@@ -1,0 +1,31 @@
+# Root configuration: stable note.
+version = 1
+app_name = "hidhogg"
+enabled = true # root flag stays untouched
+dotted.host = "127.0.0.1"
+dotted.port = 9999
+multiline = """Hidhogg
+preserves line breaks
+"""
+inline = { min = 1 , max = 9, unknown = "keep" }
+ports = [ 8080, 8081, 8082 ] # port order stays explicit
+legacy = "remove-me"
+
+[runtime]
+# runtime comment stays attached
+log_level = "info" # trailing runtime comment
+timeout_ms = 1000
+unknown_runtime = "keep-runtime"
+
+[unknown]
+# vendor comment must remain byte-identical
+vendor_key = "do-not-touch"
+
+[[pages]]
+# first page comment must remain byte-identical
+name = "clock"
+brightness = 50
+
+[[pages]]
+name = "status"
+brightness = 70

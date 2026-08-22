@@ -1,0 +1,25 @@
+# Device fixture: representative adapter configuration.
+device_id = "desk-deck"
+adapter = "ulanzi.d200x" # adapter selection
+display_name = "Desk Deck"
+description = """A display
+with a preserved newline
+"""
+capabilities.inputs = ["keys", "knob"]
+transport = { path = "/dev/hidraw0", retries = 3, unknown = "keep" }
+
+[settings]
+# device setting comment stays untouched
+brightness = 50 # device trailing comment
+unknown_setting = "keep-device-setting"
+
+[[pages]]
+# device page one
+id = "clock"
+title = "Clock"
+layout = { x = 0, y = 0, width = 4, height = 2 }
+
+[[pages]]
+id = "status"
+title = "Status"
+layout = { x = 0, y = 2, width = 4, height = 2 }

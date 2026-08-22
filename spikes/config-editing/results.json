@@ -1,0 +1,4023 @@
+{
+  "measurement_note": "Ephemeral feasibility output; fields and meanings are not a public schema. Untouched lines use an LCS comparison outside operation-specific allowed edit regions.",
+  "dependencies": [
+    {
+      "module": "github.com/pelletier/go-toml/v2",
+      "version": "v2.4.4-0.20260718201843-686c980c4758",
+      "license": "MIT"
+    },
+    {
+      "module": "github.com/tailscale/hujson",
+      "version": "v0.0.0-20260727124030-b80ff77dac4f",
+      "license": "BSD-3-Clause"
+    }
+  ],
+  "toml": [
+    {
+      "id": "replace.scalar",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "path-based scalar replacement",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "f06f4ceb05aa088663cdd43d67866a4a28bc165feabaecffab63bedc34c19f0a",
+          "output_byte_hash": "f06f4ceb05aa088663cdd43d67866a4a28bc165feabaecffab63bedc34c19f0a"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75",
+          "output_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1",
+          "output_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4",
+          "output_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a",
+          "output_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459",
+          "output_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c",
+          "output_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c"
+        }
+      ],
+      "output_sha256": "c0c82491e65cd2c0991388aff651f49f18d014baef9714b9ecda698db5efa3ea"
+    },
+    {
+      "id": "replace.scalar",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "path-based scalar replacement",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "ea494272e7c6d1993f6fc35f21314d6f09524d2dd58beea3dcb0515c193407f6",
+          "output_byte_hash": "ea494272e7c6d1993f6fc35f21314d6f09524d2dd58beea3dcb0515c193407f6"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296",
+          "output_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc",
+          "output_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557",
+          "output_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e",
+          "output_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321",
+          "output_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0",
+          "output_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0"
+        }
+      ],
+      "output_sha256": "31322486b05e82d3644f22a4a57f2af1b72f739e7aaacdc820b94ddcb16daef6"
+    },
+    {
+      "id": "insert.scalar",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "path-based scalar insertion",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "c2a22869951a1af5f4addd09f0f2e5e237235411d99b08e1dccb9e7962134fab",
+          "output_byte_hash": "c2a22869951a1af5f4addd09f0f2e5e237235411d99b08e1dccb9e7962134fab"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75",
+          "output_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1",
+          "output_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4",
+          "output_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a",
+          "output_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459",
+          "output_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c",
+          "output_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c"
+        }
+      ],
+      "output_sha256": "1044218b5bab4f29e60de8d9b41a39c1bda86908c26272d6062d7a10df5357fc"
+    },
+    {
+      "id": "insert.scalar",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "path-based scalar insertion",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "7dc8e2feb9e9591322a64b1fe80d66d6f409611c698fe324144a26a0f512e3d9",
+          "output_byte_hash": "7dc8e2feb9e9591322a64b1fe80d66d6f409611c698fe324144a26a0f512e3d9"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296",
+          "output_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc",
+          "output_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557",
+          "output_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e",
+          "output_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321",
+          "output_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0",
+          "output_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0"
+        }
+      ],
+      "output_sha256": "3d405ad31e1ecc5f1fa270362c689608973abc083643e2554ed1e90cdc5e96f8"
+    },
+    {
+      "id": "delete.scalar",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "path-based scalar deletion",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "2d64f46e23b37908dfd6c73d7939e1f00cff986ee6f7edda05a60cf60a9f40ef",
+          "output_byte_hash": "2d64f46e23b37908dfd6c73d7939e1f00cff986ee6f7edda05a60cf60a9f40ef"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75",
+          "output_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1",
+          "output_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4",
+          "output_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a",
+          "output_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459",
+          "output_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c",
+          "output_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c"
+        }
+      ],
+      "output_sha256": "2d64f46e23b37908dfd6c73d7939e1f00cff986ee6f7edda05a60cf60a9f40ef"
+    },
+    {
+      "id": "delete.scalar",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "path-based scalar deletion",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "dee9a80b2294cf476d0786d8b9ff1bf4ee4fe42fccd311a30455941567909914",
+          "output_byte_hash": "dee9a80b2294cf476d0786d8b9ff1bf4ee4fe42fccd311a30455941567909914"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296",
+          "output_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc",
+          "output_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557",
+          "output_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e",
+          "output_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321",
+          "output_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0",
+          "output_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0"
+        }
+      ],
+      "output_sha256": "dee9a80b2294cf476d0786d8b9ff1bf4ee4fe42fccd311a30455941567909914"
+    },
+    {
+      "id": "reorder.object",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "delete-and-reinsert a key to move it within a table",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "c6726b46ea3c1f3dba2502ba40191493c72e31f490010771a5fdc0e9f72ca451",
+          "output_byte_hash": "c6726b46ea3c1f3dba2502ba40191493c72e31f490010771a5fdc0e9f72ca451"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75",
+          "output_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1",
+          "output_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4",
+          "output_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a",
+          "output_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459",
+          "output_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c",
+          "output_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c"
+        }
+      ],
+      "output_sha256": "0f6ab877a82bb6aa69637ffb8b12b1a67ce79419ce83d81861cc8b94531a0d8a"
+    },
+    {
+      "id": "reorder.object",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "delete-and-reinsert a key to move it within a table",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "a1914dbe5b40d8d1f96de5b0fb29bf6e814f2cdaaf2a0dde57799eb45fcbf1bd",
+          "output_byte_hash": "a1914dbe5b40d8d1f96de5b0fb29bf6e814f2cdaaf2a0dde57799eb45fcbf1bd"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296",
+          "output_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc",
+          "output_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557",
+          "output_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e",
+          "output_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321",
+          "output_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0",
+          "output_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0"
+        }
+      ],
+      "output_sha256": "7f027ff56c7b28e5221775d9506b4367f3cc1673fbc9d26fe34ca3e791c5d001"
+    },
+    {
+      "id": "table.insert",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "create table through a nested path",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "c2a22869951a1af5f4addd09f0f2e5e237235411d99b08e1dccb9e7962134fab",
+          "output_byte_hash": "c2a22869951a1af5f4addd09f0f2e5e237235411d99b08e1dccb9e7962134fab"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75",
+          "output_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1",
+          "output_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4",
+          "output_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a",
+          "output_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459",
+          "output_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c",
+          "output_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c"
+        }
+      ],
+      "output_sha256": "35ebcae43bef3819e5dd20f6e2615d68a679ec4027b4392d5f0a2c407f83161a"
+    },
+    {
+      "id": "table.insert",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "create table through a nested path",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "7dc8e2feb9e9591322a64b1fe80d66d6f409611c698fe324144a26a0f512e3d9",
+          "output_byte_hash": "7dc8e2feb9e9591322a64b1fe80d66d6f409611c698fe324144a26a0f512e3d9"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296",
+          "output_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc",
+          "output_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557",
+          "output_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e",
+          "output_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321",
+          "output_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0",
+          "output_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0"
+        }
+      ],
+      "output_sha256": "79f7701a8271aff040a1bd6c2a105d571d13571a6798d51513312c2127724ab5"
+    },
+    {
+      "id": "array-of-tables.insert",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "append an array-of-tables element",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "c2a22869951a1af5f4addd09f0f2e5e237235411d99b08e1dccb9e7962134fab",
+          "output_byte_hash": "c2a22869951a1af5f4addd09f0f2e5e237235411d99b08e1dccb9e7962134fab"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75",
+          "output_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1",
+          "output_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4",
+          "output_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a",
+          "output_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459",
+          "output_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c",
+          "output_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c"
+        }
+      ],
+      "output_sha256": "ac3e9d5ad376fe4bce9990aa871390beaedd8d1b3afb44684c388d2686e359d8"
+    },
+    {
+      "id": "array-of-tables.insert",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "append an array-of-tables element",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "7dc8e2feb9e9591322a64b1fe80d66d6f409611c698fe324144a26a0f512e3d9",
+          "output_byte_hash": "7dc8e2feb9e9591322a64b1fe80d66d6f409611c698fe324144a26a0f512e3d9"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296",
+          "output_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc",
+          "output_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557",
+          "output_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e",
+          "output_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321",
+          "output_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0",
+          "output_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0"
+        }
+      ],
+      "output_sha256": "83fdd9ff16933214ef11bb9fda0ba32bda85144b3b9af21ba3d71e547957eaa2"
+    },
+    {
+      "id": "array.element.replace",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "replace an array element by index",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "3c451ccf03ebacf3453ca15f24137b8c85ce6273836634c4b0a03ad8d01b530c",
+          "output_byte_hash": "3c451ccf03ebacf3453ca15f24137b8c85ce6273836634c4b0a03ad8d01b530c"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75",
+          "output_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1",
+          "output_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4",
+          "output_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a",
+          "output_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459",
+          "output_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c",
+          "output_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c"
+        }
+      ],
+      "output_sha256": "cd603489791db71a29b4dc0a7295efe278a728edd77678746542db3339621181"
+    },
+    {
+      "id": "array.element.replace",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "replace an array element by index",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "2c2757e900be5f1a0f5f30e8ecf7d9ee369e3f6346e98343cb0693b66edafced",
+          "output_byte_hash": "2c2757e900be5f1a0f5f30e8ecf7d9ee369e3f6346e98343cb0693b66edafced"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296",
+          "output_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc",
+          "output_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557",
+          "output_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e",
+          "output_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321",
+          "output_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0",
+          "output_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0"
+        }
+      ],
+      "output_sha256": "60766c669639914773353fc89f09909a06632718f1a4d69094607546b1308507"
+    },
+    {
+      "id": "inline-table.replace",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "replace a value nested inside an inline table",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "067c2adc11acc15f72136f9cbea86b865f9e9683fc5d742925e7727641e3fa50",
+          "output_byte_hash": "067c2adc11acc15f72136f9cbea86b865f9e9683fc5d742925e7727641e3fa50"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75",
+          "output_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1",
+          "output_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4",
+          "output_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a",
+          "output_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459",
+          "output_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c",
+          "output_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c"
+        }
+      ],
+      "output_sha256": "cd7804bd45ed08f33a1ffd48c81dc8cea97fb6aff850ab3e6bd5377908a9511f"
+    },
+    {
+      "id": "inline-table.replace",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "replace a value nested inside an inline table",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "b74565c790a23ea62392a8e8395ec39a964c1b545223066cfcee3fd739dcec81",
+          "output_byte_hash": "b74565c790a23ea62392a8e8395ec39a964c1b545223066cfcee3fd739dcec81"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296",
+          "output_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc",
+          "output_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557",
+          "output_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e",
+          "output_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321",
+          "output_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0",
+          "output_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0"
+        }
+      ],
+      "output_sha256": "d1d2acc51f28c2be5343d31ab3ef2775db079a9786e7d0cdcce3219a89250838"
+    },
+    {
+      "id": "dotted-key.replace",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "replace a value addressed through a dotted key",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "ba9155cffe1be1b0b743f04ce6baf25a3981c0b198ccc8c12cc82d767031ff15",
+          "output_byte_hash": "ba9155cffe1be1b0b743f04ce6baf25a3981c0b198ccc8c12cc82d767031ff15"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75",
+          "output_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1",
+          "output_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4",
+          "output_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a",
+          "output_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459",
+          "output_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c",
+          "output_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c"
+        }
+      ],
+      "output_sha256": "0d2fa00211d0a8947be8d9b496b032c854d43ae07424ffe02147796d3838f8b5"
+    },
+    {
+      "id": "dotted-key.replace",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "replace a value addressed through a dotted key",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "c9233c00f6579d4a2c3bdda12be2fb52073a30831c48c4da45d9b796131092e9",
+          "output_byte_hash": "c9233c00f6579d4a2c3bdda12be2fb52073a30831c48c4da45d9b796131092e9"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296",
+          "output_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc",
+          "output_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557",
+          "output_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e",
+          "output_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321",
+          "output_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0",
+          "output_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0"
+        }
+      ],
+      "output_sha256": "36edd5c3a953e359adee28b78216f10ac4a267f77c76cca9cc72b81f9150a8dd"
+    },
+    {
+      "id": "multiline-string.replace",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "replace a value with an explicit multiline string",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "06e50f55df2512e9f47f5faef82e16a9ac2a918a16ffb09bc15dea4f758f837c",
+          "output_byte_hash": "06e50f55df2512e9f47f5faef82e16a9ac2a918a16ffb09bc15dea4f758f837c"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75",
+          "output_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1",
+          "output_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4",
+          "output_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a",
+          "output_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459",
+          "output_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c",
+          "output_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c"
+        }
+      ],
+      "output_sha256": "c922fa8308ecbe5876d423d89547aad0f6b8d4b12b3a28c8057eb4cd60a680f4"
+    },
+    {
+      "id": "multiline-string.replace",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "replace a value with an explicit multiline string",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "6a8dcd60a7fe1715f472a45593dce2ae05f03bd28e62dfb48be18ef876fb7e51",
+          "output_byte_hash": "6a8dcd60a7fe1715f472a45593dce2ae05f03bd28e62dfb48be18ef876fb7e51"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296",
+          "output_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc",
+          "output_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557",
+          "output_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e",
+          "output_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321",
+          "output_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0",
+          "output_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0"
+        }
+      ],
+      "output_sha256": "935e9d54a974842fd615789b96f28527a233c41afa79ee5302aba4a5524ce2c9"
+    },
+    {
+      "id": "comment-preservation.replace",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "replace while preserving full-line and trailing comments",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "f06f4ceb05aa088663cdd43d67866a4a28bc165feabaecffab63bedc34c19f0a",
+          "output_byte_hash": "f06f4ceb05aa088663cdd43d67866a4a28bc165feabaecffab63bedc34c19f0a"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75",
+          "output_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1",
+          "output_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4",
+          "output_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a",
+          "output_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459",
+          "output_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c",
+          "output_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c"
+        },
+        {
+          "name": "# runtime comment stays attached",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "222966fbcdf14e55e6a24114d56abd3c5357ad59e019078d75cb126f3d51732e",
+          "output_byte_hash": "222966fbcdf14e55e6a24114d56abd3c5357ad59e019078d75cb126f3d51732e"
+        },
+        {
+          "name": "# trailing runtime comment",
+          "comparison": "marker-count",
+          "byte_identical": false,
+          "marker_count_equal": true,
+          "source_byte_hash": "397bd147476090bf5b020263b975cd705c52f5f28f6e76151a0eb4a56b3cde44",
+          "output_byte_hash": "397bd147476090bf5b020263b975cd705c52f5f28f6e76151a0eb4a56b3cde44"
+        }
+      ],
+      "output_sha256": "bf8ccd0c1066c1fa5a7b9f03c0054e8c8daa1c16f2d650922627fdbfe749355f"
+    },
+    {
+      "id": "comment-preservation.replace",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "replace while preserving full-line and trailing comments",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "ea494272e7c6d1993f6fc35f21314d6f09524d2dd58beea3dcb0515c193407f6",
+          "output_byte_hash": "ea494272e7c6d1993f6fc35f21314d6f09524d2dd58beea3dcb0515c193407f6"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296",
+          "output_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc",
+          "output_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557",
+          "output_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e",
+          "output_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321",
+          "output_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0",
+          "output_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0"
+        },
+        {
+          "name": "# runtime comment stays attached",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a9258dbc0a49c682d647a044bee159e2e8eb10680d30ccd2ab644fbf804f1055",
+          "output_byte_hash": "a9258dbc0a49c682d647a044bee159e2e8eb10680d30ccd2ab644fbf804f1055"
+        },
+        {
+          "name": "# trailing runtime comment",
+          "comparison": "marker-count",
+          "byte_identical": false,
+          "marker_count_equal": true,
+          "source_byte_hash": "397bd147476090bf5b020263b975cd705c52f5f28f6e76151a0eb4a56b3cde44",
+          "output_byte_hash": "397bd147476090bf5b020263b975cd705c52f5f28f6e76151a0eb4a56b3cde44"
+        }
+      ],
+      "output_sha256": "9d2052e9700b2514ec067d88b0c58a5987d8b3a07e07572d036ef261fe997f11"
+    },
+    {
+      "id": "unknown-field.preservation",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "replace a known field without touching unknown fields",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "f06f4ceb05aa088663cdd43d67866a4a28bc165feabaecffab63bedc34c19f0a",
+          "output_byte_hash": "f06f4ceb05aa088663cdd43d67866a4a28bc165feabaecffab63bedc34c19f0a"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75",
+          "output_byte_hash": "181bbd2009d55beac0c02eec2849ca0b468d3bbd26c00be7b6a4614f012c6a75"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1",
+          "output_byte_hash": "dbab12665d98aef021ba64953c61b0ed8a908cfb56a1c01e2fcb4b052b71a2a1"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4",
+          "output_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a",
+          "output_byte_hash": "12fdac4b35cb888dcfdd99d1ec4094fe098b2ea3d8fa5886bb46caadf831574a"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459",
+          "output_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c",
+          "output_byte_hash": "e2f56422e7707db2b1e8529a4e0af40ade447bbe08db02baf70238e4533dfd9c"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4",
+          "output_byte_hash": "e57f3d5dad44ffa1a8cc3c32f7cf7b0e7d92f9fb3e734c2cb0413ccb188d74c4"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459",
+          "output_byte_hash": "04785150afb6a502087091fefd9baaf359bea1bf7bf79795d234600d69931459"
+        }
+      ],
+      "output_sha256": "16f4fdf032efb8863c2cc789e6515d860b447380909f526f571424c257b8d38c"
+    },
+    {
+      "id": "unknown-field.preservation",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "replace a known field without touching unknown fields",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "ea494272e7c6d1993f6fc35f21314d6f09524d2dd58beea3dcb0515c193407f6",
+          "output_byte_hash": "ea494272e7c6d1993f6fc35f21314d6f09524d2dd58beea3dcb0515c193407f6"
+        },
+        {
+          "name": "# Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296",
+          "output_byte_hash": "2dadacf58532e67315b6551f6561089dab374ca6929ffe5760f04e149102a296"
+        },
+        {
+          "name": "version = 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc",
+          "output_byte_hash": "14b179a542d2d10339e2a532110851ed598682772324985007282df82d5963fc"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557",
+          "output_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557"
+        },
+        {
+          "name": "# vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e",
+          "output_byte_hash": "2be30b83b467e3cb1c8c1eb4dbc65c65f7a552f4c16a0468b3bf19979b1b479e"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321",
+          "output_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321"
+        },
+        {
+          "name": "# first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0",
+          "output_byte_hash": "8b19fbb623bdd7b9c435ab4ba144a5a83654191fa3284de3ca63e8b439d91be0"
+        },
+        {
+          "name": "unknown_runtime = \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557",
+          "output_byte_hash": "a03463088a64e38062840d4d9757d3ccdb26016cdff30cec91865f58e8384557"
+        },
+        {
+          "name": "vendor_key = \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321",
+          "output_byte_hash": "d2e00b1ecc5949d2528d6026be725cd9b16e45c0fce07bc8c78810bd27777321"
+        }
+      ],
+      "output_sha256": "5425917a2d1b133df1ef7b4aaaeed22db1954b9dd5850742ca7af3dc04724670"
+    },
+    {
+      "id": "device.table.insert",
+      "fixture": "device",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "create a nested device settings table",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "ff89d7f2d75d829254fede6603f893707361f394d5d2961b1388102c3366a51e",
+          "output_byte_hash": "ff89d7f2d75d829254fede6603f893707361f394d5d2961b1388102c3366a51e"
+        },
+        {
+          "name": "# Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3d4b5006572a7fb7f00acfcc9b36543dc7f72733b97b3b7be783ef232d0d742d",
+          "output_byte_hash": "3d4b5006572a7fb7f00acfcc9b36543dc7f72733b97b3b7be783ef232d0d742d"
+        },
+        {
+          "name": "unknown_setting = \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "82f3c90becba3d9a8f9943f4b3189198537a3d1021c2cd92fea127812ca87813",
+          "output_byte_hash": "82f3c90becba3d9a8f9943f4b3189198537a3d1021c2cd92fea127812ca87813"
+        },
+        {
+          "name": "# device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "80b6f15bc132ac2486691b46e178bd117be2047130dd967a678f3e5d1c312950",
+          "output_byte_hash": "80b6f15bc132ac2486691b46e178bd117be2047130dd967a678f3e5d1c312950"
+        },
+        {
+          "name": "id = \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "129e72501bdcb9434d7428c80d0334917d5c4671a29666e72933127c611df952",
+          "output_byte_hash": "129e72501bdcb9434d7428c80d0334917d5c4671a29666e72933127c611df952"
+        }
+      ],
+      "output_sha256": "3d74aebea83396cee460282c636df2794f38a06bc0be8245b0ef44bb330f92a0"
+    },
+    {
+      "id": "device.table.insert",
+      "fixture": "device",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "create a nested device settings table",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "298eb2bf3764d205b771a57b378e0583058b55b29aed71a62cfd49cfa9b69d25",
+          "output_byte_hash": "298eb2bf3764d205b771a57b378e0583058b55b29aed71a62cfd49cfa9b69d25"
+        },
+        {
+          "name": "# Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "915e4e94ebdf30121b2d4d40b279d13e338202c51e8af465fcd522f410f676c2",
+          "output_byte_hash": "915e4e94ebdf30121b2d4d40b279d13e338202c51e8af465fcd522f410f676c2"
+        },
+        {
+          "name": "unknown_setting = \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "6be01549c3ba7c5982763bfce9c245dc538bf9bced3f7da31728a63fb12757c3",
+          "output_byte_hash": "6be01549c3ba7c5982763bfce9c245dc538bf9bced3f7da31728a63fb12757c3"
+        },
+        {
+          "name": "# device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7b76bb3f349249bf1100f5cc1de981dfd90724a88e753c72b6c1be3e237ecc7a",
+          "output_byte_hash": "7b76bb3f349249bf1100f5cc1de981dfd90724a88e753c72b6c1be3e237ecc7a"
+        },
+        {
+          "name": "id = \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "953abe57e5a0f08488490e4e55669800168401141187ae5ecd77a5740c62daf2",
+          "output_byte_hash": "953abe57e5a0f08488490e4e55669800168401141187ae5ecd77a5740c62daf2"
+        }
+      ],
+      "output_sha256": "69bbbe7a68664e5c2eeb23436c2383675a7bbeab501c67b3f067522642b4899d"
+    },
+    {
+      "id": "device.array-of-tables.insert",
+      "fixture": "device",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "append a device page",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "ff89d7f2d75d829254fede6603f893707361f394d5d2961b1388102c3366a51e",
+          "output_byte_hash": "ff89d7f2d75d829254fede6603f893707361f394d5d2961b1388102c3366a51e"
+        },
+        {
+          "name": "# Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3d4b5006572a7fb7f00acfcc9b36543dc7f72733b97b3b7be783ef232d0d742d",
+          "output_byte_hash": "3d4b5006572a7fb7f00acfcc9b36543dc7f72733b97b3b7be783ef232d0d742d"
+        },
+        {
+          "name": "unknown_setting = \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "82f3c90becba3d9a8f9943f4b3189198537a3d1021c2cd92fea127812ca87813",
+          "output_byte_hash": "82f3c90becba3d9a8f9943f4b3189198537a3d1021c2cd92fea127812ca87813"
+        },
+        {
+          "name": "# device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "80b6f15bc132ac2486691b46e178bd117be2047130dd967a678f3e5d1c312950",
+          "output_byte_hash": "80b6f15bc132ac2486691b46e178bd117be2047130dd967a678f3e5d1c312950"
+        },
+        {
+          "name": "id = \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "129e72501bdcb9434d7428c80d0334917d5c4671a29666e72933127c611df952",
+          "output_byte_hash": "129e72501bdcb9434d7428c80d0334917d5c4671a29666e72933127c611df952"
+        }
+      ],
+      "output_sha256": "25f395c44833abc3fc1734256ae6f1017ad1abdf58a033b5e368405eaa5a1397"
+    },
+    {
+      "id": "device.array-of-tables.insert",
+      "fixture": "device",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "append a device page",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "298eb2bf3764d205b771a57b378e0583058b55b29aed71a62cfd49cfa9b69d25",
+          "output_byte_hash": "298eb2bf3764d205b771a57b378e0583058b55b29aed71a62cfd49cfa9b69d25"
+        },
+        {
+          "name": "# Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "915e4e94ebdf30121b2d4d40b279d13e338202c51e8af465fcd522f410f676c2",
+          "output_byte_hash": "915e4e94ebdf30121b2d4d40b279d13e338202c51e8af465fcd522f410f676c2"
+        },
+        {
+          "name": "unknown_setting = \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "6be01549c3ba7c5982763bfce9c245dc538bf9bced3f7da31728a63fb12757c3",
+          "output_byte_hash": "6be01549c3ba7c5982763bfce9c245dc538bf9bced3f7da31728a63fb12757c3"
+        },
+        {
+          "name": "# device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7b76bb3f349249bf1100f5cc1de981dfd90724a88e753c72b6c1be3e237ecc7a",
+          "output_byte_hash": "7b76bb3f349249bf1100f5cc1de981dfd90724a88e753c72b6c1be3e237ecc7a"
+        },
+        {
+          "name": "id = \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "953abe57e5a0f08488490e4e55669800168401141187ae5ecd77a5740c62daf2",
+          "output_byte_hash": "953abe57e5a0f08488490e4e55669800168401141187ae5ecd77a5740c62daf2"
+        }
+      ],
+      "output_sha256": "ed8bb104c897583d1e8319954283c11546d52f68861c31ff1d60e6e484fe6652"
+    },
+    {
+      "id": "device.inline-table.replace",
+      "fixture": "device",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "replace a nested transport value",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "fe3f7e61d73cea4c9e8b8c53ebcfa717384031af70b4601b0793d6d519d93112",
+          "output_byte_hash": "fe3f7e61d73cea4c9e8b8c53ebcfa717384031af70b4601b0793d6d519d93112"
+        },
+        {
+          "name": "# Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3d4b5006572a7fb7f00acfcc9b36543dc7f72733b97b3b7be783ef232d0d742d",
+          "output_byte_hash": "3d4b5006572a7fb7f00acfcc9b36543dc7f72733b97b3b7be783ef232d0d742d"
+        },
+        {
+          "name": "unknown_setting = \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "82f3c90becba3d9a8f9943f4b3189198537a3d1021c2cd92fea127812ca87813",
+          "output_byte_hash": "82f3c90becba3d9a8f9943f4b3189198537a3d1021c2cd92fea127812ca87813"
+        },
+        {
+          "name": "# device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "80b6f15bc132ac2486691b46e178bd117be2047130dd967a678f3e5d1c312950",
+          "output_byte_hash": "80b6f15bc132ac2486691b46e178bd117be2047130dd967a678f3e5d1c312950"
+        },
+        {
+          "name": "id = \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "129e72501bdcb9434d7428c80d0334917d5c4671a29666e72933127c611df952",
+          "output_byte_hash": "129e72501bdcb9434d7428c80d0334917d5c4671a29666e72933127c611df952"
+        }
+      ],
+      "output_sha256": "56ea74da2360b40bf0499e2d56a08037af3bffd3bceaf418c10bc50a20de12ba"
+    },
+    {
+      "id": "device.inline-table.replace",
+      "fixture": "device",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "replace a nested transport value",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "e3b6cd349179aa456a24dc45fadf66d0221d15e54ee04d88e276bdc8cf69070a",
+          "output_byte_hash": "e3b6cd349179aa456a24dc45fadf66d0221d15e54ee04d88e276bdc8cf69070a"
+        },
+        {
+          "name": "# Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "915e4e94ebdf30121b2d4d40b279d13e338202c51e8af465fcd522f410f676c2",
+          "output_byte_hash": "915e4e94ebdf30121b2d4d40b279d13e338202c51e8af465fcd522f410f676c2"
+        },
+        {
+          "name": "unknown_setting = \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "6be01549c3ba7c5982763bfce9c245dc538bf9bced3f7da31728a63fb12757c3",
+          "output_byte_hash": "6be01549c3ba7c5982763bfce9c245dc538bf9bced3f7da31728a63fb12757c3"
+        },
+        {
+          "name": "# device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7b76bb3f349249bf1100f5cc1de981dfd90724a88e753c72b6c1be3e237ecc7a",
+          "output_byte_hash": "7b76bb3f349249bf1100f5cc1de981dfd90724a88e753c72b6c1be3e237ecc7a"
+        },
+        {
+          "name": "id = \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "953abe57e5a0f08488490e4e55669800168401141187ae5ecd77a5740c62daf2",
+          "output_byte_hash": "953abe57e5a0f08488490e4e55669800168401141187ae5ecd77a5740c62daf2"
+        }
+      ],
+      "output_sha256": "f649987af345f175cb981ad39211bf9d26b2bc45d0843346f6689a20db5a5003"
+    },
+    {
+      "id": "device.multiline-string.replace",
+      "fixture": "device",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "replace a device multiline string",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "0285de2edc3347e8aba0412bb1b130a90c9be876940e38c3d43c3b779bfc4a69",
+          "output_byte_hash": "0285de2edc3347e8aba0412bb1b130a90c9be876940e38c3d43c3b779bfc4a69"
+        },
+        {
+          "name": "# Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3d4b5006572a7fb7f00acfcc9b36543dc7f72733b97b3b7be783ef232d0d742d",
+          "output_byte_hash": "3d4b5006572a7fb7f00acfcc9b36543dc7f72733b97b3b7be783ef232d0d742d"
+        },
+        {
+          "name": "unknown_setting = \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "82f3c90becba3d9a8f9943f4b3189198537a3d1021c2cd92fea127812ca87813",
+          "output_byte_hash": "82f3c90becba3d9a8f9943f4b3189198537a3d1021c2cd92fea127812ca87813"
+        },
+        {
+          "name": "# device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "80b6f15bc132ac2486691b46e178bd117be2047130dd967a678f3e5d1c312950",
+          "output_byte_hash": "80b6f15bc132ac2486691b46e178bd117be2047130dd967a678f3e5d1c312950"
+        },
+        {
+          "name": "id = \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "129e72501bdcb9434d7428c80d0334917d5c4671a29666e72933127c611df952",
+          "output_byte_hash": "129e72501bdcb9434d7428c80d0334917d5c4671a29666e72933127c611df952"
+        }
+      ],
+      "output_sha256": "709445fb208ae39233ce0a6d5ee20e1ccf281e8e6dea32f0b7dff90d963aca68"
+    },
+    {
+      "id": "device.multiline-string.replace",
+      "fixture": "device",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "replace a device multiline string",
+      "required": true,
+      "status": "pass",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": true,
+          "source_byte_hash": "925725f66dcd0e7b6344ae55bfc5f9a0cc2e884b23809bcc940b2c3c134253fa",
+          "output_byte_hash": "925725f66dcd0e7b6344ae55bfc5f9a0cc2e884b23809bcc940b2c3c134253fa"
+        },
+        {
+          "name": "# Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "915e4e94ebdf30121b2d4d40b279d13e338202c51e8af465fcd522f410f676c2",
+          "output_byte_hash": "915e4e94ebdf30121b2d4d40b279d13e338202c51e8af465fcd522f410f676c2"
+        },
+        {
+          "name": "unknown_setting = \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "6be01549c3ba7c5982763bfce9c245dc538bf9bced3f7da31728a63fb12757c3",
+          "output_byte_hash": "6be01549c3ba7c5982763bfce9c245dc538bf9bced3f7da31728a63fb12757c3"
+        },
+        {
+          "name": "# device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7b76bb3f349249bf1100f5cc1de981dfd90724a88e753c72b6c1be3e237ecc7a",
+          "output_byte_hash": "7b76bb3f349249bf1100f5cc1de981dfd90724a88e753c72b6c1be3e237ecc7a"
+        },
+        {
+          "name": "id = \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "953abe57e5a0f08488490e4e55669800168401141187ae5ecd77a5740c62daf2",
+          "output_byte_hash": "953abe57e5a0f08488490e4e55669800168401141187ae5ecd77a5740c62daf2"
+        }
+      ],
+      "output_sha256": "ab47ddc0003ee8b767bbe0027203477fe1ac4f655363b8043913b3adf667cfc8"
+    },
+    {
+      "id": "malformed-input.reject",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "LF",
+      "operation": "reject malformed source before editing",
+      "required": true,
+      "status": "pass",
+      "detail": "parser rejected malformed source",
+      "semantic_valid": false
+    },
+    {
+      "id": "malformed-input.reject",
+      "fixture": "root",
+      "format": "toml",
+      "line_ending": "CRLF",
+      "operation": "reject malformed source before editing",
+      "required": true,
+      "status": "pass",
+      "detail": "parser rejected malformed source",
+      "semantic_valid": false
+    }
+  ],
+  "jsonc": [
+    {
+      "id": "replace.scalar",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "path-based scalar replacement",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\n\"",
+          "source_byte_hash": "929093d7215585c3942919b0e46cdb5fcca4744bbd9c9a86341b002231623ddc",
+          "output_byte_hash": "929093d7215585c3942919b0e46cdb5fcca4744bbd9c9a86341b002231623ddc"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647",
+          "output_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9",
+          "output_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "6fff18424bfc15fb6e18d10413ce235932032e5cbb9b914c938b12c6914bc864",
+          "output_byte_hash": "63add1747571f2b4923ba5c8f8c36ac99efdb22f54e5e9ad9ae9d2d7ddd946c8"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72",
+          "output_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "92d9ce3521a68abe6bb80661e3f86e8ecb77e7432608da7c05de596ef6f688ed",
+          "output_byte_hash": "e351e26a4b9c7d52d92ad8cf8d3b70dccfee21806984bffe4f0e15c512664f05"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609",
+          "output_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609"
+        }
+      ],
+      "output_sha256": "61f177cfab8ce6ad1fd134f3ffa3f6c5c0302d9cdbe2119bca87eb09ca5b813a"
+    },
+    {
+      "id": "replace.scalar",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "path-based scalar replacement",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\r\\n\"",
+          "source_byte_hash": "cabdb4cd3603aec3436f0880bacc89fa9211ea8f462b2e961e4c794655a2aa2f",
+          "output_byte_hash": "cabdb4cd3603aec3436f0880bacc89fa9211ea8f462b2e961e4c794655a2aa2f"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a",
+          "output_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5",
+          "output_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "8af404c087c23004d01a078b26960dd79c61cf4fcc61918e4dcc36f7b1452b6f",
+          "output_byte_hash": "ab922d3be18cd6d78f5698d8c2eb7837d45b2b585c5d2af31581ec227ab7709c"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223",
+          "output_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "b7857b27af262e9079c008aeeb5c68f3807285c783050bffb4ba0eabba161357",
+          "output_byte_hash": "0553e0457fc28949de5f40b6a3b50d95a52bd2ff72117d03eed5961fd4cf5a29"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774",
+          "output_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774"
+        }
+      ],
+      "output_sha256": "0771683b7e139234e55842963a3520125c8827526fb1b2de540cc6033355db90"
+    },
+    {
+      "id": "insert.scalar",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "path-based scalar insertion",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\n\"",
+          "source_byte_hash": "f71c97571ba21e67480d9e02d7d88e199df5dbfb8c732074b7fb05d69eea9d2e",
+          "output_byte_hash": "f71c97571ba21e67480d9e02d7d88e199df5dbfb8c732074b7fb05d69eea9d2e"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647",
+          "output_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9",
+          "output_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "6fff18424bfc15fb6e18d10413ce235932032e5cbb9b914c938b12c6914bc864",
+          "output_byte_hash": "accd0ba6ef838f319c0387a96fe44227c610509a3ca993de50eae27192f22e6b"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72",
+          "output_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "92d9ce3521a68abe6bb80661e3f86e8ecb77e7432608da7c05de596ef6f688ed",
+          "output_byte_hash": "e351e26a4b9c7d52d92ad8cf8d3b70dccfee21806984bffe4f0e15c512664f05"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609",
+          "output_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609"
+        }
+      ],
+      "output_sha256": "17a30e15a314c70c6e66742ca23165f904e274956075e44b4cf3f4f1525bf709"
+    },
+    {
+      "id": "insert.scalar",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "path-based scalar insertion",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\r\\n\"",
+          "source_byte_hash": "e0ba56fbd10f54f6168d6031ef2f3eba953939dd9ad04954e2f278699c5bf151",
+          "output_byte_hash": "e0ba56fbd10f54f6168d6031ef2f3eba953939dd9ad04954e2f278699c5bf151"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a",
+          "output_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5",
+          "output_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "8af404c087c23004d01a078b26960dd79c61cf4fcc61918e4dcc36f7b1452b6f",
+          "output_byte_hash": "3dc1687b2d19d4938a5755d98026345b7eb34aea68760080dea030fc0d477a36"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223",
+          "output_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "b7857b27af262e9079c008aeeb5c68f3807285c783050bffb4ba0eabba161357",
+          "output_byte_hash": "0553e0457fc28949de5f40b6a3b50d95a52bd2ff72117d03eed5961fd4cf5a29"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774",
+          "output_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774"
+        }
+      ],
+      "output_sha256": "fc59caccf6cf54ee011618ac99ff5ce06b00fc65b08a3becb7f1461ddf7a69c1"
+    },
+    {
+      "id": "delete.scalar",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "path-based scalar deletion",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\n\"",
+          "source_byte_hash": "e216c159db9bb13eed6ea12e3014d28c0ea61f5e52a36f4a8ff94f06ab887b37",
+          "output_byte_hash": "e216c159db9bb13eed6ea12e3014d28c0ea61f5e52a36f4a8ff94f06ab887b37"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647",
+          "output_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9",
+          "output_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "6fff18424bfc15fb6e18d10413ce235932032e5cbb9b914c938b12c6914bc864",
+          "output_byte_hash": "63add1747571f2b4923ba5c8f8c36ac99efdb22f54e5e9ad9ae9d2d7ddd946c8"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72",
+          "output_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "92d9ce3521a68abe6bb80661e3f86e8ecb77e7432608da7c05de596ef6f688ed",
+          "output_byte_hash": "e351e26a4b9c7d52d92ad8cf8d3b70dccfee21806984bffe4f0e15c512664f05"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609",
+          "output_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609"
+        }
+      ],
+      "output_sha256": "d55df3120f1e0e5527d70eea0848170026541302f23b760a7011dba16d01ed32"
+    },
+    {
+      "id": "delete.scalar",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "path-based scalar deletion",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\r\\n\"",
+          "source_byte_hash": "270f68b7438ade6e53e887212b8541f165f0d08f937b7fbd3faf8e52c573f8cc",
+          "output_byte_hash": "270f68b7438ade6e53e887212b8541f165f0d08f937b7fbd3faf8e52c573f8cc"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a",
+          "output_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5",
+          "output_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "8af404c087c23004d01a078b26960dd79c61cf4fcc61918e4dcc36f7b1452b6f",
+          "output_byte_hash": "ab922d3be18cd6d78f5698d8c2eb7837d45b2b585c5d2af31581ec227ab7709c"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223",
+          "output_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "b7857b27af262e9079c008aeeb5c68f3807285c783050bffb4ba0eabba161357",
+          "output_byte_hash": "0553e0457fc28949de5f40b6a3b50d95a52bd2ff72117d03eed5961fd4cf5a29"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774",
+          "output_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774"
+        }
+      ],
+      "output_sha256": "a8e460123e6b34ce33e77155c23e117ef9f6eb526e2f23271ef83e084628777c"
+    },
+    {
+      "id": "reorder.object",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "delete-and-reinsert a key to move it within a table",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\n\"",
+          "source_byte_hash": "3707ff171ffdc8a5dad35dad6ebb9d71c7ec563a4916e47cd8cd74d55ac3ba43",
+          "output_byte_hash": "3707ff171ffdc8a5dad35dad6ebb9d71c7ec563a4916e47cd8cd74d55ac3ba43"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647",
+          "output_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9",
+          "output_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "6fff18424bfc15fb6e18d10413ce235932032e5cbb9b914c938b12c6914bc864",
+          "output_byte_hash": "9e2dcaaee4b4c01e55f1541274a4b700d637b4da8aa3e93abce0bfb3f0026d01"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72",
+          "output_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "92d9ce3521a68abe6bb80661e3f86e8ecb77e7432608da7c05de596ef6f688ed",
+          "output_byte_hash": "e351e26a4b9c7d52d92ad8cf8d3b70dccfee21806984bffe4f0e15c512664f05"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609",
+          "output_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609"
+        }
+      ],
+      "output_sha256": "b812b1a68f1e57ed452016b0b5cf0fb287f56c5da06ca74f33e3382d1422e702"
+    },
+    {
+      "id": "reorder.object",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "delete-and-reinsert a key to move it within a table",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\r\\n\"",
+          "source_byte_hash": "a34f3fc3d2e3ce7d45d12bfe23ca7c4c6eacece9b91d7f9e5960bbd473240c3c",
+          "output_byte_hash": "a34f3fc3d2e3ce7d45d12bfe23ca7c4c6eacece9b91d7f9e5960bbd473240c3c"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a",
+          "output_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5",
+          "output_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "8af404c087c23004d01a078b26960dd79c61cf4fcc61918e4dcc36f7b1452b6f",
+          "output_byte_hash": "0d406d85490b3efba44e171eff306abd5b287814f0b647d27ae133d9e18e49f2"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223",
+          "output_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "b7857b27af262e9079c008aeeb5c68f3807285c783050bffb4ba0eabba161357",
+          "output_byte_hash": "0553e0457fc28949de5f40b6a3b50d95a52bd2ff72117d03eed5961fd4cf5a29"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774",
+          "output_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774"
+        }
+      ],
+      "output_sha256": "4a900bc35a5fe1689d1d96bf0e465b8be75424137b6f9a25d47d66d5980d236f"
+    },
+    {
+      "id": "table.insert",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "create table through a nested path",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\n\"",
+          "source_byte_hash": "f71c97571ba21e67480d9e02d7d88e199df5dbfb8c732074b7fb05d69eea9d2e",
+          "output_byte_hash": "f71c97571ba21e67480d9e02d7d88e199df5dbfb8c732074b7fb05d69eea9d2e"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647",
+          "output_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9",
+          "output_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "6fff18424bfc15fb6e18d10413ce235932032e5cbb9b914c938b12c6914bc864",
+          "output_byte_hash": "b0a7c5823664d1811d542922f17566a51c0e84d1a88cbe7ac559fa18ee0915f4"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72",
+          "output_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "92d9ce3521a68abe6bb80661e3f86e8ecb77e7432608da7c05de596ef6f688ed",
+          "output_byte_hash": "e351e26a4b9c7d52d92ad8cf8d3b70dccfee21806984bffe4f0e15c512664f05"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609",
+          "output_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609"
+        }
+      ],
+      "output_sha256": "5511f42f8562277878a9608d284505cd8f3d19c8e8e599ec69e71ccc44627db2"
+    },
+    {
+      "id": "table.insert",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "create table through a nested path",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\r\\n\"",
+          "source_byte_hash": "e0ba56fbd10f54f6168d6031ef2f3eba953939dd9ad04954e2f278699c5bf151",
+          "output_byte_hash": "e0ba56fbd10f54f6168d6031ef2f3eba953939dd9ad04954e2f278699c5bf151"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a",
+          "output_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5",
+          "output_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "8af404c087c23004d01a078b26960dd79c61cf4fcc61918e4dcc36f7b1452b6f",
+          "output_byte_hash": "0814cea8ab360709b2f430f88c142f16d8439b6cd8c669fd933a03b27a290a6f"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223",
+          "output_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "b7857b27af262e9079c008aeeb5c68f3807285c783050bffb4ba0eabba161357",
+          "output_byte_hash": "0553e0457fc28949de5f40b6a3b50d95a52bd2ff72117d03eed5961fd4cf5a29"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774",
+          "output_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774"
+        }
+      ],
+      "output_sha256": "6ababcb379b39cb8751fe76d3337710dc2d5ca0ab316b91e002a4829b8c43829"
+    },
+    {
+      "id": "array-of-tables.insert",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "append an array-of-tables element",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\n\"",
+          "source_byte_hash": "f71c97571ba21e67480d9e02d7d88e199df5dbfb8c732074b7fb05d69eea9d2e",
+          "output_byte_hash": "f71c97571ba21e67480d9e02d7d88e199df5dbfb8c732074b7fb05d69eea9d2e"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647",
+          "output_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9",
+          "output_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "6fff18424bfc15fb6e18d10413ce235932032e5cbb9b914c938b12c6914bc864",
+          "output_byte_hash": "63add1747571f2b4923ba5c8f8c36ac99efdb22f54e5e9ad9ae9d2d7ddd946c8"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72",
+          "output_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "92d9ce3521a68abe6bb80661e3f86e8ecb77e7432608da7c05de596ef6f688ed",
+          "output_byte_hash": "e351e26a4b9c7d52d92ad8cf8d3b70dccfee21806984bffe4f0e15c512664f05"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609",
+          "output_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609"
+        }
+      ],
+      "output_sha256": "971b77b119b3afff01eca422beb7809b13ca4089cce4a32e486ac5dda9702271"
+    },
+    {
+      "id": "array-of-tables.insert",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "append an array-of-tables element",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\r\\n\"",
+          "source_byte_hash": "e0ba56fbd10f54f6168d6031ef2f3eba953939dd9ad04954e2f278699c5bf151",
+          "output_byte_hash": "e0ba56fbd10f54f6168d6031ef2f3eba953939dd9ad04954e2f278699c5bf151"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a",
+          "output_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5",
+          "output_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "8af404c087c23004d01a078b26960dd79c61cf4fcc61918e4dcc36f7b1452b6f",
+          "output_byte_hash": "ab922d3be18cd6d78f5698d8c2eb7837d45b2b585c5d2af31581ec227ab7709c"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223",
+          "output_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "b7857b27af262e9079c008aeeb5c68f3807285c783050bffb4ba0eabba161357",
+          "output_byte_hash": "0553e0457fc28949de5f40b6a3b50d95a52bd2ff72117d03eed5961fd4cf5a29"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774",
+          "output_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774"
+        }
+      ],
+      "output_sha256": "570573b7743042d3972b6dd04caa02bf2185e0cc77ceb154744a276fee936003"
+    },
+    {
+      "id": "array.element.replace",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "replace an array element by index",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\n\"",
+          "source_byte_hash": "5504d83c5a2757ce53b7c1cc4b00c9fb81d0c3e102fcba49711dd64bb91d108c",
+          "output_byte_hash": "5504d83c5a2757ce53b7c1cc4b00c9fb81d0c3e102fcba49711dd64bb91d108c"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647",
+          "output_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9",
+          "output_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "6fff18424bfc15fb6e18d10413ce235932032e5cbb9b914c938b12c6914bc864",
+          "output_byte_hash": "63add1747571f2b4923ba5c8f8c36ac99efdb22f54e5e9ad9ae9d2d7ddd946c8"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72",
+          "output_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "92d9ce3521a68abe6bb80661e3f86e8ecb77e7432608da7c05de596ef6f688ed",
+          "output_byte_hash": "e351e26a4b9c7d52d92ad8cf8d3b70dccfee21806984bffe4f0e15c512664f05"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609",
+          "output_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609"
+        }
+      ],
+      "output_sha256": "f9bb89e089f1448e8b68add51a43b93e75126a6339623b29377f99fc672fb551"
+    },
+    {
+      "id": "array.element.replace",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "replace an array element by index",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\r\\n\"",
+          "source_byte_hash": "368deedeb78038104793f2bb9e7b833a7efe26787258dd553dbc723e6892eca0",
+          "output_byte_hash": "368deedeb78038104793f2bb9e7b833a7efe26787258dd553dbc723e6892eca0"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a",
+          "output_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5",
+          "output_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "8af404c087c23004d01a078b26960dd79c61cf4fcc61918e4dcc36f7b1452b6f",
+          "output_byte_hash": "ab922d3be18cd6d78f5698d8c2eb7837d45b2b585c5d2af31581ec227ab7709c"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223",
+          "output_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "b7857b27af262e9079c008aeeb5c68f3807285c783050bffb4ba0eabba161357",
+          "output_byte_hash": "0553e0457fc28949de5f40b6a3b50d95a52bd2ff72117d03eed5961fd4cf5a29"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774",
+          "output_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774"
+        }
+      ],
+      "output_sha256": "be3b2e1f6898600462486c31d3e6862e3f09e5d3f88edd3759da67d8b3d92804"
+    },
+    {
+      "id": "inline-table.replace",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "replace a value nested inside an inline table",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\n\"",
+          "source_byte_hash": "6a45325c4f41e165d8a0eefe01dde02fc633d235cef4046c218bb45e1a2e55d9",
+          "output_byte_hash": "6a45325c4f41e165d8a0eefe01dde02fc633d235cef4046c218bb45e1a2e55d9"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647",
+          "output_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9",
+          "output_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "6fff18424bfc15fb6e18d10413ce235932032e5cbb9b914c938b12c6914bc864",
+          "output_byte_hash": "63add1747571f2b4923ba5c8f8c36ac99efdb22f54e5e9ad9ae9d2d7ddd946c8"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72",
+          "output_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "92d9ce3521a68abe6bb80661e3f86e8ecb77e7432608da7c05de596ef6f688ed",
+          "output_byte_hash": "e351e26a4b9c7d52d92ad8cf8d3b70dccfee21806984bffe4f0e15c512664f05"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609",
+          "output_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609"
+        }
+      ],
+      "output_sha256": "d719fd8d3ca1622a7c6dc66cabe79753f23ebea0bc32cf4a7b052ef024895c80"
+    },
+    {
+      "id": "inline-table.replace",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "replace a value nested inside an inline table",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\r\\n\"",
+          "source_byte_hash": "3d339ce880047bb2b46c4752395919642500348377ffd9a43e3616741941d4bf",
+          "output_byte_hash": "3d339ce880047bb2b46c4752395919642500348377ffd9a43e3616741941d4bf"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a",
+          "output_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5",
+          "output_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "8af404c087c23004d01a078b26960dd79c61cf4fcc61918e4dcc36f7b1452b6f",
+          "output_byte_hash": "ab922d3be18cd6d78f5698d8c2eb7837d45b2b585c5d2af31581ec227ab7709c"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223",
+          "output_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "b7857b27af262e9079c008aeeb5c68f3807285c783050bffb4ba0eabba161357",
+          "output_byte_hash": "0553e0457fc28949de5f40b6a3b50d95a52bd2ff72117d03eed5961fd4cf5a29"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774",
+          "output_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774"
+        }
+      ],
+      "output_sha256": "a0ebaccd1ad9132f10a220b3505b567a4b56f2989ec64911d0a09914acabd126"
+    },
+    {
+      "id": "dotted-key.replace",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "replace a value addressed through a dotted key",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\n\"",
+          "source_byte_hash": "3dbebdbbf0afb615f6861725ff71aaf09ecd852f70c44e5fb3631a30f7cb7e6c",
+          "output_byte_hash": "3dbebdbbf0afb615f6861725ff71aaf09ecd852f70c44e5fb3631a30f7cb7e6c"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647",
+          "output_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9",
+          "output_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "6fff18424bfc15fb6e18d10413ce235932032e5cbb9b914c938b12c6914bc864",
+          "output_byte_hash": "63add1747571f2b4923ba5c8f8c36ac99efdb22f54e5e9ad9ae9d2d7ddd946c8"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72",
+          "output_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "92d9ce3521a68abe6bb80661e3f86e8ecb77e7432608da7c05de596ef6f688ed",
+          "output_byte_hash": "e351e26a4b9c7d52d92ad8cf8d3b70dccfee21806984bffe4f0e15c512664f05"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609",
+          "output_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609"
+        }
+      ],
+      "output_sha256": "406e2608564d98db45aa55fac18c9082daf20f9e0978ff2223cb0c0c02d92b2f"
+    },
+    {
+      "id": "dotted-key.replace",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "replace a value addressed through a dotted key",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\r\\n\"",
+          "source_byte_hash": "960e256807005d63923f714ce73e7263483349f1a818db9800debdf1532a2231",
+          "output_byte_hash": "960e256807005d63923f714ce73e7263483349f1a818db9800debdf1532a2231"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a",
+          "output_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5",
+          "output_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "8af404c087c23004d01a078b26960dd79c61cf4fcc61918e4dcc36f7b1452b6f",
+          "output_byte_hash": "ab922d3be18cd6d78f5698d8c2eb7837d45b2b585c5d2af31581ec227ab7709c"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223",
+          "output_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "b7857b27af262e9079c008aeeb5c68f3807285c783050bffb4ba0eabba161357",
+          "output_byte_hash": "0553e0457fc28949de5f40b6a3b50d95a52bd2ff72117d03eed5961fd4cf5a29"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774",
+          "output_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774"
+        }
+      ],
+      "output_sha256": "ea512d6758ddf69aa2ef779761f24062979cf8813030f908b6d366ef76a2372c"
+    },
+    {
+      "id": "multiline-string.replace",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "replace a value with an explicit multiline string",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\n\"",
+          "source_byte_hash": "3b1bbc67b4341be4b95d50281a82279dfbbc57aca4189c6f5ad2424a59ebb70e",
+          "output_byte_hash": "3b1bbc67b4341be4b95d50281a82279dfbbc57aca4189c6f5ad2424a59ebb70e"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647",
+          "output_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9",
+          "output_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "6fff18424bfc15fb6e18d10413ce235932032e5cbb9b914c938b12c6914bc864",
+          "output_byte_hash": "63add1747571f2b4923ba5c8f8c36ac99efdb22f54e5e9ad9ae9d2d7ddd946c8"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72",
+          "output_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "92d9ce3521a68abe6bb80661e3f86e8ecb77e7432608da7c05de596ef6f688ed",
+          "output_byte_hash": "e351e26a4b9c7d52d92ad8cf8d3b70dccfee21806984bffe4f0e15c512664f05"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609",
+          "output_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609"
+        }
+      ],
+      "output_sha256": "9356e21307d4486dabc5cb5392d6d6182b5062f2257bf19344cea1e59827f0a0"
+    },
+    {
+      "id": "multiline-string.replace",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "replace a value with an explicit multiline string",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\r\\n\"",
+          "source_byte_hash": "d7a81f865b1e3e267dc0ce4ac9dd06e39405c76ff29bea2ec60e77399cefcac9",
+          "output_byte_hash": "d7a81f865b1e3e267dc0ce4ac9dd06e39405c76ff29bea2ec60e77399cefcac9"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a",
+          "output_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5",
+          "output_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "8af404c087c23004d01a078b26960dd79c61cf4fcc61918e4dcc36f7b1452b6f",
+          "output_byte_hash": "ab922d3be18cd6d78f5698d8c2eb7837d45b2b585c5d2af31581ec227ab7709c"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223",
+          "output_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "b7857b27af262e9079c008aeeb5c68f3807285c783050bffb4ba0eabba161357",
+          "output_byte_hash": "0553e0457fc28949de5f40b6a3b50d95a52bd2ff72117d03eed5961fd4cf5a29"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774",
+          "output_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774"
+        }
+      ],
+      "output_sha256": "69d284ac39c9f9ed990e3e02d1282e6e25a827ffc23cf7f1db9591121b296c9a"
+    },
+    {
+      "id": "comment-preservation.replace",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "replace while preserving full-line and trailing comments",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\n\"",
+          "source_byte_hash": "929093d7215585c3942919b0e46cdb5fcca4744bbd9c9a86341b002231623ddc",
+          "output_byte_hash": "929093d7215585c3942919b0e46cdb5fcca4744bbd9c9a86341b002231623ddc"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647",
+          "output_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9",
+          "output_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "6fff18424bfc15fb6e18d10413ce235932032e5cbb9b914c938b12c6914bc864",
+          "output_byte_hash": "63add1747571f2b4923ba5c8f8c36ac99efdb22f54e5e9ad9ae9d2d7ddd946c8"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72",
+          "output_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "92d9ce3521a68abe6bb80661e3f86e8ecb77e7432608da7c05de596ef6f688ed",
+          "output_byte_hash": "e351e26a4b9c7d52d92ad8cf8d3b70dccfee21806984bffe4f0e15c512664f05"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609",
+          "output_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609"
+        },
+        {
+          "name": "// runtime comment stays attached",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "77bccefe7d87418a22b47e5db534f2e64c83c9c0717b026d3bbec1e31112b78f",
+          "output_byte_hash": "77bccefe7d87418a22b47e5db534f2e64c83c9c0717b026d3bbec1e31112b78f"
+        },
+        {
+          "name": "// trailing runtime comment",
+          "comparison": "marker-count",
+          "byte_identical": false,
+          "marker_count_equal": true,
+          "source_byte_hash": "2ad449b440659107eed28e5d50c9e3087da341949faa3a1601a013a7dfff0633",
+          "output_byte_hash": "2ad449b440659107eed28e5d50c9e3087da341949faa3a1601a013a7dfff0633"
+        }
+      ],
+      "output_sha256": "3b4a47c1b0b98d4a39facac037460faaa97a05881739e4d06ed68f1a259802e9"
+    },
+    {
+      "id": "comment-preservation.replace",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "replace while preserving full-line and trailing comments",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\r\\n\"",
+          "source_byte_hash": "cabdb4cd3603aec3436f0880bacc89fa9211ea8f462b2e961e4c794655a2aa2f",
+          "output_byte_hash": "cabdb4cd3603aec3436f0880bacc89fa9211ea8f462b2e961e4c794655a2aa2f"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a",
+          "output_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5",
+          "output_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "8af404c087c23004d01a078b26960dd79c61cf4fcc61918e4dcc36f7b1452b6f",
+          "output_byte_hash": "ab922d3be18cd6d78f5698d8c2eb7837d45b2b585c5d2af31581ec227ab7709c"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223",
+          "output_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "b7857b27af262e9079c008aeeb5c68f3807285c783050bffb4ba0eabba161357",
+          "output_byte_hash": "0553e0457fc28949de5f40b6a3b50d95a52bd2ff72117d03eed5961fd4cf5a29"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774",
+          "output_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774"
+        },
+        {
+          "name": "// runtime comment stays attached",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8d6b465992e884303d8ca53a6825abdacffa61ea997c6227c6da62f1a5bf31f3",
+          "output_byte_hash": "8d6b465992e884303d8ca53a6825abdacffa61ea997c6227c6da62f1a5bf31f3"
+        },
+        {
+          "name": "// trailing runtime comment",
+          "comparison": "marker-count",
+          "byte_identical": false,
+          "marker_count_equal": true,
+          "source_byte_hash": "2ad449b440659107eed28e5d50c9e3087da341949faa3a1601a013a7dfff0633",
+          "output_byte_hash": "2ad449b440659107eed28e5d50c9e3087da341949faa3a1601a013a7dfff0633"
+        }
+      ],
+      "output_sha256": "38d0dd9f3aa83435f5971dfeb622c2f451fa648af6a36e4bae318ad4e187fdc4"
+    },
+    {
+      "id": "unknown-field.preservation",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "replace a known field without touching unknown fields",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\n\"",
+          "source_byte_hash": "929093d7215585c3942919b0e46cdb5fcca4744bbd9c9a86341b002231623ddc",
+          "output_byte_hash": "929093d7215585c3942919b0e46cdb5fcca4744bbd9c9a86341b002231623ddc"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647",
+          "output_byte_hash": "a406fb82a1f41fe1f746957d64e833e71c594bc61d0e146e39be716b2a97d647"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9",
+          "output_byte_hash": "5142f25bfe0fe1b451aa489fb34af38e68ad1d45b42ec1ce1c98a9d0986f51b9"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "6fff18424bfc15fb6e18d10413ce235932032e5cbb9b914c938b12c6914bc864",
+          "output_byte_hash": "63add1747571f2b4923ba5c8f8c36ac99efdb22f54e5e9ad9ae9d2d7ddd946c8"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72",
+          "output_byte_hash": "417efb76289ae4d50854be8eaedebe3e33f84beb082f21199773821847823f72"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "92d9ce3521a68abe6bb80661e3f86e8ecb77e7432608da7c05de596ef6f688ed",
+          "output_byte_hash": "e351e26a4b9c7d52d92ad8cf8d3b70dccfee21806984bffe4f0e15c512664f05"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609",
+          "output_byte_hash": "8a3cb1dda0c7fb293733c1fbb01e82a5769d4b1d5cfc6eb4b16dd7fd0553f609"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "6fff18424bfc15fb6e18d10413ce235932032e5cbb9b914c938b12c6914bc864",
+          "output_byte_hash": "63add1747571f2b4923ba5c8f8c36ac99efdb22f54e5e9ad9ae9d2d7ddd946c8"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "92d9ce3521a68abe6bb80661e3f86e8ecb77e7432608da7c05de596ef6f688ed",
+          "output_byte_hash": "e351e26a4b9c7d52d92ad8cf8d3b70dccfee21806984bffe4f0e15c512664f05"
+        }
+      ],
+      "output_sha256": "f2f1f0af49fcf5e82ca6d136e810d6d991802feb3f22fef2516a539fa614356b"
+    },
+    {
+      "id": "unknown-field.preservation",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "replace a known field without touching unknown fields",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 8 is outside the allowed edit region: \"    \\\"port\\\": 9999,\\r\\n\"",
+          "source_byte_hash": "cabdb4cd3603aec3436f0880bacc89fa9211ea8f462b2e961e4c794655a2aa2f",
+          "output_byte_hash": "cabdb4cd3603aec3436f0880bacc89fa9211ea8f462b2e961e4c794655a2aa2f"
+        },
+        {
+          "name": "// Root configuration: stable note.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a",
+          "output_byte_hash": "3b502f560eda826ab8abacab5942ed7de768f4bf02996c836484e2465d104f3a"
+        },
+        {
+          "name": "\"version\": 1",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5",
+          "output_byte_hash": "b276c2a8ba3cd1ed55885597396a80096ce138e7ae74c2262e8da5634191bab5"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "8af404c087c23004d01a078b26960dd79c61cf4fcc61918e4dcc36f7b1452b6f",
+          "output_byte_hash": "ab922d3be18cd6d78f5698d8c2eb7837d45b2b585c5d2af31581ec227ab7709c"
+        },
+        {
+          "name": "// vendor comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223",
+          "output_byte_hash": "7c827a4f5b1b0b0e23e3b5eb2f8f007f7be4ff8a30772c654f852366d06b4223"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "b7857b27af262e9079c008aeeb5c68f3807285c783050bffb4ba0eabba161357",
+          "output_byte_hash": "0553e0457fc28949de5f40b6a3b50d95a52bd2ff72117d03eed5961fd4cf5a29"
+        },
+        {
+          "name": "// first page comment must remain byte-identical",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774",
+          "output_byte_hash": "71c0a41c8151d0e6422756aaf59b7ac8cd15d5cc737064ed8514cbac3d6a0774"
+        },
+        {
+          "name": "\"unknown_runtime\": \"keep-runtime\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "8af404c087c23004d01a078b26960dd79c61cf4fcc61918e4dcc36f7b1452b6f",
+          "output_byte_hash": "ab922d3be18cd6d78f5698d8c2eb7837d45b2b585c5d2af31581ec227ab7709c"
+        },
+        {
+          "name": "\"vendor_key\": \"do-not-touch\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "b7857b27af262e9079c008aeeb5c68f3807285c783050bffb4ba0eabba161357",
+          "output_byte_hash": "0553e0457fc28949de5f40b6a3b50d95a52bd2ff72117d03eed5961fd4cf5a29"
+        }
+      ],
+      "output_sha256": "254fa20cbaccfd019888a620e1717cb1283f62e49bd2a970a4ac27b370207309"
+    },
+    {
+      "id": "device.table.insert",
+      "fixture": "device",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "create a nested device settings table",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 13 is outside the allowed edit region: \"    \\\"unknown_setting\\\": \\\"keep-device-setting\\\",\\n\"",
+          "source_byte_hash": "46e60b839d11f8c5a9be724c5ebf9979962c98758478545f3afe830a8c272421",
+          "output_byte_hash": "46e60b839d11f8c5a9be724c5ebf9979962c98758478545f3afe830a8c272421"
+        },
+        {
+          "name": "// Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "0c59dc5eb7997b4f283595948ad2640c7d36ba20d6f044e01734c0153b09cf82",
+          "output_byte_hash": "0c59dc5eb7997b4f283595948ad2640c7d36ba20d6f044e01734c0153b09cf82"
+        },
+        {
+          "name": "\"unknown_setting\": \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "87c2e6c4a64a87b70bd372e24c9ab091c69e5e9b3ddb81f53167256a0ca245a7",
+          "output_byte_hash": "3e336e40993d01f3c700965f93b1cdfc4bb69107b27c0bdb37b4ec67b67c80ed"
+        },
+        {
+          "name": "// device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7176014b5199af06470ebeca761a3114fbd84bd68a7ab9b80429777a3333e474",
+          "output_byte_hash": "7176014b5199af06470ebeca761a3114fbd84bd68a7ab9b80429777a3333e474"
+        },
+        {
+          "name": "\"id\": \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "857191a653e86302570088b0a594e35e3d8e880670a0a0c1485df130423bcde5",
+          "output_byte_hash": "857191a653e86302570088b0a594e35e3d8e880670a0a0c1485df130423bcde5"
+        }
+      ],
+      "output_sha256": "e2cdedd1831e14f14e8a0738ca5da2163c8c278bf3e3b0b87b86292a6cc58ad0"
+    },
+    {
+      "id": "device.table.insert",
+      "fixture": "device",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "create a nested device settings table",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 13 is outside the allowed edit region: \"    \\\"unknown_setting\\\": \\\"keep-device-setting\\\",\\r\\n\"",
+          "source_byte_hash": "052a2396b8d908d43e83fd7f50c1aef810404bfbd706ffae4c633cd8815f3460",
+          "output_byte_hash": "052a2396b8d908d43e83fd7f50c1aef810404bfbd706ffae4c633cd8815f3460"
+        },
+        {
+          "name": "// Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "1549b8780a3b22a29cdc498525d588d35f15b65a9cf4e1a2925800d340df9b33",
+          "output_byte_hash": "1549b8780a3b22a29cdc498525d588d35f15b65a9cf4e1a2925800d340df9b33"
+        },
+        {
+          "name": "\"unknown_setting\": \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "e55d3ea99020d3f497d01fd4d12d26dfeb677dd5d3aaf24061794f08354c295b",
+          "output_byte_hash": "9f21d12d3d51a0b04e22e8490edaae1f205eaa77ce934fcff00ce3fba2ab5c73"
+        },
+        {
+          "name": "// device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8944ea33ac91eb1c5ed0f6d241d11cfd4543c110e7ccb97d6292634b26ce3015",
+          "output_byte_hash": "8944ea33ac91eb1c5ed0f6d241d11cfd4543c110e7ccb97d6292634b26ce3015"
+        },
+        {
+          "name": "\"id\": \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "db8033e31ac7c0758ab96c65549e7b3fdf16f3d7f966202e2c5edaff780cac41",
+          "output_byte_hash": "db8033e31ac7c0758ab96c65549e7b3fdf16f3d7f966202e2c5edaff780cac41"
+        }
+      ],
+      "output_sha256": "001e8a5f8f300d6e212141759b5f26e211ca0d9022c58bc97d21d67261dae875"
+    },
+    {
+      "id": "device.array-of-tables.insert",
+      "fixture": "device",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "append a device page",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 13 is outside the allowed edit region: \"    \\\"unknown_setting\\\": \\\"keep-device-setting\\\",\\n\"",
+          "source_byte_hash": "46e60b839d11f8c5a9be724c5ebf9979962c98758478545f3afe830a8c272421",
+          "output_byte_hash": "46e60b839d11f8c5a9be724c5ebf9979962c98758478545f3afe830a8c272421"
+        },
+        {
+          "name": "// Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "0c59dc5eb7997b4f283595948ad2640c7d36ba20d6f044e01734c0153b09cf82",
+          "output_byte_hash": "0c59dc5eb7997b4f283595948ad2640c7d36ba20d6f044e01734c0153b09cf82"
+        },
+        {
+          "name": "\"unknown_setting\": \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "87c2e6c4a64a87b70bd372e24c9ab091c69e5e9b3ddb81f53167256a0ca245a7",
+          "output_byte_hash": "e5d536188f8995ecf4326f5367b7daf416dadefdab28fe678e86b41f47b00545"
+        },
+        {
+          "name": "// device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7176014b5199af06470ebeca761a3114fbd84bd68a7ab9b80429777a3333e474",
+          "output_byte_hash": "7176014b5199af06470ebeca761a3114fbd84bd68a7ab9b80429777a3333e474"
+        },
+        {
+          "name": "\"id\": \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "857191a653e86302570088b0a594e35e3d8e880670a0a0c1485df130423bcde5",
+          "output_byte_hash": "857191a653e86302570088b0a594e35e3d8e880670a0a0c1485df130423bcde5"
+        }
+      ],
+      "output_sha256": "ce392023f784a1b3fd9b8dca0bb4f27201fa2dfeb0da96b63f47ab216fa629b0"
+    },
+    {
+      "id": "device.array-of-tables.insert",
+      "fixture": "device",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "append a device page",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 13 is outside the allowed edit region: \"    \\\"unknown_setting\\\": \\\"keep-device-setting\\\",\\r\\n\"",
+          "source_byte_hash": "052a2396b8d908d43e83fd7f50c1aef810404bfbd706ffae4c633cd8815f3460",
+          "output_byte_hash": "052a2396b8d908d43e83fd7f50c1aef810404bfbd706ffae4c633cd8815f3460"
+        },
+        {
+          "name": "// Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "1549b8780a3b22a29cdc498525d588d35f15b65a9cf4e1a2925800d340df9b33",
+          "output_byte_hash": "1549b8780a3b22a29cdc498525d588d35f15b65a9cf4e1a2925800d340df9b33"
+        },
+        {
+          "name": "\"unknown_setting\": \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "e55d3ea99020d3f497d01fd4d12d26dfeb677dd5d3aaf24061794f08354c295b",
+          "output_byte_hash": "cc422af4d7e54ef891b493873e2e9a3c18d60667076ca1aa5e0ec3521650f106"
+        },
+        {
+          "name": "// device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8944ea33ac91eb1c5ed0f6d241d11cfd4543c110e7ccb97d6292634b26ce3015",
+          "output_byte_hash": "8944ea33ac91eb1c5ed0f6d241d11cfd4543c110e7ccb97d6292634b26ce3015"
+        },
+        {
+          "name": "\"id\": \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "db8033e31ac7c0758ab96c65549e7b3fdf16f3d7f966202e2c5edaff780cac41",
+          "output_byte_hash": "db8033e31ac7c0758ab96c65549e7b3fdf16f3d7f966202e2c5edaff780cac41"
+        }
+      ],
+      "output_sha256": "a4017d96a908e37a74c0773b922a4f0e8e784d148b3829d0e709c98a0dc28abf"
+    },
+    {
+      "id": "device.inline-table.replace",
+      "fixture": "device",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "replace a nested transport value",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 13 is outside the allowed edit region: \"    \\\"unknown_setting\\\": \\\"keep-device-setting\\\",\\n\"",
+          "source_byte_hash": "492be48682a16d48c03b52cc10f1ad1dabd920203f441e7728462b81a299ae30",
+          "output_byte_hash": "492be48682a16d48c03b52cc10f1ad1dabd920203f441e7728462b81a299ae30"
+        },
+        {
+          "name": "// Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "0c59dc5eb7997b4f283595948ad2640c7d36ba20d6f044e01734c0153b09cf82",
+          "output_byte_hash": "0c59dc5eb7997b4f283595948ad2640c7d36ba20d6f044e01734c0153b09cf82"
+        },
+        {
+          "name": "\"unknown_setting\": \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "87c2e6c4a64a87b70bd372e24c9ab091c69e5e9b3ddb81f53167256a0ca245a7",
+          "output_byte_hash": "e5d536188f8995ecf4326f5367b7daf416dadefdab28fe678e86b41f47b00545"
+        },
+        {
+          "name": "// device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7176014b5199af06470ebeca761a3114fbd84bd68a7ab9b80429777a3333e474",
+          "output_byte_hash": "7176014b5199af06470ebeca761a3114fbd84bd68a7ab9b80429777a3333e474"
+        },
+        {
+          "name": "\"id\": \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "857191a653e86302570088b0a594e35e3d8e880670a0a0c1485df130423bcde5",
+          "output_byte_hash": "857191a653e86302570088b0a594e35e3d8e880670a0a0c1485df130423bcde5"
+        }
+      ],
+      "output_sha256": "a73679c7ef3673d4ab2df17d2cc4dc9c135495ee47a68c48d5334855bacd69f9"
+    },
+    {
+      "id": "device.inline-table.replace",
+      "fixture": "device",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "replace a nested transport value",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "minimal_edit_verified": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 13 is outside the allowed edit region: \"    \\\"unknown_setting\\\": \\\"keep-device-setting\\\",\\r\\n\"",
+          "source_byte_hash": "170c4c0305907825bf60f1d7d7a6941566b482857ab60675aef401d37836beda",
+          "output_byte_hash": "170c4c0305907825bf60f1d7d7a6941566b482857ab60675aef401d37836beda"
+        },
+        {
+          "name": "// Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "1549b8780a3b22a29cdc498525d588d35f15b65a9cf4e1a2925800d340df9b33",
+          "output_byte_hash": "1549b8780a3b22a29cdc498525d588d35f15b65a9cf4e1a2925800d340df9b33"
+        },
+        {
+          "name": "\"unknown_setting\": \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "e55d3ea99020d3f497d01fd4d12d26dfeb677dd5d3aaf24061794f08354c295b",
+          "output_byte_hash": "cc422af4d7e54ef891b493873e2e9a3c18d60667076ca1aa5e0ec3521650f106"
+        },
+        {
+          "name": "// device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8944ea33ac91eb1c5ed0f6d241d11cfd4543c110e7ccb97d6292634b26ce3015",
+          "output_byte_hash": "8944ea33ac91eb1c5ed0f6d241d11cfd4543c110e7ccb97d6292634b26ce3015"
+        },
+        {
+          "name": "\"id\": \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "db8033e31ac7c0758ab96c65549e7b3fdf16f3d7f966202e2c5edaff780cac41",
+          "output_byte_hash": "db8033e31ac7c0758ab96c65549e7b3fdf16f3d7f966202e2c5edaff780cac41"
+        }
+      ],
+      "output_sha256": "fb0d2ba9d4e317f07172e7fc80117ddcedf98d04b6567de19fcb57d2a082917c"
+    },
+    {
+      "id": "device.multiline-string.replace",
+      "fixture": "device",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "replace a device multiline string",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 13 is outside the allowed edit region: \"    \\\"unknown_setting\\\": \\\"keep-device-setting\\\",\\n\"",
+          "source_byte_hash": "0e3c44fd2a9495166b3e2a06f8217251dcc64974f044d8ea8124f4b87f0037fa",
+          "output_byte_hash": "0e3c44fd2a9495166b3e2a06f8217251dcc64974f044d8ea8124f4b87f0037fa"
+        },
+        {
+          "name": "// Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "0c59dc5eb7997b4f283595948ad2640c7d36ba20d6f044e01734c0153b09cf82",
+          "output_byte_hash": "0c59dc5eb7997b4f283595948ad2640c7d36ba20d6f044e01734c0153b09cf82"
+        },
+        {
+          "name": "\"unknown_setting\": \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "87c2e6c4a64a87b70bd372e24c9ab091c69e5e9b3ddb81f53167256a0ca245a7",
+          "output_byte_hash": "e5d536188f8995ecf4326f5367b7daf416dadefdab28fe678e86b41f47b00545"
+        },
+        {
+          "name": "// device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "7176014b5199af06470ebeca761a3114fbd84bd68a7ab9b80429777a3333e474",
+          "output_byte_hash": "7176014b5199af06470ebeca761a3114fbd84bd68a7ab9b80429777a3333e474"
+        },
+        {
+          "name": "\"id\": \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "857191a653e86302570088b0a594e35e3d8e880670a0a0c1485df130423bcde5",
+          "output_byte_hash": "857191a653e86302570088b0a594e35e3d8e880670a0a0c1485df130423bcde5"
+        }
+      ],
+      "output_sha256": "ac968f5cabe176501de4d7d0846d6a84bc201fa187c78d32faf1c47ce8c4b26e"
+    },
+    {
+      "id": "device.multiline-string.replace",
+      "fixture": "device",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "replace a device multiline string",
+      "required": true,
+      "status": "fail",
+      "detail": "untouched span changed: all-unmodified-lines",
+      "semantic_valid": true,
+      "untouched_spans": [
+        {
+          "name": "all-unmodified-lines",
+          "comparison": "lcs-unmodified-lines",
+          "byte_identical": false,
+          "detail": "source line 13 is outside the allowed edit region: \"    \\\"unknown_setting\\\": \\\"keep-device-setting\\\",\\r\\n\"",
+          "source_byte_hash": "3513de8ebe85c518e3dd56200de4828b875455b04e6de742671be599ad689f5d",
+          "output_byte_hash": "3513de8ebe85c518e3dd56200de4828b875455b04e6de742671be599ad689f5d"
+        },
+        {
+          "name": "// Device fixture: representative adapter configuration.",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "1549b8780a3b22a29cdc498525d588d35f15b65a9cf4e1a2925800d340df9b33",
+          "output_byte_hash": "1549b8780a3b22a29cdc498525d588d35f15b65a9cf4e1a2925800d340df9b33"
+        },
+        {
+          "name": "\"unknown_setting\": \"keep-device-setting\"",
+          "comparison": "exact-line",
+          "byte_identical": false,
+          "source_byte_hash": "e55d3ea99020d3f497d01fd4d12d26dfeb677dd5d3aaf24061794f08354c295b",
+          "output_byte_hash": "cc422af4d7e54ef891b493873e2e9a3c18d60667076ca1aa5e0ec3521650f106"
+        },
+        {
+          "name": "// device page one",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "8944ea33ac91eb1c5ed0f6d241d11cfd4543c110e7ccb97d6292634b26ce3015",
+          "output_byte_hash": "8944ea33ac91eb1c5ed0f6d241d11cfd4543c110e7ccb97d6292634b26ce3015"
+        },
+        {
+          "name": "\"id\": \"clock\"",
+          "comparison": "exact-line",
+          "byte_identical": true,
+          "source_byte_hash": "db8033e31ac7c0758ab96c65549e7b3fdf16f3d7f966202e2c5edaff780cac41",
+          "output_byte_hash": "db8033e31ac7c0758ab96c65549e7b3fdf16f3d7f966202e2c5edaff780cac41"
+        }
+      ],
+      "output_sha256": "f744efa0de6909103b7a7a24b43f9d2980f5c545c932defda8dd0a2145b3ceb8"
+    },
+    {
+      "id": "malformed-input.reject",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "LF",
+      "operation": "reject malformed source before editing",
+      "required": true,
+      "status": "pass",
+      "detail": "parser rejected malformed source",
+      "semantic_valid": false
+    },
+    {
+      "id": "malformed-input.reject",
+      "fixture": "root",
+      "format": "jsonc",
+      "line_ending": "CRLF",
+      "operation": "reject malformed source before editing",
+      "required": true,
+      "status": "pass",
+      "detail": "parser rejected malformed source",
+      "semantic_valid": false
+    }
+  ],
+  "transactional_writes": [
+    {
+      "id": "content-hash.stale-write-refusal",
+      "status": "pass",
+      "detail": "hash mismatch refused replacement and preserved newer bytes"
+    },
+    {
+      "id": "content-hash.toctou-boundary",
+      "status": "pass",
+      "detail": "injected editor write after hash check was overwritten; compare-and-swap is not claimed"
+    },
+    {
+      "id": "atomic.same-directory-replacement",
+      "status": "pass",
+      "detail": "same-directory temporary was atomically renamed with no leftover"
+    }
+  ],
+  "deterministic_regeneration": true,
+  "jsonc_mode": "comparison-only",
+  "recommendation": "Every required TOML case passed in this fixture suite; TOML remains provisional pending review of the measured artifact."
+}
