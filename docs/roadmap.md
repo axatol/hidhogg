@@ -8,9 +8,9 @@ Task IDs are immutable.
 | ID | Status | Goal | Dependencies |
 |---|---|---|---|
 | P-01 | Complete | Establish planning baseline and evidence rules | none |
-| S-01 | In progress: physical display/reconnect | Determine whether a cgo-free Go runtime can operate the physical D200X reliably | P-01 |
+| S-01 | Complete | Determine whether a cgo-free Go runtime can operate the physical D200X reliably | P-01 |
 | S-02 | Complete | Determine whether required TOML GUI mutations can be lossless; compare JSONC fallback if not | P-01 |
-| D-01 | Blocked by evidence | Owner selects runtime architecture and configuration format from the spike report | S-01, S-02 |
+| D-01 | Ready for owner decision | Owner selects runtime architecture and configuration format from the spike report | S-01, S-02 |
 | M-01 | Not started | Scaffold the selected production architecture | D-01 |
 
 ## P-01 — Planning baseline
@@ -25,9 +25,9 @@ Task IDs are immutable.
 - Scope: deterministic interface-0 enumeration, open/close, input, brightness, diagnostic display, and disconnect/reconnect.
 - Constraints: do not log device serials; do not access unrelated HID devices; do not inherit production code from `UlanziDeckControl`.
 - Automatic gate: cgo-free build, unit tests for framing/selection, and testable transport lifecycle.
-- Physical gate: 20 open/close iterations, representative input matrix, visible brightness/display confirmation, and three unplug/replug cycles without keyboard seizure, duplicate sessions, truncated reports, or dead reads.
+- Physical gate: 20 open/close iterations, representative input matrix, visible brightness/display confirmation, and one unplug/replug cycle without keyboard seizure, duplicate sessions, truncated reports, or dead reads. The owner reduced the reconnect threshold from three cycles on 2026-08-23; this establishes feasibility, not repeated-cycle reliability.
 - Acceptance: report every criterion as pass, fail, or not run. Recommend Go only if every required physical criterion passes.
-- Current evidence: automatic checks, exact collection selection, 20 open/close iterations, the representative input matrix, and brightness pass. The first diagnostic display run failed because the spike emitted malformed manifest JSON; the repaired archive passes independent automatic verification but has not been rerun physically. One of three required reconnect cycles is recorded. See [research.md](research.md).
+- Current evidence: all revised automatic and physical gates pass. The repaired diagnostic archive displays colored numbered tiles, although the numbers are not highly legible. One reconnect/session-replacement cycle passes; repeated-cycle reliability remains unmeasured. See [research.md](research.md).
 
 ## S-02 — Configuration editing spike
 

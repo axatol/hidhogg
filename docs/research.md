@@ -40,19 +40,19 @@ open matching D200X HID: permission denied: IOHIDDeviceOpen failed: 0xe00002e2
 
 The user then ran the documented commands from an authorized terminal. The resulting local log records 20 successful open/close iterations, all square and wide touch inputs, both physical buttons, and left/press/release/right events for all three encoders. The user visually confirmed that brightness control works.
 
-The first diagnostic display run did not change the display despite reporting successful upload and unlock. Inspection found that the generated `manifest.json` omitted the closing bracket for every `ViewParam` array and was therefore invalid JSON. The repair adds the missing bracket and an independent semantic JSON test covering all 14 display mappings. Plain tests, race tests, vet, ZIP extraction, geometry checks, framing checks, and independent review pass. The repaired archive has not yet been tested on the physical device.
+The first diagnostic display run did not change the display despite reporting successful upload and unlock. Inspection found that the generated `manifest.json` omitted the closing bracket for every `ViewParam` array and was therefore invalid JSON. The repair adds the missing bracket and an independent semantic JSON test covering all 14 display mappings. Plain tests, race tests, vet, ZIP extraction, geometry checks, framing checks, and independent review pass. On physical rerun, the display showed colored numbered tiles. The numbers were not highly legible; this is a diagnostic-artwork limitation rather than a protocol failure.
 
-The appended reconnect log records one disconnect followed by reconnection and active-session replacement. It does not record the three cycles required by the gate.
+The appended reconnect log records one disconnect followed by reconnection and active-session replacement. On 2026-08-23, the owner accepted one cycle as sufficient for this feasibility spike and removed the two remaining cycles from the gate. This does not establish repeated-cycle reliability.
 
-### Outstanding physical matrix
+### Physical matrix
 
 - 20 open/close iterations: pass.
 - Representative square, wide, physical-button, and encoder input: pass.
 - Brightness `0`, `80`, and `100`: pass by user visual confirmation.
-- Numbered complete-display upload followed by unlock: failed with malformed manifest; repaired implementation awaits physical rerun.
-- Three unplug/replug cycles without duplicate sessions or uncertain-write retries: one cycle observed; two remain.
+- Numbered complete-display upload followed by unlock: pass after manifest repair; colored numbered tiles were visible, with low number legibility.
+- One unplug/replug cycle without duplicate sessions or uncertain-write retries: pass. Repeated-cycle reliability remains unmeasured.
 
-Go must not be selected for production until every item passes.
+All owner-approved feasibility gates pass. This supports, but does not compel, selection of the Go service architecture; `D-01` remains an explicit owner decision.
 
 ## S-02 — lossless configuration editing
 
