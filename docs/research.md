@@ -1,6 +1,6 @@
 # Feasibility evidence
 
-Updated: 2026-08-22
+Updated: 2026-08-23
 
 This record separates automatic evidence, one-device observations, upstream claims, and unresolved hypotheses.
 
@@ -32,21 +32,25 @@ Initial enumeration exposed two interface-0 top-level collections:
 
 Interface number alone is therefore insufficient with this backend. After requiring VID `0x2207`, PID `0x0019`, interface `0`, usage page `0x000c`, and usage `0x0001`, enumeration returned exactly one eligible candidate. Raw paths, instance identifiers, parent identifiers, and serials were not recorded; diagnostic output uses short SHA-256 hashes.
 
-The first open attempt failed before any write:
+The first open attempt from the Codex process failed before any write:
 
 ```text
 open matching D200X HID: permission denied: IOHIDDeviceOpen failed: 0xe00002e2
 ```
 
-No brightness, display, input-enable, or reconnect write was attempted. The physical gate is blocked pending execution from a process with the required macOS HID permission. It is not evidence that the library cannot communicate with the device once authorized.
+The user then ran the documented commands from an authorized terminal. The resulting local log records 20 successful open/close iterations, all square and wide touch inputs, both physical buttons, and left/press/release/right events for all three encoders. The user visually confirmed that brightness control works.
+
+The first diagnostic display run did not change the display despite reporting successful upload and unlock. Inspection found that the generated `manifest.json` omitted the closing bracket for every `ViewParam` array and was therefore invalid JSON. The repair adds the missing bracket and an independent semantic JSON test covering all 14 display mappings. Plain tests, race tests, vet, ZIP extraction, geometry checks, framing checks, and independent review pass. The repaired archive has not yet been tested on the physical device.
+
+The appended reconnect log records one disconnect followed by reconnection and active-session replacement. It does not record the three cycles required by the gate.
 
 ### Outstanding physical matrix
 
-- 20 open/close iterations.
-- Representative square, wide, physical-button, and encoder input.
-- Brightness `0`, `80`, and `100`.
-- Numbered complete-display upload followed by unlock.
-- Three unplug/replug cycles without duplicate sessions or uncertain-write retries.
+- 20 open/close iterations: pass.
+- Representative square, wide, physical-button, and encoder input: pass.
+- Brightness `0`, `80`, and `100`: pass by user visual confirmation.
+- Numbered complete-display upload followed by unlock: failed with malformed manifest; repaired implementation awaits physical rerun.
+- Three unplug/replug cycles without duplicate sessions or uncertain-write retries: one cycle observed; two remain.
 
 Go must not be selected for production until every item passes.
 

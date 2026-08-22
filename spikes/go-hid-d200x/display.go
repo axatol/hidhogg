@@ -145,6 +145,7 @@ func appendManifestEntry(manifest *bytes.Buffer, key, iconPath string, isLast bo
 	manifest.WriteString("      {\n")
 	fmt.Fprintf(manifest, "        \"Icon\":\"%s\"\n", iconPath)
 	manifest.WriteString("      }\n")
+	manifest.WriteString("    ]\n")
 	if isLast {
 		manifest.WriteString("  }\n")
 	} else {

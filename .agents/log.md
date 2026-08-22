@@ -24,3 +24,11 @@
 - Pinned go-toml's exact edit-capable pseudo-version passed 34/34 required cases and 8/8 exact same-line minimal-edit checks.
 - HuJSON passed 2 malformed-input cases but failed all 32 mutation preservation comparisons by changing untouched trailing commas.
 - TOML is recommended provisionally. The unstable dependency pin and filesystem TOCTOU limitation remain explicit risks; the owner has not declared a stable format.
+
+## 2026-08-23 — S-01 physical evidence and display repair
+
+- An authorized terminal completed 20 open/close iterations and captured the required touch, physical-button, and encoder inputs.
+- Brightness changes were visually confirmed on the physical D200X.
+- The first diagnostic display attempt failed. The generated manifest omitted each `ViewParam` closing bracket and was invalid JSON; automated tests had only compared it to itself and therefore missed the defect.
+- The manifest repair now has independent JSON and coordinate-mapping validation. Plain, race, vet, archive, framing, and independent review checks pass, but physical display behavior remains unverified.
+- One reconnect/session-replacement cycle is recorded. The gate still requires two more cycles.

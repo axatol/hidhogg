@@ -1,14 +1,14 @@
 # Hidhogg roadmap
 
 Status: feasibility investigation
-Updated: 2026-08-22
+Updated: 2026-08-23
 
 Task IDs are immutable.
 
 | ID | Status | Goal | Dependencies |
 |---|---|---|---|
 | P-01 | Complete | Establish planning baseline and evidence rules | none |
-| S-01 | Blocked: macOS permission | Determine whether a cgo-free Go runtime can operate the physical D200X reliably | P-01 |
+| S-01 | In progress: physical display/reconnect | Determine whether a cgo-free Go runtime can operate the physical D200X reliably | P-01 |
 | S-02 | Complete | Determine whether required TOML GUI mutations can be lossless; compare JSONC fallback if not | P-01 |
 | D-01 | Blocked by evidence | Owner selects runtime architecture and configuration format from the spike report | S-01, S-02 |
 | M-01 | Not started | Scaffold the selected production architecture | D-01 |
@@ -27,7 +27,7 @@ Task IDs are immutable.
 - Automatic gate: cgo-free build, unit tests for framing/selection, and testable transport lifecycle.
 - Physical gate: 20 open/close iterations, representative input matrix, visible brightness/display confirmation, and three unplug/replug cycles without keyboard seizure, duplicate sessions, truncated reports, or dead reads.
 - Acceptance: report every criterion as pass, fail, or not run. Recommend Go only if every required physical criterion passes.
-- Current evidence: automatic checks and exact read-only collection selection pass. The first physical open returned `0xe00002e2` before any write. The remaining physical matrix is blocked pending execution with macOS HID permission; see [research.md](research.md).
+- Current evidence: automatic checks, exact collection selection, 20 open/close iterations, the representative input matrix, and brightness pass. The first diagnostic display run failed because the spike emitted malformed manifest JSON; the repaired archive passes independent automatic verification but has not been rerun physically. One of three required reconnect cycles is recorded. See [research.md](research.md).
 
 ## S-02 — Configuration editing spike
 

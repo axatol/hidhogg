@@ -3,11 +3,59 @@ package d200x
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"image"
 	"reflect"
 	"sort"
 	"testing"
 )
+
+func TestDiagnosticManifestIsValidJSONWithCanonicalCoordinateMappings(t *testing.T) {
+	type manifestEntry struct {
+		State     int `json:"State"`
+		ViewParam []struct {
+			Icon string `json:"Icon"`
+		} `json:"ViewParam"`
+	}
+	expected := map[string]string{
+		"0_0": "icons/button-00.png",
+		"1_0": "icons/button-01.png",
+		"2_0": "icons/button-02.png",
+		"3_0": "icons/button-03.png",
+		"4_0": "icons/button-04.png",
+		"0_1": "icons/button-05.png",
+		"1_1": "icons/button-06.png",
+		"2_1": "icons/button-07.png",
+		"3_1": "icons/button-08.png",
+		"4_1": "icons/button-09.png",
+		"0_2": "icons/button-10.png",
+		"1_2": "icons/button-11.png",
+		"2_2": "icons/button-12.png",
+		"3_2": "icons/wide-tile.png",
+	}
+	var manifest map[string]manifestEntry
+	if err := json.Unmarshal(DiagnosticManifest(), &manifest); err != nil {
+		t.Fatalf("manifest is not valid JSON: %v", err)
+	}
+	if len(manifest) != len(expected) {
+		t.Fatalf("manifest entry count = %d, want %d", len(manifest), len(expected))
+	}
+	for coordinate, expectedIcon := range expected {
+		entry, ok := manifest[coordinate]
+		if !ok {
+			t.Fatalf("manifest is missing coordinate %s", coordinate)
+		}
+		if entry.State != 0 {
+			t.Fatalf("manifest %s State = %d, want 0", coordinate, entry.State)
+		}
+		if len(entry.ViewParam) != 1 || entry.ViewParam[0].Icon != expectedIcon {
+			t.Fatalf("manifest %s ViewParam = %#v, want icon %q", coordinate, entry.ViewParam, expectedIcon)
+		}
+	}
+	if _, ok := manifest["4_2"]; ok {
+		t.Fatal("manifest unexpectedly maps the absent bottom-right tile")
+	}
+}
 
 func TestDiagnosticDisplayArchiveIsDeterministicAndFirmwareSafe(t *testing.T) {
 	first, err := BuildDiagnosticDisplayArchive()
