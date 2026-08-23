@@ -1,7 +1,7 @@
 # Hidhogg overview
 
-Status: feasibility investigation
-Updated: 2026-08-22
+Status: production scaffold planning
+Updated: 2026-08-24
 
 ## Goal
 
@@ -18,23 +18,27 @@ Hidhogg is configuration-driven. The GUI edits common fields immediately, the ru
 - A shared library provides stable references to source artwork and executable-plus-argument actions.
 - Inbound events cannot provide or invoke executable commands.
 
-## Provisional architecture
+## Selected architecture
 
-Architecture remains gated by `S-01` in [roadmap.md](roadmap.md):
+The owner selected a Go runtime authority with a SwiftUI menu-bar client and Unix-socket CLI API on 2026-08-24:
 
 ```text
-Pure-Go HID gate passes          Pure-Go HID gate fails
-----------------------          -----------------------
-Go runtime authority            Native Swift runtime authority
-SwiftUI menu-bar client         SwiftUI menu-bar application
-Unix-socket CLI API             Unix-socket CLI endpoint
+SwiftUI menu-bar client
+           |
+      Unix socket
+           |
+ Go runtime authority
+           |
+  Device adapters
 ```
 
-In either result, device adapters expose capabilities rather than assuming every HID has displays. The D200X adapter exposes inputs, displays, and brightness. A future Flow Lite adapter would expose inputs, lighting, and on-device key mapping.
+Reconnect reliability is an accepted implementation assumption, while repeated-cycle reliability remains unverified.
+
+Device adapters expose capabilities rather than assuming every HID has displays. The D200X adapter exposes inputs, displays, and brightness. A future Flow Lite adapter would expose inputs, lighting, and on-device key mapping.
 
 ## Configuration direction
 
-TOML passed the bounded `S-02` fixture suite and is the current provisional recommendation. Required GUI edits must preserve untouched comments, whitespace, ordering, and unknown fields byte-for-byte. The tested JSONC/HuJSON fallback did not satisfy that preservation contract. The owner has not yet declared a stable format.
+TOML passed the bounded `S-02` fixture suite and was selected by the owner on 2026-08-24. Required GUI edits must preserve untouched comments, whitespace, ordering, and unknown fields byte-for-byte. The tested JSONC/HuJSON fallback did not satisfy that preservation contract. No public configuration schema has been declared.
 
 ```text
 ~/.config/hidhogg/

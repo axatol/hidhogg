@@ -1,7 +1,7 @@
 # Repository structure
 
-Status: feasibility investigation
-Updated: 2026-08-22
+Status: production scaffold planning
+Updated: 2026-08-24
 
 ```text
 hidhogg/

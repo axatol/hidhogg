@@ -1,10 +1,10 @@
 # Hidhogg handoff
 
-Updated: 2026-08-23
+Updated: 2026-08-24
 
 ## Current objective
 
-Obtain and record owner decision `D-01`, then define the `M-01` production scaffold boundary.
+Define and obtain owner confirmation of the `M-01` production scaffold boundary.
 
 ## Current state
 
@@ -14,18 +14,20 @@ Obtain and record owner decision `D-01`, then define the `M-01` production scaff
 - `S-01` automatic checks pass. An authorized terminal completed enumeration, 20 open/close iterations, the representative input matrix, and brightness verification.
 - The repaired diagnostic archive physically displays colored numbered tiles. Their low legibility is an artwork limitation, not a protocol failure.
 - One reconnect/session-replacement cycle passed. The owner accepted one cycle for feasibility; repeated-cycle reliability remains unmeasured.
-- `S-01` and `S-02` are complete. `D-01` is ready for the owner.
-- No production architecture or stable configuration format has been selected.
+- `S-01` and `S-02` are complete.
+- `D-01` is complete: the owner selected a Go core with a SwiftUI client and TOML configuration on 2026-08-24.
+- `M-01` is ready for planning. No production scaffold or public configuration schema exists.
 
 ## Constraints
 
 - Do not read secret-like paths, environment variables, personal data, or device serial numbers.
 - Keep `UlanziDeckControl` reference-only.
-- Do not represent the single reconnect cycle as evidence of repeated-cycle reliability.
-- Do not publish a configuration schema before the owner resolves `D-01`.
+- Do not represent the single reconnect cycle as evidence of repeated-cycle reliability. The owner accepts reliability as an implementation assumption, not as measured evidence.
+- Keep the unstable TOML editing dependency behind a Hidhogg-owned adapter with regression coverage.
+- Plan and obtain owner confirmation of the `M-01` boundary before writing production code or publishing a configuration schema.
 
 ## Next actions
 
-1. Present the evidence-backed runtime and configuration recommendations for owner decision `D-01`.
-2. Record the explicit owner selection.
-3. Define and confirm the `M-01` production scaffold plan before writing production code.
+1. Define the `M-01` module boundaries, interfaces, dependencies, acceptance criteria, and verification gates.
+2. Present the `M-01` plan for owner confirmation.
+3. Begin production scaffolding only after confirmation.

@@ -1,7 +1,7 @@
 # Hidhogg roadmap
 
-Status: feasibility investigation
-Updated: 2026-08-23
+Status: production scaffold planning
+Updated: 2026-08-24
 
 Task IDs are immutable.
 
@@ -10,8 +10,8 @@ Task IDs are immutable.
 | P-01 | Complete | Establish planning baseline and evidence rules | none |
 | S-01 | Complete | Determine whether a cgo-free Go runtime can operate the physical D200X reliably | P-01 |
 | S-02 | Complete | Determine whether required TOML GUI mutations can be lossless; compare JSONC fallback if not | P-01 |
-| D-01 | Ready for owner decision | Owner selects runtime architecture and configuration format from the spike report | S-01, S-02 |
-| M-01 | Not started | Scaffold the selected production architecture | D-01 |
+| D-01 | Complete | Owner selects runtime architecture and configuration format from the spike report | S-01, S-02 |
+| M-01 | Ready for planning | Scaffold the selected production architecture | D-01 |
 
 ## P-01 — Planning baseline
 
@@ -42,8 +42,15 @@ Task IDs are immutable.
 
 - Goal: select Go core plus SwiftUI or native Swift, and TOML or JSONC.
 - Required evidence: exact dependency versions, licenses, commands, automated results, physical observations, failures, and uncertainties.
-- Blocker: owner confirmation is required; implementation must not infer the final choice.
+- Decision (2026-08-24): Go core with a SwiftUI client and TOML configuration.
+- Reliability posture: the owner accepts reconnect reliability as an implementation assumption. Only one reconnect/session-replacement cycle has been measured; repeated-cycle reliability remains unverified and must not be represented as established evidence.
+
+## M-01 — Production scaffold
+
+- Status: ready for planning; no production code or public configuration schema has been created.
+- Planning gate: define module boundaries, interfaces, dependencies, acceptance criteria, and verification gates for owner confirmation before implementation.
+- Constraints: isolate the unstable TOML editing dependency behind a Hidhogg-owned adapter and retain reconnect/session-replacement resilience as an explicit verification concern.
 
 ## Parallel boundaries
 
-`S-01` and `S-02` may proceed independently. Production scaffolding, stable schemas, and UI work must wait for `D-01`.
+`S-01` and `S-02` proceeded independently and are complete. `M-01` planning may proceed; production scaffolding, stable schemas, and UI implementation must wait for owner confirmation of the `M-01` boundary.
