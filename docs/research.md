@@ -83,7 +83,7 @@ Content hashing refuses changes already present before a GUI write. The test als
 
 ### Recommendation
 
-TOML is the current evidence-based recommendation, conditional on accepting an exact unstable dependency pin behind a Hidhogg-owned adapter and regression corpus. No public configuration schema has been declared. The final format remains owner decision `D-01`.
+TOML was the evidence-based recommendation, conditional on accepting an exact unstable dependency pin behind a Hidhogg-owned adapter and regression corpus. The owner selected TOML under `D-01` on 2026-08-24. No public configuration schema has been declared.
 
 ## Sources
 

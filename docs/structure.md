@@ -12,7 +12,26 @@ hidhogg/
     └── config-editing/   lossless TOML and JSONC comparison
 ```
 
-Production application directories are intentionally absent until the architecture and configuration gates are resolved.
+Production application directories remain absent until `M-01-P01` freezes the scaffold contracts.
+
+The authorized `M-01` scaffold will introduce the following boundaries after `M-01-P01`:
+
+```text
+hidhogg/
+├── api/
+│   └── protocol/          internal IPC contract fixtures and specification
+├── cmd/
+│   ├── hidhogg/           Go runtime entry point
+│   └── hidhoggctl/        local CLI entry point
+├── internal/
+│   ├── ipc/               local transport and message handling
+│   └── runtime/           orchestration and lifecycle
+├── macos/
+│   └── Hidhogg/           SwiftUI menu-bar Xcode project
+└── spikes/                    retained feasibility evidence
+```
+
+Config and device ports will be declared only at an exercised consumer boundary. Action, notification, D200X, HID, and TOML implementation packages are deferred until a production use case requires them.
 
 ## Ownership boundaries
 
@@ -24,3 +43,4 @@ Production application directories are intentionally absent until the architectu
 | Future device adapter | Device-specific discovery, protocol, rendering, and capabilities | GUI and shared action semantics |
 | Future runtime | Configuration authority, event routing, actions, and adapter lifecycle | Device-specific framing |
 | Future SwiftUI client | Menu-bar status and common-field edits | Direct HID ownership in a Go-core design |
+| Internal IPC | Versioned, bounded local messages and process health | Remote access and executable commands |

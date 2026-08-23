@@ -34,6 +34,8 @@ SwiftUI menu-bar client
 
 Reconnect reliability is an accepted implementation assumption, while repeated-cycle reliability remains unverified.
 
+For the `M-01` scaffold, the SwiftUI app launches and supervises the Go runtime. Packaging work may later replace this with a separately managed process, but `launchd`, login-item installation, signing, and distribution are outside `M-01`.
+
 Device adapters expose capabilities rather than assuming every HID has displays. The D200X adapter exposes inputs, displays, and brightness. A future Flow Lite adapter would expose inputs, lighting, and on-device key mapping.
 
 ## Configuration direction
@@ -42,10 +44,10 @@ TOML passed the bounded `S-02` fixture suite and was selected by the owner on 20
 
 ```text
 ~/.config/hidhogg/
-├── config.toml or config.jsonc
+├── config.toml
 ├── assets/
 └── devices/
-    └── desk-deck.toml or desk-deck.jsonc
+    └── desk-deck.toml
 ```
 
 The root file owns application settings and shared library metadata. Each device file owns its adapter selection, settings, one-page layout, notification filters, and stable library references.

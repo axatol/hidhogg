@@ -4,7 +4,7 @@ Updated: 2026-08-24
 
 ## Current objective
 
-Define and obtain owner confirmation of the `M-01` production scaffold boundary.
+Complete the authorized `M-01` scaffold through frozen contracts, delegated implementation, and independent verification.
 
 ## Current state
 
@@ -16,7 +16,11 @@ Define and obtain owner confirmation of the `M-01` production scaffold boundary.
 - One reconnect/session-replacement cycle passed. The owner accepted one cycle for feasibility; repeated-cycle reliability remains unmeasured.
 - `S-01` and `S-02` are complete.
 - `D-01` is complete: the owner selected a Go core with a SwiftUI client and TOML configuration on 2026-08-24.
-- `M-01` is ready for planning. No production scaffold or public configuration schema exists.
+- The owner approved the `M-01` boundary and SwiftUI-supervised Go process model on 2026-08-24.
+- `M-01` implementation was authorized on 2026-08-24. Stable tasks are `M-01-P01`, `M-01-G01`, `M-01-I01`, `M-01-S01`, and `M-01-V01`.
+- Independent architecture review required contract revisions before implementation; architect consensus selected strict LF-framed health/status IPC, unique per-generation endpoints, instance attribution, bounded supervision, minimal exercised packages, and shared fixtures.
+- Installed tools: Go 1.26.4, Swift 6.3.3, and Xcode 26.6. Go 1.27 is current upstream but is not installed; no Go 1.27 test result may be claimed.
+- No production scaffold or public configuration schema exists.
 
 ## Constraints
 
@@ -24,10 +28,11 @@ Define and obtain owner confirmation of the `M-01` production scaffold boundary.
 - Keep `UlanziDeckControl` reference-only.
 - Do not represent the single reconnect cycle as evidence of repeated-cycle reliability. The owner accepts reliability as an implementation assumption, not as measured evidence.
 - Keep the unstable TOML editing dependency behind a Hidhogg-owned adapter with regression coverage.
-- Plan and obtain owner confirmation of the `M-01` boundary before writing production code or publishing a configuration schema.
+- Keep `M-01` limited to testable shells, internal contracts, health/status IPC, and fakes; do not implement excluded product behavior or publish a configuration schema.
 
 ## Next actions
 
-1. Define the `M-01` module boundaries, interfaces, dependencies, acceptance criteria, and verification gates.
-2. Present the `M-01` plan for owner confirmation.
-3. Begin production scaffolding only after confirmation.
+1. Complete and independently review `M-01-P01` specification and shared fixtures.
+2. Delegate `M-01-G01`/`M-01-I01` and `M-01-S01` within their protected areas.
+3. Run independent verification through `M-01-V01` and remediate failures.
+4. Update durable documentation and notify milestone completion only after all gates pass.
