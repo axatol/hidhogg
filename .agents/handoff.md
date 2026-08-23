@@ -19,6 +19,7 @@ Complete the authorized `M-01` scaffold through frozen contracts, delegated impl
 - The owner approved the `M-01` boundary and SwiftUI-supervised Go process model on 2026-08-24.
 - `M-01` implementation was authorized on 2026-08-24. Stable tasks are `M-01-P01`, `M-01-G01`, `M-01-I01`, `M-01-S01`, and `M-01-V01`.
 - Independent architecture review required contract revisions before implementation; architect consensus selected strict LF-framed health/status IPC, unique per-generation endpoints, instance attribution, bounded supervision, minimal exercised packages, and shared fixtures.
+- `M-01-P01` is complete and architect-approved. The normative contract and shared fixtures are under `api/protocol/v1`.
 - Installed tools: Go 1.26.4, Swift 6.3.3, and Xcode 26.6. Go 1.27 is current upstream but is not installed; no Go 1.27 test result may be claimed.
 - No production scaffold or public configuration schema exists.
 

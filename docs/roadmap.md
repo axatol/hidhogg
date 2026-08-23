@@ -56,6 +56,7 @@ Task IDs are immutable.
 
 ### M-01-P01 — Freeze scaffold contracts
 
+- Status: complete on 2026-08-24 after independent architect review.
 - Goal: define the internal dependency direction and the bounded health/status IPC contract used by the scaffold.
 - Scope: one-request-per-connection LF framing; strict JSON envelopes and shared fixtures; 16 KiB bounds; deadlines and concurrency; endpoint lifecycle and peer identity; per-generation attribution and readiness; deterministic process supervision; minimal dependency direction; black-box cases.
 - Constraints: the IPC contract is internal and does not establish a public compatibility promise; messages cannot carry executable commands.
@@ -68,6 +69,7 @@ Task IDs are immutable.
 
 ### M-01-G01 — Scaffold Go module and boundaries
 
+- Status: in progress.
 - Goal: create compilable Go runtime and CLI shells with replaceable internal boundaries.
 - Scope: root module; `cmd/hidhogg`; `cmd/hidhoggctl`; `internal/runtime`; `internal/ipc`; only exercised consumer-owned config/device ports and test fakes.
 - Constraints: do not create speculative action, notification, D200X, or TOML implementation packages; do not move spike code wholesale; no production import may reference a spike, HID dependency, or unstable TOML editor.
@@ -80,6 +82,7 @@ Task IDs are immutable.
 
 ### M-01-I01 — Implement local scaffold IPC
 
+- Status: in progress.
 - Goal: prove bounded communication between the runtime, CLI, and SwiftUI client.
 - Scope: owner-only Unix socket; single LF-framed strict JSON health/status exchange; request correlation; one-second phase deadlines; eight-connection limit; unique endpoint ownership; graceful shutdown.
 - Constraints: no configuration writes, notification submission, action commands, discovery, or remote transport; each frame is at most 16,384 bytes including LF; malformed input must not terminate the runtime.
@@ -92,6 +95,7 @@ Task IDs are immutable.
 
 ### M-01-S01 — Scaffold SwiftUI client and supervision
 
+- Status: in progress.
 - Goal: create a native menu-bar shell that owns the scaffold Go process lifecycle and displays its health state.
 - Scope: Xcode project; SwiftUI `MenuBarExtra`; injected executable/socket paths; UUID instance attribution; validated readiness; concurrent bounded output drains; deterministic termination escalation; one bounded restart; Unix-socket health client; test doubles.
 - Constraints: no `launchd`, login item, signing, settings editor, or direct HID ownership; do not expose unbounded process output in the UI.

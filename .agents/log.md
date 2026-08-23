@@ -61,3 +61,10 @@
 - Architect consensus selected one LF-framed request and response per connection, strict shared v1 JSON fixtures, 16 KiB frames, one-second phase deadlines, eight concurrent connections, unique per-generation endpoints, UUID instance attribution, bounded output, fixed shutdown escalation, and one automatic restart.
 - `M-01` was narrowed to exercised runtime and IPC boundaries. Action, notification, D200X, HID, and TOML implementation packages are deferred.
 - Installed tools are Go 1.26.4, Swift 6.3.3, and Xcode 26.6. The installed macOS SDK exposes a 104-byte `sun_path` and Swift imports `getpeereid`; Go's `x/sys/unix` exposes `GetsockoptXucred` with `SOL_LOCAL` and `LOCAL_PEERCRED`.
+
+## 2026-08-24 — M-01-P01 contract frozen
+
+- `api/protocol/v1` is the normative internal scaffold contract and shared Go/Swift fixture corpus.
+- Independent architect review required two correction rounds covering deterministic post-LF behavior, crash cleanup, generated-case oracles, validation precedence, missing-LF timeout behavior, and field/type error precedence.
+- The architect approved the corrected contract with no remaining implementation-blocking semantic ambiguity.
+- `M-01-P01` is complete. `M-01-G01`, `M-01-I01`, and `M-01-S01` may proceed within the frozen contract.
