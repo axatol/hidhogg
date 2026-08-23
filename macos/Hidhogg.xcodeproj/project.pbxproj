@@ -1,0 +1,321 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000010000000000000001 /* HidhoggApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000001 /* HidhoggApp.swift */; };
+		A10000020000000000000001 /* PathSecurity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000020000000000000001 /* PathSecurity.swift */; };
+		A10000030000000000000001 /* ProcessSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000030000000000000001 /* ProcessSupport.swift */; };
+		A10000040000000000000001 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000040000000000000001 /* Protocol.swift */; };
+		A10000050000000000000001 /* Supervisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000050000000000000001 /* Supervisor.swift */; };
+		A10000060000000000000001 /* UnixSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000060000000000000001 /* UnixSocketClient.swift */; };
+		A10000100000000000000001 /* ProtocolFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000100000000000000001 /* ProtocolFixtureTests.swift */; };
+		A10000110000000000000001 /* SupervisorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000120000000000000001 /* SupervisorTests.swift */; };
+		A10000120000000000000001 /* LiveIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000130000000000000001 /* LiveIntegrationTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AB0000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A80000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A50000000000000000000001;
+			remoteInfo = Hidhogg;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* Hidhogg.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Hidhogg.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000010000000000000001 /* HidhoggApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HidhoggApp.swift; sourceTree = "<group>"; };
+		A20000020000000000000001 /* PathSecurity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PathSecurity.swift; sourceTree = "<group>"; };
+		A20000030000000000000001 /* ProcessSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessSupport.swift; sourceTree = "<group>"; };
+		A20000040000000000000001 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
+		A20000050000000000000001 /* Supervisor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Supervisor.swift; sourceTree = "<group>"; };
+		A20000060000000000000001 /* UnixSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnixSocketClient.swift; sourceTree = "<group>"; };
+		A20000100000000000000001 /* ProtocolFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolFixtureTests.swift; sourceTree = "<group>"; };
+		A20000120000000000000001 /* SupervisorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupervisorTests.swift; sourceTree = "<group>"; };
+		A20000130000000000000001 /* LiveIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveIntegrationTests.swift; sourceTree = "<group>"; };
+		A20000110000000000000001 /* HidhoggTests.xctest */ = {isa = PBXFileReference; explicitFileType = "wrapper.cfbundle"; includeInIndex = 0; path = HidhoggTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A30000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A30000100000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A40000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A40000010000000000000001 /* Hidhogg */,
+				A40000100000000000000001 /* HidhoggTests */,
+				A40000020000000000000001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A40000010000000000000001 /* Hidhogg */ = {
+			isa = PBXGroup;
+			children = (
+				A20000010000000000000001 /* HidhoggApp.swift */,
+				A20000020000000000000001 /* PathSecurity.swift */,
+				A20000030000000000000001 /* ProcessSupport.swift */,
+				A20000040000000000000001 /* Protocol.swift */,
+				A20000050000000000000001 /* Supervisor.swift */,
+				A20000060000000000000001 /* UnixSocketClient.swift */,
+			);
+			path = Hidhogg;
+			sourceTree = "<group>";
+		};
+		A40000100000000000000001 /* HidhoggTests */ = {
+			isa = PBXGroup;
+			children = (
+				A20000100000000000000001 /* ProtocolFixtureTests.swift */,
+				A20000120000000000000001 /* SupervisorTests.swift */,
+				A20000130000000000000001 /* LiveIntegrationTests.swift */,
+			);
+			path = HidhoggTests;
+			sourceTree = "<group>";
+		};
+		A40000020000000000000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000001 /* Hidhogg.app */,
+				A20000110000000000000001 /* HidhoggTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A50000000000000000000001 /* Hidhogg */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A60000000000000000000001 /* Build configuration list for PBXNativeTarget \"Hidhogg\" */;
+			buildPhases = (
+				A70000000000000000000001 /* Sources */,
+				A30000000000000000000001 /* Frameworks */,
+				A70000010000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Hidhogg;
+			productName = Hidhogg;
+			productReference = A20000000000000000000001 /* Hidhogg.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A50000100000000000000001 /* HidhoggTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A60000100000000000000001 /* Build configuration list for PBXNativeTarget \"HidhoggTests\" */;
+			buildPhases = (
+				A70000100000000000000001 /* Sources */,
+				A30000100000000000000001 /* Frameworks */,
+				A70000110000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AC0000000000000000000001 /* Hidhogg */,
+			);
+			name = HidhoggTests;
+			productName = HidhoggTests;
+			productReference = A20000110000000000000001 /* HidhoggTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXTargetDependency section */
+		AC0000000000000000000001 /* Hidhogg */ = {
+			isa = PBXTargetDependency;
+			target = A50000000000000000000001 /* Hidhogg */;
+			targetProxy = AB0000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXProject section */
+		A80000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+			};
+			buildConfigurationList = A60000200000000000000001 /* Build configuration list for PBXProject \"Hidhogg\" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A40000000000000000000001;
+			productRefGroup = A40000020000000000000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A50000000000000000000001 /* Hidhogg */,
+				A50000100000000000000001 /* HidhoggTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A70000010000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A70000110000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A70000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000010000000000000001 /* HidhoggApp.swift in Sources */,
+				A10000020000000000000001 /* PathSecurity.swift in Sources */,
+				A10000030000000000000001 /* ProcessSupport.swift in Sources */,
+				A10000040000000000000001 /* Protocol.swift in Sources */,
+				A10000050000000000000001 /* Supervisor.swift in Sources */,
+				A10000060000000000000001 /* UnixSocketClient.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A70000100000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000100000000000000001 /* ProtocolFixtureTests.swift in Sources */,
+				A10000110000000000000001 /* SupervisorTests.swift in Sources */,
+				A10000120000000000000001 /* LiveIntegrationTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A90000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A90000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A90000100000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(BUILT_PRODUCTS_DIR)/Hidhogg.app/Contents/MacOS/Hidhogg";
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_NAME = HidhoggTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hidhogg.tests;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Hidhogg.app/Contents/MacOS/Hidhogg";
+			};
+			name = Debug;
+		};
+		A90000100000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(BUILT_PRODUCTS_DIR)/Hidhogg.app/Contents/MacOS/Hidhogg";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Hidhogg.app/Contents/MacOS/Hidhogg";
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_NAME = HidhoggTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hidhogg.tests;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A90000200000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				ENABLE_TESTABILITY = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_NAME = Hidhogg;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hidhogg.app;
+			};
+			name = Debug;
+		};
+		A90000200000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_NAME = Hidhogg;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hidhogg.app;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A60000000000000000000001 /* Build configuration list for PBXNativeTarget "Hidhogg" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A90000200000000000000001 /* Debug */,
+				A90000200000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A60000100000000000000001 /* Build configuration list for PBXNativeTarget "HidhoggTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A90000100000000000000001 /* Debug */,
+				A90000100000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A60000200000000000000001 /* Build configuration list for PBXProject "Hidhogg" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A90000000000000000000001 /* Debug */,
+				A90000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A80000000000000000000001 /* Project object */;
+}

@@ -50,7 +50,7 @@
 
 - The owner approved the `M-01` scaffold boundary and a SwiftUI-supervised Go process model.
 - `M-01` establishes testable shells and internal contracts only. Product behavior, physical HID integration, public configuration schema, packaging, signing, login items, and `launchd` remain out of scope.
-- The Go module uses Go 1.26 as its minimum language baseline and is tested with Go 1.27. Exact installed Xcode and Swift versions must be recorded before implementation.
+- The Go module uses Go 1.26 as its minimum language baseline. Go 1.27 was not installed or tested during `M-01`.
 - The local scaffold protocol is versioned, JSON-encoded, bounded, owner-only, and restricted to health/status. It cannot carry executable commands.
 - Implementation remains pending owner approval of the detailed roadmap tasks.
 
@@ -68,3 +68,24 @@
 - Independent architect review required two correction rounds covering deterministic post-LF behavior, crash cleanup, generated-case oracles, validation precedence, missing-LF timeout behavior, and field/type error precedence.
 - The architect approved the corrected contract with no remaining implementation-blocking semantic ambiguity.
 - `M-01-P01` is complete. `M-01-G01`, `M-01-I01`, and `M-01-S01` may proceed within the frozen contract.
+
+## 2026-08-24 — M-01 endpoint root revised after execution evidence
+
+- Escalated XCTest execution showed that Foundation's per-user temporary-directory path exceeded Darwin's 104-byte Unix-socket path field, so the production Swift supervisor could not launch.
+- Architect consensus replaced the environment-derived root with literal `/private/tmp`, verified at startup as a real UID-0-owned `01777` directory. Each generation is an atomic effective-UID-owned `0700` child named `hidhogg-<euid>-<UUID>`.
+- The target host read-only check reported `/private/tmp` as UID 0, mode `041777`, directory. Future sandboxed packaging must revisit the location.
+
+## 2026-08-24 — M-01 cleanup threat boundary corrected
+
+- Independent verification found that Swift overwrote the first recorded socket identity and that both languages ultimately rely on a pathname identity check followed by unlink.
+- Architect consensus found no macOS compare-and-unlink primitive available to the cgo-free Go and Swift scaffold. `M-01` therefore trusts same-effective-UID processes and records the final check/unlink race instead of claiming atomic conditional cleanup.
+- Observable identity, type, owner, or mode mismatches must remain untouched. Swift must retain the first identity and treat drift as a security failure.
+- Generated manifest families are milestone-blocking test requirements; exhaustive fuzzing, sustained load, adversarial same-UID stress, packaging isolation, and repeated physical reconnects remain future work.
+
+## 2026-08-24 — M-01 production scaffold completed
+
+- The Go runtime and CLI, strict bounded Unix-socket health/status IPC, SwiftUI menu-bar shell, process supervisor, shared fixtures, and live Go/Swift integration are implemented.
+- Architect consensus added pre-health, post-health, and ready-state endpoint identity checks. The first socket identity is retained; observable drift is terminal and guarded cleanup preserves replacements.
+- Independent verification found and reproduced one Go cleanup defect: mode-mutated sockets were identity-checked but not required to remain `0600`. Both unlink guards now enforce type, owner, mode, and identity; the regression test and a fresh live `0644` mutation probe pass.
+- Final gates pass: cgo-free Go build, unit tests, race tests, vet, `git diff --check`, and 15/15 Xcode tests including live runtime integration.
+- `M-01` is complete. Residual risks are the accepted same-effective-UID pathname race, untested Go 1.27, no dedicated Swift post-ready substitution test, deferred packaging isolation, and unmeasured repeated reconnect reliability.

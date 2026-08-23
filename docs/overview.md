@@ -1,6 +1,6 @@
 # Hidhogg overview
 
-Status: production scaffold planning
+Status: production scaffold complete
 Updated: 2026-08-24
 
 ## Goal
@@ -35,6 +35,8 @@ SwiftUI menu-bar client
 Reconnect reliability is an accepted implementation assumption, while repeated-cycle reliability remains unverified.
 
 For the `M-01` scaffold, the SwiftUI app launches and supervises the Go runtime. Packaging work may later replace this with a separately managed process, but `launchd`, login-item installation, signing, and distribution are outside `M-01`.
+
+The completed scaffold provides strict, bounded health/status IPC over an owner-only per-generation Unix socket. The SwiftUI supervisor attributes readiness to its launched runtime, drains bounded output tails, permits one restart, and applies deterministic TERM-to-KILL shutdown escalation. Product behavior and the public TOML schema remain deferred.
 
 Device adapters expose capabilities rather than assuming every HID has displays. The D200X adapter exposes inputs, displays, and brightness. A future Flow Lite adapter would expose inputs, lighting, and on-device key mapping.
 

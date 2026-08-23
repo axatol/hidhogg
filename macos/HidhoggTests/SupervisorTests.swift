@@ -1,0 +1,505 @@
+import Foundation
+import Darwin
+import XCTest
+@testable import Hidhogg
+
+final class SupervisorTests: XCTestCase {
+    func testReadinessUsesInjectedHealthClientAndPassesGenerationArguments() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let process = FakeManagedProcess(running: true)
+        let launcher = FakeLauncher(processes: [process])
+        let healthFactory = FakeHealthFactory { requestID, instanceID in
+            RuntimeResponse(
+                requestID: requestID,
+                instanceID: instanceID,
+                state: "ready",
+                protocolVersion: nil,
+                error: nil
+            )
+        }
+        let supervisor = ProcessSupervisor(
+            configuration: ProcessSupervisorConfiguration(
+                executablePath: "/tmp/hidhogg-runtime",
+                readinessTimeoutNanoseconds: 2_000_000,
+                readinessPollNanoseconds: 1_000_000
+            ),
+            directoryFactory: DefaultGenerationDirectoryFactory(root: root),
+            launcher: launcher,
+            clock: SystemHidhoggClock(),
+            requestIDProvider: FixedRequestIDProvider(),
+            instanceIDProvider: FixedUUIDProvider(),
+            healthClientFactory: healthFactory,
+            socketIdentityValidator: FixedSocketIdentityValidator()
+        )
+
+        let runTask = Task { await supervisor.run() }
+        for _ in 0..<100 {
+            let snapshot = await supervisor.snapshot()
+            if snapshot.state == .ready { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        let readySnapshot = await supervisor.snapshot()
+        XCTAssertEqual(readySnapshot.state, .ready)
+        await supervisor.quit()
+        await runTask.value
+
+        let request = try XCTUnwrap(launcher.requests.first)
+        XCTAssertEqual(request.executablePath, "/tmp/hidhogg-runtime")
+        XCTAssertEqual(request.arguments.first, "--socket-path")
+        XCTAssertEqual(request.arguments[2], "--instance-id")
+        XCTAssertEqual(request.arguments[3], FixedUUIDProvider.value.uuidString.lowercased())
+        XCTAssertEqual(process.terminateCount, 1)
+        XCTAssertEqual(process.forceTerminateCount, 0)
+    }
+
+    func testSocketSubstitutionFailsWithoutAdoptingReplacement() async throws {
+        let root = try makeTemporaryRoot()
+        let substitution = SocketSubstitutionCoordinator()
+        defer {
+            substitution.cleanup()
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let process = FakeManagedProcess(running: true)
+        let launcher = FakeLauncher(processes: [process]) { request in
+            try substitution.installSocket(at: request.arguments[1])
+        }
+        let supervisor = ProcessSupervisor(
+            configuration: ProcessSupervisorConfiguration(
+                executablePath: "/tmp/hidhogg-runtime",
+                readinessTimeoutNanoseconds: 5_000_000,
+                readinessPollNanoseconds: 1_000_000,
+                restartDelayNanoseconds: 100_000_000,
+                terminateGraceNanoseconds: 1_000_000,
+                killGraceNanoseconds: 1_000_000
+            ),
+            directoryFactory: DefaultGenerationDirectoryFactory(root: root),
+            launcher: launcher,
+            clock: SystemHidhoggClock(),
+            requestIDProvider: FixedRequestIDProvider(),
+            instanceIDProvider: FixedUUIDProvider(),
+            healthClientFactory: SubstitutingHealthFactory(coordinator: substitution)
+        )
+
+        let runTask = Task { await supervisor.run() }
+        var observedSecurityFailure = false
+        for _ in 0..<100 {
+            let snapshot = await supervisor.snapshot()
+            if case .failed(.security) = snapshot.state {
+                observedSecurityFailure = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+
+        XCTAssertTrue(observedSecurityFailure)
+        await supervisor.quit()
+        await runTask.value
+
+        XCTAssertEqual(process.terminateCount, 1)
+        XCTAssertEqual(process.forceTerminateCount, 0)
+        XCTAssertTrue(substitution.replacementExists())
+        XCTAssertNoThrow(try substitution.validateReplacement())
+    }
+
+    func testSecondFailureIsTerminalAfterExactlyOneRestart() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = FakeManagedProcess(running: false, exit: .exit(status: 7))
+        let second = FakeManagedProcess(running: false, exit: .signal(9))
+        let launcher = FakeLauncher(processes: [first, second])
+        let clock = RecordingClock()
+        let instanceIDs = SequenceUUIDProvider(values: [
+            UUID(uuidString: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!,
+            UUID(uuidString: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")!
+        ])
+        let supervisor = ProcessSupervisor(
+            configuration: ProcessSupervisorConfiguration(
+                executablePath: "/tmp/hidhogg-runtime",
+                readinessTimeoutNanoseconds: 1,
+                readinessPollNanoseconds: 1
+            ),
+            directoryFactory: DefaultGenerationDirectoryFactory(root: root),
+            launcher: launcher,
+            clock: clock,
+            requestIDProvider: FixedRequestIDProvider(),
+            instanceIDProvider: instanceIDs,
+            healthClientFactory: FakeHealthFactory { requestID, instanceID in
+                RuntimeResponse(requestID: requestID, instanceID: instanceID, state: "ready", protocolVersion: nil, error: nil)
+            }
+        )
+
+        await supervisor.run()
+        let snapshot = await supervisor.snapshot()
+        XCTAssertEqual(snapshot.state, .failed(.restartExhausted))
+        XCTAssertEqual(snapshot.restartCount, 1)
+        XCTAssertEqual(launcher.requests.count, 2)
+        XCTAssertEqual(launcher.requests[0].arguments[3], "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        XCTAssertEqual(launcher.requests[1].arguments[3], "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+        let sleeps = await clock.recordedSleeps()
+        XCTAssertEqual(sleeps.filter { $0 == 500_000_000 }, [500_000_000])
+    }
+
+    func testQuitEscalatesFromTermToKillWhenChildIgnoresTerm() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let process = FakeManagedProcess(running: true, ignoresTermination: true)
+        let launcher = FakeLauncher(processes: [process])
+        let healthFactory = FakeHealthFactory { requestID, instanceID in
+            RuntimeResponse(
+                requestID: requestID,
+                instanceID: instanceID,
+                state: "ready",
+                protocolVersion: nil,
+                error: nil
+            )
+        }
+        let supervisor = ProcessSupervisor(
+            configuration: ProcessSupervisorConfiguration(
+                executablePath: "/tmp/hidhogg-runtime",
+                readinessTimeoutNanoseconds: 2_000_000,
+                readinessPollNanoseconds: 1_000_000,
+                terminateGraceNanoseconds: 2_000_000,
+                killGraceNanoseconds: 1_000_000
+            ),
+            directoryFactory: DefaultGenerationDirectoryFactory(root: root),
+            launcher: launcher,
+            clock: SystemHidhoggClock(),
+            requestIDProvider: FixedRequestIDProvider(),
+            instanceIDProvider: FixedUUIDProvider(),
+            healthClientFactory: healthFactory,
+            socketIdentityValidator: FixedSocketIdentityValidator()
+        )
+
+        let runTask = Task { await supervisor.run() }
+        for _ in 0..<100 {
+            let snapshot = await supervisor.snapshot()
+            if snapshot.state == .ready { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        let readySnapshot = await supervisor.snapshot()
+        XCTAssertEqual(readySnapshot.state, .ready)
+        await supervisor.quit()
+        await runTask.value
+
+        XCTAssertEqual(process.terminateCount, 1)
+        XCTAssertEqual(process.forceTerminateCount, 1)
+    }
+
+    private func makeTemporaryRoot() throws -> URL {
+        for _ in 0..<32 {
+            let suffix = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8)).lowercased()
+            let root = URL(fileURLWithPath: "/private/tmp/hh-\(suffix)", isDirectory: true)
+            let result = root.path.withCString { Darwin.mkdir($0, 0o700) }
+            guard result != 0 else {
+                let maximumGenerationName = "hidhogg-\(geteuid())-\(String(repeating: "f", count: 36))"
+                let maximumSocketPath = root
+                    .appendingPathComponent(maximumGenerationName, isDirectory: true)
+                    .appendingPathComponent("runtime.sock")
+                    .path
+                XCTAssertTrue(root.path.hasPrefix("/private/tmp/"))
+                XCTAssertLessThanOrEqual(maximumSocketPath.utf8.count + 1, PathSecurity.unixPathBytes)
+                return root
+            }
+            if errno != EEXIST {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+            }
+        }
+        throw NSError(domain: "HidhoggTests", code: 2, userInfo: [NSLocalizedDescriptionKey: "could not allocate a short test root"])
+    }
+}
+
+private actor RecordingClock: HidhoggClock {
+    private var sleeps: [UInt64] = []
+
+    func sleep(nanoseconds: UInt64) async throws {
+        sleeps.append(nanoseconds)
+    }
+
+    func recordedSleeps() -> [UInt64] {
+        sleeps
+    }
+}
+
+private struct FixedUUIDProvider: UUIDProviding, Sendable {
+    static let value = UUID(uuidString: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!
+    func makeUUID() -> UUID { Self.value }
+}
+
+private final class SequenceUUIDProvider: @unchecked Sendable, UUIDProviding {
+    private let lock = NSLock()
+    private let values: [UUID]
+    private var index = 0
+
+    init(values: [UUID]) {
+        self.values = values
+    }
+
+    func makeUUID() -> UUID {
+        lock.lock()
+        defer { lock.unlock() }
+        let value = values[min(index, values.count - 1)]
+        index += 1
+        return value
+    }
+}
+
+private struct FixedRequestIDProvider: RequestIDProviding, Sendable {
+    func makeRequestID() -> String { "11111111-1111-4111-8111-111111111111" }
+}
+
+private struct FixedSocketIdentityValidator: SocketIdentityValidating, Sendable {
+    private static let identity = FileIdentity(device: 1, inode: 1)
+
+    func validateSocket(_ socket: URL) throws -> FileIdentity {
+        Self.identity
+    }
+}
+
+private final class FakeManagedProcess: @unchecked Sendable, ManagedProcess {
+    private let lock = NSLock()
+    private var runningStorage: Bool
+    private let exitStorage: ProcessExit?
+    private let ignoresTermination: Bool
+    private(set) var terminateCount = 0
+    private(set) var forceTerminateCount = 0
+
+    init(running: Bool, exit: ProcessExit? = nil, ignoresTermination: Bool = false) {
+        runningStorage = running
+        exitStorage = exit
+        self.ignoresTermination = ignoresTermination
+    }
+
+    var processIdentifier: Int32 { 42 }
+
+    var isRunning: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return runningStorage
+    }
+
+    var exit: ProcessExit? {
+        lock.lock()
+        defer { lock.unlock() }
+        return runningStorage ? nil : exitStorage
+    }
+
+    func terminate() {
+        lock.lock()
+        terminateCount += 1
+        if !ignoresTermination {
+            runningStorage = false
+        }
+        lock.unlock()
+    }
+
+    func forceTerminate() {
+        lock.lock()
+        forceTerminateCount += 1
+        runningStorage = false
+        lock.unlock()
+    }
+}
+
+private final class FakeLauncher: @unchecked Sendable, ProcessLaunching {
+    private let lock = NSLock()
+    private let processes: [FakeManagedProcess]
+    private let onLaunch: (@Sendable (LaunchRequest) throws -> Void)?
+    private(set) var requests: [LaunchRequest] = []
+    private var nextProcess = 0
+
+    init(
+        processes: [FakeManagedProcess],
+        onLaunch: (@Sendable (LaunchRequest) throws -> Void)? = nil
+    ) {
+        self.processes = processes
+        self.onLaunch = onLaunch
+    }
+
+    func launch(
+        request: LaunchRequest,
+        standardOutputTail: OutputTail,
+        standardErrorTail: OutputTail
+    ) throws -> any ManagedProcess {
+        lock.lock()
+        defer { lock.unlock() }
+        guard nextProcess < processes.count else {
+            throw FakeLauncherError.exhausted
+        }
+        try onLaunch?(request)
+        requests.append(request)
+        let process = processes[nextProcess]
+        nextProcess += 1
+        return process
+    }
+}
+
+private enum FakeLauncherError: Error {
+    case exhausted
+}
+
+private final class FakeHealthFactory: @unchecked Sendable, RuntimeHealthClientCreating {
+    private let response: (String, String) -> RuntimeResponse
+
+    init(response: @escaping (String, String) -> RuntimeResponse) {
+        self.response = response
+    }
+
+    func make(socketPath: String, instanceID: String) throws -> any RuntimeHealthChecking {
+        FakeHealthClient(instanceID: instanceID, response: response)
+    }
+}
+
+private final class FakeHealthClient: @unchecked Sendable, RuntimeHealthChecking {
+    private let instanceID: String
+    private let response: (String, String) -> RuntimeResponse
+
+    init(instanceID: String, response: @escaping (String, String) -> RuntimeResponse) {
+        self.instanceID = instanceID
+        self.response = response
+    }
+
+    func health(requestID: String) throws -> RuntimeResponse {
+        response(requestID, instanceID)
+    }
+}
+
+private final class SubstitutingHealthFactory: @unchecked Sendable, RuntimeHealthClientCreating {
+    private let coordinator: SocketSubstitutionCoordinator
+
+    init(coordinator: SocketSubstitutionCoordinator) {
+        self.coordinator = coordinator
+    }
+
+    func make(socketPath: String, instanceID: String) throws -> any RuntimeHealthChecking {
+        SubstitutingHealthClient(coordinator: coordinator, instanceID: instanceID)
+    }
+}
+
+private final class SubstitutingHealthClient: @unchecked Sendable, RuntimeHealthChecking {
+    private let coordinator: SocketSubstitutionCoordinator
+    private let instanceID: String
+
+    init(coordinator: SocketSubstitutionCoordinator, instanceID: String) {
+        self.coordinator = coordinator
+        self.instanceID = instanceID
+    }
+
+    func health(requestID: String) throws -> RuntimeResponse {
+        try coordinator.substituteSocket()
+        return RuntimeResponse(
+            requestID: requestID,
+            instanceID: instanceID,
+            state: "starting",
+            protocolVersion: nil,
+            error: nil
+        )
+    }
+}
+
+private final class SocketSubstitutionCoordinator: @unchecked Sendable {
+    private let lock = NSLock()
+    private var path: String?
+    private var originalDescriptor: Int32?
+    private var replacementDescriptor: Int32?
+
+    func installSocket(at path: String) throws {
+        let descriptor = try makeUnixSocket(at: path)
+        lock.lock()
+        self.path = path
+        originalDescriptor = descriptor
+        lock.unlock()
+    }
+
+    func substituteSocket() throws {
+        lock.lock()
+        guard let path, let descriptor = originalDescriptor, replacementDescriptor == nil else {
+            lock.unlock()
+            throw NSError(domain: "HidhoggTests", code: 3)
+        }
+        originalDescriptor = nil
+        lock.unlock()
+
+        _ = Darwin.close(descriptor)
+        guard Darwin.unlink(path) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        let replacement = try makeUnixSocket(at: path)
+        lock.lock()
+        replacementDescriptor = replacement
+        lock.unlock()
+    }
+
+    func replacementExists() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let path else { return false }
+        return FileManager.default.fileExists(atPath: path)
+    }
+
+    func validateReplacement() throws {
+        lock.lock()
+        let path = self.path
+        lock.unlock()
+        guard let path else { throw NSError(domain: "HidhoggTests", code: 4) }
+        _ = try PathSecurity.validateSocket(URL(fileURLWithPath: path))
+    }
+
+    func cleanup() {
+        lock.lock()
+        let path = self.path
+        let original = originalDescriptor
+        let replacement = replacementDescriptor
+        self.path = nil
+        originalDescriptor = nil
+        replacementDescriptor = nil
+        lock.unlock()
+
+        if let original { _ = Darwin.close(original) }
+        if let replacement { _ = Darwin.close(replacement) }
+        if let path {
+            _ = path.withCString { Darwin.unlink($0) }
+            let directory = URL(fileURLWithPath: path).deletingLastPathComponent()
+            try? FileManager.default.removeItem(at: directory)
+        }
+    }
+
+    private func makeUnixSocket(at path: String) throws -> Int32 {
+        let descriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+        guard descriptor >= 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+
+        var address = sockaddr_un()
+        address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+        address.sun_family = sa_family_t(AF_UNIX)
+        let pathBytes = Array(path.utf8)
+        withUnsafeMutableBytes(of: &address.sun_path) { rawBuffer in
+            for offset in 0..<rawBuffer.count {
+                rawBuffer[offset] = 0
+            }
+            for (offset, byte) in pathBytes.enumerated() where offset < rawBuffer.count - 1 {
+                rawBuffer[offset] = byte
+            }
+        }
+
+        let result = withUnsafePointer(to: &address) { addressPointer in
+            addressPointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard result == 0 else {
+            let error = errno
+            _ = Darwin.close(descriptor)
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(error))
+        }
+        guard Darwin.chmod(path, 0o600) == 0 else {
+            let error = errno
+            _ = Darwin.close(descriptor)
+            _ = Darwin.unlink(path)
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(error))
+        }
+        return descriptor
+    }
+}
