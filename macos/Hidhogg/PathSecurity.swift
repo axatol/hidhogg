@@ -17,11 +17,20 @@ public enum PathSecurityError: Error, Equatable, Sendable {
     case rootChanged
     case missing(String)
     case lstatFailed(String, Int32)
+    case removeFailed(String, Int32)
+    case directoryReadFailed(String)
     case wrongType(String)
     case wrongOwner(String)
     case wrongMode(String, UInt16)
+    case identityChanged(String)
     case unexpectedEndpoint(String)
     case notEmpty(String)
+}
+
+public enum GenerationCleanupResult: Equatable, Sendable {
+    case removed
+    case alreadyAbsent
+    case refused(PathSecurityError)
 }
 
 public enum GenerationRootPolicy: Equatable, Sendable {
@@ -148,64 +157,113 @@ public enum PathSecurity {
         }
     }
 
+    @discardableResult
     public static func removeMatchingGeneration(
         directory: URL,
         directoryIdentity: FileIdentity,
         socket: URL,
         socketIdentity: FileIdentity?
-    ) throws {
+    ) throws -> GenerationCleanupResult {
         let currentDirectory: FileIdentity
         do {
             let result = try lstat(directory.path)
-            guard result.type == UInt16(S_IFDIR),
-                  result.owner == UInt32(geteuid()),
-                  result.mode == 0o700,
-                  result.identity == directoryIdentity else {
-                return
+            guard result.type == UInt16(S_IFDIR) else {
+                return .refused(.wrongType(directory.path))
+            }
+            guard result.owner == UInt32(geteuid()) else {
+                return .refused(.wrongOwner(directory.path))
+            }
+            guard result.mode == 0o700 else {
+                return .refused(.wrongMode(directory.path, result.mode))
+            }
+            guard result.identity == directoryIdentity else {
+                return .refused(.identityChanged(directory.path))
             }
             currentDirectory = result.identity
         } catch PathSecurityError.missing(_) {
-            return
+            return .alreadyAbsent
         }
 
         if let socketIdentity {
             do {
                 let result = try lstat(socket.path)
-                guard result.type == UInt16(S_IFSOCK),
-                      result.owner == UInt32(geteuid()),
-                      result.mode == 0o600,
-                      result.identity == socketIdentity else {
-                    return
+                guard result.type == UInt16(S_IFSOCK) else {
+                    return .refused(.wrongType(socket.path))
+                }
+                guard result.owner == UInt32(geteuid()) else {
+                    return .refused(.wrongOwner(socket.path))
+                }
+                guard result.mode == 0o600 else {
+                    return .refused(.wrongMode(socket.path, result.mode))
+                }
+                guard result.identity == socketIdentity else {
+                    return .refused(.identityChanged(socket.path))
                 }
                 guard socket.path.withCString({ Darwin.unlink($0) }) == 0 || errno == ENOENT else {
-                    return
+                    throw PathSecurityError.removeFailed(socket.path, errno)
                 }
             } catch PathSecurityError.missing(_) {
-            } catch {
-                return
+                // The recorded socket has already gone away; continue checking
+                // the generation directory before removing it.
             }
         }
 
-        guard let beforeRemoval = try? lstat(directory.path),
-              beforeRemoval.identity == directoryIdentity,
-              beforeRemoval.type == UInt16(S_IFDIR),
-              beforeRemoval.owner == UInt32(geteuid()),
-              beforeRemoval.mode == 0o700 else {
-            return
+        let beforeRemoval: (identity: FileIdentity, mode: UInt16, type: UInt16, owner: UInt32)
+        do {
+            beforeRemoval = try lstat(directory.path)
+        } catch PathSecurityError.missing(_) {
+            return .alreadyAbsent
         }
-        guard isEmptyDirectory(directory.path) else { return }
-        guard let finalDirectory = try? lstat(directory.path),
-              finalDirectory.identity == currentDirectory,
-              finalDirectory.type == UInt16(S_IFDIR),
-              finalDirectory.owner == UInt32(geteuid()),
-              finalDirectory.mode == 0o700 else {
-            return
+        guard beforeRemoval.type == UInt16(S_IFDIR) else {
+            return .refused(.wrongType(directory.path))
         }
-        _ = directory.path.withCString { Darwin.rmdir($0) }
+        guard beforeRemoval.owner == UInt32(geteuid()) else {
+            return .refused(.wrongOwner(directory.path))
+        }
+        guard beforeRemoval.mode == 0o700 else {
+            return .refused(.wrongMode(directory.path, beforeRemoval.mode))
+        }
+        guard beforeRemoval.identity == directoryIdentity else {
+            return .refused(.identityChanged(directory.path))
+        }
+        guard try isEmptyDirectory(directory.path) else {
+            return .refused(.notEmpty(directory.path))
+        }
+
+        let finalDirectory: (identity: FileIdentity, mode: UInt16, type: UInt16, owner: UInt32)
+        do {
+            finalDirectory = try lstat(directory.path)
+        } catch PathSecurityError.missing(_) {
+            return .alreadyAbsent
+        }
+        guard finalDirectory.identity == currentDirectory else {
+            return .refused(.identityChanged(directory.path))
+        }
+        guard finalDirectory.type == UInt16(S_IFDIR) else {
+            return .refused(.wrongType(directory.path))
+        }
+        guard finalDirectory.owner == UInt32(geteuid()) else {
+            return .refused(.wrongOwner(directory.path))
+        }
+        guard finalDirectory.mode == 0o700 else {
+            return .refused(.wrongMode(directory.path, finalDirectory.mode))
+        }
+        let result = directory.path.withCString { Darwin.rmdir($0) }
+        guard result == 0 else {
+            let error = errno
+            if error == ENOENT {
+                return .alreadyAbsent
+            }
+            throw PathSecurityError.removeFailed(directory.path, error)
+        }
+        return .removed
     }
 
-    private static func isEmptyDirectory(_ path: String) -> Bool {
-        guard let handle = FileManager.default.enumerator(atPath: path) else { return true }
-        return handle.nextObject() == nil
+    private static func isEmptyDirectory(_ path: String) throws -> Bool {
+        do {
+            return try FileManager.default.contentsOfDirectory(atPath: path).isEmpty
+        } catch {
+            throw PathSecurityError.directoryReadFailed(path)
+        }
     }
 }

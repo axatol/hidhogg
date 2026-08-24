@@ -36,6 +36,8 @@ hidhogg/
 
 Config and device ports will be declared only at an exercised consumer boundary. Action, notification, D200X, HID, and TOML implementation packages are deferred until a production use case requires them.
 
+The Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-runtime`. The distinct helper name is required because `Hidhogg` and `hidhogg` collide on the default case-insensitive macOS filesystem.
+
 ## Ownership boundaries
 
 | Area | Responsibility | Excludes |

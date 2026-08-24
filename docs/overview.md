@@ -38,6 +38,8 @@ For the `M-01` scaffold, the SwiftUI app launches and supervises the Go runtime.
 
 The completed scaffold provides strict, bounded health/status IPC over an owner-only per-generation Unix socket. The SwiftUI supervisor attributes readiness to its launched runtime, drains bounded output tails, permits one restart, and applies deterministic TERM-to-KILL shutdown escalation. Product behavior and the public TOML schema remain deferred.
 
+Every Xcode-built app embeds the required Go runtime as `Contents/MacOS/hidhogg-runtime`; it does not search `PATH` or depend on `/usr/local/bin`. The application delegate starts that runtime eagerly at application launch and coordinates asynchronous cleanup before normal termination.
+
 Device adapters expose capabilities rather than assuming every HID has displays. The D200X adapter exposes inputs, displays, and brightness. A future Flow Lite adapter would expose inputs, lighting, and on-device key mapping.
 
 ## Configuration direction

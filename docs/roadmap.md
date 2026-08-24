@@ -12,6 +12,7 @@ Task IDs are immutable.
 | S-02 | Complete | Determine whether required TOML GUI mutations can be lossless; compare JSONC fallback if not | P-01 |
 | D-01 | Complete | Owner selects runtime architecture and configuration format from the spike report | S-01, S-02 |
 | M-01 | Complete | Scaffold the selected production architecture | D-01 |
+| M-01-F01 | Complete | Embed the required Go runtime in Xcode app products and verify failed-launch cleanup | M-01 |
 
 ## P-01 — Planning baseline
 
@@ -122,3 +123,13 @@ Task IDs are immutable.
 ## Parallel boundaries
 
 `S-01` and `S-02` proceeded independently and are complete. Within `M-01`, `M-01-P01` freezes shared contracts; Go and Swift shells may then proceed in parallel, IPC integration follows the shared contract, and independent verification follows all implementation tasks.
+
+## M-01-F01 — Bundle-required runtime correction
+
+- Status: complete on 2026-08-24 after independent direct-launch and test-host verification.
+- Goal: make every Xcode-built Hidhogg app contain the required `hidhogg` Go runtime and ensure failed launch generations clean up or report why they could not.
+- Scope: Xcode build/copy integration, deterministic bundle lookup, launch-failure cleanup regression coverage, and direct bundle verification.
+- Constraints: do not search shell `PATH`; do not depend on `/usr/local/bin`; preserve endpoint mismatch safeguards and user-owned Xcode workspace metadata.
+- Acceptance criteria: the built app contains an executable `Contents/MacOS/hidhogg-runtime`, distinct from the case-insensitively colliding Swift executable `Contents/MacOS/Hidhogg`; the app resolves that bundled path; a normal Xcode-built launch reaches ready; two failed launch attempts leave no matching empty generation directories; cleanup failure is observable rather than silently discarded.
+- Role: `executor_light`, followed by `tester`.
+- Verification gate: Go gates, full Xcode tests, bundle inspection, and an independent direct-launch/cleanup probe.

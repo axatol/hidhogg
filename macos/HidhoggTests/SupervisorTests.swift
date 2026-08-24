@@ -141,6 +141,72 @@ final class SupervisorTests: XCTestCase {
         XCTAssertEqual(sleeps.filter { $0 == 500_000_000 }, [500_000_000])
     }
 
+    func testFailedLaunchAttemptsRemoveEveryGeneration() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let launcher = FailingLauncher(failures: 2)
+        let instanceIDs = SequenceUUIDProvider(values: [
+            UUID(uuidString: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!,
+            UUID(uuidString: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")!
+        ])
+        let supervisor = ProcessSupervisor(
+            configuration: ProcessSupervisorConfiguration(
+                executablePath: "/tmp/hidhogg-runtime",
+                readinessTimeoutNanoseconds: 1,
+                readinessPollNanoseconds: 1,
+                restartDelayNanoseconds: 1
+            ),
+            directoryFactory: DefaultGenerationDirectoryFactory(root: root),
+            launcher: launcher,
+            clock: RecordingClock(),
+            instanceIDProvider: instanceIDs,
+            healthClientFactory: FakeHealthFactory { requestID, instanceID in
+                RuntimeResponse(requestID: requestID, instanceID: instanceID, state: "ready", protocolVersion: nil, error: nil)
+            }
+        )
+
+        await supervisor.run()
+
+        let snapshot = await supervisor.snapshot()
+        XCTAssertEqual(snapshot.state, .failed(.restartExhausted))
+        XCTAssertEqual(launcher.requests.count, 2)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
+    }
+
+    func testCleanupFailureIsObservableAndPreventsRestart() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let launcher = FailingLauncher(failures: 1) { request in
+            let generation = URL(fileURLWithPath: request.arguments[1]).deletingLastPathComponent()
+            try Data([0x01]).write(to: generation.appendingPathComponent("unexpected"))
+        }
+        let supervisor = ProcessSupervisor(
+            configuration: ProcessSupervisorConfiguration(
+                executablePath: "/tmp/hidhogg-runtime",
+                readinessTimeoutNanoseconds: 1,
+                readinessPollNanoseconds: 1,
+                restartDelayNanoseconds: 1
+            ),
+            directoryFactory: DefaultGenerationDirectoryFactory(root: root),
+            launcher: launcher,
+            clock: RecordingClock(),
+            instanceIDProvider: FixedUUIDProvider(),
+            healthClientFactory: FakeHealthFactory { requestID, instanceID in
+                RuntimeResponse(requestID: requestID, instanceID: instanceID, state: "ready", protocolVersion: nil, error: nil)
+            }
+        )
+
+        await supervisor.run()
+
+        let snapshot = await supervisor.snapshot()
+        guard case .failed(.cleanup(let message)) = snapshot.state else {
+            XCTFail("cleanup failure was not observable: \(snapshot.state)")
+            return
+        }
+        XCTAssertTrue(message.contains("notEmpty"))
+        XCTAssertEqual(launcher.requests.count, 1)
+    }
+
     func testQuitEscalatesFromTermToKillWhenChildIgnoresTerm() async throws {
         let root = try makeTemporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -337,6 +403,37 @@ private final class FakeLauncher: @unchecked Sendable, ProcessLaunching {
 
 private enum FakeLauncherError: Error {
     case exhausted
+}
+
+private final class FailingLauncher: @unchecked Sendable, ProcessLaunching {
+    private let lock = NSLock()
+    private var remainingFailures: Int
+    private let onLaunch: (@Sendable (LaunchRequest) throws -> Void)?
+    private(set) var requests: [LaunchRequest] = []
+
+    init(
+        failures: Int,
+        onLaunch: (@Sendable (LaunchRequest) throws -> Void)? = nil
+    ) {
+        remainingFailures = failures
+        self.onLaunch = onLaunch
+    }
+
+    func launch(
+        request: LaunchRequest,
+        standardOutputTail: OutputTail,
+        standardErrorTail: OutputTail
+    ) throws -> any ManagedProcess {
+        lock.lock()
+        defer { lock.unlock() }
+        guard remainingFailures > 0 else {
+            throw FakeLauncherError.exhausted
+        }
+        remainingFailures -= 1
+        try onLaunch?(request)
+        requests.append(request)
+        throw NSError(domain: "HidhoggTests", code: 1)
+    }
 }
 
 private final class FakeHealthFactory: @unchecked Sendable, RuntimeHealthClientCreating {

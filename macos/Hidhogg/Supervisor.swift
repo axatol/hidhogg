@@ -132,6 +132,7 @@ public enum LifecycleState: Equatable, Sendable, CustomStringConvertible {
 
 public enum SupervisorFailure: Equatable, Sendable, CustomStringConvertible {
     case launch(String)
+    case cleanup(String)
     case readinessTimedOut
     case processExited(ProcessExit?)
     case restartExhausted
@@ -141,6 +142,7 @@ public enum SupervisorFailure: Equatable, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case .launch(let message): return bounded(message)
+        case .cleanup(let message): return "runtime generation cleanup failed: \(bounded(message))"
         case .readinessTimedOut: return "runtime did not become ready"
         case .processExited(let exit):
             guard let exit else { return "runtime exited" }
@@ -280,16 +282,20 @@ public actor ProcessSupervisor {
         if quitRequested {
             state = .stopping
             await stopCurrentProcess()
-            cleanupCurrentGeneration()
-            state = .stopped
+            if let cleanupFailure = cleanupCurrentGeneration() {
+                state = .failed(.cleanup(cleanupFailure))
+            } else {
+                state = .stopped
+            }
         }
     }
 
     public func quit() async {
         quitRequested = true
         await stopCurrentProcess()
-        cleanupCurrentGeneration()
-        if started {
+        if let cleanupFailure = cleanupCurrentGeneration() {
+            state = .failed(.cleanup(cleanupFailure))
+        } else if started {
             state = .stopped
         }
     }
@@ -338,8 +344,12 @@ public actor ProcessSupervisor {
                 standardErrorTail: stderrTail!
             )
         } catch {
-            state = .failed(.launch(String(describing: error)))
-            cleanupCurrentGeneration()
+            let launchFailure = String(describing: error)
+            if let cleanupFailure = cleanupCurrentGeneration() {
+                state = .failed(.cleanup("launch failed: \(launchFailure); \(cleanupFailure)"))
+                return .terminalFailure
+            }
+            state = .failed(.launch(launchFailure))
             return .failed
         }
         currentProcess = process
@@ -348,26 +358,20 @@ public actor ProcessSupervisor {
         for _ in 0..<pollCount {
             if quitRequested {
                 await stopCurrentProcess()
-                cleanupCurrentGeneration()
-                return .quit
+                return finishQuitAfterCleanup()
             }
             do {
                 try await clock.sleep(nanoseconds: configuration.readinessPollNanoseconds)
             } catch {
                 if quitRequested {
                     await stopCurrentProcess()
-                    cleanupCurrentGeneration()
-                    return .quit
+                    return finishQuitAfterCleanup()
                 }
                 await stopCurrentProcess()
-                cleanupCurrentGeneration()
-                state = .failed(.internalFailure)
-                return .failed
+                return finishFailureAfterCleanup(.internalFailure)
             }
             guard process.isRunning else {
-                state = .failed(.processExited(process.exit))
-                cleanupCurrentGeneration()
-                return .failed
+                return finishFailureAfterCleanup(.processExited(process.exit))
             }
 
             switch observeSocketIdentity(generation.socket) {
@@ -410,12 +414,10 @@ public actor ProcessSupervisor {
         }
 
         await stopCurrentProcess()
-        cleanupCurrentGeneration()
         if quitRequested {
-            return .quit
+            return finishQuitAfterCleanup()
         }
-        state = .failed(.readinessTimedOut)
-        return .failed
+        return finishFailureAfterCleanup(.readinessTimedOut)
     }
 
     private func observeSocketIdentity(_ socket: URL) -> SocketIdentityObservation {
@@ -436,8 +438,11 @@ public actor ProcessSupervisor {
 
     private func failForSocketSecurity() async -> GenerationOutcome {
         await stopCurrentProcess()
-        cleanupCurrentGeneration()
-        state = .failed(.security("runtime socket identity unavailable or changed"))
+        let cleanupFailure = cleanupCurrentGeneration()
+        let message = cleanupFailure.map {
+            "runtime socket identity unavailable or changed; \($0)"
+        } ?? "runtime socket identity unavailable or changed"
+        state = .failed(.security(message))
         return .terminalFailure
     }
 
@@ -445,21 +450,17 @@ public actor ProcessSupervisor {
         while process.isRunning {
             if quitRequested {
                 await stopCurrentProcess()
-                cleanupCurrentGeneration()
-                return .quit
+                return finishQuitAfterCleanup()
             }
             do {
                 try await clock.sleep(nanoseconds: configuration.readinessPollNanoseconds)
             } catch {
                 if quitRequested {
                     await stopCurrentProcess()
-                    cleanupCurrentGeneration()
-                    return .quit
+                    return finishQuitAfterCleanup()
                 }
                 await stopCurrentProcess()
-                cleanupCurrentGeneration()
-                state = .failed(.internalFailure)
-                return .failed
+                return finishFailureAfterCleanup(.internalFailure)
             }
             guard let generation = currentGeneration else {
                 return await failForSocketSecurity()
@@ -472,12 +473,26 @@ public actor ProcessSupervisor {
             }
         }
         if quitRequested {
-            cleanupCurrentGeneration()
-            return .quit
+            return finishQuitAfterCleanup()
         }
-        state = .failed(.processExited(process.exit))
-        cleanupCurrentGeneration()
+        return finishFailureAfterCleanup(.processExited(process.exit))
+    }
+
+    private func finishFailureAfterCleanup(_ failure: SupervisorFailure) -> GenerationOutcome {
+        if let cleanupFailure = cleanupCurrentGeneration() {
+            state = .failed(.cleanup(cleanupFailure))
+            return .terminalFailure
+        }
+        state = .failed(failure)
         return .failed
+    }
+
+    private func finishQuitAfterCleanup() -> GenerationOutcome {
+        if let cleanupFailure = cleanupCurrentGeneration() {
+            state = .failed(.cleanup(cleanupFailure))
+            return .terminalFailure
+        }
+        return .quit
     }
 
     private func stopCurrentProcess() async {
@@ -507,18 +522,30 @@ public actor ProcessSupervisor {
         }
     }
 
-    private func cleanupCurrentGeneration() {
-        guard let generation = currentGeneration else { return }
-        try? PathSecurity.removeMatchingGeneration(
-            directory: generation.directory,
-            directoryIdentity: generation.directoryIdentity,
-            socket: generation.socket,
-            socketIdentity: currentSocketIdentity
-        )
+    private func cleanupCurrentGeneration() -> String? {
+        guard let generation = currentGeneration else { return nil }
+        let cleanupFailure: String?
+        do {
+            switch try PathSecurity.removeMatchingGeneration(
+                directory: generation.directory,
+                directoryIdentity: generation.directoryIdentity,
+                socket: generation.socket,
+                socketIdentity: currentSocketIdentity
+            ) {
+            case .removed, .alreadyAbsent:
+                cleanupFailure = nil
+            case .refused(let reason):
+                cleanupFailure = "refused: \(String(describing: reason))"
+            }
+        } catch {
+            cleanupFailure = String(describing: error)
+        }
         currentProcess = nil
         currentGeneration = nil
         currentSocketIdentity = nil
         stdoutTail = nil
         stderrTail = nil
+        guard let cleanupFailure else { return nil }
+        return "generation \(generation.directory.path): \(cleanupFailure)"
     }
 }

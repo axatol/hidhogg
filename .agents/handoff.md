@@ -11,9 +11,11 @@ Select and plan the milestone after the completed `M-01` production scaffold.
 - `S-01`, `S-02`, `D-01`, and `M-01` are complete.
 - The owner selected a Go core, SwiftUI client, and TOML configuration on 2026-08-24.
 - `M-01` implements Go runtime/CLI shells, strict bounded health/status IPC, shared v1 fixtures, a SwiftUI `MenuBarExtra`, deterministic process supervision, endpoint security, and live Go/Swift integration.
+- `M-01-F01` is complete: every Xcode-built app contains `Contents/MacOS/hidhogg-runtime`, starts it eagerly outside the dedicated hosted-test configuration, and awaits cleanup on normal application termination.
 - The normative internal protocol is `api/protocol/v1/README.md`; consequential decisions awaiting owner review are in `docs/m01-decision-review.md`.
 - Installed verification toolchains were Go 1.26.4, Swift 6.3.3, and Xcode 26.6. Go 1.27 was unavailable and not run.
 - Final verification passed cgo-free Go build/test/race/vet, `git diff --check`, and 15/15 Xcode tests. An independent live probe confirmed a mode-mutated socket is preserved during shutdown.
+- The post-milestone bundling correction passes 17/17 Xcode tests. Independent Debug direct-launch probes reached ready and cleaned their exact runtime/socket/generation on quit; the Test configuration created no orphan or generation.
 
 ## Residual risks
 
@@ -21,6 +23,7 @@ Select and plan the milestone after the completed `M-01` production scaffold.
 - Repeated physical reconnect reliability is an owner-accepted implementation assumption supported by only one measured reconnect/session-replacement cycle.
 - Swift monitors endpoint identity after readiness, but no dedicated post-ready substitution test exists.
 - Packaging, signing, App Sandbox isolation, login items, `launchd`, product behavior, physical HID integration, and a public TOML schema remain deferred.
+- Distribution signing/notarization of the embedded Go runtime is unverified; Test-configuration app products intentionally suppress automatic runtime startup.
 
 ## Next actions
 

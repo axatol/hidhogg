@@ -89,3 +89,12 @@
 - Independent verification found and reproduced one Go cleanup defect: mode-mutated sockets were identity-checked but not required to remain `0600`. Both unlink guards now enforce type, owner, mode, and identity; the regression test and a fresh live `0644` mutation probe pass.
 - Final gates pass: cgo-free Go build, unit tests, race tests, vet, `git diff --check`, and 15/15 Xcode tests including live runtime integration.
 - `M-01` is complete. Residual risks are the accepted same-effective-UID pathname race, untested Go 1.27, no dedicated Swift post-ready substitution test, deferred packaging isolation, and unmeasured repeated reconnect reliability.
+
+## 2026-08-24 — M-01-F01 bundled-runtime correction completed
+
+- Xcode launches initially failed because the app bundle contained no Go runtime and the app fell back to absent `/usr/local/bin/hidhogg`. Two empty generation directories confirmed cleanup failures were being discarded.
+- The Go runtime is now an always-run, cache-backed Xcode build output atomically installed as `Contents/MacOS/hidhogg-runtime`. The initial case-only `hidhogg` name was rejected after it overwrote the Swift `Hidhogg` executable on case-insensitive APFS.
+- `NSApplicationDelegateAdaptor` now starts the shared model eagerly and uses an AppKit terminate-later handshake so normal application termination awaits supervisor cleanup. Launch failure cleanup is observable, and two failed attempts leave no generation directories.
+- Hosted XCTest originally orphaned the eagerly started runtime because test-host teardown bypasses normal termination. A dedicated `Test` configuration defines `HIDHOGG_TEST_HOST` only for the app target and compiles out only automatic app-owned startup; explicit live integration remains enabled.
+- Final independent verification passes 17/17 tests with identical pre/post process and generation inventories. Two Debug direct-launch probes reached matching health/status readiness and normal quit removed each child, socket, and generation.
+- Signing and notarization of the nested runtime remain deferred and unverified.
