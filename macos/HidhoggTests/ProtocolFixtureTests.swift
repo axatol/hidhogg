@@ -322,7 +322,7 @@ final class PathSecurityTests: XCTestCase {
 
         let generation = try factory.create(instanceID: FixedPathUUIDProvider.instanceID)
         defer {
-            try? PathSecurity.removeMatchingGeneration(
+            _ = try? PathSecurity.removeMatchingGeneration(
                 directory: generation.directory,
                 directoryIdentity: generation.directoryIdentity,
                 socket: generation.socket,

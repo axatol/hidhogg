@@ -146,7 +146,7 @@ public enum PathSecurity {
             return (directory, identity)
         } catch {
             if let createdIdentity {
-                try? removeMatchingGeneration(
+                _ = try? removeMatchingGeneration(
                     directory: directory,
                     directoryIdentity: createdIdentity,
                     socket: directory.appendingPathComponent("runtime.sock"),

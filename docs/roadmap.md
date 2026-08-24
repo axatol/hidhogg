@@ -13,6 +13,7 @@ Task IDs are immutable.
 | D-01 | Complete | Owner selects runtime architecture and configuration format from the spike report | S-01, S-02 |
 | M-01 | Complete | Scaffold the selected production architecture | D-01 |
 | M-01-F01 | Complete | Embed the required Go runtime in Xcode app products and verify failed-launch cleanup | M-01 |
+| M-01-F02 | Complete | Make the runtime build phase independent of interactive shell PATH and clear cleanup warnings | M-01-F01 |
 
 ## P-01 — Planning baseline
 
@@ -133,3 +134,13 @@ Task IDs are immutable.
 - Acceptance criteria: the built app contains an executable `Contents/MacOS/hidhogg-runtime`, distinct from the case-insensitively colliding Swift executable `Contents/MacOS/Hidhogg`; the app resolves that bundled path; a normal Xcode-built launch reaches ready; two failed launch attempts leave no matching empty generation directories; cleanup failure is observable rather than silently discarded.
 - Role: `executor_light`, followed by `tester`.
 - Verification gate: Go gates, full Xcode tests, bundle inspection, and an independent direct-launch/cleanup probe.
+
+## M-01-F02 — Xcode GUI build-environment correction
+
+- Status: complete on 2026-08-24 after independent restricted-`PATH` verification.
+- Goal: make Xcode GUI builds find the installed Go toolchain without inheriting an interactive shell and keep the Swift build warning-free.
+- Scope: deterministic build-phase executable discovery, actionable missing-tool failure, and explicit discard of best-effort cleanup results.
+- Constraints: do not hard-code a single developer-specific path; preserve bundle output, cleanup behavior, and user-owned Xcode workspace metadata.
+- Acceptance criteria: a restricted GUI-like `PATH` build finds a supported Go installation or reports actionable remediation; full tests pass; the two unused `try?` warnings are absent.
+- Role: `executor_light`, followed by `tester`.
+- Verification gate: fresh restricted-`PATH` build, full Test-configuration XCTest, issue-log audit, and staged diff check.

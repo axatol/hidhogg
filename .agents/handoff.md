@@ -12,6 +12,7 @@ Select and plan the milestone after the completed `M-01` production scaffold.
 - The owner selected a Go core, SwiftUI client, and TOML configuration on 2026-08-24.
 - `M-01` implements Go runtime/CLI shells, strict bounded health/status IPC, shared v1 fixtures, a SwiftUI `MenuBarExtra`, deterministic process supervision, endpoint security, and live Go/Swift integration.
 - `M-01-F01` is complete: every Xcode-built app contains `Contents/MacOS/hidhogg-runtime`, starts it eagerly outside the dedicated hosted-test configuration, and awaits cleanup on normal application termination.
+- `M-01-F02` is complete: GUI-launched Xcode discovers Go from standard installation locations without interactive shell initialization, and the Swift build has no unused cleanup-result warnings.
 - The normative internal protocol is `api/protocol/v1/README.md`; consequential decisions awaiting owner review are in `docs/m01-decision-review.md`.
 - Installed verification toolchains were Go 1.26.4, Swift 6.3.3, and Xcode 26.6. Go 1.27 was unavailable and not run.
 - Final verification passed cgo-free Go build/test/race/vet, `git diff --check`, and 15/15 Xcode tests. An independent live probe confirmed a mode-mutated socket is preserved during shutdown.

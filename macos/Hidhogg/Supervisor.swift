@@ -93,7 +93,7 @@ public struct DefaultGenerationDirectoryFactory: GenerationDirectoryCreating, Se
         let rootIdentity = try PathSecurity.validateGenerationRoot(root, policy: rootPolicy)
         let result = try PathSecurity.createGenerationDirectory(root: root, directoryName: name)
         guard try PathSecurity.validateGenerationRoot(root, policy: rootPolicy) == rootIdentity else {
-            try? PathSecurity.removeMatchingGeneration(
+            _ = try? PathSecurity.removeMatchingGeneration(
                 directory: result.url,
                 directoryIdentity: result.identity,
                 socket: result.url.appendingPathComponent("runtime.sock"),
