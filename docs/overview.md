@@ -1,7 +1,7 @@
 # Hidhogg overview
 
-Status: production scaffold complete
-Updated: 2026-08-24
+Status: M-02 config-driven D200X slice complete
+Updated: 2026-08-26
 
 ## Goal
 
@@ -55,6 +55,10 @@ TOML passed the bounded `S-02` fixture suite and was selected by the owner on 20
 ```
 
 The root file owns application settings and shared library metadata. Each device file owns its adapter selection, settings, one-page layout, notification filters, and stable library references.
+
+`M-02` introduces a milestone-private, versioned single-file schema solely to prove the Go runtime's first physical vertical slice. It requires all 14 D200X display positions and rejects unknown fields. This does not replace the planned root/device configuration model; migration to that broader model remains explicit future work.
+
+The direct Go runtime is the sole `M-02` execution surface. Swift supervisor wiring, SwiftUI editing, configuration watching, and lossless source mutation are deferred to later milestones. Opt-in verbose diagnostics record decoded input events and outbound D200X packets, but never raw HID paths, serial numbers, or unrelated device identities.
 
 ## Evidence policy
 

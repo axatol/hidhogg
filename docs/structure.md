@@ -1,7 +1,7 @@
 # Repository structure
 
-Status: production scaffold complete
-Updated: 2026-08-24
+Status: M-02 config-driven D200X slice complete
+Updated: 2026-08-26
 
 ```text
 hidhogg/
@@ -26,6 +26,8 @@ hidhogg/
 │   ├── hidhogg/           Go runtime entry point
 │   └── hidhoggctl/        local CLI entry point
 ├── internal/
+│   ├── config/            strict milestone-private TOML model and schema generation
+│   ├── d200x/             production D200X protocol, transport, rendering, and session
 │   ├── ipc/               local transport and message handling
 │   └── runtime/           orchestration and lifecycle
 ├── macos/
@@ -34,7 +36,7 @@ hidhogg/
 └── spikes/                retained feasibility evidence
 ```
 
-Config and device ports will be declared only at an exercised consumer boundary. Action, notification, D200X, HID, and TOML implementation packages are deferred until a production use case requires them.
+Config and device ports are declared only at exercised consumer boundaries. `M-02` introduced production TOML loading and D200X packages; action and notification packages remain deferred.
 
 The Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-runtime`. The distinct helper name is required because `Hidhogg` and `hidhogg` collide on the default case-insensitive macOS filesystem.
 
@@ -45,7 +47,8 @@ The Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-run
 | HID spike | Transport feasibility and physical evidence | Production session architecture |
 | Config spike | Lossless mutation and conflict behavior | Published configuration compatibility |
 | Documentation | Verified facts, decisions, gates, and handoff | Unsupported hardware claims |
-| Future device adapter | Device-specific discovery, protocol, rendering, and capabilities | GUI and shared action semantics |
-| Go runtime | Runtime lifecycle and bounded local health/status service | Product actions, configuration, and HID access |
+| Go runtime | Lifecycle, strict configuration orchestration, one D200X session, diagnostic events, and bounded health/status service | Actions, notifications, reload, and multi-device policy |
+| M-02 configuration | Strict single-file decode, semantic validation, and deterministic schema | File watching, mutation, root/device composition |
+| D200X adapter | Exact device selection, framing, configured page rendering, serialized session, and input decoding | Runtime policy, actions, notifications, reconnect |
 | SwiftUI client | Menu-bar status, runtime supervision, and local health client | Direct HID ownership and settings editing |
 | Internal IPC | Versioned, bounded local messages and process health | Remote access and executable commands |

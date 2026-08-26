@@ -1,0 +1,107 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "description": "configuration schema version",
+      "enum": [
+        1
+      ]
+    },
+    "adapter": {
+      "type": "string",
+      "description": "device adapter identifier",
+      "enum": [
+        "ulanzi.d200x"
+      ]
+    },
+    "brightness": {
+      "type": "integer",
+      "description": "display brightness percentage",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "positions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "stable position identifier",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                },
+                "position": {
+                  "type": "string",
+                  "description": "supported D200X grid position",
+                  "enum": [
+                    "0_0",
+                    "1_0",
+                    "2_0",
+                    "3_0",
+                    "4_0",
+                    "0_1",
+                    "1_1",
+                    "2_1",
+                    "3_1",
+                    "4_1",
+                    "0_2",
+                    "1_2",
+                    "2_2",
+                    "3_2"
+                  ]
+                },
+                "label": {
+                  "type": "string",
+                  "description": "display label",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "background": {
+                  "type": "string",
+                  "description": "hexadecimal background colour",
+                  "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                }
+              },
+              "required": [
+                "id",
+                "position",
+                "label",
+                "background"
+              ],
+              "additionalProperties": false
+            },
+            "description": "all supported D200X display positions",
+            "minItems": 14,
+            "maxItems": 14,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "positions"
+        ],
+        "additionalProperties": false
+      },
+      "description": "configured display pages",
+      "minItems": 1,
+      "maxItems": 1
+    }
+  },
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "Hidhogg Ulanzi D200X configuration v1",
+  "description": "Milestone-private single-file configuration for one Ulanzi D200X page.",
+  "required": [
+    "schema_version",
+    "adapter",
+    "brightness",
+    "pages"
+  ],
+  "additionalProperties": false
+}

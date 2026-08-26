@@ -1,0 +1,90 @@
+# Valid one-page Ulanzi D200X configuration.
+schema_version = 1
+adapter = "ulanzi.d200x"
+brightness = 80
+
+[[pages]]
+
+[[pages.positions]]
+id = "clock"
+position = "0_0"
+label = "Clock"
+background = "#102030"
+
+[[pages.positions]]
+id = "calendar"
+position = "1_0"
+label = "Calendar"
+background = "#112233"
+
+[[pages.positions]]
+id = "timer"
+position = "2_0"
+label = "Timer"
+background = "#122436"
+
+[[pages.positions]]
+id = "focus"
+position = "3_0"
+label = "Focus"
+background = "#132639"
+
+[[pages.positions]]
+id = "music"
+position = "4_0"
+label = "Music"
+background = "#14283c"
+
+[[pages.positions]]
+id = "weather"
+position = "0_1"
+label = "Weather"
+background = "#153048"
+
+[[pages.positions]]
+id = "notes"
+position = "1_1"
+label = "Notes"
+background = "#16324b"
+
+[[pages.positions]]
+id = "mail"
+position = "2_1"
+label = "Mail"
+background = "#17364e"
+
+[[pages.positions]]
+id = "chat"
+position = "3_1"
+label = "Chat"
+background = "#183a51"
+
+[[pages.positions]]
+id = "calls"
+position = "4_1"
+label = "Calls"
+background = "#193e54"
+
+[[pages.positions]]
+id = "cpu"
+position = "0_2"
+label = "CPU"
+background = "#1a4257"
+
+[[pages.positions]]
+id = "memory"
+position = "1_2"
+label = "Memory"
+background = "#1b465a"
+
+[[pages.positions]]
+id = "network"
+position = "2_2"
+label = "Network"
+background = "#1c4a5d"
+
+[[pages.positions]]
+id = "status"
+position = "3_2"
+label = "Status"
+background = "#1d4e60"

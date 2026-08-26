@@ -1,0 +1,3 @@
+schema_version = 1
+adapter = "ulanzi.d200x"
+brightness = "80"

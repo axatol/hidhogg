@@ -1,7 +1,7 @@
 # Hidhogg roadmap
 
-Status: production scaffold complete
-Updated: 2026-08-24
+Status: M-02 config-driven D200X slice complete
+Updated: 2026-08-26
 
 Task IDs are immutable.
 
@@ -14,6 +14,12 @@ Task IDs are immutable.
 | M-01 | Complete | Scaffold the selected production architecture | D-01 |
 | M-01-F01 | Complete | Embed the required Go runtime in Xcode app products and verify failed-launch cleanup | M-01 |
 | M-01-F02 | Complete | Make the runtime build phase independent of interactive shell PATH and clear cleanup warnings | M-01-F01 |
+| M-02 | Complete | Drive one physical D200X page and decoded input events from one explicit TOML file | M-01 |
+| M-02-P01 | Complete | Freeze the Go-only configuration, device-session, event, and verification contracts | M-02 |
+| M-02-C01 | Complete | Implement strict TOML loading, semantic validation, and deterministic JSON Schema generation | M-02-P01 |
+| M-02-D01 | Complete | Implement the production D200X protocol, transport, rendering, and decoded input boundary | M-02-P01 |
+| M-02-R01 | Complete | Integrate configuration and D200X operation into the Go runtime | M-02-C01, M-02-D01 |
+| M-02-V01 | Complete | Independently verify automatic gates and the owner-run physical procedure | M-02-R01 |
 
 ## P-01 — Planning baseline
 
@@ -144,3 +150,48 @@ Task IDs are immutable.
 - Acceptance criteria: a restricted GUI-like `PATH` build finds a supported Go installation or reports actionable remediation; full tests pass; the two unused `try?` warnings are absent.
 - Role: `executor_light`, followed by `tester`.
 - Verification gate: fresh restricted-`PATH` build, full Test-configuration XCTest, issue-log audit, and staged diff check.
+
+## M-02 — Config-driven D200X vertical slice
+
+- Status: complete on 2026-08-26 after automatic, Taplo, independent, and physical verification.
+- Goal: prove that one explicit, versioned TOML file can drive one complete physical D200X page and expose decoded input events through the production Go runtime.
+- Scope: strict configuration loading; semantic validation; deterministic checked-in JSON Schema; exact D200X selection; one complete configured page; brightness, upload, unlock, and input enable; bounded decoded event output; opt-in verbose outbound-packet and input-event logging.
+- Constraints: configuration must validate before HID enumeration or writes; raw HID paths, serials, and unrelated device identities must never be logged; writes are serialized and never automatically retried after an uncertain failure; existing health IPC remains operational.
+- Excludes: all Swift and SwiftUI changes, default config discovery, root/device composition, configuration watching or mutation, last-known-good reload, actions, notifications, new IPC methods, rich assets, multi-device abstractions, packaging, and reconnect hardening.
+- Completion gate: all automatic gates pass and the owner records the physical procedure pass, fail, or not run.
+
+### M-02-P01 — Freeze Go-only slice contracts
+
+- Status: complete on 2026-08-26 after owner confirmation and independent architect review.
+- Contract: `--config-path` names one absolute TOML file with `schema_version = 1`, adapter `ulanzi.d200x`, brightness `0..100`, exactly one page, and all 14 display positions explicitly configured with stable ID, position, label, and background colour.
+- Compatibility posture: the schema is milestone-private; unknown fields are rejected; future root/device composition requires an explicit migration rather than silent reinterpretation.
+- Observability: decoded press/release events go to a bounded diagnostic sink. Verbose mode additionally logs input events and outbound packets without raw device identifiers or serials.
+- Failure policy: invalid configuration performs no HID activity; disconnect or an uncertain write ends the device session without retry.
+
+### M-02-C01 — Configuration and schema
+
+- Status: complete on 2026-08-26 after independent package test, race, vet, regeneration, and diff checks.
+- Scope: stable TOML decoder; schema reflector; semantic validation; valid and invalid fixtures; deterministic schema artifact and stale-generation test.
+- Acceptance: malformed, duplicate, unknown, unsupported-version/adapter, page-count, duplicate-ID/position, position-range, colour, and brightness cases are deterministic; valid fixtures agree across TOML decoding, JSON projection, and schema validation; Taplo consumes the checked-in schema.
+- Parallel boundary: may proceed alongside `M-02-D01`; owns configuration packages and schema artifacts.
+
+### M-02-D01 — Production D200X adapter
+
+- Status: complete on 2026-08-26 after durable framing, selection, rendering, lifecycle, input, and diagnostic regression tests passed independently with cgo disabled and under the race detector.
+- Scope: exact collection selection, framing, serialized writes, deterministic label/colour page archive, brightness, upload, unlock, input enable, input decoding, cancellation, and bounded verbose diagnostics.
+- Acceptance: zero or ambiguous eligible collections refuse open; fake transport proves exact packet ordering and complete archive semantics; short/failed writes invalidate the session; malformed or unknown input cannot terminate the runtime; tests never access physical HID hardware.
+- Parallel boundary: may proceed alongside `M-02-C01`; owns D200X packages and must not import the spike module.
+
+### M-02-R01 — Go runtime integration
+
+- Status: complete on 2026-08-26 after independent architecture corrections and cgo-free test, race, vet, build, and module-integrity gates.
+- Goal: load and validate before opening one D200X, operate the configured session concurrently with existing health IPC, and shut down deterministically.
+- Acceptance: invalid config causes zero enumerate/open/write calls; startup order is load, validate, select, open, page upload, brightness, unlock, input enable, and event read; cancellation closes the session; verbose mode is opt-in and bounded.
+
+### M-02-V01 — Independent verification
+
+- Status: complete on 2026-08-26. Full cgo-free build/test/race/vet, schema regeneration, module integrity, diff checks, direct Taplo linting, independent review, and the physical gate pass.
+- Automatic gates: `CGO_ENABLED=0 go build ./...`, `go test ./...`, `go test -race ./...`, `go vet ./...`, schema regeneration, `git diff --check`, existing Xcode tests, dependency/provenance audit, and confirmation that tests do not access physical HID hardware.
+- Physical gate: with one D200X attached and Ulanzi Studio quit, launch the Go runtime with an explicit config; confirm all 14 configured positions and brightness; press and release one named square tile and observe exactly one ordered pair; quit and confirm the device closes.
+- Evidence rule: record each physical item as pass, fail, or not run. Do not infer repeated reconnect reliability.
+- Physical result: pass. One connected D200X accepted the configured 14-position page and brightness 80; the owner confirmed both visible results. Two intentional interactions with configured tile `music` at `4_0` each produced exactly one ordered pressed/released pair. Controlled shutdown removed the runtime socket.

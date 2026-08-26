@@ -1,13 +1,16 @@
 # Hidhogg handoff
 
-Updated: 2026-08-24
+Updated: 2026-08-26
 
 ## Current objective
 
-Select and plan the milestone after the completed `M-01` production scaffold.
+Select and plan the milestone after the completed Go-only `M-02` config-driven D200X vertical slice.
 
 ## Completed state
 
+- `M-02` is complete. One strict TOML file drives one configured 14-position D200X page, brightness, and bounded decoded input events through the direct Go runtime.
+- Full cgo-free Go build/test/race/vet, deterministic schema generation, `go mod verify`, Taplo linting, independent tester review, and independent architecture review pass.
+- The owner physically confirmed all 14 positions and brightness 80. Two interactions with `music` at `4_0` each emitted exactly one pressed/released pair; controlled shutdown removed the runtime socket.
 - `S-01`, `S-02`, `D-01`, and `M-01` are complete.
 - The owner selected a Go core, SwiftUI client, and TOML configuration on 2026-08-24.
 - `M-01` implements Go runtime/CLI shells, strict bounded health/status IPC, shared v1 fixtures, a SwiftUI `MenuBarExtra`, deterministic process supervision, endpoint security, and live Go/Swift integration.
@@ -25,9 +28,11 @@ Select and plan the milestone after the completed `M-01` production scaffold.
 - Swift monitors endpoint identity after readiness, but no dedicated post-ready substitution test exists.
 - Packaging, signing, App Sandbox isolation, login items, `launchd`, product behavior, physical HID integration, and a public TOML schema remain deferred.
 - Distribution signing/notarization of the embedded Go runtime is unverified; Test-configuration app products intentionally suppress automatic runtime startup.
+- The Swift supervisor does not yet pass the now-required `--config-path`; the bundled app is intentionally incompatible until the deferred Swift follow-up.
+- Repeated reconnect reliability, configuration watching/last-known-good reload, actions, notifications, and rich assets remain unimplemented.
 
 ## Next actions
 
-1. Review `docs/m01-decision-review.md`; record any owner-requested revisions as new roadmap work rather than rewriting completed evidence.
-2. Define the next milestone and its stable task IDs before implementation.
-3. Keep HID, TOML editing, notification, and action behavior behind explicit exercised boundaries as they enter production scope.
+1. Define the next functional vertical slice before implementation.
+2. Decide whether the next slice restores Swift supervisor compatibility by supplying the explicit config path or first adds Go-side actions/notifications.
+3. Keep configuration watching/editing and reconnect hardening behind separate explicit milestones.

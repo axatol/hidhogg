@@ -105,3 +105,30 @@
 - The runtime phase now checks standard Apple Silicon Homebrew, official Go installer, and Intel Homebrew locations before its supplied `PATH`, and emits actionable remediation if none contains Go.
 - All best-effort cleanup calls explicitly discard their returned result, removing the unused-result Swift diagnostics without changing cleanup semantics.
 - Independent verification passed a fresh restricted-`PATH` universal build, warning audit, bundle inspection, direct bundled-runtime health/cleanup probe, and the existing 17/17 Test-configuration suite.
+
+## 2026-08-26 — M-02 Go-only vertical slice authorized
+
+- The owner authorized the next milestone as a thin functional slice in which one explicit TOML file drives one complete D200X page and decoded physical input through the production Go runtime.
+- Independent architect review recommended strict validation before HID activity, all 14 display positions, deterministic label/colour rendering, an injected diagnostic event sink, and no actions, notifications, reload, rich assets, new IPC, or general device registry.
+- The owner deferred all Swift-related work until the Go application is fully functional.
+- Opt-in verbose diagnostics must log decoded input events and outbound packets. Raw HID paths, serials, and unrelated device identities remain prohibited from logs.
+- The milestone-private schema uses `schema_version = 1`, rejects unknown fields, and will be generated deterministically from the same canonical Go model used for TOML decoding. Future root/device composition remains a deliberate migration.
+
+## 2026-08-26 — M-02 automatic implementation verified
+
+- Strict configuration, deterministic Draft-4 JSON Schema generation, the production D200X adapter, and direct Go runtime integration are implemented.
+- Stable production dependencies are `go-toml/v2 v2.4.3` and `google/jsonschema-go v0.4.3`, both MIT licensed. The D200X adapter pins pre-v1 `go-ctap/hid v0.11.0`, Apache-2.0, as established by the feasibility spike.
+- Two malformed transitive checksums introduced during parallel dependency integration were corrected by comparison with the retained spike and Go's authenticated module download; `go mod verify` now passes.
+- Independent architecture review required exact integrated startup-order coverage, config/adapter position-map parity, and an explicit stdout-failure shutdown test. All corrections pass.
+- Full cgo-free Go tests and race tests pass outside the socket-restricted sandbox; build, vet, schema regeneration, module tidy diff, module verification, and diff checks pass. Automated tests use fake transports and do not access HID hardware.
+- Taplo is not installed, so direct Taplo consumption remains not run. The physical D200X gate remains not run.
+- Deferring Swift creates an intentional temporary incompatibility: the current supervisor omits the newly required `--config-path`, so the bundled Swift application cannot launch the M-02 runtime until the later Swift milestone.
+
+## 2026-08-26 — M-02 physical slice completed
+
+- The official Taplo CLI linted `examples/d200x.toml` against the generated local Draft-4 schema without diagnostics.
+- The direct Go runtime opened one owner-confirmed D200X and sent eight complete-display-upload reports followed by brightness `80`, unlock, and input-enable reports.
+- The owner confirmed all 14 configured positions were visible and brightness 80 was applied.
+- Two intentional interactions with configured tile `music` at position `4_0` each emitted exactly one ordered `pressed` then `released` event pair with no raw device identity.
+- Controlled interruption closed the runtime and removed its Unix socket.
+- `M-02` is complete. This evidence does not establish repeated reconnect reliability or Swift application compatibility.
