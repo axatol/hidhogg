@@ -1,6 +1,6 @@
 # Hidhogg handoff
 
-Updated: 2026-08-26
+Updated: 2026-08-27
 
 ## Current objective
 
@@ -11,6 +11,7 @@ Select and plan the milestone after the completed Go-only `M-02` config-driven D
 - `M-02` is complete. One strict TOML file drives one configured 14-position D200X page, brightness, and bounded decoded input events through the direct Go runtime.
 - Full cgo-free Go build/test/race/vet, deterministic schema generation, `go mod verify`, Taplo linting, independent tester review, and independent architecture review pass.
 - The owner physically confirmed all 14 positions and brightness 80. Two interactions with `music` at `4_0` each emitted exactly one pressed/released pair; controlled shutdown removed the runtime socket.
+- A deploy-directory run additionally verified owner-only directory/socket modes, matching-instance health readiness, and socket removal after shutdown.
 - `S-01`, `S-02`, `D-01`, and `M-01` are complete.
 - The owner selected a Go core, SwiftUI client, and TOML configuration on 2026-08-24.
 - `M-01` implements Go runtime/CLI shells, strict bounded health/status IPC, shared v1 fixtures, a SwiftUI `MenuBarExtra`, deterministic process supervision, endpoint security, and live Go/Swift integration.
@@ -33,6 +34,6 @@ Select and plan the milestone after the completed Go-only `M-02` config-driven D
 
 ## Next actions
 
-1. Define the next functional vertical slice before implementation.
-2. Decide whether the next slice restores Swift supervisor compatibility by supplying the explicit config path or first adds Go-side actions/notifications.
+1. Plan and authorize pending `M-03`, the self-contained runtime-discovery correction.
+2. After `M-03`, decide whether the next functional slice restores Swift supervisor compatibility or first adds Go-side actions/notifications.
 3. Keep configuration watching/editing and reconnect hardening behind separate explicit milestones.

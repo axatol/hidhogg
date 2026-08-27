@@ -20,6 +20,7 @@ Task IDs are immutable.
 | M-02-D01 | Complete | Implement the production D200X protocol, transport, rendering, and decoded input boundary | M-02-P01 |
 | M-02-R01 | Complete | Integrate configuration and D200X operation into the Go runtime | M-02-C01, M-02-D01 |
 | M-02-V01 | Complete | Independently verify automatic gates and the owner-run physical procedure | M-02-R01 |
+| M-03 | Pending | Make direct-Go runtime discovery self-contained and preflight IPC before physical device mutation | M-02 |
 
 ## P-01 — Planning baseline
 
@@ -195,3 +196,12 @@ Task IDs are immutable.
 - Physical gate: with one D200X attached and Ulanzi Studio quit, launch the Go runtime with an explicit config; confirm all 14 configured positions and brightness; press and release one named square tile and observe exactly one ordered pair; quit and confirm the device closes.
 - Evidence rule: record each physical item as pass, fail, or not run. Do not infer repeated reconnect reliability.
 - Physical result: pass. One connected D200X accepted the configured 14-position page and brightness 80; the owner confirmed both visible results. Two intentional interactions with configured tile `music` at `4_0` each produced exactly one ordered pressed/released pair. Controlled shutdown removed the runtime socket.
+
+## M-03 — Self-contained runtime discovery
+
+- Status: pending; recorded as the immediate next improvement on 2026-08-27.
+- Goal: replace user-supplied socket and instance plumbing with one secure runtime directory while retaining generation attribution.
+- Scope: `--runtime-dir`; internally generated lowercase canonical instance ID; atomically published owner-only runtime metadata; `hidhoggctl --runtime-dir` discovery; case-insensitive UUID normalization for explicit overrides; IPC directory and endpoint preflight before any HID open or write.
+- Constraints: retain owner-only directory/socket modes, peer-UID verification, generation identity checks, guarded cleanup, multi-instance safety, and explicit supervisor/testing overrides.
+- Acceptance: a normal direct-Go launch requires only runtime directory and configuration path; uppercase and lowercase UUID overrides normalize to the same canonical representation; invalid runtime-directory state fails before physical device mutation; metadata and socket are removed only when their recorded identities still match.
+- Excludes: configuration watching/editing, SwiftUI settings, actions, notifications, reconnect hardening, signing, and packaging.

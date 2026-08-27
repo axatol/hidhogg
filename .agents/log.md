@@ -132,3 +132,12 @@
 - Two intentional interactions with configured tile `music` at position `4_0` each emitted exactly one ordered `pressed` then `released` event pair with no raw device identity.
 - Controlled interruption closed the runtime and removed its Unix socket.
 - `M-02` is complete. This evidence does not establish repeated reconnect reliability or Swift application compatibility.
+
+## 2026-08-27 — Deploy-directory verification and immediate follow-up
+
+- The owner verified a direct launch using `deploy/hidhogg.toml` and `deploy/runtime.sock` after setting `deploy` to owner-only mode `0700`.
+- The live runtime repeated the expected upload, brightness, unlock, and input-enable sequence. `hidhoggctl health` returned protocol version 1, `ready`, and the exact launched instance ID.
+- While running, the socket was an owner-owned Unix socket with mode `0600`; after controlled shutdown, `runtime.sock` was absent while the configuration remained.
+- A deploy-path negative run using the checked-in unknown-field fixture exited with configuration failure, emitted no outbound packet diagnostic, and created no socket, confirming rejection before HID and IPC activity.
+- macOS `uuidgen` emits uppercase hexadecimal, which the current canonical-lowercase parser rejects. Manual lowercasing works, but this is an avoidable CLI defect rather than a security requirement.
+- `M-03` is the immediate next improvement: accept one runtime directory, generate and atomically publish the instance ID internally, normalize explicit UUID overrides case-insensitively, let the CLI discover runtime metadata, and validate IPC state before changing the physical device.
