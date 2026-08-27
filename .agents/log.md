@@ -149,3 +149,12 @@
 - Unconfigured physical inputs remained bounded and were not assigned invented tile identities: wire indexes `15` and `16` emitted button pairs; encoder indexes `17` and `18` emitted rotation and press/release events; index `19` emitted at least a left-rotation event before interruption.
 - Before the owner completed the extended action matrix, the device entered its firmware screensaver state and the live runtime received no further input events. Runtime shutdown still removed `deploy/runtime.sock`.
 - The temporal association is verified, but the cause is not: it may be firmware input suppression, a missing keep-awake/session command, or another protocol state transition. Extended idle-duration input reliability is therefore not established.
+
+## 2026-08-27 — Controlled screensaver isolation reproduced the defect
+
+- A fresh direct-Go run initialized the D200X and received a baseline `clock` press/release pair at wire index `0`.
+- After the owner observed the firmware screensaver, `hidhoggctl status` still returned protocol version 1, `ready`, and the exact live instance ID.
+- The owner then pressed the same display input twice. Neither interaction woke or changed the display, and the runtime received no input event.
+- Controlled shutdown removed `deploy/runtime.sock`.
+- The failure is isolated from process and IPC liveness: current `ready` does not prove that the configured D200X remains operational after its firmware idle transition.
+- Cause remains unknown. Investigation must distinguish missing keep-awake/wake protocol behavior, firmware input suppression, and device-session state loss before selecting a correction.
