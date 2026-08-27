@@ -12,6 +12,7 @@ Select and plan the milestone after the completed Go-only `M-02` config-driven D
 - Full cgo-free Go build/test/race/vet, deterministic schema generation, `go mod verify`, Taplo linting, independent tester review, and independent architecture review pass.
 - The owner physically confirmed all 14 positions and brightness 80. Two interactions with `music` at `4_0` each emitted exactly one pressed/released pair; controlled shutdown removed the runtime socket.
 - A deploy-directory run additionally verified owner-only directory/socket modes, matching-instance health readiness, and socket removal after shutdown.
+- Extended deploy verification mapped all configured display inputs and several physical-button/encoder inputs, but input stopped after the device entered its firmware screensaver state; cause and recovery remain unresolved.
 - `S-01`, `S-02`, `D-01`, and `M-01` are complete.
 - The owner selected a Go core, SwiftUI client, and TOML configuration on 2026-08-24.
 - `M-01` implements Go runtime/CLI shells, strict bounded health/status IPC, shared v1 fixtures, a SwiftUI `MenuBarExtra`, deterministic process supervision, endpoint security, and live Go/Swift integration.
@@ -31,9 +32,11 @@ Select and plan the milestone after the completed Go-only `M-02` config-driven D
 - Distribution signing/notarization of the embedded Go runtime is unverified; Test-configuration app products intentionally suppress automatic runtime startup.
 - The Swift supervisor does not yet pass the now-required `--config-path`; the bundled app is intentionally incompatible until the deferred Swift follow-up.
 - Repeated reconnect reliability, configuration watching/last-known-good reload, actions, notifications, and rich assets remain unimplemented.
+- Idle/screensaver-duration input reliability is not established; the latest live session stopped receiving events after the firmware screen state appeared.
 
 ## Next actions
 
-1. Plan and authorize pending `M-03`, the self-contained runtime-discovery correction.
-2. After `M-03`, decide whether the next functional slice restores Swift supervisor compatibility or first adds Go-side actions/notifications.
-3. Keep configuration watching/editing and reconnect hardening behind separate explicit milestones.
+1. Diagnose the firmware screensaver/input-loss finding and decide whether it blocks or precedes pending `M-03`.
+2. Plan and authorize pending `M-03`, the self-contained runtime-discovery correction.
+3. After `M-03`, decide whether the next functional slice restores Swift supervisor compatibility or first adds Go-side actions/notifications.
+4. Keep configuration watching/editing and reconnect hardening behind separate explicit milestones.

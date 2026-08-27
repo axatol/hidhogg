@@ -141,3 +141,11 @@
 - A deploy-path negative run using the checked-in unknown-field fixture exited with configuration failure, emitted no outbound packet diagnostic, and created no socket, confirming rejection before HID and IPC activity.
 - macOS `uuidgen` emits uppercase hexadecimal, which the current canonical-lowercase parser rejects. Manual lowercasing works, but this is an avoidable CLI defect rather than a security requirement.
 - `M-03` is the immediate next improvement: accept one runtime directory, generate and atomically publish the instance ID internally, normalize explicit UUID overrides case-insensitively, let the CLI discover runtime metadata, and validate IPC state before changing the physical device.
+
+## 2026-08-27 — Extended deploy input verification exposed idle-state loss
+
+- `hidhoggctl status` returned `ready`, protocol version 1, and the exact live instance ID.
+- Every configured display input at wire indexes `0` through `13` emitted one correctly mapped pressed/released pair with the expected stable ID and position.
+- Unconfigured physical inputs remained bounded and were not assigned invented tile identities: wire indexes `15` and `16` emitted button pairs; encoder indexes `17` and `18` emitted rotation and press/release events; index `19` emitted at least a left-rotation event before interruption.
+- Before the owner completed the extended action matrix, the device entered its firmware screensaver state and the live runtime received no further input events. Runtime shutdown still removed `deploy/runtime.sock`.
+- The temporal association is verified, but the cause is not: it may be firmware input suppression, a missing keep-awake/session command, or another protocol state transition. Extended idle-duration input reliability is therefore not established.
