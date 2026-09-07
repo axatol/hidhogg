@@ -204,6 +204,27 @@ func TestSessionSendPageWritesUploadThenBrightnessUnlockAndInputEnable(t *testin
 	}
 }
 
+func TestSessionSendPageUploadWritesOnlyTypedCompleteUpload(t *testing.T) {
+	transport := newFakeTransport()
+	session, _ := openTestSession(t, transport)
+	if err := session.SendPageUpload(context.Background(), configuredTestPage()); err != nil {
+		t.Fatalf("SendPageUpload: %v", err)
+	}
+	commands, err := commandsFromReports(transport.snapshotWrites())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commands) != 1 || commands[0] != CommandCompleteDisplayUpload {
+		t.Fatalf("typed page upload commands = %v, want one complete upload", commands)
+	}
+	if _, active := session.Current(); !active {
+		t.Fatal("typed page upload invalidated session")
+	}
+	if err := session.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSessionSerializesConcurrentWrites(t *testing.T) {
 	transport := newFakeTransport()
 	transport.writeDelay = time.Millisecond

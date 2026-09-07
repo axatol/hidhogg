@@ -26,6 +26,7 @@ type DisplayArchive struct {
 type displayArchiveFile struct {
 	name             string
 	compression      uint16
+	extra            []byte
 	uncompressedData []byte
 	compressedData   []byte
 	checksum         uint32
@@ -74,7 +75,7 @@ func assembleDisplayArchive(files []displayArchiveFile, paddingLength int) ([]by
 		if err != nil {
 			return nil, err
 		}
-		if len(file.compressedData) > 0xFFFFFFFF || len(file.uncompressedData) > 0xFFFFFFFF || archive.Len() > 0xFFFFFFFF {
+		if len(file.compressedData) > 0xFFFFFFFF || len(file.uncompressedData) > 0xFFFFFFFF || len(file.extra) > 0xFFFF || archive.Len() > 0xFFFFFFFF {
 			return nil, fmt.Errorf("display archive field overflow")
 		}
 		localOffsets[index] = uint32(archive.Len())
@@ -92,8 +93,9 @@ func assembleDisplayArchive(files []displayArchiveFile, paddingLength int) ([]by
 		writeUint32(&archive, uint32(len(file.compressedData)))
 		writeUint32(&archive, uint32(len(file.uncompressedData)))
 		writeUint16(&archive, uint16(len(name)))
-		writeUint16(&archive, 0)
+		writeUint16(&archive, uint16(len(file.extra)))
 		_, _ = archive.Write(name)
+		_, _ = archive.Write(file.extra)
 		_, _ = archive.Write(file.compressedData)
 	}
 
@@ -118,13 +120,14 @@ func assembleDisplayArchive(files []displayArchiveFile, paddingLength int) ([]by
 		writeUint32(&archive, uint32(len(file.compressedData)))
 		writeUint32(&archive, uint32(len(file.uncompressedData)))
 		writeUint16(&archive, uint16(len(name)))
-		writeUint16(&archive, 0)
+		writeUint16(&archive, uint16(len(file.extra)))
 		writeUint16(&archive, 0)
 		writeUint16(&archive, 0)
 		writeUint16(&archive, 0)
 		writeUint32(&archive, 0)
 		writeUint32(&archive, localOffsets[index])
 		_, _ = archive.Write(name)
+		_, _ = archive.Write(file.extra)
 	}
 
 	centralSize := archive.Len() - centralOffset

@@ -12,48 +12,70 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"hidhogg/internal/profile"
+
 	toml "github.com/pelletier/go-toml/v2"
 )
 
 const (
-	SchemaVersionV1       = 1
-	AdapterUlanziD200X    = "ulanzi.d200x"
-	RequiredPageCount     = 1
-	RequiredPositionCount = 14
-	MinimumBrightness     = 0
-	MaximumBrightness     = 100
-	MaximumStableIDRunes  = 64
-	MaximumLabelRunes     = 64
+	// SchemaVersionV1 is retained so callers and diagnostics can identify the
+	// rejected predecessor format. Decode and Validate accept only v2.
+	SchemaVersionV1 = 1
+	SchemaVersionV2 = 2
+	SchemaVersion   = SchemaVersionV2
+
+	AdapterUlanziD200X        = "ulanzi.d200x"
+	RequiredPositionCount     = 14
+	MaximumProfileCount       = 31
+	MinimumBrightness         = 0
+	MaximumBrightness         = 100
+	DefaultIdleTimeoutSeconds = 300
+	MaximumIdleTimeoutSeconds = 86400
+	MaximumStableIDRunes      = 64
+	MaximumLabelRunes         = 64
+	MaximumLabelBytes         = 256
 )
 
-// Config is the milestone-private, single-file D200X configuration.
+// Config is the strict schema-v2 D200X configuration.
 //
 // The TOML and JSON tags intentionally use the same names. JSON is used for
 // schema projection and fixture validation; TOML is the runtime source format.
 type Config struct {
-	SchemaVersion int    `toml:"schema_version" json:"schema_version" jsonschema:"configuration schema version"`
-	Adapter       string `toml:"adapter" json:"adapter" jsonschema:"device adapter identifier"`
-	Brightness    int    `toml:"brightness" json:"brightness" jsonschema:"display brightness percentage"`
-	Pages         []Page `toml:"pages" json:"pages" jsonschema:"configured display pages"`
+	SchemaVersion      int       `toml:"schema_version" json:"schema_version" jsonschema:"configuration schema version"`
+	Adapter            string    `toml:"adapter" json:"adapter" jsonschema:"device adapter identifier"`
+	Brightness         int       `toml:"brightness" json:"brightness" jsonschema:"display brightness percentage"`
+	IdleTimeoutSeconds int       `toml:"idle_timeout_seconds" json:"idle_timeout_seconds" jsonschema:"application-owned idle timeout in seconds"`
+	DefaultProfileID   string    `toml:"default_profile_id" json:"default_profile_id" jsonschema:"profile selected at startup"`
+	Profiles           []Profile `toml:"profiles" json:"profiles" jsonschema:"ordered configured display profiles"`
 }
 
-// Page is the one configured D200X page. The slice is retained to make the
-// exactly-one-page contract explicit in both TOML and JSON Schema.
-type Page struct {
+// Profile is one named, complete D200X display layout.
+type Profile struct {
+	ID        string     `toml:"id" json:"id" jsonschema:"case-sensitive stable profile identifier"`
+	Label     string     `toml:"label" json:"label" jsonschema:"display profile label"`
 	Positions []Position `toml:"positions" json:"positions" jsonschema:"all supported D200X display positions"`
 }
 
 // Position describes one physical display position and its rendered content.
+// Action, when present, is bound to this position's completed press gesture.
 type Position struct {
-	ID         string `toml:"id" json:"id" jsonschema:"stable position identifier"`
-	Position   string `toml:"position" json:"position" jsonschema:"supported D200X grid position"`
-	Label      string `toml:"label" json:"label" jsonschema:"display label"`
-	Background string `toml:"background" json:"background" jsonschema:"hexadecimal background colour"`
+	ID         string  `toml:"id" json:"id" jsonschema:"stable position identifier"`
+	Position   string  `toml:"position" json:"position" jsonschema:"supported D200X grid position"`
+	Label      string  `toml:"label" json:"label" jsonschema:"display label"`
+	Background string  `toml:"background" json:"background" jsonschema:"hexadecimal background colour"`
+	Action     *Action `toml:"action" json:"action,omitempty" jsonschema:"optional press action binding"`
+}
+
+// Action is the only action shape accepted by schema v2. Its position binding
+// is supplied by the containing Position rather than by another field.
+type Action struct {
+	Type      string `toml:"type" json:"type" jsonschema:"action type"`
+	Gesture   string `toml:"gesture" json:"gesture" jsonschema:"input gesture"`
+	ProfileID string `toml:"profile_id" json:"profile_id" jsonschema:"case-sensitive target profile identifier"`
 }
 
 // DisplayPosition and Tile are compatibility aliases for callers that use
-// either the physical-layout or product terminology. They do not introduce a
-// second DTO or a second wire representation.
+// either the physical-layout or product terminology.
 type DisplayPosition = Position
 type Tile = Position
 
@@ -141,18 +163,15 @@ func Decode(data []byte) (Config, error) {
 		return Config{}, fmt.Errorf("decode configuration TOML: %w", err)
 	}
 
-	// A zero brightness is valid, so its presence cannot be inferred from the
-	// decoded Go value. The generic pass supplies that one structural presence
-	// check while the canonical DTO remains the sole public model.
 	var raw map[string]any
 	if err := toml.Unmarshal(data, &raw); err != nil {
 		return Config{}, fmt.Errorf("inspect configuration TOML: %w", err)
 	}
-	if _, ok := raw["brightness"]; !ok {
-		return Config{}, newValidationError(ValidationIssue{
-			Path:    "brightness",
-			Message: "is required",
-		})
+	if issues := missingRequiredFields(raw); len(issues) > 0 {
+		return Config{}, newValidationError(issues...)
+	}
+	if _, ok := raw["idle_timeout_seconds"]; !ok {
+		decoded.IdleTimeoutSeconds = DefaultIdleTimeoutSeconds
 	}
 
 	if err := decoded.Validate(); err != nil {
@@ -161,10 +180,61 @@ func Decode(data []byte) (Config, error) {
 	return decoded, nil
 }
 
+func missingRequiredFields(raw map[string]any) []ValidationIssue {
+	fields := []string{"schema_version", "adapter", "brightness", "default_profile_id", "profiles"}
+	issues := make([]ValidationIssue, 0, len(fields))
+	for _, field := range fields {
+		if _, ok := raw[field]; !ok {
+			issues = append(issues, ValidationIssue{Path: field, Message: "is required"})
+		}
+	}
+	return issues
+}
+
 // JSON returns the canonical JSON projection used by schema consumers and
 // tests. It carries the same property names as the TOML DTO.
 func (c Config) JSON() ([]byte, error) {
 	return json.Marshal(c)
+}
+
+// ProfileCatalog validates and converts this configuration into an immutable,
+// ordered catalog of neutral profile values and action bindings.
+func (c Config) ProfileCatalog() (profile.Catalog, error) {
+	if err := c.Validate(); err != nil {
+		return profile.Catalog{}, err
+	}
+	definitions := make([]profile.Profile, len(c.Profiles))
+	for profileIndex, source := range c.Profiles {
+		values := make([]profile.Value, len(source.Positions))
+		for positionIndex, value := range source.Positions {
+			converted := profile.Value{
+				ID:         value.ID,
+				Position:   value.Position,
+				Label:      value.Label,
+				Background: value.Background,
+			}
+			if value.Action != nil {
+				converted.Action = &profile.Action{
+					Type:      value.Action.Type,
+					Gesture:   value.Action.Gesture,
+					ProfileID: value.Action.ProfileID,
+				}
+			}
+			values[positionIndex] = converted
+		}
+		definitions[profileIndex] = profile.Profile{
+			ID:     source.ID,
+			Label:  source.Label,
+			Values: values,
+		}
+	}
+	return profile.NewCatalog(c.DefaultProfileID, definitions)
+}
+
+// Catalog is a concise alias for ProfileCatalog at call sites that already
+// have a validated configuration value.
+func (c Config) Catalog() (profile.Catalog, error) {
+	return c.ProfileCatalog()
 }
 
 // ValidationIssue identifies one semantic violation by canonical field path.
@@ -201,13 +271,13 @@ func (e *ValidationError) Error() string {
 }
 
 // Validate applies semantic constraints that reflection and TOML decoding
-// cannot express, including the supported-position domain and uniqueness.
+// cannot express, including profile/action resolution and position domains.
 func (c Config) Validate() error {
 	var issues []ValidationIssue
-	if c.SchemaVersion != SchemaVersionV1 {
+	if c.SchemaVersion != SchemaVersionV2 {
 		issues = append(issues, ValidationIssue{
 			Path:    "schema_version",
-			Message: fmt.Sprintf("must equal %d", SchemaVersionV1),
+			Message: fmt.Sprintf("must equal %d", SchemaVersionV2),
 		})
 	}
 	if c.Adapter != AdapterUlanziD200X {
@@ -222,60 +292,109 @@ func (c Config) Validate() error {
 			Message: fmt.Sprintf("must be between %d and %d", MinimumBrightness, MaximumBrightness),
 		})
 	}
-	if len(c.Pages) != RequiredPageCount {
+	if c.IdleTimeoutSeconds < 0 || c.IdleTimeoutSeconds > MaximumIdleTimeoutSeconds {
 		issues = append(issues, ValidationIssue{
-			Path:    "pages",
-			Message: fmt.Sprintf("must contain exactly %d page", RequiredPageCount),
+			Path:    "idle_timeout_seconds",
+			Message: fmt.Sprintf("must be between 0 and %d", MaximumIdleTimeoutSeconds),
 		})
 	}
-	for pageIndex, page := range c.Pages {
-		pagePath := fmt.Sprintf("pages[%d].positions", pageIndex)
-		if len(page.Positions) != RequiredPositionCount {
-			issues = append(issues, ValidationIssue{
-				Path:    pagePath,
-				Message: fmt.Sprintf("must contain exactly %d positions", RequiredPositionCount),
-			})
-		}
+	if !validStableID(c.DefaultProfileID) {
+		issues = append(issues, ValidationIssue{
+			Path:    "default_profile_id",
+			Message: "must start with an ASCII letter or digit and contain only ASCII letters, digits, '.', '_' or '-' (maximum 64 characters)",
+		})
+	}
+	if len(c.Profiles) < 1 || len(c.Profiles) > MaximumProfileCount {
+		issues = append(issues, ValidationIssue{
+			Path:    "profiles",
+			Message: fmt.Sprintf("must contain between 1 and %d profiles", MaximumProfileCount),
+		})
+	}
 
-		seenIDs := make(map[string]int, len(page.Positions))
-		seenPositions := make(map[string]int, len(page.Positions))
-		for positionIndex, position := range page.Positions {
-			positionPath := fmt.Sprintf("%s[%d]", pagePath, positionIndex)
-			validatePosition(&issues, positionPath, position)
-			if previous, ok := seenIDs[position.ID]; ok {
+	profileOccurrences := make(map[string][]int, len(c.Profiles))
+	for profileIndex, current := range c.Profiles {
+		profileOccurrences[current.ID] = append(profileOccurrences[current.ID], profileIndex)
+	}
+	for profileIndex, current := range c.Profiles {
+		profilePath := fmt.Sprintf("profiles[%d]", profileIndex)
+		validateProfile(&issues, profilePath, current, profileOccurrences)
+		if occurrences := profileOccurrences[current.ID]; len(occurrences) > 1 && occurrences[0] == profileIndex {
+			for _, duplicateIndex := range occurrences[1:] {
 				issues = append(issues, ValidationIssue{
-					Path:    positionPath + ".id",
-					Message: fmt.Sprintf("duplicates %s[%d].id", pagePath, previous),
-				})
-			} else {
-				seenIDs[position.ID] = positionIndex
-			}
-			if previous, ok := seenPositions[position.Position]; ok {
-				issues = append(issues, ValidationIssue{
-					Path:    positionPath + ".position",
-					Message: fmt.Sprintf("duplicates %s[%d].position", pagePath, previous),
-				})
-			} else {
-				seenPositions[position.Position] = positionIndex
-			}
-		}
-		for _, spec := range supportedPositionSpecs {
-			if _, ok := seenPositions[spec.Name]; !ok {
-				issues = append(issues, ValidationIssue{
-					Path:    pagePath,
-					Message: fmt.Sprintf("must include position %q", spec.Name),
+					Path:    fmt.Sprintf("profiles[%d].id", duplicateIndex),
+					Message: fmt.Sprintf("duplicates profiles[%d].id", profileIndex),
 				})
 			}
 		}
 	}
+	if occurrences := profileOccurrences[c.DefaultProfileID]; len(occurrences) != 1 {
+		issues = append(issues, ValidationIssue{
+			Path:    "default_profile_id",
+			Message: fmt.Sprintf("must resolve to exactly one profile (found %d)", len(occurrences)),
+		})
+	}
+
 	if len(issues) == 0 {
 		return nil
 	}
 	return newValidationError(issues...)
 }
 
-func validatePosition(issues *[]ValidationIssue, path string, position Position) {
-	if !stableIDPattern.MatchString(position.ID) || utf8.RuneCountInString(position.ID) > MaximumStableIDRunes {
+func validateProfile(issues *[]ValidationIssue, currentPath string, current Profile, profileOccurrences map[string][]int) {
+	if !validStableID(current.ID) {
+		*issues = append(*issues, ValidationIssue{
+			Path:    currentPath + ".id",
+			Message: "must start with an ASCII letter or digit and contain only ASCII letters, digits, '.', '_' or '-' (maximum 64 characters)",
+		})
+	}
+	if !validLabel(current.Label) {
+		*issues = append(*issues, ValidationIssue{
+			Path:    currentPath + ".label",
+			Message: "must contain visible text and be at most 64 characters",
+		})
+	}
+	positionsPath := currentPath + ".positions"
+	if len(current.Positions) != RequiredPositionCount {
+		*issues = append(*issues, ValidationIssue{
+			Path:    positionsPath,
+			Message: fmt.Sprintf("must contain exactly %d positions", RequiredPositionCount),
+		})
+	}
+
+	seenIDs := make(map[string]int, len(current.Positions))
+	seenPositions := make(map[string]int, len(current.Positions))
+	for positionIndex, position := range current.Positions {
+		positionPath := fmt.Sprintf("%s[%d]", positionsPath, positionIndex)
+		validatePosition(issues, positionPath, position, profileOccurrences)
+		if previous, ok := seenIDs[position.ID]; ok {
+			*issues = append(*issues, ValidationIssue{
+				Path:    positionPath + ".id",
+				Message: fmt.Sprintf("duplicates %s[%d].id", positionsPath, previous),
+			})
+		} else {
+			seenIDs[position.ID] = positionIndex
+		}
+		if previous, ok := seenPositions[position.Position]; ok {
+			*issues = append(*issues, ValidationIssue{
+				Path:    positionPath + ".position",
+				Message: fmt.Sprintf("duplicates %s[%d].position", positionsPath, previous),
+			})
+		} else {
+			seenPositions[position.Position] = positionIndex
+		}
+	}
+	for _, spec := range supportedPositionSpecs {
+		if _, ok := seenPositions[spec.Name]; !ok {
+			*issues = append(*issues, ValidationIssue{
+				Path:    positionsPath,
+				Message: fmt.Sprintf("must include position %q", spec.Name),
+			})
+		}
+	}
+}
+
+func validatePosition(issues *[]ValidationIssue, path string, position Position, profileOccurrences map[string][]int) {
+	if !validStableID(position.ID) {
 		*issues = append(*issues, ValidationIssue{
 			Path:    path + ".id",
 			Message: "must start with an ASCII letter or digit and contain only ASCII letters, digits, '.', '_' or '-' (maximum 64 characters)",
@@ -299,18 +418,53 @@ func validatePosition(issues *[]ValidationIssue, path string, position Position)
 			Message: "must be a hexadecimal colour such as #102030 or #102030ff",
 		})
 	}
+	if position.Action == nil {
+		return
+	}
+	actionPath := path + ".action"
+	if position.Action.Type != "activate_profile" {
+		*issues = append(*issues, ValidationIssue{Path: actionPath + ".type", Message: "must equal \"activate_profile\""})
+	}
+	if position.Action.Gesture != "press" {
+		*issues = append(*issues, ValidationIssue{Path: actionPath + ".gesture", Message: "must equal \"press\""})
+	}
+	if !validStableID(position.Action.ProfileID) {
+		*issues = append(*issues, ValidationIssue{
+			Path:    actionPath + ".profile_id",
+			Message: "must start with an ASCII letter or digit and contain only ASCII letters, digits, '.', '_' or '-' (maximum 64 characters)",
+		})
+	}
+	if occurrences := profileOccurrences[position.Action.ProfileID]; len(occurrences) != 1 {
+		*issues = append(*issues, ValidationIssue{
+			Path:    actionPath + ".profile_id",
+			Message: fmt.Sprintf("must resolve to exactly one profile (found %d)", len(occurrences)),
+		})
+	}
+}
+
+func validStableID(value string) bool {
+	return stableIDPattern.MatchString(value) && utf8.ValidString(value)
 }
 
 func validLabel(label string) bool {
-	if !utf8.ValidString(label) || strings.TrimSpace(label) == "" || utf8.RuneCountInString(label) > MaximumLabelRunes {
+	if !utf8.ValidString(label) || utf8.RuneCountInString(label) < 1 || utf8.RuneCountInString(label) > MaximumLabelRunes || len([]byte(label)) > MaximumLabelBytes {
 		return false
 	}
+	visible := false
 	for _, character := range label {
-		if unicode.IsControl(character) {
+		if unicode.IsControl(character) || unicode.Is(unicode.Cf, character) {
 			return false
 		}
+		if invisibleLabelRune(character) {
+			continue
+		}
+		visible = true
 	}
-	return true
+	return visible
+}
+
+func invisibleLabelRune(character rune) bool {
+	return unicode.IsSpace(character) || unicode.Is(unicode.Mn, character) || unicode.Is(unicode.Me, character) || unicode.Is(unicode.Cn, character) || unicode.Is(unicode.Co, character) || unicode.Is(unicode.Cs, character)
 }
 
 // IsValidationError reports whether err contains semantic validation issues.

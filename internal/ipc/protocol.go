@@ -6,20 +6,25 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
+	"unicode"
 	"unicode/utf8"
 )
 
 const (
-	ProtocolVersion = 1
-	MaxFrameBytes   = 16 * 1024
-	ReadyState      = "ready"
+	ProtocolVersion     = 1
+	MaxFrameBytes       = 16 * 1024
+	ReadyState          = "ready"
+	maxProfileSummaries = 31
 )
 
 type Method string
 
 const (
-	MethodHealth Method = "health"
-	MethodStatus Method = "status"
+	MethodHealth           Method = "health"
+	MethodStatus           Method = "status"
+	MethodProfilesList     Method = "profiles.list"
+	MethodProfilesActivate Method = "profiles.activate"
 )
 
 type Request struct {
@@ -27,12 +32,31 @@ type Request struct {
 	RequestID       string `json:"request_id"`
 	Method          Method `json:"method"`
 	InstanceID      string `json:"instance_id"`
+	ProfileID       string `json:"profile_id,omitempty"`
+}
+
+// ProfileSummary is the intentionally narrow profile discovery shape. Layout
+// values and actions remain runtime-owned and are never placed on the wire.
+type ProfileSummary struct {
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	IsDefault bool   `json:"is_default"`
+	IsCurrent bool   `json:"is_current"`
+}
+
+// ActivationResult reports the profile committed by an activation request.
+type ActivationResult struct {
+	ProfileID string `json:"profile_id"`
+	Changed   bool   `json:"changed"`
 }
 
 type Result struct {
-	InstanceID      string `json:"instance_id"`
-	State           string `json:"state"`
-	ProtocolVersion *int   `json:"protocol_version,omitempty"`
+	InstanceID      string           `json:"instance_id"`
+	State           string           `json:"state"`
+	ProtocolVersion *int             `json:"protocol_version,omitempty"`
+	Profiles        []ProfileSummary `json:"profiles,omitempty"`
+	ProfileID       string           `json:"profile_id,omitempty"`
+	Changed         bool             `json:"changed,omitempty"`
 }
 
 type Error struct {
@@ -56,27 +80,99 @@ const (
 	ErrorInstanceMismatch   = "instance_mismatch"
 	ErrorMessageTooLarge    = "message_too_large"
 	ErrorInternal           = "internal"
+	ErrorProfileNotFound    = "profile_not_found"
+	ErrorActivationFailed   = "activation_failed"
+	ErrorDeviceWriteFailed  = "device_write_failed"
+	ErrorShuttingDown       = "shutting_down"
+	ErrorBusy               = "busy"
 )
 
 var stableErrorCodes = map[string]struct{}{
-	ErrorInvalidJSON:      {},
-	ErrorInvalidEnvelope:  {},
-	ErrorUnsupportedVers:  {},
-	ErrorUnknownMethod:    {},
-	ErrorInstanceMismatch: {},
-	ErrorMessageTooLarge:  {},
-	ErrorInternal:         {},
+	ErrorInvalidJSON:       {},
+	ErrorInvalidEnvelope:   {},
+	ErrorUnsupportedVers:   {},
+	ErrorUnknownMethod:     {},
+	ErrorInstanceMismatch:  {},
+	ErrorMessageTooLarge:   {},
+	ErrorInternal:          {},
+	ErrorProfileNotFound:   {},
+	ErrorActivationFailed:  {},
+	ErrorDeviceWriteFailed: {},
+	ErrorShuttingDown:      {},
+	ErrorBusy:              {},
 }
 
 const (
-	messageInvalidJSON      = "request is not valid JSON"
-	messageInvalidEnvelope  = "request envelope is invalid"
-	messageUnsupportedVers  = "protocol version is not supported"
-	messageUnknownMethod    = "request method is not supported"
-	messageInstanceMismatch = "runtime instance does not match"
-	messageMessageTooLarge  = "request message is too large"
-	messageInternal         = "internal server error"
+	messageInvalidJSON       = "request is not valid JSON"
+	messageInvalidEnvelope   = "request envelope is invalid"
+	messageUnsupportedVers   = "protocol version is not supported"
+	messageUnknownMethod     = "request method is not supported"
+	messageInstanceMismatch  = "runtime instance does not match"
+	messageMessageTooLarge   = "request message is too large"
+	messageInternal          = "internal server error"
+	messageProfileNotFound   = "requested profile does not exist"
+	messageActivationFailed  = "profile activation failed"
+	messageDeviceWriteFailed = "device write failed"
+	messageShuttingDown      = "runtime is shutting down"
+	messageBusy              = "runtime is busy"
 )
+
+var (
+	ErrProfileNotFound   = errors.New("profile not found")
+	ErrActivationFailed  = errors.New("profile activation failed")
+	ErrDeviceWriteFailed = errors.New("device write failed")
+	ErrShuttingDown      = errors.New("runtime is shutting down")
+	ErrBusy              = errors.New("runtime is busy")
+)
+
+var profileIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
+func decodeProfileSummary(value jsonValue) (ProfileSummary, error) {
+	if value.kind != jsonObject || !hasExactly(value.object, "id", "label", "is_default", "is_current") {
+		return ProfileSummary{}, errors.New("profile summary fields are invalid")
+	}
+	id, label := value.object["id"], value.object["label"]
+	isDefault, isCurrent := value.object["is_default"], value.object["is_current"]
+	if id.kind != jsonString || label.kind != jsonString || isDefault.kind != jsonBool || isCurrent.kind != jsonBool {
+		return ProfileSummary{}, errors.New("profile summary values are invalid")
+	}
+	summary := ProfileSummary{ID: id.string, Label: label.string, IsDefault: isDefault.bool, IsCurrent: isCurrent.bool}
+	if err := validateProfileSummary(summary); err != nil {
+		return ProfileSummary{}, err
+	}
+	return summary, nil
+}
+
+func validateProfileSummary(summary ProfileSummary) error {
+	if !validProfileID(summary.ID) {
+		return errors.New("profile summary ID is invalid")
+	}
+	if !validProfileLabel(summary.Label) {
+		return errors.New("profile summary label is invalid")
+	}
+	return nil
+}
+
+func validProfileID(value string) bool {
+	return profileIDPattern.MatchString(value) && utf8.ValidString(value)
+}
+
+func validProfileLabel(value string) bool {
+	if !utf8.ValidString(value) || utf8.RuneCountInString(value) < 1 || utf8.RuneCountInString(value) > 64 || len([]byte(value)) > 256 {
+		return false
+	}
+	visible := false
+	for _, character := range value {
+		if unicode.IsControl(character) || unicode.Is(unicode.Cf, character) {
+			return false
+		}
+		if unicode.IsSpace(character) || unicode.Is(unicode.Mn, character) || unicode.Is(unicode.Me, character) || unicode.Is(unicode.Cn, character) || unicode.Is(unicode.Co, character) || unicode.Is(unicode.Cs, character) {
+			continue
+		}
+		visible = true
+	}
+	return visible
+}
 
 type protocolError struct {
 	code      string
@@ -152,14 +248,18 @@ func DecodeRequest(frame []byte) (Request, Response, error) {
 		return Request{}, failure.response(), nil
 	}
 
-	if request.Method != MethodHealth && request.Method != MethodStatus {
+	if !isSupportedMethod(request.Method) {
 		failure := newProtocolError(ErrorUnknownMethod, messageUnknownMethod)
 		failure.requestID = requestID
 		failure.echoID = true
 		return Request{}, failure.response(), nil
 	}
 
-	if !hasExactly(paramsValue.object, "instance_id") {
+	paramsFields := []string{"instance_id"}
+	if request.Method == MethodProfilesActivate {
+		paramsFields = append(paramsFields, "profile_id")
+	}
+	if !hasExactly(paramsValue.object, paramsFields...) {
 		failure := newProtocolError(ErrorInvalidEnvelope, messageInvalidEnvelope)
 		failure.requestID = requestID
 		failure.echoID = true
@@ -173,6 +273,16 @@ func DecodeRequest(frame []byte) (Request, Response, error) {
 		return Request{}, failure.response(), nil
 	}
 	request.InstanceID = instanceID
+	if request.Method == MethodProfilesActivate {
+		profileValue := paramsValue.object["profile_id"]
+		if profileValue.kind != jsonString || profileValue.string == "" {
+			failure := newProtocolError(ErrorInvalidEnvelope, messageInvalidEnvelope)
+			failure.requestID = requestID
+			failure.echoID = true
+			return Request{}, failure.response(), nil
+		}
+		request.ProfileID = profileValue.string
+	}
 	return request, Response{}, nil
 }
 
@@ -200,8 +310,14 @@ func EncodeRequest(request Request) ([]byte, error) {
 	if !isCanonicalUUID(request.RequestID) || !isCanonicalUUID(request.InstanceID) {
 		return nil, errors.New("request identifiers must be canonical UUIDs")
 	}
-	if request.Method != MethodHealth && request.Method != MethodStatus {
+	if !isSupportedMethod(request.Method) {
 		return nil, errors.New("request method is not supported")
+	}
+	if request.Method == MethodProfilesActivate && request.ProfileID == "" {
+		return nil, errors.New("profile ID is required")
+	}
+	if request.Method != MethodProfilesActivate && request.ProfileID != "" {
+		return nil, errors.New("profile ID is not permitted")
 	}
 	payload := struct {
 		ProtocolVersion int    `json:"protocol_version"`
@@ -209,6 +325,7 @@ func EncodeRequest(request Request) ([]byte, error) {
 		Method          Method `json:"method"`
 		Params          struct {
 			InstanceID string `json:"instance_id"`
+			ProfileID  string `json:"profile_id,omitempty"`
 		} `json:"params"`
 	}{
 		ProtocolVersion: request.ProtocolVersion,
@@ -216,6 +333,7 @@ func EncodeRequest(request Request) ([]byte, error) {
 		Method:          request.Method,
 	}
 	payload.Params.InstanceID = request.InstanceID
+	payload.Params.ProfileID = request.ProfileID
 	return encodeJSONFrame(payload)
 }
 
@@ -234,19 +352,36 @@ func EncodeResponse(response Response) ([]byte, error) {
 		Error:           response.Error,
 	}
 	if response.Result != nil {
-		payload.Result = &resultJSON{
-			InstanceID:      response.Result.InstanceID,
-			State:           response.Result.State,
-			ProtocolVersion: response.Result.ProtocolVersion,
+		result := response.Result
+		encodedResult := &resultJSON{ProtocolVersion: result.ProtocolVersion}
+		switch resultMethod(result) {
+		case MethodHealth, MethodStatus:
+			instanceID, state := result.InstanceID, result.State
+			encodedResult.InstanceID = &instanceID
+			encodedResult.State = &state
+		case MethodProfilesList:
+			instanceID := result.InstanceID
+			profiles := make([]ProfileSummary, len(result.Profiles))
+			copy(profiles, result.Profiles)
+			encodedResult.InstanceID = &instanceID
+			encodedResult.Profiles = &profiles
+		case MethodProfilesActivate:
+			profileID, changed := result.ProfileID, result.Changed
+			encodedResult.ProfileID = &profileID
+			encodedResult.Changed = &changed
 		}
+		payload.Result = encodedResult
 	}
 	return encodeJSONFrame(payload)
 }
 
 type resultJSON struct {
-	InstanceID      string `json:"instance_id"`
-	State           string `json:"state"`
-	ProtocolVersion *int   `json:"protocol_version,omitempty"`
+	InstanceID      *string           `json:"instance_id,omitempty"`
+	State           *string           `json:"state,omitempty"`
+	ProtocolVersion *int              `json:"protocol_version,omitempty"`
+	Profiles        *[]ProfileSummary `json:"profiles,omitempty"`
+	ProfileID       *string           `json:"profile_id,omitempty"`
+	Changed         *bool             `json:"changed,omitempty"`
 }
 
 func DecodeResponse(frame []byte, expectedRequestID, expectedMethod, expectedInstanceID string) (Response, error) {
@@ -303,6 +438,9 @@ func DecodeResponse(frame []byte, expectedRequestID, expectedMethod, expectedIns
 	} else if requestID != nil && expectedRequestID != "" && *requestID != expectedRequestID {
 		return Response{}, errors.New("response request ID does not match")
 	}
+	if err := validateResponseShape(response, expectedRequestID, expectedInstanceID, response.Result != nil); err != nil {
+		return Response{}, err
+	}
 	return response, nil
 }
 
@@ -320,16 +458,17 @@ func validateResponseShape(response Response, expectedRequestID, expectedInstanc
 		return errors.New("response request ID does not match")
 	}
 	if response.Result != nil {
-		if !isCanonicalUUID(response.Result.InstanceID) || response.Result.State != ReadyState {
+		method := resultMethod(response.Result)
+		if method == "" {
 			return errors.New("response result is invalid")
 		}
-		if response.Result.ProtocolVersion != nil && *response.Result.ProtocolVersion != ProtocolVersion {
-			return errors.New("response result protocol version is invalid")
-		}
-		if expectedInstanceID != "" && response.Result.InstanceID != expectedInstanceID {
-			return errors.New("response instance ID does not match")
+		if err := validateResultForMethod(*response.Result, method, expectedInstanceID); err != nil {
+			return err
 		}
 	} else {
+		if response.Error == nil {
+			return errors.New("response error is invalid")
+		}
 		if _, ok := stableErrorCodes[response.Error.Code]; !ok || !utf8.ValidString(response.Error.Message) || len([]byte(response.Error.Message)) > 256 {
 			return errors.New("response error is invalid")
 		}
@@ -341,50 +480,135 @@ func decodeResult(value jsonValue, method, expectedInstanceID string) (Result, e
 	if value.kind != jsonObject {
 		return Result{}, errors.New("response result is invalid")
 	}
-	allowed := []string{"instance_id", "state"}
-	if method == string(MethodStatus) {
-		allowed = append(allowed, "protocol_version")
-	}
-	if method != string(MethodHealth) && method != string(MethodStatus) || !hasExactly(value.object, allowed...) {
-		return Result{}, errors.New("response result fields are invalid")
-	}
-	instanceID := canonicalString(value.object["instance_id"])
-	state, ok := value.object["state"]
-	if instanceID == "" || !ok || state.kind != jsonString || state.string != ReadyState {
-		return Result{}, errors.New("response result values are invalid")
-	}
-	if expectedInstanceID != "" && instanceID != expectedInstanceID {
-		return Result{}, errors.New("response instance ID does not match")
-	}
-	result := Result{InstanceID: instanceID, State: state.string}
-	if method == string(MethodStatus) {
-		version := value.object["protocol_version"]
-		if version.kind != jsonNumber || version.number.String() != "1" {
-			return Result{}, errors.New("response result protocol version is invalid")
+	switch Method(method) {
+	case MethodHealth, MethodStatus:
+		allowed := []string{"instance_id", "state"}
+		if Method(method) == MethodStatus {
+			allowed = append(allowed, "protocol_version")
 		}
-		versionNumber := ProtocolVersion
-		result.ProtocolVersion = &versionNumber
+		if !hasExactly(value.object, allowed...) {
+			return Result{}, errors.New("response result fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		state, ok := value.object["state"]
+		if instanceID == "" || !ok || state.kind != jsonString || state.string != ReadyState {
+			return Result{}, errors.New("response result values are invalid")
+		}
+		if expectedInstanceID != "" && instanceID != expectedInstanceID {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		result := Result{InstanceID: instanceID, State: state.string}
+		if Method(method) == MethodStatus {
+			version := value.object["protocol_version"]
+			if version.kind != jsonNumber || version.number.String() != "1" {
+				return Result{}, errors.New("response result protocol version is invalid")
+			}
+			versionNumber := ProtocolVersion
+			result.ProtocolVersion = &versionNumber
+		}
+		return result, nil
+	case MethodProfilesList:
+		if !hasExactly(value.object, "instance_id", "profiles") {
+			return Result{}, errors.New("response result fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		if instanceID == "" || (expectedInstanceID != "" && instanceID != expectedInstanceID) {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		profilesValue := value.object["profiles"]
+		if profilesValue.kind != jsonArray || len(profilesValue.array) > maxProfileSummaries {
+			return Result{}, errors.New("response profiles are invalid")
+		}
+		profiles := make([]ProfileSummary, len(profilesValue.array))
+		seenIDs := make(map[string]struct{}, len(profiles))
+		for index, profileValue := range profilesValue.array {
+			summary, err := decodeProfileSummary(profileValue)
+			if err != nil {
+				return Result{}, fmt.Errorf("response profile %d: %w", index, err)
+			}
+			if _, exists := seenIDs[summary.ID]; exists {
+				return Result{}, errors.New("response profile IDs are duplicated")
+			}
+			seenIDs[summary.ID] = struct{}{}
+			profiles[index] = summary
+		}
+		return Result{InstanceID: instanceID, Profiles: profiles}, nil
+	case MethodProfilesActivate:
+		if !hasExactly(value.object, "profile_id", "changed") {
+			return Result{}, errors.New("response result fields are invalid")
+		}
+		profileID := value.object["profile_id"]
+		changed := value.object["changed"]
+		if profileID.kind != jsonString || profileID.string == "" || changed.kind != jsonBool {
+			return Result{}, errors.New("response result values are invalid")
+		}
+		return Result{ProfileID: profileID.string, Changed: changed.bool}, nil
+	default:
+		return Result{}, errors.New("response method is invalid")
 	}
-	return result, nil
 }
 
 func validateResultForMethod(result Result, method Method, expectedInstanceID string) error {
-	if !isCanonicalUUID(result.InstanceID) || result.InstanceID != expectedInstanceID || result.State != ReadyState {
-		return errors.New("response result is invalid")
-	}
 	switch method {
 	case MethodHealth:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != ReadyState || result.Profiles != nil || result.ProfileID != "" || result.Changed {
+			return errors.New("response result is invalid")
+		}
 		if result.ProtocolVersion != nil {
 			return errors.New("health result has an unexpected protocol version")
 		}
 	case MethodStatus:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != ReadyState || result.Profiles != nil || result.ProfileID != "" || result.Changed {
+			return errors.New("response result is invalid")
+		}
 		if result.ProtocolVersion == nil || *result.ProtocolVersion != ProtocolVersion {
 			return errors.New("status result protocol version is invalid")
+		}
+	case MethodProfilesList:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != "" || result.ProtocolVersion != nil || result.ProfileID != "" || result.Profiles == nil || len(result.Profiles) > maxProfileSummaries {
+			return errors.New("response profile list is invalid")
+		}
+		for _, summary := range result.Profiles {
+			if err := validateProfileSummary(summary); err != nil {
+				return err
+			}
+		}
+	case MethodProfilesActivate:
+		if result.InstanceID != "" || result.State != "" || result.ProtocolVersion != nil || result.Profiles != nil || !validProfileID(result.ProfileID) {
+			return errors.New("response activation is invalid")
 		}
 	default:
 		return errors.New("response method is invalid")
 	}
 	return nil
+}
+
+func resultMethod(result *Result) Method {
+	if result == nil {
+		return ""
+	}
+	if result.Profiles != nil {
+		return MethodProfilesList
+	}
+	if result.ProfileID != "" {
+		return MethodProfilesActivate
+	}
+	if result.ProtocolVersion != nil {
+		return MethodStatus
+	}
+	if result.InstanceID != "" || result.State != "" {
+		return MethodHealth
+	}
+	return ""
+}
+
+func isSupportedMethod(method Method) bool {
+	switch method {
+	case MethodHealth, MethodStatus, MethodProfilesList, MethodProfilesActivate:
+		return true
+	default:
+		return false
+	}
 }
 
 func decodeError(value jsonValue) (Error, error) {

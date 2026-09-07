@@ -1,7 +1,7 @@
 # Hidhogg overview
 
-Status: M-02 config-driven D200X slice complete
-Updated: 2026-08-26
+Status: M-02, M-02-F01, and M-03 complete
+Updated: 2026-09-04
 
 ## Goal
 
@@ -59,6 +59,10 @@ The root file owns application settings and shared library metadata. Each device
 `M-02` introduces a milestone-private, versioned single-file schema solely to prove the Go runtime's first physical vertical slice. It requires all 14 D200X display positions and rejects unknown fields. This does not replace the planned root/device configuration model; migration to that broader model remains explicit future work.
 
 The direct Go runtime is the sole `M-02` execution surface. Swift supervisor wiring, SwiftUI editing, configuration watching, and lossless source mutation are deferred to later milestones. Opt-in verbose diagnostics record decoded input events and outbound D200X packets, but never raw HID paths, serial numbers, or unrelated device identities.
+
+`M-03` adds direct-Go discovery through one caller-owned, owner-only runtime directory. A persistent advisory lock coordinates cooperating runtimes; strict generation metadata becomes visible only after IPC binding, device initialization, and serving readiness. The controller revalidates directory, lock, metadata, socket, peer UID, and generation attribution around each discovered call. Explicit socket and instance arguments mode remains temporarily available for Swift supervision and deterministic tests.
+
+`M-02-F01` adds bounded owner-run diagnostics and an isolated one-frame `d200xprobe` research CLI. These surfaces measured brightness-zero input, firmware-screensaver wake packets, and captured small-window modes without broadening the experimental outbound-command surface. The selected production policy uses a fixed 50-second `0x0002` keepalive and an optional `idle_timeout_seconds` setting that defaults to 300; zero disables application dimming without disabling keepalive. On idle the runtime sets brightness to zero, then restores configured brightness and consumes the first complete known physical gesture. Automatic and bounded owner-present physical gates passed on 2026-09-03.
 
 ## Evidence policy
 

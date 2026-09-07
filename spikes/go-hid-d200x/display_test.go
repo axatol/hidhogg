@@ -3,10 +3,13 @@ package d200x
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"image"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -128,6 +131,117 @@ func TestDiagnosticDisplayArchiveContainsNumberedGeometryAndManifest(t *testing.
 	sort.Strings(wantNames)
 	if !reflect.DeepEqual(gotNames, wantNames) {
 		t.Fatalf("ZIP names = %v, want %v", gotNames, wantNames)
+	}
+}
+
+func TestLiveBulkDisplayArchiveContainsContentAddressedCanonicalGeometry(t *testing.T) {
+	archive, err := BuildLiveBulkDisplayArchive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := BuildLiveBulkDisplayArchive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archive.PaddingLength != second.PaddingLength || !bytes.Equal(archive.Data, second.Data) {
+		t.Fatalf("live bulk archive is not deterministic: padding %d/%d, bytes equal=%v", archive.PaddingLength, second.PaddingLength, bytes.Equal(archive.Data, second.Data))
+	}
+	reader, err := zip.NewReader(bytes.NewReader(archive.Data), int64(len(archive.Data)))
+	if err != nil {
+		t.Fatalf("read ZIP: %v", err)
+	}
+	type manifestEntry struct {
+		State     int `json:"State"`
+		ViewParam []struct {
+			Icon string `json:"Icon"`
+		} `json:"ViewParam"`
+	}
+	var manifest map[string]manifestEntry
+	files := make(map[string][]byte, len(reader.File))
+	for _, file := range reader.File {
+		data, err := readZIPFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file.Name, err)
+		}
+		files[file.Name] = data
+		if file.Name == "manifest.json" {
+			if err := json.Unmarshal(data, &manifest); err != nil {
+				t.Fatalf("decode live bulk manifest: %v", err)
+			}
+		}
+	}
+	wantCoordinates := []string{
+		"0_0", "1_0", "2_0", "3_0", "4_0",
+		"0_1", "1_1", "2_1", "3_1", "4_1",
+		"0_2", "1_2", "2_2", "3_2",
+	}
+	if len(manifest) != len(wantCoordinates) {
+		t.Fatalf("live bulk manifest entries = %d, want %d", len(manifest), len(wantCoordinates))
+	}
+	iconNames := make(map[string]struct{}, len(manifest))
+	iconDigests := make(map[string]struct{}, len(manifest))
+	for _, coordinate := range wantCoordinates {
+		entry, ok := manifest[coordinate]
+		if !ok {
+			t.Fatalf("live bulk manifest is missing coordinate %s", coordinate)
+		}
+		if entry.State != 0 || len(entry.ViewParam) != 1 {
+			t.Fatalf("live bulk manifest %s entry = %#v", coordinate, entry)
+		}
+		iconPath := entry.ViewParam[0].Icon
+		if !strings.HasPrefix(iconPath, "Images/") || !strings.HasSuffix(iconPath, ".png") {
+			t.Fatalf("live bulk manifest %s icon path = %q", coordinate, iconPath)
+		}
+		if _, duplicate := iconNames[iconPath]; duplicate {
+			t.Fatalf("live bulk manifest reuses icon path %q", iconPath)
+		}
+		iconNames[iconPath] = struct{}{}
+		data, ok := files[iconPath]
+		if !ok {
+			t.Fatalf("live bulk manifest %s references missing %q", coordinate, iconPath)
+		}
+		digest := sha256.Sum256(data)
+		wantPath := "Images/" + hex.EncodeToString(digest[:]) + ".png"
+		if iconPath != wantPath {
+			t.Fatalf("live bulk manifest %s icon path = %q, want content path %q", coordinate, iconPath, wantPath)
+		}
+		digestKey := hex.EncodeToString(digest[:])
+		if _, duplicate := iconDigests[digestKey]; duplicate {
+			t.Fatalf("live bulk archive reuses image content for %s", coordinate)
+		}
+		iconDigests[digestKey] = struct{}{}
+		config, _, err := image.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			t.Fatalf("decode %s: %v", iconPath, err)
+		}
+		wantWidth := DiagnosticSquareWidth
+		if coordinate == "3_2" {
+			wantWidth = DiagnosticWideWidth
+		}
+		if config.Width != wantWidth || config.Height != DiagnosticTileHeight {
+			t.Fatalf("live bulk %s geometry = %dx%d, want %dx%d", coordinate, config.Width, config.Height, wantWidth, DiagnosticTileHeight)
+		}
+	}
+	if len(iconNames) != DiagnosticSquareIconCount+1 {
+		t.Fatalf("live bulk icon count = %d, want %d", len(iconNames), DiagnosticSquareIconCount+1)
+	}
+}
+
+func TestLiveBulkDisplayFrameIsOneCompleteUpload(t *testing.T) {
+	frame, err := LiveBulkDisplayFrame()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.Command != CommandCompleteDisplayUpload || len(frame.Payload) == 0 {
+		t.Fatalf("live bulk frame = %#v", frame)
+	}
+	reports, err := EncodeFrame(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeFrame(reports)
+	if err != nil || decoded.Command != CommandCompleteDisplayUpload || !bytes.Equal(decoded.Payload, frame.Payload) {
+		t.Fatalf("live bulk frame round trip = %#v, error=%v", decoded, err)
 	}
 }
 

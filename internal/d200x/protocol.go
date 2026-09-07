@@ -2,6 +2,7 @@ package d200x
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 )
 
@@ -52,6 +53,49 @@ type ProtocolError struct {
 	Received int
 	Command  Command
 	Count    int
+}
+
+// InboundMalformedError identifies errors proven to originate from malformed
+// bytes in a complete or partially assembled inbound frame.
+type InboundMalformedError struct {
+	Err error
+}
+
+func (e *InboundMalformedError) Error() string {
+	if e == nil || e.Err == nil {
+		return "malformed inbound D200X frame"
+	}
+	return e.Err.Error()
+}
+
+func (e *InboundMalformedError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func IsInboundMalformed(err error) bool {
+	var malformed *InboundMalformedError
+	if !errors.As(err, &malformed) || malformed == nil {
+		return false
+	}
+	var protocolError *ProtocolError
+	if !errors.As(malformed.Err, &protocolError) || protocolError == nil {
+		return false
+	}
+	switch protocolError.Kind {
+	case ErrorInvalidReportLength,
+		ErrorUnsupportedReportID,
+		ErrorInvalidFrameMagic,
+		ErrorPayloadTooLarge,
+		ErrorTruncatedPayload,
+		ErrorUnexpectedContinuation,
+		ErrorMalformedInputPayload:
+		return true
+	default:
+		return false
+	}
 }
 
 func (e *ProtocolError) Error() string {
@@ -359,7 +403,7 @@ func UnlockScreenFrame() Frame {
 	return NewFrame(CommandUnlockScreen, nil)
 }
 
-func CompleteDisplayUploadFrame(payload []byte) (Frame, error) {
+func completeDisplayUploadFrame(payload []byte) (Frame, error) {
 	if len(payload) > MaxPayloadLength {
 		return Frame{}, &ProtocolError{
 			Kind:     ErrorPayloadTooLarge,

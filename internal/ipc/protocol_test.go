@@ -2,10 +2,13 @@ package ipc
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -186,6 +189,149 @@ func TestDecodeResponseRejectsMutations(t *testing.T) {
 				t.Fatal("mutated response was accepted")
 			}
 		})
+	}
+}
+
+func TestProfileRequestRoundTripPreservesCaseAndStrictParams(t *testing.T) {
+	request := Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       "11111111-1111-4111-8111-111111111111",
+		Method:          MethodProfilesActivate,
+		InstanceID:      testInstanceID,
+		ProfileID:       "Work.Profile",
+	}
+	encoded, err := EncodeRequest(request)
+	if err != nil {
+		t.Fatalf("encode profile request: %v", err)
+	}
+	want := `{"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","method":"profiles.activate","params":{"instance_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","profile_id":"Work.Profile"}}` + "\n"
+	if string(encoded) != want {
+		t.Fatalf("encoded profile request = %q, want %q", encoded, want)
+	}
+	decoded, failure, err := DecodeRequest(encoded)
+	if err != nil || failure.Error != nil {
+		t.Fatalf("decode profile request = %#v, %#v, %v", decoded, failure, err)
+	}
+	if decoded != request {
+		t.Fatalf("decoded profile request = %#v, want %#v", decoded, request)
+	}
+
+	invalid := strings.Replace(string(encoded), `,"profile_id":"Work.Profile"`, `,"extra":true`, 1)
+	_, failure, err = DecodeRequest([]byte(invalid))
+	if err != nil || failure.Error == nil || failure.Error.Code != ErrorInvalidEnvelope {
+		t.Fatalf("invalid profile params = %#v, %#v, %v", failure, err, failure.Error)
+	}
+}
+
+func TestProfileResponseRoundTripsAndNeverCarriesLayouts(t *testing.T) {
+	requestID := "11111111-1111-4111-8111-111111111111"
+	list := Response{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       &requestID,
+		Result: &Result{InstanceID: testInstanceID, Profiles: []ProfileSummary{
+			{ID: "default", Label: "Default", IsDefault: true, IsCurrent: true},
+			{ID: "Work.Profile", Label: "Work", IsDefault: false, IsCurrent: false},
+		}},
+	}
+	encoded, err := EncodeResponse(list)
+	if err != nil {
+		t.Fatalf("encode profile list: %v", err)
+	}
+	want := `{"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"instance_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","profiles":[{"id":"default","label":"Default","is_default":true,"is_current":true},{"id":"Work.Profile","label":"Work","is_default":false,"is_current":false}]},"error":null}` + "\n"
+	if string(encoded) != want {
+		t.Fatalf("encoded profile list = %q, want %q", encoded, want)
+	}
+	decoded, err := DecodeResponse(encoded, requestID, string(MethodProfilesList), testInstanceID)
+	if err != nil {
+		t.Fatalf("decode profile list: %v", err)
+	}
+	if decoded.Result == nil || len(decoded.Result.Profiles) != 2 || decoded.Result.Profiles[1].ID != "Work.Profile" {
+		t.Fatalf("decoded profile list = %#v", decoded)
+	}
+
+	activation := Response{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       &requestID,
+		Result:          &Result{ProfileID: "Work.Profile", Changed: false},
+	}
+	encoded, err = EncodeResponse(activation)
+	if err != nil {
+		t.Fatalf("encode idempotent activation: %v", err)
+	}
+	want = `{"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"profile_id":"Work.Profile","changed":false},"error":null}` + "\n"
+	if string(encoded) != want {
+		t.Fatalf("encoded activation = %q, want %q", encoded, want)
+	}
+	decoded, err = DecodeResponse(encoded, requestID, string(MethodProfilesActivate), testInstanceID)
+	if err != nil || decoded.Result == nil || decoded.Result.ProfileID != "Work.Profile" || decoded.Result.Changed {
+		t.Fatalf("decoded activation = %#v, %v", decoded, err)
+	}
+}
+
+func TestProfileResponseRejectsStrictShapeMutations(t *testing.T) {
+	requestID := "11111111-1111-4111-8111-111111111111"
+	base := []byte(`{"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"instance_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","profiles":[{"id":"default","label":"Default","is_default":true,"is_current":true}]},"error":null}` + "\n")
+	tests := []struct {
+		name string
+		body []byte
+	}{
+		{name: "unknown summary field", body: bytes.Replace(base, []byte(`"is_current":true`), []byte(`"is_current":true,"layout":{}`), 1)},
+		{name: "wrong boolean type", body: bytes.Replace(base, []byte(`"is_default":true`), []byte(`"is_default":"true"`), 1)},
+		{name: "invalid profile ID", body: bytes.Replace(base, []byte(`"id":"default"`), []byte(`"id":"DEFAULT PROFILE"`), 1)},
+		{name: "activation unknown result field", body: []byte(`{"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"profile_id":"default","changed":true,"profiles":[]},"error":null}` + "\n")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			method := string(MethodProfilesList)
+			if test.name == "activation unknown result field" {
+				method = string(MethodProfilesActivate)
+			}
+			if _, err := DecodeResponse(test.body, requestID, method, testInstanceID); err == nil {
+				t.Fatal("mutated profile response was accepted")
+			}
+		})
+	}
+}
+
+func TestProfileSummaryFrameBoundaries(t *testing.T) {
+	requestID := "11111111-1111-4111-8111-111111111111"
+	profiles := make([]ProfileSummary, 0, maxProfileSummaries)
+	for index := 0; index < maxProfileSummaries; index++ {
+		profiles = append(profiles, ProfileSummary{
+			ID:        strings.Repeat("a", 61) + fmt.Sprintf("%03d", index),
+			Label:     strings.Repeat("&", 64),
+			IsDefault: index == 0,
+			IsCurrent: index == 0,
+		})
+	}
+	frame, err := EncodeResponse(Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &Result{InstanceID: testInstanceID, Profiles: profiles}})
+	if err != nil {
+		t.Fatalf("encode 31 profile summaries: %v", err)
+	}
+	t.Logf("31-profile frame length = %d", len(frame))
+	if len(frame) > MaxFrameBytes {
+		t.Fatalf("31-profile frame length = %d, exceeds %d", len(frame), MaxFrameBytes)
+	}
+
+	profiles = append(profiles, ProfileSummary{ID: strings.Repeat("b", 63) + "0", Label: strings.Repeat("&", 64)})
+	encodedBody, err := json.Marshal(struct {
+		ProtocolVersion int         `json:"protocol_version"`
+		RequestID       string      `json:"request_id"`
+		Result          interface{} `json:"result"`
+		Error           interface{} `json:"error"`
+	}{ProtocolVersion: ProtocolVersion, RequestID: requestID, Result: struct {
+		InstanceID string           `json:"instance_id"`
+		Profiles   []ProfileSummary `json:"profiles"`
+	}{InstanceID: testInstanceID, Profiles: profiles}, Error: nil})
+	if err != nil {
+		t.Fatalf("encode 32-profile fixture: %v", err)
+	}
+	fixture := append(encodedBody, '\n')
+	if len(fixture) != 16387 {
+		t.Fatalf("32-profile fixture length = %d, want 16387", len(fixture))
+	}
+	if err := writeFrame(io.Discard, fixture); !errors.Is(err, errFrameTooLarge) {
+		t.Fatalf("32-profile fixture encoder error = %v, want frame bound", err)
 	}
 }
 

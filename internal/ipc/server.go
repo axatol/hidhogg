@@ -43,12 +43,21 @@ func (f HandlerFunc) Handle(ctx context.Context, request Request) (Result, error
 	return f(ctx, request)
 }
 
+// ProfileService is the narrow runtime boundary used by the profile IPC
+// methods. Implementations return summaries in configured order and preserve
+// profile identifier case.
+type ProfileService interface {
+	ListProfiles() []ProfileSummary
+	ActivateProfile(context.Context, string) (ActivationResult, error)
+}
+
 type ServerConfig struct {
 	SocketPath     string
 	InstanceID     string
 	Deadlines      Deadlines
 	MaxConnections int
 	Handler        Handler
+	ProfileService ProfileService
 	PeerVerifier   func(net.Conn) error
 }
 
@@ -57,6 +66,8 @@ type Server struct {
 	endpoint    *endpoint
 	slots       chan struct{}
 	connections sync.WaitGroup
+	serving     chan struct{}
+	servingOnce sync.Once
 
 	mu           sync.Mutex
 	closed       bool
@@ -85,7 +96,13 @@ func NewServer(config ServerConfig) (*Server, error) {
 		peerVerifier = verifyPeerUID
 	}
 	config.Deadlines = config.Deadlines.normalized()
-	return &Server{config: config, slots: make(chan struct{}, config.MaxConnections), closeDone: make(chan struct{}), peerVerifier: peerVerifier}, nil
+	return &Server{
+		config:       config,
+		slots:        make(chan struct{}, config.MaxConnections),
+		closeDone:    make(chan struct{}),
+		serving:      make(chan struct{}),
+		peerVerifier: peerVerifier,
+	}, nil
 }
 
 func defaultHandler(_ context.Context, request Request) (Result, error) {
@@ -139,6 +156,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	if listener == nil {
 		return errors.New("IPC server listener is unavailable")
 	}
+	s.servingOnce.Do(func() { close(s.serving) })
 	stop := make(chan struct{})
 	go func() {
 		select {
@@ -159,6 +177,17 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 	_ = s.Close()
 	return nil
+}
+
+// ServingReady returns a channel that closes once Serve has acquired the
+// bound listener and is about to accept connections. Start only binds the
+// endpoint; callers that publish readiness metadata should wait for this
+// signal after launching Serve.
+func (s *Server) ServingReady() <-chan struct{} {
+	if s == nil {
+		return nil
+	}
+	return s.serving
 }
 
 var errServerClosed = errors.New("IPC server closed")
@@ -229,6 +258,9 @@ func (s *Server) handleRequest(request Request) (response Response) {
 			response = internalResponse(request.RequestID)
 		}
 	}()
+	if isProfileMethod(request.Method) {
+		return s.handleProfileRequest(request)
+	}
 	result, err := s.config.Handler.Handle(context.Background(), request)
 	if err != nil {
 		return internalResponse(request.RequestID)
@@ -241,6 +273,68 @@ func (s *Server) handleRequest(request Request) (response Response) {
 		return internalResponse(request.RequestID)
 	}
 	return response
+}
+
+func (s *Server) handleProfileRequest(request Request) Response {
+	if s.config.ProfileService == nil {
+		return internalResponse(request.RequestID)
+	}
+	requestID := request.RequestID
+	switch request.Method {
+	case MethodProfilesList:
+		summaries := s.config.ProfileService.ListProfiles()
+		if summaries == nil {
+			summaries = make([]ProfileSummary, 0)
+		}
+		result := Result{InstanceID: request.InstanceID, Profiles: summaries}
+		if err := validateResultForMethod(result, request.Method, request.InstanceID); err != nil {
+			return internalResponse(request.RequestID)
+		}
+		return Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &result}
+	case MethodProfilesActivate:
+		result, err := s.config.ProfileService.ActivateProfile(context.Background(), request.ProfileID)
+		if err != nil {
+			return profileErrorResponse(request.RequestID, err)
+		}
+		response := Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &Result{ProfileID: result.ProfileID, Changed: result.Changed}}
+		if err := validateResultForMethod(*response.Result, request.Method, ""); err != nil {
+			return internalResponse(request.RequestID)
+		}
+		return response
+	default:
+		return internalResponse(request.RequestID)
+	}
+}
+
+func profileErrorResponse(requestID string, err error) Response {
+	code, message := classifyProfileError(err)
+	id := requestID
+	return Response{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       &id,
+		Error:           &Error{Code: code, Message: message},
+	}
+}
+
+func classifyProfileError(err error) (string, string) {
+	switch {
+	case errors.Is(err, ErrProfileNotFound):
+		return ErrorProfileNotFound, messageProfileNotFound
+	case errors.Is(err, ErrDeviceWriteFailed):
+		return ErrorDeviceWriteFailed, messageDeviceWriteFailed
+	case errors.Is(err, ErrShuttingDown), errors.Is(err, context.Canceled):
+		return ErrorShuttingDown, messageShuttingDown
+	case errors.Is(err, ErrBusy), errors.Is(err, context.DeadlineExceeded):
+		return ErrorBusy, messageBusy
+	case err != nil:
+		return ErrorActivationFailed, messageActivationFailed
+	default:
+		return ErrorInternal, messageInternal
+	}
+}
+
+func isProfileMethod(method Method) bool {
+	return method == MethodProfilesList || method == MethodProfilesActivate
 }
 
 func internalResponse(requestID string) Response {

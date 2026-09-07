@@ -1,9 +1,9 @@
 # Hidhogg scaffold protocol v1
 
 Status: internal scaffold contract
-Frozen: 2026-08-24
+Frozen: 2026-09-06
 
-This protocol exists only to verify the `M-01` Go/Swift boundary. It is not a public compatibility promise.
+This protocol is an internal scaffold contract for the Go/Swift boundary and profile-control clients. It is not a public compatibility promise.
 
 ## Transport and framing
 
@@ -31,9 +31,10 @@ All fields are required. No other fields are permitted.
 |---|---|
 | `protocol_version` | JSON integer exactly `1`; `1.0` is invalid |
 | `request_id` | canonical lowercase hyphenated UUID |
-| `method` | case-sensitive `health` or `status` |
-| `params` | object containing only `instance_id` |
+| `method` | case-sensitive `health`, `status`, `profiles.list`, or `profiles.activate` |
+| `params` | object containing `instance_id`; `profiles.activate` additionally requires `profile_id` |
 | `params.instance_id` | canonical lowercase UUID matching the launched generation |
+| `params.profile_id` | non-empty case-sensitive profile identifier; no case normalization is performed |
 
 Unknown fields, duplicate keys at any object depth, missing fields, `null`, and wrong JSON types are rejected. UUID version is not restricted, but canonical syntax and lowercase encoding are required.
 
@@ -53,7 +54,21 @@ Failure:
 
 Exactly one of `result` and `error` is non-null. A safely decoded and valid request ID is echoed even when another field fails; otherwise `request_id` is null. Error messages are static, never contain request bytes, and are at most 256 UTF-8 bytes.
 
-`health` returns `instance_id` and `state`. `status` additionally returns `protocol_version`. The scaffold state is `ready`; process identifiers, device state, configuration, and logs are not exposed.
+`health` returns `instance_id` and `state`. `status` additionally returns `protocol_version`. These two result shapes are unchanged by the profile methods. The scaffold state is `ready`; process identifiers, device state, configuration, layouts, actions, and logs are not exposed.
+
+`profiles.list` returns a result containing the requested `instance_id` and `profiles`, an array in configuration order. Each summary contains exactly `id`, `label`, `is_default`, and `is_current`:
+
+```json
+{"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"instance_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","profiles":[{"id":"default","label":"Default","is_default":true,"is_current":true}]},"error":null}
+```
+
+`profiles.activate` returns a result containing exactly `profile_id` and `changed`. A request for the current profile succeeds with `changed:false`; a successful transition reports `changed:true` only after the runtime commits the complete page write:
+
+```json
+{"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"profile_id":"work","changed":true},"error":null}
+```
+
+Configuration accepts at most 31 profiles. The encoder checks the complete LF-terminated response frame, including the newline; a 31-summary worst-case response is 15,880 bytes and fits the 16,384-byte bound. A corresponding 32-summary boundary fixture is exactly 16,387 bytes and is rejected before transmission.
 
 Stable error codes:
 
@@ -62,9 +77,14 @@ Stable error codes:
 | `invalid_json` | invalid UTF-8 or JSON syntax |
 | `invalid_envelope` | fields, structural types, duplicates, or identifier syntax are invalid |
 | `unsupported_version` | `protocol_version` is not integer `1` |
-| `unknown_method` | method is not `health` or `status` |
+| `unknown_method` | method is not in the protocol method allowlist |
 | `instance_mismatch` | request instance does not match the runtime generation |
 | `message_too_large` | frame exceeds 16,384 bytes including LF |
+| `profile_not_found` | requested profile ID is not configured |
+| `activation_failed` | profile activation failed before a device write was classified as uncertain |
+| `device_write_failed` | a profile page write failed or left device state uncertain |
+| `shutting_down` | the runtime is stopping or no longer accepts activation work |
+| `busy` | bounded activation work is unavailable before the request deadline |
 | `internal` | bounded unexpected server failure |
 
 Validation precedence is normative:
@@ -76,19 +96,19 @@ Validation precedence is normative:
 5. top-level object, exact field set, canonical request ID, and structural field types except `protocol_version`;
 6. protocol version;
 7. method allowlist;
-8. exact params shape and canonical instance ID;
+8. exact params shape, canonical instance ID, and profile ID presence;
 9. instance match; and
 10. handler/internal failure.
 
 The request ID is echoed only after duplicate-key validation and canonical request-ID validation succeed. It is null for all earlier failures and for any duplicate key, including a duplicate unrelated field.
 
-Clients reject any response schema deviation. Every response has exactly four required top-level fields with no duplicates or extras: integer `protocol_version` equal to `1`, canonical `request_id` or null as allowed by the failure, and exactly one non-null value among `result` and `error`. A success result has only the fields specified for its method, uses the requested instance ID, and has state exactly `ready`. An error object has exactly string fields `code` and `message`; the code is from the stable allowlist and the message is at most 256 UTF-8 bytes.
+Clients reject any response schema deviation. Every response has exactly four required top-level fields with no duplicates or extras: integer `protocol_version` equal to `1`, canonical `request_id` or null as allowed by the failure, and exactly one non-null value among `result` and `error`. A `health`, `status`, or `profiles.list` result uses the requested instance ID; health/status state is exactly `ready`, profiles.list contains only the ordered summaries besides that ID, and a `profiles.activate` result has only `profile_id` and `changed`. An error object has exactly string fields `code` and `message`; the code is from the stable allowlist and the message is at most 256 UTF-8 bytes.
 
 ## Endpoint lifecycle and security
 
 1. On macOS, the production supervisor uses the literal, non-resolved root `/private/tmp`. Before creation it requires by `lstat` that the root is a real UID-0 directory with mode exactly `01777`. It constructs `hidhogg-<decimal-effective-uid>-<canonical-lowercase-random-UUID>`, validates the complete `<root>/<generation>/runtime.sock` encoded byte length including NUL, and atomically creates the generation directory with `mkdir(0700)`. Creation fails on collision and never adopts or deletes an existing path. Tests may inject another root; production does not use `TMPDIR` or Foundation's temporary-directory URL.
 2. The endpoint is `<generation-directory>/runtime.sock`. Its encoded path, including the terminating NUL, must fit the 104-byte Darwin `sun_path` field before launch.
-3. Swift passes the exact endpoint with `--socket-path`; the runtime never searches for an endpoint. `hidhoggctl` also requires an explicit path during `M-01`.
+3. Swift passes the exact endpoint with `--socket-path`; the runtime never searches for an endpoint. `hidhoggctl` supports the same legacy `--socket-path` plus `--instance-id` mode and a discovery `--runtime-dir` mode that reads the published generation metadata.
 4. Before binding, the runtime uses `lstat` to require that the generation directory is a real directory, owned by its effective UID, with mode exactly `0700`. If any endpoint entry exists, including a symlink, file, or socket, startup fails without deletion.
 5. After bind and before readiness, the runtime applies mode `0600` and starts listening.
 6. Immediately after accept/connect and before protocol bytes, both peers must verify the other's effective UID equals their own. Failure closes silently. Clients also validate the generation directory as above and use `lstat` to require a non-symlink socket owned by their effective UID. Failure to obtain Darwin peer credentials is fatal for this macOS-only scaffold.
@@ -96,7 +116,7 @@ Clients reject any response schema deviation. Every response has exactly four re
 8. Runtime and supervisor cleanup is best-effort and identity-guarded. Immediately before unlinking, the cleaner requires the recorded generation-directory and socket device/inode identities, types, owners, and modes still match. Any mismatch leaves the endpoint and directory untouched. Before any socket identity was recorded, the supervisor removes only an already-empty matching generation directory. Cleanup never recursively deletes.
 9. Every restart uses a new directory and endpoint. Multiple app instances therefore coexist.
 
-No component probes and unlinks a supposedly stale endpoint. The final pathname unlink is not an atomic compare-and-unlink operation on macOS; a malicious process with the same effective UID can substitute the name between validation and unlink. `M-01` trusts same-effective-UID processes. The owner-only directory, unpredictable generation name, peer credentials, and instance attribution exclude other users and prevent accidental or stale cleanup, but are not a sandbox against code already running as the owner. Normal exit, forced exit after readiness, exit before readiness, observable substitution, and unexpected-entry behavior are tested.
+No component probes and unlinks a supposedly stale endpoint. The final pathname unlink is not an atomic compare-and-unlink operation on macOS; a malicious process with the same effective UID can substitute the name between validation and unlink. This scaffold trusts same-effective-UID processes. The owner-only directory, unpredictable generation name, peer credentials, and instance attribution exclude other users and prevent accidental or stale cleanup, but are not a sandbox against code already running as the owner. Normal exit, forced exit after readiness, exit before readiness, observable substitution, and unexpected-entry behavior are tested.
 
 ## Instance attribution and readiness
 
@@ -130,7 +150,7 @@ cmd/hidhogg ─► internal/ipc server ─► runtime status query
 cmd/hidhoggctl ───────────────► internal/ipc client
 ```
 
-Interfaces are declared at their consumer. No production package imports spike modules. `M-01` does not link HID, TOML editing, action, notification, or D200X production dependencies.
+Interfaces are declared at their consumer. No production package imports spike modules. The protocol package does not link HID, TOML editing, action, notification, or D200X production dependencies.
 
 ## Shared fixtures
 

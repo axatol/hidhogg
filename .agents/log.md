@@ -158,3 +158,591 @@
 - Controlled shutdown removed `deploy/runtime.sock`.
 - The failure is isolated from process and IPC liveness: current `ready` does not prove that the configured D200X remains operational after its firmware idle transition.
 - Cause remains unknown. Investigation must distinguish missing keep-awake/wake protocol behavior, firmware input suppression, and device-session state loss before selecting a correction.
+
+## 2026-08-27 — M-02-F01 diagnostic boundary authorized
+
+- The owner selected an application-owned screensaver plus keepalive direction, subject to physical evidence.
+- Brightness zero is already visually confirmed to disable the screens, but input availability at brightness zero is unmeasured.
+- `M-02-F01` will first measure square, physical-button, and encoder input at brightness zero, then test whether allowlisted known-safe packets recover input from a fresh firmware-screensaver state.
+- The initial wake allowlist is brightness, unlock, input-enable, and complete configured-page upload. Arbitrary commands and uncertain-write retries remain prohibited.
+- If brightness zero preserves input, the first wake interaction will be consumed before any future configured action. Final keepalive and idle behavior remain undecided until the matrix is complete.
+
+## 2026-08-27 — First M-02-F01 physical run rejected the probe sequencing
+
+- Automatic diagnostic gates and an independent review passed after adding exact closed-set wake-candidate, brightness-restore, no-retry, and multi-report cancellation coverage.
+- In the first brightness-zero physical run, the square probe accepted the press event at wire index 0, but its release remained queued. The following wide-tile probe consumed that stale square release and failed before brightness zero was sent.
+- The run was stopped immediately. This is a diagnostic-harness sequencing defect, not evidence of a D200X input failure.
+- The confirmed repair boundary is to validate complete press/release pairs for tiles, physical buttons, and encoder presses; rotations remain single-event probes. Hardware testing must restart from a fresh generation after regression and independent verification pass.
+
+## 2026-08-28 — Full baseline matrix exceeds the firmware idle window
+
+- After the paired-event repair passed automatic and independent verification, a fresh physical run decoded the square pair at wire index 0 and the wide pair at wire index 13 exactly.
+- Before the first physical-button probe completed, the owner observed the firmware screensaver. The run was stopped as indeterminate; brightness zero was never sent.
+- Human-paced per-probe prompting therefore cannot reliably complete the full pre-zero baseline before firmware sleep. This does not establish a physical-button or encoder failure.
+- The protocol requires revision to capture the baseline faster without an outbound keepalive contaminating the measurement.
+
+## 2026-08-28 — Continuous-capture diagnostic and owner-run wrappers verified
+
+- Architecture review rejected an outbound keepalive during the brightness-zero baseline because it would contaminate the measured firmware state.
+- The brightness-zero diagnostic now proves one square pair, sends brightness zero immediately, continuously captures the compact full input matrix, restores configured brightness, and proves a recovery square pair. Monotonic write and operator-ready boundaries prevent stale or transition-overlapping events from being attributed to a phase.
+- Closed-set firmware-wake diagnostics remain one candidate per fresh process. Failed, short, or canceled writes are not retried.
+- Owner-run wrappers under `scripts/diagnostics` archive bounded JSONL observations, stderr, metadata, and SHA-256 manifests. Wake wrappers require a verified passing brightness-zero archive.
+- Focused tests, race tests, vet, build, shell syntax, forged-report rejection, and declined-confirmation paths passed independent review. No hardware was accessed during this verification.
+
+## 2026-08-28 — First owner-run continuous baseline was not attributable
+
+- Archive `20260827T153157Z-brightness-zero` passed startup but rejected the baseline as `class-failure`; brightness zero, the zero-state matrix, and recovery were not run.
+- The archive did not retain individual captured inputs, so the extra or mismatched event source could not be distinguished from stale, duplicate, malformed, or wrong input. It is not brightness-zero device evidence.
+- The diagnostic now emits bounded per-event observations with monotonic sequence, phase, wire index, known marker/action, decode state, and classification. Raw HID reports, payloads, and device identity remain structurally absent.
+- Independent review verified the Go observation path and strict jq/Python archive-validation parity, including rejection of raw, unknown, forged, and decoded-without-wire-index records.
+
+## 2026-08-28 — Non-input frames isolated from decoded input validation
+
+- Archive `20260827T161240Z-brightness-zero` captured three ordinary undecoded non-input frames followed by the exact square wire-index 0 pressed/released pair.
+- The baseline failure was caused by the diagnostic counting those non-input frames in the exact decoded-input trace; brightness zero was not sent.
+- Non-input frames remain bounded observations but are now excluded from baseline, zero-state, recovery, and write-overlap input validation. Malformed frames and wrong, duplicate, or transition-overlapping decoded input remain failures.
+- Independent tests verified the correction across Go validation and both isolated archive-validator backends.
+
+## 2026-08-28 — Encoder rotation overrides explicit brightness zero
+
+- The owner confirmed the device was explicitly at brightness zero immediately before testing.
+- Turning any encoder caused the device to restore brightness to 100 without an application brightness command.
+- Using the spike CLI, the owner confirmed that display tiles and physical buttons did not restore brightness; the override occurred only with encoder knobs.
+- Brightness zero is therefore not a stable passive application-owned screensaver state for encoder rotation, but the observed override is not a general input-wake behavior.
+- A future idle design cannot assume that consuming the first decoded encoder interaction is sufficient: firmware may visibly illuminate the device at 100 before the application can respond.
+- The owner also confirmed that sending brightness packets with the spike CLI did not dismiss the firmware screensaver. This is direct negative evidence for brightness alone as a visible firmware-screensaver wake candidate; input recovery from that packet remains unmeasured.
+
+## 2026-08-28 — Spike-only known-command probe implemented
+
+- The owner explicitly authorized a no-confirm experimental CLI for all 12 known D200X command IDs so behavior can be measured. Supplying an exact symbolic `--action` is the authorization boundary.
+- `spikes/go-hid-d200x/cmd/d200xprobe` sends exactly one logical frame once, or passively listens with zero outbound frames. It permits only canonical brightness and the deterministic diagnostic upload parameters; numeric IDs and arbitrary payload injection remain unavailable.
+- The experimental allowlist is confined to the nested spike module. The spike's normal `Session.SendFrame` and production `internal/d200x` safe-outbound refusals remain unchanged.
+- Independent test, race, vet, build, stress, redaction, passive-listen, no-retry, exact-upload, and production-boundary verification passed. Physical behavior for the newly exposed commands remains unmeasured.
+- Passive observation was subsequently revised to `--listen` for indefinite zero-write capture, with optional `--duration <positive duration>`. SIGINT/SIGTERM stops cleanly at a frame boundary and reports a partial assembled frame as failure; independent synthetic cancellation and stress verification passed.
+- The owner cautioned that legacy packet-ordering and behavior assumptions may be wrong. Imported legacy material is therefore evidence only for captured bytes and observed temporal sequences; it is not a causal ordering contract, stable firmware guarantee, or proof that a completed write was accepted.
+- The spike probe now accepts strict typed JSON for captured `0x0006` modes `0`, `1`, `2`, and `200...203`, reproducing legacy golden payload bytes exactly while making no behavior claim. Mode `100` remains rejected because its associated `0x0011` artwork initialization is unresolved. Independent golden, parser, redaction, one-write, stress, and production-boundary verification passed.
+
+## 2026-08-29 — Individual firmware-screensaver wake observations
+
+- The owner confirmed that input remains receivable at brightness zero while the native firmware screensaver is inactive. Brightness zero alone therefore does not account for the previously observed input suppression; the exact input classes tested were not recorded exhaustively.
+- The owner confirmed that `enable-input-stream` (`0x0002`), `small-window-refresh` (`0x0006`), and `unlock-screen` (`0x0010`) were tested individually while the tested D200X was in its native firmware screensaver state.
+- Each command dismissed the screensaver and restored input reception. The exact `small-window-refresh` parameter fixture was not recorded.
+- This establishes three observed wake candidates on one device. It does not establish required packet ordering, keepalive timing, necessity, sufficiency across firmware versions, or long-duration reliability.
+
+## 2026-08-29 — Small-window refresh owner wrapper
+
+- `scripts/diagnostics/small-window-refresh.sh` accepts exactly one captured mode from `0`, `1`, `2`, `200`, `201`, `202`, or `203` and invokes one fresh `d200xprobe` process with strict typed JSON.
+- Mode `2` sends only `{"mode":2}`. Other modes use one local date/time snapshot, zero-valued bounded metrics, and only the fields required by that captured mode.
+- Missing, extra, unsupported, padded, and raw-payload arguments refuse before Go execution. The wrapper does not inspect configuration, retry, loop, or batch modes.
+- Synthetic wrapper checks, spike Go tests, independent adversarial verification, syntax checks, and diff checks pass without HID access. Physical behavior remains owner-run evidence.
+
+## 2026-08-29 — Small-window presets integrated into d200xprobe
+
+- The temporary small-window shell wrapper was superseded and removed. `d200xprobe --action small-window-refresh --parameters <preset>` now accepts `metrics`, `dial-time`, `background`, `date-time-weekday`, `time-weekday`, `date-time`, and `time`, mapping respectively to captured modes `0`, `1`, `2`, `200`, `201`, `202`, and `203`.
+- Generated presets use one local clock snapshot, zero CPU/RAM/GPU values, `24H`, and only mode-required fields. `background` does not read the clock and emits exactly `2|`. Strict JSON fixtures remain unchanged.
+- Focused exact-payload and pre-enumeration refusal tests, full cgo-free tests, race tests, vet, both CLI builds, independent verification, and diff checks pass without HID access. Physical behavior remains owner-run evidence.
+
+## 2026-08-29 — Synthetic metric probe and mode-2 observation
+
+- The owner observed that the mode-`2` `background` preset displayed a metrics view when selected after other modes, including `date-time`. The earlier mode-`0` `metrics` preset used zero values and did not visibly report metrics.
+- This supports investigation of a two-packet model in which mode `0` updates metric values and mode `2` selects their view, but does not prove ordering, necessity, or causality.
+- The `metrics` preset now generates independent synthetic CPU/RAM/GPU integers from `1` through `99`, includes them in one mode-`0` frame, and reports them only after a successful write. Exact JSON fixtures remain deterministic.
+- Random-source errors or invalid values refuse before HID access and are never retried. Tests cover failure at each of the three draws, exact payload and output, failed-write suppression, one frame, full cgo-free tests, race, vet, build, and independent verification without HID access.
+- The owner subsequently confirmed that a physical mode-`0` `metrics` run displayed the generated nonzero synthetic values. This validates mode-0 metric value injection on the tested D200X; mode `2` and the proposed mode-0/mode-2 sequencing relationship remain unconfirmed.
+
+## 2026-08-29 — M-02-F01 handoff checkpoint
+
+- M-02-F01 remains in progress. Manual physical probes provide useful evidence, but no trusted passing archive exists for the current continuous-capture brightness-zero diagnostic, so the roadmap acceptance matrix is not complete.
+- Independent handoff audit found no documentation/source contradiction in the probe implementation. It identified stale document dates and broad handoff wording, which were corrected.
+- The next physical question is an isolated mode-`2` run from a recorded non-metrics view. The next process decision is whether to retain the archived diagnostic matrix as a completion gate or explicitly revise that gate based on owner acceptance.
+- Before another archived run, review the 48-record diagnostic cap against 20 required decoded events plus possible non-input frames. This is a source-level boundedness risk, not a reproduced physical failure.
+- The worktree remains uncommitted. An untracked compiled `spikes/go-hid-d200x/d200xprobe` artifact may be stale; protected unrelated `.envrc`, `.codex`, and Xcode workspace metadata were not inspected or modified.
+
+## 2026-08-30 — Ulanzi Studio bounded static interoperability analysis
+
+- The owner authorized static interoperability analysis of `/Volumes/Data/Applications/Ulanzi Studio.app`. The installed application remained untouched and unlaunched; application data, preferences, logs, accounts, telemetry, unrelated assets, and protection bypass were excluded.
+- The arm64 Qt executable `UlanziDeck` is 57,231,952 bytes with SHA-256 `b64e598411c0d67fc44b08b09820e0b5fea12ce26052c44098e96bbd9b2c3022`. A static-only copy excluding unreadable `.DS_Store` files has identical executable bytes but an invalid bundle seal and must never be launched.
+- Static disassembly independently verified the complete native path from `UlanziDeck` through `SendDataQueue`, `HIDDevice`, bundled hidapi, and `IOHIDDeviceSetReport`. The application uses `7c 7c`, little-endian payload length, 1,024-byte protocol chunks, a leading HID report ID byte, and a 100 ms read timeout.
+- `0x0003` is a zero-payload command emitted on device/connect/settings paths. `0x000b` carries font-style JSON on connection; the later full-payload capture established that its serialization is indented rather than compact. `0x000d` and mode-100 `0x0011` carry raw bytes of conventional ZIP archives containing `manifest.json` plus `Images/`.
+- Inbound `0x010b` routes to the font-style update path; inbound `0x0303` is treated as NUL-terminated UTF-8 JSON for device-profile migration/initialization. A cross-check corrected an initial misclassification: four-byte key/position/type/status input belongs to `0x0101`, not `0x010b`.
+- Xcode command-line disassembly is sufficient for framing, command identity, call paths, and broad payload shape. Exact archive manifest nesting remains unresolved and would benefit from a dedicated decompiler. Dynamic tracing remains a separate authorization gate and must not bypass hardened-runtime or signing controls.
+
+## 2026-08-30 — LLDB phase prepared but not authorized for execution
+
+- `docs/ulanzi-studio-lldb-runbook.md` defines an isolated, symbol-based procedure for bounded outbound, inbound, and optional hidapi captures.
+- The first execution gate is ordinary LLDB launch from a new local standard account with no prior Ulanzi Studio state and networking disconnected. A debugger/signing denial is a stop result; protection bypass, patching, resigning, injection, and security-control changes remain prohibited.
+- The trial matrix starts with two repeat connection captures and stops for review before font, ZIP, input, or screensaver experiments. Every later trial changes one variable per fresh process.
+- Raw captures remain outside the repository. Only hashes, bounded derived protocol fields, evidence classification, and synthetic clean-room fixtures may be retained.
+- Preparing the runbook did not launch, attach to, or modify Ulanzi Studio and does not constitute authorization to execute the dynamic phase.
+- Static-only utilities now live under `scripts/diagnostics/ulanzi-lldb`. They verify the reviewed executable hash, architecture, and breakpoint resolution; create owner-only T01/T02 workspaces under `/private/tmp`; hash safe-named binary captures; and compare digest, size, and filename manifests.
+- The preflight passed against both the non-runnable static specimen and the signed installed bundle, resolving the reviewed application entry addresses plus bundled `hid_write` and `hid_read_timeout`. Synthetic evidence validation exercised identical and different manifest outcomes plus refusal of empty, unsafe-named, and unprepared captures. No Ulanzi Studio process or HID access was attempted.
+
+## 2026-08-30 — LLDB T01 blocked before target launch
+
+- The owner explicitly authorized launching the installed Ulanzi Studio against the sole connected, owned D200X. The owner selected use of the existing macOS account and prior local application state, and restricted collection to command IDs, lengths, and bounded call stacks; payload bytes remained excluded.
+- Physical network disconnection was unavailable. A per-process sandbox profile denying `network*` was validated by a local socket attempt failing with `EPERM`, then used to launch LLDB.
+- LLDB loaded the reviewed arm64 executable, resolved `HIDDevice::sendDataToDeck`, `UlanziDeck::OnDeckFrameReceived`, `hid_write`, and `hid_read_timeout`, and installed both application breakpoints.
+- `process launch` failed before target execution with status -1: task attachment was not allowed. No command identifiers, lengths, stacks, or payloads were collected; T02 was not attempted.
+- Strict verification of the installed application reports `invalid signature (code or signature have been modified)`. Independently, `DevToolsSecurity -status` cannot resolve `system.privilege.taskport.debug`. The available evidence does not establish which condition caused the attachment denial.
+- Per the approved stop rule, no patching, resigning, injection, permission mutation, security-control weakening, or Console-log inspection occurred. Trial evidence is outside the repository at `/private/tmp/ulanzi-lldb.5M53ad/T01-connect-baseline` and may disappear after reboot.
+
+## 2026-08-30 — Temporary ad-hoc-copy exception authorized
+
+- The owner corrected the historical context: the earlier `UlanziDeckControl` project records successful bounded LLDB observations against an authorized temporary ad-hoc-signed Ulanzi Studio 3.1.9 copy. Its `docs/research.md` and `.agents/log.md` establish the method and observations, although they do not retain the exact signing command; that temporary copy was removed.
+- The owner explicitly authorized reproducing that approach for M-02-F03. The exception permits creating and ad-hoc signing one new owner-only temporary copy. The initial whole-file-identity condition was corrected before signing: embedded-signature replacement necessarily changes the executable file, so the enforceable integrity gate is whole-executable identity before signing and identical `__TEXT,__text` machine-code bytes afterward.
+- The installed application and both existing static specimens remain protected from modification. Payload contents remain excluded; networking remains denied for the traced process; T01/T02 remain the stop gate.
+- The exception does not authorize changing SIP, AMFI, debugger authorization, entitlements, or other system security controls. Failure after temporary-copy signing remains a stop result.
+
+## 2026-08-30 — Ad-hoc T01 invalidated by network-deny enclosure
+
+- A fresh owner-only copy at `/private/tmp/ulanzi-lldb-runnable.87Jf7l` was byte-identical to the reviewed main executable before signing. Ad-hoc signing produced a valid bundle; the expected whole-file hash changed, while the `__TEXT,__text` hash remained `5a07a3228e601d32c5996c758ca3558c39180f06b80438e6dc40ad2970a58e90`, identical to the installed specimen.
+- LLDB successfully launched the ad-hoc target and resolved both D200X breakpoints. The target then reported `sandbox initialization failed: Operation not permitted` twice under the enclosing per-process network-deny sandbox.
+- After initialization, outbound and inbound breakpoint hit counts both remained zero. The process was manually stopped without UI interaction. No command IDs, lengths, stacks, or payload bytes were captured, so the run is invalid as T01 and T02 remains unstarted.
+- Retrying without the network-deny enclosure changes the approved data-exposure boundary and requires explicit confirmation. The disposable copy remains pending the research decision and must be removed after the approved trials or abandonment.
+
+## 2026-08-30 — Normal-network T01/T02 retry authorized
+
+- The owner authorized retrying the disposable-copy trials with Ulanzi Studio's normal network access after the enclosing network-deny sandbox invalidated application initialization.
+- This is an operational exception, not evidence that network access is causally required. LLDB will discard target stdout/stderr and capture only D200X command identifiers, lengths, and bounded stacks; payload contents, network traffic, application data, and account state remain excluded.
+- The no-login condition, owned D200X boundary, installed/static-copy immutability, T01/T02 stop gate, and post-research deletion of the disposable copy remain in force.
+
+## 2026-08-30 — Connection observation gate completed
+
+- Two preliminary harness runs were rejected: the first retained only `continue` from repeated one-line LLDB breakpoint commands, and the second was the already recorded network-deny sandbox failure. Neither contributes protocol evidence.
+- Valid T01 and T02 used multiline breakpoint command lists verified before launch. Outbound capture read command words and payload lengths; inbound capture read only the eight-byte frame header; each hit retained at most eight stack frames. Payload contents and target stdout/stderr were not captured.
+- Both trials repeated the same initialization prefix: outbound `0x0003/0`, `0x0001/5633`, `0x000b/144`; inbound `0x0303/1014`; outbound `0x000a/2`, `0x0003/0`; inbound `0x0303/1014`; outbound `0x000a/2`.
+- Both trials then emitted periodic outbound `0x0006` from `SendSmallWinInfoToDeck::$_1`. T01 observed five 26-byte occurrences; T02 observed six 25-byte occurrences. The count reflects unequal observation duration. Payload exclusion leaves the verified one-byte length difference unexplained.
+- T01's owner-only 17,664-byte transcript has SHA-256 `701074ad46011e6e6baf0fc6fa99b9626731dad912a8863f68f5c96f43812005`; T02's 17,682-byte transcript has SHA-256 `afcc34ae8079b195c03014614bd9df356d9ac1aae6101711b78ef2d2f3dc85f5`. Both remain outside the repository under `/private/tmp/ulanzi-lldb.m4xHv3/` for owner review and may disappear after reboot.
+- The repeated prefix is observed application chronology, not a causal device ordering guarantee. The normal-network success does not establish that network access was required. Later font, ZIP, input, and screensaver trials remain behind the owner review gate.
+- The exact owner-only disposable directory `/private/tmp/ulanzi-lldb-runnable.87Jf7l` was removed after both targets had been terminated. The installed bundle, static specimen, and retained evidence workspace were not removed.
+
+## 2026-08-30 — Complete D200X payload inspection authorized
+
+- The owner clarified that maximizing protocol learning is the governing objective and that the existing Studio and device data contain nothing secret. Complete D200X logical packets and their derived JSON, ZIP, image, profile, and device-metadata contents may be captured and inspected.
+- The earlier metadata-only connection boundary was unnecessarily restrictive relative to the milestone goal. It remains documented as the scope of T01/T02 rather than being recharacterized after the fact.
+- The expansion applies to repeat connection trials `T01P` and `T02P`. It does not authorize inspection of unrelated application memory or network traffic. Raw captures remain owner-only outside Git, and a newly created ad-hoc-signed disposable copy must be removed after the review gate.
+
+## 2026-08-30 — Full-payload connection gate completed
+
+- T01P and T02P captured every non-empty D200X logical payload in two fresh connection-only launches. The inspected executable matched the installed specimen before ad-hoc signing, and `__TEXT,__text` remained byte-identical afterward. Target stdout/stderr were discarded; unrelated memory and network traffic were not inspected.
+- Stable captured bytes: `0x000b` is 144-byte indented six-field font JSON with SHA-256 `1b1d9b3dcaf219585488071ece82f3a98b9cbb32c890149867dda51be30cbebc`; `0x000a` is ASCII `44` with SHA-256 `71ee45a3c0db9a9865f7313dd3372cf60dca6479d46261f3542eb9346e4a04d6`; all four 1,014-byte `0x0303` captures share SHA-256 `9fc85325ef5f80e87a6a042e8cf4bf196a95360a905872ec33ef7ddc62e19a4e`.
+- `0x0303` consists of 149 bytes of UTF-8 JSON followed by 865 NUL bytes. Its keys are `SerialNumber`, `Dversion`, `error`, `DeviceType`, and `HardwareVersion`; the identifier value was not copied into Git.
+- T01P/T02P `0x0001` ZIPs were 5,634 and 5,632 bytes. Generated UUID filenames, entry order, timestamps, and raw compression differ; their normalized sorted manifests share SHA-256 `f35628660a902c3af7b455cfd64c1376f0ef4cb15e78134b8cc4ae276d39e260`, and their four-PNG content multisets are equal.
+- Periodic `0x0006` is ASCII `100|CPU|RAM|HH:mm:ss|GPU|12H|` with unpadded decimal values. This data-dependent grammar explains the earlier 25/26-byte variation, although the discarded earlier values cannot be recovered.
+- The prior static-only claim that `0x000b` was compact JSON was wrong and has been corrected. Captured bytes establish indented JSON.
+- Manual binary dumping perturbed asynchronous order. T01P/T02P are payload evidence; the earlier auto-continue T01/T02 remain the chronology evidence.
+- Owner-only captures and transcripts remain temporarily under `/private/tmp/ulanzi-lldb-payload.zSRQIR/`. T01P and T02P transcript SHA-256 values are `bb33adc27792dbde7450794087f3b9c3d51d5c80e532f8e835465e5cc1370c60` and `437a27ad8bfc928b7f1cbc0fd79bcf0ac1ab39436e7ca2947de5a8b3130bfea9`.
+- After both LLDB targets had ended and evidence hashes were recorded, the exact disposable root `/private/tmp/ulanzi-lldb-runnable.VWfCYn` was permanently removed. The installed Ulanzi Studio bundle and `/private/tmp/ulanzi-lldb-payload.zSRQIR/` evidence remain.
+
+## 2026-08-30 — Automated Ulanzi Studio gap analysis completed
+
+- A final static pass established that connection upload `0x0001`, targeted key upload `0x000d`, and mode-100 encoder upload `0x0011` all use `ItemBeanProfileManager::createZip` and the same `fillEncoderJson` callback. Their distinction is profile selection and command ID, not archive schema.
+- `0x000d` selects one current-page key profile. Mode-100 `0x0011` selects the current page's `Encoder` profiles and falls back to ordinary `0x0006` refresh outside mode 100. The common manifest builder emits ordinary `ViewParam`/`State` or an `Encoder` object and conditionally includes `SmallViewMode` for the small-window component or key `3_2`.
+- Inbound `0x010b` ignores its payload, reads the current Studio font model, and invokes the outbound `0x000b` path. It is therefore a font retransmission request in Studio's implementation, not a correlated acknowledgement payload.
+- Studio's `0x0303` parser consumes `SerialNumber`, `Dversion`, and optional `HardwareVersion`; it lowercases and validates the expected 17-character serial before device/profile lookup. No read of captured `DeviceType` or `error` was found in that path.
+- `sendBackgroundBrightness` reads persisted per-device brightness, converts it to decimal ASCII, and asynchronously sends `0x000a`. This proves the source of captured `44`, but not why connection chronology invokes the path twice.
+- Architect review and direct evidence agree that further unattended launches have low information value. Remaining gaps require owner-controlled one-variable trials: `0x000d`, `0x0011`, font changes, physical input, and native-screensaver behavior, in that order. Cross-firmware `0x0303` variability requires another specimen or controlled emulation.
+- The previous removal of the disposable run copy happened at the earlier review gate. For any resumed interactive dynamic phase, create a fresh verified disposable copy and retain it until that overall phase ends; remove it only after the owner ends or abandons the temporary research phase.
+
+## 2026-08-30 — Interactive targeted-key T05-T07 gate completed
+
+- A fresh owner-only copy at `/private/tmp/ulanzi-lldb-runnable.zII2q5` matched the reviewed executable before signing, passed strict verification after ad-hoc signing, and retained `__TEXT,__text` SHA-256 `5a07a3228e601d32c5996c758ca3558c39180f06b80438e6dc40ad2970a58e90`. It remains retained for the active interactive phase.
+- The first LLDB harness used the terminal UI plus a high-frequency register condition and made Studio unresponsive. Its main thread was observed in Qt backing-store rendering. That harness was terminated and rejected. A plain FIFO-driven LLDB console with producer breakpoints at `SendKeyZip` and `SendKeyZipFromCurrentPage` restored responsiveness.
+- Studio requires an action before a tile can display text and has no save/submit boundary; display-affecting edits transmit immediately. Architect consensus selected the built-in System -> Text action as the least-confounded action-backed baseline. The fixed precomposed action string produced no `0x000d` producer hit; the tile was never physically pressed.
+- Eight owner-only `0x000d` archives under `/private/tmp/ulanzi-lldb-interactive.jIKQFm/T05-one-key-upload` cover initial assignment, title T05, title T06, accidental deletion, repeated assignment, repeated title T05, and both move packets. Repeated normalized empty-title and T05 manifests are identical. All bundled Text-action PNG bytes share SHA-256 `9137b7981ab83b9e2034a892dda78ee2fa00684b7f85f1e6685f351bf5d0ef88`.
+- Equal-length `HIDHOGG-T05` to `HIDHOGG-T06` changed only `ViewParam[0].Text`. Raw ZIP length varied independently because generated UUID filenames and archive metadata affect compression.
+- Delete emits a 299-byte ZIP whose manifest explicitly clears the position with `State: 0` and `ViewParam: [{"Font":"","Text":""}]`. Moving `0_0` to `1_0` emitted new-position content first and the same old-position tombstone second in this observed run. Manual debugger stops preclude treating that order as a firmware requirement.
+- The tile editor also exposes title visibility, size, color, and three alignment controls. These are verified future one-variable inputs; their packet deltas and ranges remain untested.
+
+## 2026-08-30 — Interactive mode-100 T08 gate completed
+
+- Static caller analysis corrected the initial intervention plan. Encoder assignment and removal did not hit `UlanziDeck::SendSmallWindowData_Knob`. `SystemSmallWindowsEditor::selectSmallWindowMode` emits `SignShowSmallWindows`; the connected `UlanziDeck::OnShowSmallWindows` invokes `SendSmallWindowData_Knob`, whose decimal-mode-100 branch sends `0x0011`.
+- The owner reduced the profile to one Multimedia action on knob 1 and empty knobs 2 and 3. With capture disabled, Studio was switched to `Time` and allowed to settle. Selecting the Studio `Knob` radio produced exactly one outbound `0x0011`; the same controlled transition was repeated once and again produced exactly one.
+- Both payloads were 1,866-byte ZIPs. Raw SHA-256 values were `a6fec39aa40a0af7e09199eb0776aaac88a99b86ebfe30ab7def6bb3c8dd7c5b` and `51b775bef3829715093ee2cc64785c38dc99a472fde292a1deddb48b04238bef`. Generated image UUIDs and ZIP timestamps differed, while normalized manifest SHA-256 `857ae8ca6cb399c424c70e2c2d3f811888e024b39cbaa82e9cb1804aabddccf5` and PNG SHA-256 `12eef5f47405971014f91b2696a8960b64a28274f4c1f8f661a93bc585bcfcee` matched.
+- The manifest maps physical knobs 1-3 to positions `2_3`, `3_3`, and `4_3`. Knob 1 contains the `Encoder` layout; the two empty knobs are explicit `State: 0`/empty `ViewParam` tombstones. This corrects the earlier unverified assumption that archive coordinate `2_3` meant the physical third knob.
+- Raw T08 captures remain owner-only under `/private/tmp/ulanzi-lldb-interactive.jIKQFm/T08-mode100-encoder/`. The active disposable copy remains retained for later interactive trials. Device-side necessity, minimal schema, visible firmware effect, and `0x0006`/`0x0011` ordering remain unresolved.
+
+## 2026-08-30 — Interactive alignment T03 and wide-background T12 completed
+
+- T03 changed the retained tile at `1_0` from `Font.Align: bottom` to `center`. Two captures each emitted exactly one 1,680-byte `0x000d`; their normalized manifests share SHA-256 `b7fd0901a4009dc6c85c52818b61a0376cf56b6825f1a48a165cb061b6c982e0`, their PNG bytes retain SHA-256 `9137b7981ab83b9e2034a892dda78ee2fa00684b7f85f1e6685f351bf5d0ef88`, and only `Font.Align` differs from the retained bottom baseline.
+- The owner requested that future discovery trials not be routinely repeated. One controlled observation is sufficient unless output is ambiguous or contradicts prior evidence.
+- T12 proved at the UI handler that the wide-tile Background radio supplies numeric mode `2`. The wide tile was blank without configured artwork. An exact filter observed no immediate outbound `0x0006` with payload `2|` during the bounded post-transition interval; other timer paths remain possible.
+- Background file selection opens an `Edit Icon` crop/preview dialog with an explicit Save boundary. Saving a project-owned 458-by-196 RGB diagnostic PNG emitted exactly one 1,608-byte `0x000d`, raw SHA-256 `46459ca4ef76e40a12d99aaaec1a3e94b778e109885f5b842228c9e54e296041`. Its normalized manifest at `3_2` includes `SmallViewMode: 2` and has SHA-256 `702b3c098adf364f3e9d2a27e8deea04cdbf081f466427f65d5516f962179418`.
+- Studio preserved the 458-by-196 dimensions, converted the source from RGB to RGBA, and applied transparent rounded corners. Source SHA-256 is `4d728692a942d2f12c91e7d488f5315c4e6dc67d98c4fb6a93d2b7c43d395094`; transformed PNG SHA-256 is `fa6a18eda0dc3d06231c44293d21cc0b8a30d9fe83f42a9cea4d0f25be05591d`. The owner confirmed correct full-width orientation without unexpected cropping or stretching. Extra colour bands were present in the interpolated source.
+- Raw evidence remains owner-only under `/private/tmp/ulanzi-lldb-interactive.jIKQFm/T03-font-alignment/` and `/private/tmp/ulanzi-lldb-interactive.jIKQFm/T12-background-wide/`. The disposable copy remains active with protocol breakpoints disabled.
+
+## 2026-08-30 — Interactive title-size T04 completed
+
+- From the restored bottom-aligned size-10 baseline, one stepper increment to size 11 emitted exactly one 1,678-byte `0x000d`, raw SHA-256 `528e44723128470cb6d5a8136601058df7171cb0fbdd2455f9d7f957a3f30e34`.
+- The UUID-normalized manifest has SHA-256 `324b1d52239ea13a30570fc0aa2f310b5d8cd9f1ce65d0e20049cad387d3429b`. Deleting only `Font.Size` makes it equal the retained size-10 baseline. The PNG remains byte-identical with SHA-256 `9137b7981ab83b9e2034a892dda78ee2fa00684b7f85f1e6685f351bf5d0ef88`.
+- No routine repeat was performed, following the owner's discovery-testing preference. Raw evidence remains owner-only under `/private/tmp/ulanzi-lldb-interactive.jIKQFm/T04-font-size/`; the breakpoint was disabled after its hit count was verified as one.
+
+## 2026-08-30 — Interactive inbound-input T09-T11 completed
+
+- A conditional breakpoint at `UlanziDeck::OnDeckFrameReceived` captured six inbound `0x0101` payloads from one unassigned square at `0_0` and the unassigned physical middle encoder. No configured Studio action executed.
+- Every payload was 1,014 bytes with only the first four bytes nonzero. Square press/release were `01 00 01 01` and `01 00 01 00`; middle-encoder left/right/press/release were `01 12 02 02`, `01 12 02 03`, `01 12 02 01`, and `01 12 02 00`.
+- This independently confirms the direct-probe mapping for the observed controls: byte 1 wire index, byte 2 button/encoder marker, and byte 3 release/press/left/right action. It does not establish an exhaustive firmware event namespace.
+- Raw payload SHA-256 values and the evidence location `/private/tmp/ulanzi-lldb-interactive.jIKQFm/T09-T11-input/` are recorded in `docs/ulanzi-studio-analysis.md`. The inbound breakpoint was disabled and Studio resumed; the disposable copy remains retained for screensaver trials.
+
+## 2026-08-31 — S0 no-write screensaver control completed
+
+- Architect review rejected Ulanzi Studio as the primary causal harness because its asynchronous and periodic traffic cannot attribute a wake to one frame. The agreed harness is `d200xprobe`, one candidate frame per fresh native-screensaver generation.
+- The completed T09-T11 Studio target and LLDB process were terminated; the verified disposable bundle and raw evidence remain retained. No process from that session holds the D200X.
+- With the native screensaver already visible, passive `d200xprobe --listen` opened the device and explicitly sent zero frames. Opening did not dismiss the screensaver. One owner-controlled `0_0` press/release did not dismiss it and emitted no frame.
+- One `unlock-screen` frame was then used only to reset the specimen for a fresh generation. A passive listener captured exactly one `0_0` pressed/released pair with the same SHA-256 values as T09, proving working input before the new idle wait. The owner proceeded under an instruction to press only if the screensaver was gone, but did not separately state the visual result.
+- The passive listener was stopped. The device is now waiting without an open Hidhogg/Studio process or outbound writes for the next native screensaver state. S1 will send exactly one `enable-input-stream` frame, then test one `0_0` press/release.
+
+## 2026-08-31 — S1 single-frame input-enable wake passed
+
+- From the fresh screensaver generation created after S0, `d200xprobe` sent exactly one `enable-input-stream` (`0x0002`) frame. No brightness, unlock, upload, small-window refresh, or retry was sent in S1.
+- Before touching the D200X, the owner explicitly reported that the visible screensaver had disappeared.
+- A passive zero-write listener then captured exactly one `0_0` press and release. The 1,014-byte payload SHA-256 values were `8d8d8158584390de642c28ea609110a4758e1a9d5e0e761ba0b0c675ca6dca74` and `663f5c56995bb094776d27cacbcc6ebf232bbec69cb841ba7d425cd493f17379`, matching the pre-idle and Studio T09 baselines.
+- S0 versus S1 is controlled one-device causal evidence that a single `0x0002` frame is sufficient to dismiss this native screensaver state and restore input. It does not prove that periodic `0x0002` prevents the state, determine an interval, or generalize across firmware.
+- The passive listener was stopped after the result. No Hidhogg, probe, Studio, or LLDB process remains intentionally attached to the D200X.
+
+## 2026-08-31 — Diagnostic keepalive experiment authorized
+
+- Architect review found no existing tool capable of a bounded periodic intervention: `d200xprobe` is intentionally one-shot, `hidhoggdiag` has only brightness-zero and one-shot wake modes, and production sends input-enable only in its startup page sequence.
+- The owner approved a diagnostic-only `keepalive-prevention` mode. Its experiment derives interval `I = T0 / 2` and duration `D = 2 * T0` from one newly measured no-write onset, uses a monotonic one-session scheduler, sends only input-enable, and forbids catch-up and retry.
+- Production runtime behavior, configuration, and Swift/UI remain protected until the physical K1 and archived brightness-zero gates are reviewed. Consequential decisions are recorded separately in `docs/m02-f01-decision-review.md`.
+
+## 2026-08-31 — Closed K1 diagnostic implemented and verified
+
+- Architect review resolved the approved prevention experiment as a closed protocol: `D = 4I`, `D <= 60m`, and exactly four experimental `enable-input-stream` boundaries. Documentation-only or wrapper-only limits were rejected because the direct CLI would remain capable of producing out-of-contract evidence.
+- Core validation, a shared no-HID CLI validation path, and the owner wrapper enforce the same Go-duration contract before HID activity; the wrapper rejects invalid schedules before archive creation and confirmation. There is no runtime override. The 48-boundary guard remains unreachable defense-in-depth.
+- A successful run serializes exactly 11 ordered redacted observations: normal startup, scheduler start, four boundary writes, schedule completion, canonical wire-0 square press/release, final verification, and result. jq, Python, and Ruby archive validators require that shape.
+- Automatic verification passed the full uncached cgo-free Go suite, focused race tests, vet, shell syntax, all archive-validator backends, formatting, and diff checks. Independent tester `M-02-F01-K01-V02` passed with no high or medium defect. The tests did not access HID hardware.
+- Accepted sub-interval wake jitter can extend actual wall-clock completion while remaining before the next boundary. Physical K1 evidence must retain actual timing rather than infer it solely from requested duration.
+
+## 2026-08-31 — C0 attempt reached ceiling without visual report
+
+- A single `enable-input-stream` reset completed at `2026-08-30T15:41:46Z`, followed by a passive zero-write `d200xprobe` listener.
+- The listener received no frames through the 30-minute ceiling and was stopped by signal. No listener-originated frame was sent.
+- No contemporaneous owner visual-state report was received. The attempt is incomplete: zero inbound frames do not reveal visible screensaver onset, so no `T0` is derived and K1 remains blocked on an owner-observed C0.
+
+## 2026-08-31 — Owner-observed C0 established conservative onset
+
+- A setup-only input-enable reset completed at `2026-08-30T23:04:34Z`; the owner immediately confirmed the configured display was visible, and a passive zero-write listener remained open.
+- The owner reported native screensaver onset at `2026-08-30T23:05:38Z`, 64 seconds later. Human observation latency is included, so this is a conservative observed `T0`, not a firmware-precise boundary.
+- One `0_0` press/release after onset left the screensaver visible and emitted no listener output. This satisfies the C0 visible-onset and suppressed-input checks on the owned specimen.
+- The reviewed formula derives `I = 32s` and `D = 128s` for K1. No K1 result has been recorded yet.
+
+## 2026-08-31 — First K1 archive classified final-verification failure
+
+- K1 ran with `I = 32s`, `D = 128s`. The archive records normal startup, exactly four passing scheduled input-enable writes, and passing duration completion without retry or catch-up.
+- The owner did not perform the immediate post-schedule visual/input check. The screensaver was reported approximately one C0 interval after the nominal fourth write, and a later `0_0` press/release neither woke it nor emitted input.
+- The diagnostic correctly recorded no input observations, `class-failure` for final verification and result, and exit 1. Manifest hashes match metadata, stdout, and stderr. This is schedule-execution and post-write-recurrence evidence, not a prevention pass or an at-`D` result.
+- A second invocation is not assumed authorized by the first-run protocol; architect review was requested before proceeding.
+
+## 2026-08-31 — One replacement K1 endpoint measurement authorized
+
+- Architect review classified the first K1 as scheduler-valid but endpoint-inconclusive because the at-`D` primary endpoint was not observed. A second run is allowed only as a clearly labeled replacement with unchanged parameters; the first archive remains retained and is not a negative replicate.
+- The replacement predeclares continuous observation, a local at-`D` cue, a five-second visual-classification window, and—only when active—a subsequent five-second window for one canonical `0_0` press/release.
+- Any early screensaver, uncertainty, distraction, unrelated interaction, missed window, late/failed write, or missing pair prevents a pass. A third K1 requires a revised protocol decision.
+
+## 2026-08-31 — Replacement K1 failed the endpoint-timing gate
+
+- The authorized replacement retained `I = 32s`, `D = 128s`, a fresh owner-confirmed active baseline, continuous observation, and exactly four passing scheduled boundaries.
+- The owner reported active display at the spoken cue, then screensaver onset before there was enough time to press. No input pair was captured. The agent-mediated cue cannot be proven within five seconds of the diagnostic endpoint.
+- The checksum-valid archive correctly records `class-failure` and exit 1, but the causal endpoint remains inconclusive. It must not be presented as prevention pass or failure.
+- Both permitted K1 invocations have now been consumed. K02 is blocked on an explicitly revised protocol with a diagnostic-coupled cue; no third run is authorized under the existing decision.
+
+## 2026-08-31 — Revised endpoint timing and classification contract
+
+- Main-agent review rejected the first scheduler-coupled implementation because it archived the planned five-second deadline as though it were the actual capture close and assigned `class-failure` to uncertain or malformed owner attestations.
+- Architect decision `M-02-F01-K02-R01-A02` distinguishes the logical close from actual timer wake and capture stop. The nominal tail remains exactly five seconds after cue completion; actual closure must be no earlier and no more than 250 milliseconds late. All planned and actual monotonic timings must be archived. The allowance is experimental policy, not a platform guarantee.
+- Only `ACTIVE_AT_CUE` plus exactly one canonical `0_0` press/release within the logical window can pass. Screensaver evidence is `class-failure`; uncertainty, missing/malformed attestation, and capture/decoder failure are `indeterminate`; cue or timing failure is `invalidated`, taking precedence.
+- Exactly one further physical K1 run with `I = 32s` and `D = 128s` remains authorized only after corrected automatic gates, independent verification, final architect review, and owner-heard same-cue preflight pass.
+
+## 2026-08-31 — First R01 independent verification failed
+
+- The corrected planned-close, actual-wake, actual-stop, post-window, classification, and archive-schema gates passed focused automatic checks, including all jq, Python, and Ruby validators.
+- Independent tester `M-02-F01-K02-R01-V01` failed the revision because a terminal input-capture error detected before a scheduled boundary does not stop later keepalive writes or the endpoint cue. The existing check occurs only after the endpoint capture window.
+- A separate read-only integration audit also identified unresolved direct-CLI preflight authority, attestation after already-invalid endpoint timing, injected-cue timeout enforcement, protocol-error classification, cancellation, and bounded-observation behavior. Architect decision `M-02-F01-K02-R01-A03` is required before the next narrow correction.
+- No physical cue or HID run is permitted while R01 verification is failing.
+
+## 2026-08-31 — Architect A03 set the final R01 fail-closed boundary
+
+- Capture health must be checked before and after each of the four writes and immediately before cue. Terminal failure or capacity exhaustion stops further frames and the cue, records redacted health, and makes the result indeterminate.
+- Direct CLI execution is part of the physical authority boundary: the fixed cue and exact `CUE_HEARD` token must occur in the same process before runner construction or HID activity. Wrapper-only preflight is insufficient.
+- Invalid endpoint timing skips owner attestation. Injected cues cannot report success after their derived timeout. Only proven inbound-byte malformation is class evidence; ambiguous protocol, transport, session, and read-count failures are terminal capture failures.
+- Cancellation before terminal observation commit prevents pass. Continuous pre-schedule capture is retained, but logical endpoint eligibility starts at cue invocation. Zero fake-clock cue duration is allowed. Required observations may not be silently discarded; archive checks are defense-in-depth.
+- The sole remaining physical authorization is unchanged and remains gated on corrected automatic tests, independent PASS, final architect PASS, and same-invocation owner-heard preflight.
+
+## 2026-08-31 — Stale task caches removed
+
+- At the owner's request, stale Hidhogg Go build, test, race, and vet caches under `/private/tmp` were removed after active agents confirmed they no longer needed them. Available space increased from 636 MiB to 24 GiB.
+- The two approximately 1.3 GiB Ulanzi static-analysis trees were retained because their future research value has not yet been resolved. Project files and durable diagnostic archives were not removed.
+
+## 2026-08-31 — R01 boundary re-review found one remaining defect
+
+- Independent verifier `M-02-F01-K02-R01-V02B` passed focused Go, repeated, race, vet, shell-syntax, and jq/Python/Ruby archive-validation gates. Its broad `go test ./...` failure was confined to sandbox-denied Unix-socket IPC fixtures and is not endpoint evidence.
+- Static review found that the endpoint classifier reused `idleEnd` as `cueStart`. Frames arriving during capture-health and observation work after the completed idle interval could therefore be misclassified as cue-window evidence.
+- Architect ruling `M-02-F01-K02-R01-A04` requires a fresh boundary immediately before cue invocation. Frames between `idleEnd` and that fresh boundary remain archived but are excluded from both idle invalidation and endpoint classification. The narrow caller-boundary-to-cue-call race is accepted as invocation-boundary semantics.
+- Mid-window capture failure with valid timing still permits one visual attestation, but endpoint and result must remain `indeterminate`. Invalid endpoint timing continues to suppress attestation and takes precedence.
+- Physical K1 remains blocked pending the boundary correction, renewed independent verification, and final architect approval.
+
+## 2026-08-31 — R01 V03 found jq archive-parity defect
+
+- The fresh cue boundary, pre-cue classification, focused Go, race, vet, shell-syntax, and jq/Python/Ruby regression suites passed after corrections R06 and R07.
+- Independent verifier `M-02-F01-K02-R01-V03` demonstrated that jq accepted a canonical pair with nonadjacent sequences `11 → 13`, while Python and Ruby rejected it. The jq partition checked only increasing sequence order and omitted the pair-adjacency and nondecreasing elapsed-time predicates already enforced by the other backends.
+- This is a strict archive-validator parity defect, not a production endpoint finding. Physical K1 remains blocked pending a narrow jq correction, regression coverage, renewed independent PASS, and final architect approval.
+
+## 2026-08-31 — R01 automatic and architect gates passed
+
+- Correction `R08` added the missing jq canonical-pair adjacency and nondecreasing-time predicates plus separate sequence-gap and reversed-time fixtures. jq, Python, and Ruby reject both fixtures and retain all valid zero/pre-cue/post-window cases.
+- Main verification passed focused Go, race, vet, shell syntax, archive regressions, diff checks, and an unrestricted full `go test ./...`, including Unix-socket IPC tests. Independent verifier `M-02-F01-K02-R01-V04` passed with no production defect or material coverage gap.
+- Final architect review `M-02-F01-K02-R01-A06` marks the automatic implementation PASS and authorizes exactly one owner-present physical K1 at `I = 32s`, `D = 128s`, conditional on audible same-process preflight and exact `CUE_HEARD` before runner construction or HID activity.
+- Any outcome after HID scheduling consumes the authorization. No retry, replacement, production policy, or cross-device generalization is authorized.
+
+## 2026-08-31 — Final K1 diagnostic passed but K02 timing evidence failed
+
+- The owner completed the one authorized scheduler-coupled K1. Archive `deploy/diagnostics/20260831T064118Z-keepalive-prevention` is checksum-valid, passes strict validation, and records internal diagnostic `pass` with `I = 32s`, `D = 128s`, four ordered boundary writes, healthy capture, `ACTIVE_AT_CUE`, and one adjacent canonical wire-0 press/release pair in-window.
+- Cue duration was 2.565405084 seconds. Timer wake and capture stop were 1.073666 and 1.160541 milliseconds after planned close, both within the 250-millisecond tolerance. Manifest hashes match recomputed metadata, stdout, and stderr hashes.
+- The boundary observations omit actual monotonic wake/write timestamps. Since accepted scheduler jitter extends until the next interval boundary, the archive cannot satisfy K02's retained actual-timing evidence requirement or prove exact 32-second delivery.
+- Architect `M-02-F01-K02-A07` classifies K02 contract acceptance as `fail`; independent tester `M-02-F01-K02-V01` classifies the physical inference as inconclusive despite the valid diagnostic pass. The authorization is consumed and no further K1 is permitted without a new explicit protocol decision.
+
+## 2026-09-01 — Owner waived K02 timestamp retention after outcome
+
+- After reviewing the favourable endpoint outcome, the owner explicitly waived the retained requirement for serialized actual monotonic wake/write timestamps. Architect `M-02-F01-K02-A08` classifies K02 as bounded pass by retrospective waiver, not an unqualified or prospectively compliant pass.
+- The accepted claim is limited to one owned-specimen 128-second run with four ordered `0x0002` writes admitted within 32-second categorical scheduler windows, visible activity at the coupled cue, and one valid canonical input pair.
+- The owner proposed reducing the scheduler window to reduce risk. A 16-second cadence is the conservative analytical candidate because worst admitted categorical spacing approaches 32 seconds, retaining the intended `T0 / 2` margin against observed `T0 = 64s`. It remains physically unverified and is not yet a production policy.
+- B01 and explicit production-policy confirmation remain required before changing runtime code or configuration. The five-second endpoint window is unchanged. No further K1 is authorized.
+
+## 2026-09-01 — Owner approved prospective K1-50 planning
+
+- The owner clarified that the desired risk buffer is a cadence near observed `T0`, then explicitly confirmed a new prospective `I = 50s`, `D = 200s`, four-write experiment with a 250-millisecond lateness gate and the unchanged five-second endpoint window.
+- K1-50 is a new experiment, not a retry or reclassification of K02. It requires serialized planned, actual-wake, and write-completion timing for every boundary before any physical run.
+- No device action or production-policy change is authorized during implementation. Automatic, independent, and final architect gates must pass before one owner-present physical invocation is prepared.
+
+## 2026-09-01 — Architect fixed K1-50 timing contract
+
+- Architect `M-02-F01-K03-A01` requires `planned <= actual wake <= write start <= successful completion <= planned + 250ms` for each of four boundaries. All values are monotonic nanoseconds from one scheduler origin and must be serialized under `timing_contract = k1-50-v1`.
+- The 250-millisecond bound is inclusive; 250 milliseconds plus 1 nanosecond, early/reordered/missing timing, or clock regression invalidates without retry, catch-up, later write, or cue. Failed or uncertain writes are indeterminate and must omit completion rather than synthesize it.
+- The fourth completion must precede the fresh cue boundary. Retained legacy archives keep their historical schema and cannot satisfy K03. One physical K1-50 remains gated on automatic, independent, and final architect PASS.
+
+## 2026-09-01 — K1-50 automatic readiness gates passed
+
+- `K03-R01` implemented prospective boundary timing and strict legacy/prospective validator dispatch. Independent `K03-V01` found two medium validator defects: accepted pre-cue elapsed-time regression and jq acceptance of floating-point nanosecond representations.
+- `K03-R02` made pre-cue elapsed time nondecreasing and aligned jq, Python, and Ruby on strict integer nanosecond representations. Independent tester `K03-V02` passed the full K1-50 matrix, including all twelve timing fields, legacy compatibility, inclusive 250-millisecond tolerance, failure termination, output-bound failure, and fourth-completion-to-cue ordering.
+- Final architect `K03-A02` passed the architecture and scientific-readiness gate. The unrelated full-suite limitation is sandbox-denied Unix-socket creation in `internal/ipc`; it does not exercise K03.
+- Exactly one owner-present `I = 50s`, `D = 200s` physical invocation may now be prepared. Same-process cue preflight and exact `CUE_HEARD` remain mandatory. Once HID scheduling begins, every outcome consumes the authorization and no retry is permitted.
+
+## 2026-09-01 — K1-50 physical scheduler passed; endpoint indeterminate
+
+- The one authorized K03 invocation is archived at `deploy/diagnostics/20260901T063506Z-keepalive-prevention`. Same-process preflight passed, one HID session started, all four writes passed `k1-50-v1`, capture health passed, and checksums computed from `stdout.jsonl` and `stderr.log` match the values recorded in metadata.
+- Boundary completion lateness was 1.711458 ms, 1.576791 ms, 1.988541 ms, and 1.326333 ms. Boundary four completed at 200.001326333 s and the endpoint cue began at 200.002471333 s, preserving the required ordering.
+- The interaction supplied `CUE_HEARD` at the later closed visual-attestation prompt. That token is not `ACTIVE_AT_CUE`, `SCREENSAVER_AT_CUE`, or `UNCERTAIN`, so the diagnostic correctly retained an indeterminate final verification and result. No canonical endpoint input pair was captured.
+- K03 therefore provides prospective scheduler-conformance evidence but no prevention pass or failure. Its physical authorization is consumed; do not retry without a new reviewed decision.
+
+## 2026-09-01 — Owner-run K1-50 pass designated authoritative
+
+- The owner completed the interaction directly and produced `deploy/diagnostics/20260901T065715Z-keepalive-prevention`. Strict archive validation passed, and computed SHA-256 values match metadata for `stdout.jsonl` and `stderr.log`.
+- All four `k1-50-v1` boundaries passed with completion lateness from 1.694333 ms to 2.852750 ms. Capture health passed, boundary four completed before cue start, `ACTIVE_AT_CUE` was recorded, and exactly one canonical wire-0 square press/release pair occurred inside the endpoint window. Final verification and result are `pass`.
+- The owner explicitly designated this independently operated archive as the authoritative and sufficient K03 source of truth. Earlier agent-mediated archives remain historical procedural failures caused by prompt/interaction timing and do not control the K03 result.
+- K03 is complete. The ruling does not complete B01 or choose a production idle policy.
+
+## 2026-09-01 — Studio screensaver uploader and encoder wake discovery
+
+- The owner confirmed that encoder rotation at brightness zero restores firmware brightness to 100 under both direct-Go operation and Ulanzi Studio. The current B01 single-zero-write trace therefore cannot classify every later encoder action as occurring at brightness zero and requires redesign before another trusted matrix run.
+- Studio Device preferences expose a screensaver-artwork editor for `1220 × 708` images. `Stored Image` opens the macOS file picker; `Set Image` is the explicit commit control. This is artwork configuration, not a discovered timeout setting.
+- Architect `M-02-F03-T13-A02` approved a bounded synthetic `SS-U0` through `SS-U3` click/cancel and A/B/A upload protocol. Production encoder-brightness behavior remains deferred until T13 and revised B01 evidence are reviewed.
+
+## 2026-09-02 — T13 non-launching capture gate passed
+
+- Initial independent verifier `T13-V02` found evidence-integrity defects in timestamp ordering, specimen authorization, payload-log/file reconciliation, boolean chronology timestamps, and zero-length callback handling. No dynamic process or hardware was accessed.
+- Correction `T13-R02` binds authorization to the selected specimen record, validates nondecreasing strict-integer timestamps, reconciles every payload row and owner-only file by name/size/hash/specimen, rejects orphan evidence, and checks declared length before process-memory access.
+- Independent `T13-V03` passed 59 fresh-workspace checks plus the 12-test Python and shell suites. Deterministic `1220 × 708` A/B fixtures, LLDB ABI fakes, closed marker flows, bounds, modes, and static no-launch/attach/HID/network behavior pass. Real Studio/LLDB trials remain intentionally unrun.
+
+## 2026-09-02 — T13 dynamic screensaver-artwork evidence
+
+- Authorized dynamic trials used the disposable Studio copy and controlled metadata-free `1220 × 708` fixtures. SS-U0 open/cancel showed only periodic `0x0006` traffic and the owner observed no display change.
+- SS-U1 committed fixture A, captured an authorized `0x0009` payload of 40,982 bytes, and the owner confirmed A visible. SS-U2 committed fixture B from the A baseline, captured an authorized `0x0009` payload of 130,798 bytes, and the owner confirmed B visible.
+- The initial stopped-payload boundary also stopped on periodic `0x0006`, starving Studio's UI. A debugger-side packet-length condition excluding payloads of at most 1,024 bytes allowed the `0x0009` upload to reach the stopped capture boundary; the payload breakpoint was then disabled before the observation window.
+- SS-U2 reached the 256-event chronology cap before commit because of interactive delay. Its authorized payload and owner-observed B outcome are valid, but it is not complete chronology evidence. SS-U3 was opened through file-picker visibility and then cancelled at the owner's direction; it is intentionally excluded from protocol conclusions.
+- The owner waived the A-restoration repeat. T13 supports implementing `0x0009` screensaver-artwork upload, but does not establish payload structure, deterministic re-encoding, or A/B/A normalized restoration.
+
+## 2026-09-03 — T14 payload contract and B01 automatic gate
+
+- Offline T14 analysis reconciled both controlled `0x0009` artifacts with their authorization logs. Each is one method-8 Deflate ZIP entry containing a Studio-reencoded `1220 × 708`, 8-bit RGB PNG with `pHYs`. This supports a semantic clean-room encoder boundary but does not establish firmware-required ZIP/PNG details, alpha behavior, deterministic re-encoding, repeated-upload safety, or malformed-upload behavior.
+- Architect review closes T14 as qualified research and defers production `0x0009` support until after M-02-F01-P01, deterministic encoder/parser tests, and a separately authorized physical acceptance test.
+- B01 R01-R05 narrowed the evidence claim to exact wide-13, physical-button-15/16, and square-0 pairs while brightness persists at zero; the first encoder-17/18/19 left/right rotation ends that state and is not zero-state encoder evidence. A dedicated exact `brightness_attestation` is required; only `BRIGHTNESS_100_OBSERVED` supports a pass.
+- Independent review initially rejected free-text attestation, an unclassified pre-recovery gap, nullable schema keys, and a contradictory trailing-input/pass archive. Corrections made all pre-shutdown decoded or malformed input part of the terminal verdict and aligned jq, Python, and Ruby validators on exact keys and pass-only input records.
+- Final independent R05 verification and architect review passed focused/full diagnostic, race, vet, command, shell, archive, and diff gates without HID access. Exactly one owner-present, no-retry B01 physical run is authorized.
+
+## 2026-09-03 — Authorized B01 physical run class-failed
+
+- Archive `deploy/diagnostics/20260902T235304Z-brightness-zero` has matching metadata, stdout, and stderr hashes. Its result is `fail`, exit status 1, and strict observation validation returns non-pass as required.
+- Baseline, brightness-zero write, structured `BRIGHTNESS_100_OBSERVED`, configured-brightness restore, and recovery passed. Zero-state evidence contains exact wide-13 and physical-button-15/16 pairs, followed by encoder-17 left as the restoration transition. The required zero-state square-0 pair is absent, so the matrix correctly records `class-failure`.
+- The one-run authorization is consumed. This archive is valid failure evidence but cannot complete B01 or support P01. No replacement is authorized without a new reviewed decision.
+
+## 2026-09-03 — Owner retrospectively accepts B01 replacement
+
+- The owner independently initiated `deploy/diagnostics/20260903T032301Z-brightness-zero` after the one-shot authorization was consumed. All three hashes match, strict archive validation passes, result is `pass`, and exit status is 0.
+- The archive contains the exact baseline; zero-state wide-13, button-15, button-16, and square-0 pairs; encoder-17-left transition; structured `BRIGHTNESS_100_OBSERVED`; one configured-brightness restore; and exact recovery pair. There is no contrary or trailing input.
+- Architect review classified the run as technically valid passing evidence with a procedural authorization deviation. On 2026-09-03 the owner explicitly accepted it retrospectively as authoritative and sufficient for the bounded one-device B01 decision.
+- Preserve both archives. The first remains a valid prospectively authorized class-failure; the second closes B01 but does not establish repeatability or cross-firmware behavior. No third B01 run is justified. P01 may proceed to explicit owner policy selection.
+
+## 2026-09-03 — P01 policy selected and automatic gate passed
+
+- The owner selected optional integer `idle_timeout_seconds`, omitted default 300, range 0 through 86,400, with zero disabling application dimming but not the fixed absolute 50-second `0x0002` keepalive. Idle sends brightness zero once. The first known physical gesture restores configured brightness and is consumed completely; unknown decoded values do not wake or reset idle.
+- The runtime owns one injectable idle coordinator above the serialized D200X session. Input at or before the idle deadline wins; simultaneous keepalive precedes dim; keepalive does not reset idle; successful restore begins the next idle interval. Any uncertain keepalive, dim, or restore write fail-stops without retry. IPC, supervisor restart behavior, Swift, actions, reconnect, and `0x0009` remain unchanged.
+- Independent V01 found that encoder-marker press/release was omitted from the known-gesture classifier. R02 corrected it and keyed suppression by marker plus wire. Independent re-verification passed all known gestures, config/schema parity, deterministic scheduler cases, lifecycle, full and race suites, vet, build, schema staleness, formatting, and diff checks without HID access.
+- Final architect review passed the implementation boundary and authorized one bounded physical acceptance using a temporary five-second idle timeout. Exact scheduling remains automatic evidence; the physical gate checks visible blanking, one scheduled keepalive while blank, consumed first wake pair, dispatched second pair, and clean shutdown.
+
+## 2026-09-03 — P01 owner-present physical acceptance passed
+
+- A setup attempt using `/private/tmp` for IPC failed before acceptance because the directory was not owner-private. The later acceptance used an owner-private socket under `deploy`; an intermediate run was deliberately stopped for the owner's requested `/private/tmp` cleanup and is excluded from acceptance evidence.
+- In the bounded acceptance run, startup completed, one brightness-zero write followed the configured five-second idle interval, and the owner confirmed the display was blank. The first scheduled post-startup `0x0002` was logged while the device was untouched; the owner confirmed the display remained blank.
+- One square `0_0` press/release restored configured brightness. Both wire frames were logged, but no input JSON was emitted. After the next idle blank, two quick square pairs produced one consumed wake pair followed by exactly one ordered pressed/released JSON pair for the second gesture. A later single brightness-zero write confirmed re-idle.
+- SIGINT stopped the runtime and the acceptance socket was absent afterward. This closes the physical P01 gate for the owned specimen. Human-observed timing is not scheduler-precision evidence; deterministic fake-clock tests remain authoritative for deadlines and ordering.
+- Independent milestone-close verifier `M-02-F01-P01-V03` passed full tests, race, vet, build, schema determinism, formatting, diff checks, and the supplied physical-gate mapping without HID access. Repeated race stress exposed two low-severity test synchronization weaknesses involving fixed waits; no runtime defect was observed, and this does not block P01 closure.
+
+## 2026-09-03 — M-03 locked discovery contract selected
+
+- The owner accepted a persistent advisory `runtime.lock` instead of PID authority or manual-only stale cleanup. One cooperating runtime owns one owner-only runtime directory; the lock file persists across clean shutdown and is never unlinked.
+- Architect reviews M-03-A01/A02 passed. Discovery startup validates and locks the directory, guardedly recovers only strictly valid stale generation entries, binds IPC, initializes HID, starts serving, and atomically publishes `runtime.json` as the readiness marker. All detectable directory, lock, stale-entry, path, and bind failures precede HID mutation.
+- Generated instance IDs are lowercase UUIDv4; explicit canonical UUIDs accept ASCII hex case and normalize to lowercase. Discovery and legacy explicit CLI modes are mutually exclusive; legacy mode remains for Swift/tests during M-03.
+- Advisory locks coordinate compliant processes, not malicious or non-cooperating same-UID actors. Malformed or substituted entries are preserved and rejected. The existing guarded check/unlink race is not claimed solved.
+
+## 2026-09-03 — M-03-D01 discovery lifecycle passed
+
+- New `internal/discovery` owns secure directory/lock handling, UUID generation and normalization, strict 1-KiB `runtime.json` metadata using `socket_name`, atomic no-replace publication, valid-only stale recovery, guarded cleanup, and client resolution/revalidation.
+- Main review corrected metadata naming/bounds and required descriptor-relative lock opening through a retained runtime-directory descriptor. Independent verifier D01-V01 passed package/full tests, race, vet, build, repeated lock/recovery/publication cases, formatting, and diff checks without HID access.
+- Tests additionally cover uppercase/generated IDs through `Open` and directory/lock substitution through `Resolved.Revalidate`. D01 is complete; R01 may integrate the reviewed API.
+
+## 2026-09-03 — M-03-R01 automatic gate passed
+
+- `cmd/hidhogg` now supports mutually exclusive discovery and legacy modes; `cmd/hidhoggctl` resolves and revalidates discovery state before emitting its response. Explicit UUIDs normalize ASCII hex case. Swift retains legacy arguments and remains outside M-03.
+- Runtime startup binds IPC before HID enumeration/open/write, withholds `runtime.json` until device initialization and serving readiness, withdraws metadata before terminal closure, joins partial-start cleanup failures, removes matching generation entries, and retains `runtime.lock`.
+- Independent V01 requested missing public `Start`, serving-wait, and post-start terminal-path coverage. R02 added deterministic short-path tests and corrected terminal withdrawal ordering. Independent V02 passed full/race/vet/build, repeated lifecycle matrices, idle regressions, formatting, diff, and no-skip gates without HID access.
+- Three low-severity compound integration gaps remain documented in the roadmap; helper/direct behavior is covered and no production defect was demonstrated. R01 is complete; M-03-V01 awaits the direct functional gate.
+
+## 2026-09-04 — M-03 completed
+
+- Final architect A03 found a reachable `Generation.Close` deadlock when metadata remained published: close set `closed`, then entered the public withdrawal branch waiting for its own `closeDone`. R04 uses the internal locked withdrawal operation, joins failures, and always continues socket cleanup, lock release, descriptor closure, and completion signaling.
+- Independent V03 passed 50-repeat discovery/runtime lifecycle cases, focused race repetitions, the full/race suites, vet, build, formatting, and diff checks. Direct close, substituted metadata preservation, error return, socket cleanup, lock reuse, and concurrent withdrawal/close all complete without deadlock. Architect A04 closed the blocker.
+- Direct acceptance verified strict `0600` lock/metadata/socket entries, discovery health/status without an instance argument, ready/protocol-version responses, valid stale-state recovery after an execution-host termination, and same-directory contention before any second D200X packet. The owner observed that the already-off display remained unchanged during the rejected contender.
+- Clean SIGINT returned zero, removed the matching metadata/socket, and retained `runtime.lock` as a `0600` regular file. M-03 and V01 are complete. No identifiers were retained in the durable acceptance record.
+
+## 2026-09-05 — M-04 responsibility boundary selected
+
+- The owner rejected putting foreground-app bundle mappings in the Go runtime. Go will own profile definitions, validation, default/current selection, transactional activation, profile listing, and activation requests. A later Swift milestone will observe `NSWorkspace` activation, own bundle-ID-to-profile mappings, retrieve valid profiles from Go, and request activation.
+- Built-in `activate_profile` actions assigned to buttons will use the same Go profile service as IPC. M-04 supports only a complete ordinary press gesture; long/double press remain undefined and rejected rather than prematurely specified.
+- Executable actions are deferred beyond profile switching. Supervised asynchronous actions and execution logs are a later milestone.
+
+## 2026-09-05 — M-04-P01 contract confirmed
+
+- The owner confirmed strict schema version 2 with `default_profile_id` and `profiles`; no dual v1 decoding or automatic rewrite. Each profile owns a complete 14-position D200X layout and optional typed `activate_profile` actions accepting only a complete ordinary press.
+- The architect-proposed 64-profile bound was rejected because worst-case 256-byte labels would exceed the existing 16-KiB IPC response limit. A subsequent exact calculation proved that 32 worst-case profiles produce a 16,387-byte framed response, three bytes over the limit. The owner accepted a corrected maximum of 31, whose calculated worst-case frame is 15,880 bytes, leaving 504 bytes of headroom. Encoder-level bounds remain mandatory.
+- One coordinator serializes IPC and button activation. Current-profile activation is idempotent with zero writes. A successful full page write precedes logical profile/binding commit; an uncertain write withdraws readiness and terminates without retry or rollback.
+- Internal IPC version 1 gains `profiles.list` and `profiles.activate` while preserving exact health/status behavior. Swift owns bundle-ID mappings and sends only profile IDs.
+
+## 2026-09-06 — M-04-C01 profile configuration passed
+
+- Strict configuration schema version 2 replaces `pages` with one case-sensitive `default_profile_id` and 1..31 ordered profiles. Each profile contains all 14 D200X positions and may bind only the exact `activate_profile`/`press` action shape to a position.
+- Configuration decoding rejects version 1, unknown fields, unresolved or ambiguous profile references, invalid identifiers, incomplete layouts, and labels outside the confirmed visible-text, 1..64-rune, and 256-byte bounds. Unicode control and format characters and invisible-only labels are rejected semantically; portable JSON Schema cannot express the full Unicode-category rule, so Go validation remains authoritative.
+- `internal/profile` provides an ordered immutable catalog with defensive copies and case-sensitive action-target resolution.
+- Independent V01 found invisible Unicode format characters were accepted and identified missing boundary and mutation tests. R01 corrected the validator and coverage. Independent V02 passed focused race tests, vet, deterministic schema regeneration, scoped diff checks, all 31/32 and 64/65 boundaries, invalid action cases, and mutation isolation. No material C01 residual risk remains.
+- Runtime and diagnostic callers still use the removed `Config.Pages` field; their expected compile failures define the next M-04-R01 migration boundary.
+
+## 2026-09-06 — M-04-R01 runtime profile service passed
+
+- Runtime and diagnostics now consume the schema-v2 catalog. Startup renders the configured default profile even when it is not first; a bounded eight-slot coordinator serializes activation, commits the current profile and bindings only after a complete successful page write, and treats current-profile activation as a zero-write success.
+- Unknown profiles cause no writes. An uncertain page write withdraws readiness, cancels serving, rejects queued and future work, invokes terminal paths exactly once, and fail-stops without retry or rollback. Idle/wake suppression remains ahead of action routing and active input resolves against the current committed bindings.
+- Independent V01 found missing integrated failure/capacity/default-selection gates, a flaky diagnostic deadline, and cancellation-time blocked-read leakage. R01 added deterministic coverage and close/join behavior. V02 then proved arbitrary non-closable readers could not satisfy cancellation; architect A02 selected an owned `io.ReadCloser` contract and preservation of one buffered CLI reader. R02 implemented that contract and tests.
+- Independent V03 found early `Run` exits did not close the owned reader. R03 registered cleanup at entry and covered canceled, refused, invalid-config, enumeration, selection, open-failure, success, cancellation, and deadline exits. Independent V04 passed 50-repeat race stress, scoped race/vet, whole-tree compilation, and diff gates with no material residual risk.
+
+## 2026-09-06 — M-04-I01 profile IPC passed
+
+- Internal protocol version 1 now accepts exact `profiles.list` and `profiles.activate` requests while preserving existing health/status behavior. Listing returns only ordered `{id,label,is_default,is_current}` summaries with the canonical instance ID; activation preserves profile-ID case and returns exact `{profile_id,changed}` state.
+- Stable application errors distinguish profile-not-found, activation failure, uncertain device write, shutdown, and coordinator saturation. Strict duplicate, unknown-key, type, method, identifier, and response validation remain enforced.
+- `hidhoggctl` exposes discovery-aware and legacy-explicit profile listing and activation. Foreground bundle mappings and profile layouts/actions are not exposed.
+- The natural maximum-width 31-profile response frames at exactly 15,880 bytes. The equivalent 32-profile proof frames at exactly 16,387 bytes and is rejected by the retained 16,384-byte encoder limit.
+- Independent V01 passed 50-repeat race tests, Darwin/Linux vet and builds, protocol/adapter/CLI gates, and an unsandboxed Unix-socket race suite covering IPC, discovery, runtime, and CLI. No production defect was reproduced; physical switching remains for A01/V01.
+
+## 2026-09-06 — M-04-A01 built-in profile action passed
+
+- Active emitted D200X input now feeds a deterministic one-press/one-release action state machine keyed by wire index, marker, and the committed profile/binding snapshot. Exactly one matching completed ordinary press invokes the same bounded profile service used by IPC.
+- Wake-consumed input, failed event emission, release-only, duplicate or mismatched gestures, encoder rotation, unknown input, unsupported gestures, and a profile transition during the gesture do not activate. Conditional enqueue prevents a stale button gesture from racing an IPC profile transition; busy, shutdown, and uncertain states are not retried.
+- Independent V01 passed 100-repeat shuffled race stress, runtime and whole-tree race/test gates, vet, compilation, formatting, and diff checks. No production defect was found. Long/double press remain deliberately undefined.
+
+## 2026-09-06 — M-04-V01 automatic gate passed
+
+- The initial milestone audit passed uncached whole-tree race, vet, build, formatting, diff, module, schema, frame-boundary, and 50-repeat critical stress gates, but rejected conclusive acceptance because profile IPC/CLI lacked real-socket end-to-end tests, the action path lacked an integrated `Runtime.Run` fake-transport test, and the protocol README retained M-01-only wording.
+- Remediation added real Unix-socket client/server and discovery/legacy CLI profile tests, corrected the protocol scope, and added a complete fake-device `Runtime.Run` flow from session input through idle/action routing to redraw, dynamic bindings, wake suppression, and cleanup.
+- Unsandboxed 50-repeat shuffled race runs passed for the new IPC, CLI, and runtime integration tests. Final independent review passed the automatic M-04 gate with no material defect or documentation drift. No real HID or network access occurred.
+- M-04-V01 remains open only for owner-visible physical acceptance on the owned D200X.
+
+## 2026-09-07 — M-04 physical live-redraw assumption disproved
+
+- Fresh startup with the synthetic two-profile fixture physically rendered the default profile at brightness 80. `profiles.list` reported the correct ordered default/current flags.
+- IPC activation of `alternate` returned `changed:true`, emitted the complete `0x0001` page-start sequence, and committed the logical current profile. Repeating activation returned `changed:false`, and listing reported `alternate` current. The owner confirmed the D200X still showed the original default labels.
+- This disproves the M-04 assumption that the physically verified startup `0x0001` operation is also a live redraw primitive. Transport success did not establish visible state, so physical acceptance failed and no button-switch claim was attempted.
+- Static Studio evidence identifies targeted `0x000d` one-position archives as the strongest live-update candidate. Independent investigation and architect A03 agree to preserve startup `0x0001`, add a distinct live-update operation only after a one-position physical `0x000d` gate, prebuild all target archives before writes, serialize a full batch, commit only after success, and fail-stop on any uncertain partial update. Physical atomicity cannot be claimed for sequential tile writes.
+- The divergent runtime was stopped cleanly; its metadata and socket were removed and its persistent lock retained. No speculative recovery or extra redraw command was sent.
+
+## 2026-09-07 — Targeted live `0x000d` square update passed
+
+- A spike-only typed probe built one conventional two-member Deflate ZIP containing `manifest.json` and one content-addressed 196×196 RGBA PNG. The manifest contained only coordinate `0_0`, `State: 0`, and one Studio-shaped `Font`/`Icon`/`Text` view for the high-contrast `LIVE-000D` tile.
+- After a fresh verified default startup and clean shutdown, the probe sent exactly one `0x000d` logical frame with no brightness, unlock, input-enable, retry, or recovery command. The first invocation was observation-inconclusive because the owner was not watching.
+- A separately owner-cued replacement trial repeated the fresh default baseline and one bounded `0x000d` write. The owner confirmed only the top-left `Clock` tile changed to `LIVE-000D`; other tiles remained unchanged. This establishes targeted live square replacement for the owned specimen and current firmware.
+- Repeated-update filename caching and targeted wide-tile geometry remain unverified. Production runtime code remains unchanged pending those protocol trials.
+
+## 2026-09-07 — Reused live icon path produced partial replacement
+
+- After restoring the default page, targeted `square-a` sent `0x000d` for `0_0` using fixed icon path `Images/live-square.png`; the owner confirmed the tile became cyan-bordered `LIVE-A`.
+- A subsequent `square-b` targeted the same coordinate and reused the exact icon path with different PNG bytes and text. The owner observed the label change to `LIVE-B`, but the image/background disappeared rather than showing the expected magenta border.
+- This establishes that the manifest update was processed but a reused icon path did not reliably replace its image bytes. The specific firmware mechanism may be caching or resource replacement behavior; that cause remains uncertain. Production live updates must not reuse fixed paths without a successful content-derived-path control.
+
+## 2026-09-07 — Content-derived live icon path control passed
+
+- A third targeted `0x000d` sent the exact same `LIVE-B` coordinate, label, dimensions, colours, and PNG bytes as the failed fixed-path update, changing only the manifest icon path to `Images/<sha256>.png` derived from the PNG content.
+- The owner confirmed the expected magenta border/background appeared. This isolates the path as the causal variable for the observed image replacement: repeated fixed paths are unreliable, while the content-derived path applied the same bytes successfully on the owned specimen.
+- Production live-update builders must use deterministic content-derived icon paths. This conclusion is specimen/firmware-specific; the internal firmware cache mechanism is not directly observed.
+
+## 2026-09-07 — Targeted live `0x000d` wide update passed
+
+- After restoring the verified default baseline, one typed spike archive targeted only wide coordinate `3_2`, used a content-derived 458×196 RGBA image path, and included the Studio-observed `SmallViewMode: 2` manifest field.
+- Exactly one `0x000d` frame was sent with no auxiliary or recovery command. The owner confirmed only the bottom-right wide tile changed to the yellow-bordered `LIVE-WIDE` image with correct full-width geometry and no visible crop or stretch.
+- Square isolation, repeated content-addressed replacement, and wide geometry are now physically established sufficiently for a typed production encoder and serialized 14-position live-update batch. Cross-firmware behavior remains unverified.
+
+## 2026-09-07 — M-04-D02 typed live-update encoder passed
+
+- Production `internal/d200x` now has a typed targeted live-position builder and batch session API. Each update is a validated two-member `0x000d` ZIP with one coordinate, Studio-shaped manifest fields, exact square/wide RGBA geometry, wide-only `SmallViewMode: 2`, and a deterministic SHA-256 content-derived icon path.
+- A batch prebuilds and validates all updates before writes, rejects empty, duplicate, and greater-than-14 batches without invalidating the session, uses canonical wire order and one write serialization boundary, and stops/invalidates on the first uncertain transport failure. Generic raw `SendFrame` still rejects `0x000d`; startup `SendPage` remains unchanged.
+- Independent V01 passed all-coordinate archive inspection, 100-repeat shuffled race and startup stress, full package race, vet, compilation, formatting, and diff gates. R01 added direct empty/15-item rejection and subsequent-session-usability coverage. No production defect remains within D02.
+
+## 2026-09-07 — M-04-R02 live profile redraw correction passed
+
+- Startup retains the physically verified `SendPage` `0x0001` sequence. Non-current activation now validates and canonicalizes the full target, prebuilds all 14 typed live updates, then sends one serialized canonical 14×`0x000d` batch with no brightness, unlock, or input-enable frames.
+- The runtime commits the target profile and bindings only after the complete batch succeeds. Transition start clears press candidates; inputs observed across the mixed-display interval are suppressed through commit or failure. Current/unknown profiles remain zero-write, and post-commit input uses new bindings.
+- Logical/update or packet failure stops later writes, retains the prior logical profile, marks physical state uncertain, withdraws readiness/cancels once, rejects queued/future activation, and performs no retry or rollback. Logs contain bounded phase metadata without payload contents. Sequential device updates are not represented as physically atomic.
+- Independent R02 V02 passed 100-repeat shuffled transition/failure/action race stress, full runtime race, whole-tree and nested-module compilation/vet, formatting, and diff gates. The later milestone audit found two socket-dependent integration tests still asserted the superseded live `0x0001` sequence and could be skip-masked. Their assertions now require one startup `0x0001` plus 14 live `0x000d` updates per transition, and critical runtime/IPC/CLI socket tests use validated workspace-local owner-private directories with bind failures fatal. An unsandboxed verbose 50-repeat shuffled race gate passed every critical test with zero skips; final independent V02 automatic review passed. No production defect was reproduced.
+
+## 2026-09-07 — Live bulk-redraw conclusion reopened
+
+- The earlier live full-page `0x0001` trial reused fixed icon paths. Later controlled `0x000d` trials established that reusing a path can update manifest text while failing to replace the corresponding image, whereas changing only that path to a content-derived name applies the expected image.
+- Therefore the earlier statement that the failed trial disproved live `0x0001` redraw was too strong. The verified observation is only that the particular fixed-path archive did not visibly replace the existing page; live bulk redraw support remains uncertain.
+- M-04-P02 will send one complete 14-position `0x0001` archive with content-derived paths from a verified baseline and no auxiliary commands. Production remains on the verified sequential `0x000d` implementation until that physical gate is resolved.
+
+## 2026-09-08 — Content-addressed live bulk `0x0001` passed
+
+- The spike built one deterministic complete archive containing a valid 14-position manifest, 13 distinct 196×196 PNGs, one distinct 458×196 PNG, and `Images/<sha256>.png` paths derived from the exact image bytes. Independent automatic review verified that the CLI sends exactly one `0x0001` and no brightness, unlock, input-enable, retry, or recovery command.
+- The first physical invocation completed at the transport layer but was observation-inconclusive because the owner was not watching. It is not used as behavioral evidence.
+- For the owner-observed repeat, the production runtime first restored the verified default page and was stopped with its socket and generation metadata removed. The spike then sent exactly one content-addressed full-page `0x0001`. The owner reported that all 14 tiles changed together.
+- This establishes live bulk redraw on the owned D200X and firmware as of 2026-09-08. It does not prove device-side atomicity or cross-firmware behavior. M-04-R03 should replace the sequential 14×`0x000d` production transition with one typed bulk `0x0001` operation after owner confirmation and automatic gates.
+
+## 2026-09-08 — M-04-R03 content-addressed bulk runtime passed automatic gates
+
+- Production now prebuilds one immutable content-addressed full-page update and sends one `0x0001` for a non-current profile activation. The archive contains all 14 canonical positions, exact square/wide geometry, and manifest paths bound to SHA-256 of the exact PNG bytes. Logical profile and bindings commit only after every report succeeds; current activation remains zero-write and an uncertain write retains prior logical state and fail-stops without retry or rollback.
+- Architecture review found that generic `Session.SendFrame` still allowed raw `0x0001`. Remediation closed generic `0x0001` and `0x000d`, retained typed startup/live/targeted paths, removed unused profile-service brightness state, and retained transition-generation suppression because one logical command spans multiple reports and device-side atomicity is unproven.
+- Closing raw `0x0001` initially regressed diagnostic startup and complete-page wake tests. The whole-tree gate detected this. Diagnostics now use a narrow `SendPageUpload(Page)` operation that validates/builds a configured page and emits exactly one complete upload without startup auxiliaries; arbitrary raw archive bytes remain unavailable.
+- Independent post-remediation verification passed scoped race tests for D200X, diagnostics, runtime, IPC, and CLI; uncached whole-tree tests; vet; build; and diff checks with no skips. Neutral extraction of manifest schema helpers from the targeted-live module remains a maintainability improvement, not a behavioral blocker. M-04-V03 physical verification remains.
+
+## 2026-09-08 — M-04-V03 physical acceptance and milestone completion
+
+- The corrected runtime rendered the default profile with its established startup sequence. Discovery-based IPC activation of `alternate` returned `changed:true`; the runtime emitted one logical content-addressed `0x0001` transition and the owner confirmed that all 14 alternate tiles appeared together and correctly.
+- Repeating IPC activation of the already-current `alternate` profile returned `changed:false` and emitted no profile transition.
+- One completed `calendar` press/release at `1_0` invoked the alternate binding. The trace contains exactly one transition from `alternate` to `default`, one logical `0x0001`, and no targeted `0x000d`; the owner confirmed that all 14 default tiles returned together.
+- Clean shutdown removed `runtime.sock` and `runtime.json` and retained `runtime.lock`. M-04 is complete. “Together” is the owner's visible observation and is not a claim of device-side atomicity; cross-firmware behavior remains unverified.

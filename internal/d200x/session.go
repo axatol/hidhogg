@@ -191,7 +191,7 @@ func (s *Session) ReadFrame(ctx context.Context) (Frame, error) {
 	}
 	assembler, err := NewFrameAssembler(report[:n])
 	if err != nil {
-		return Frame{}, err
+		return Frame{}, &InboundMalformedError{Err: err}
 	}
 	for !assembler.Complete() {
 		n, err = s.Read(ctx, report)
@@ -202,10 +202,14 @@ func (s *Session) ReadFrame(ctx context.Context) (Frame, error) {
 			return Frame{}, err
 		}
 		if err := assembler.Append(report[:n]); err != nil {
-			return Frame{}, err
+			return Frame{}, &InboundMalformedError{Err: err}
 		}
 	}
-	return assembler.Frame()
+	frame, err := assembler.Frame()
+	if err != nil {
+		return Frame{}, &InboundMalformedError{Err: err}
+	}
+	return frame, nil
 }
 
 func validateReadCount(actual, capacity int) error {
@@ -224,6 +228,9 @@ func (s *Session) ReadInput(ctx context.Context) (InputEvent, bool, error) {
 		return InputEvent{}, false, err
 	}
 	event, ok, err := DecodeInput(frame)
+	if err != nil {
+		return event, ok, &InboundMalformedError{Err: err}
+	}
 	if ok && err == nil {
 		s.logInputEvent(event)
 	}
@@ -233,6 +240,9 @@ func (s *Session) ReadInput(ctx context.Context) (InputEvent, bool, error) {
 func (s *Session) SendFrame(ctx context.Context, frame Frame) error {
 	if s == nil {
 		return &ProtocolError{Kind: ErrorSessionClosed}
+	}
+	if frame.Command == CommandCompleteDisplayUpload || frame.Command == CommandPartialDisplayUpload {
+		return &ProtocolError{Kind: ErrorUnsafeOutboundCommand, Command: frame.Command}
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()

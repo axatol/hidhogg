@@ -3,7 +3,10 @@ package d200x
 import (
 	"bytes"
 	"compress/flate"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"hash/crc32"
 	"image"
@@ -61,9 +64,340 @@ func DiagnosticDisplayFrame() (Frame, error) {
 	return CompleteDisplayUploadFrame(archive.Data)
 }
 
+const LiveBulkDisplayPreset = "live-bulk"
+
+func BuildLiveBulkDisplayArchive() (DisplayArchive, error) {
+	files, err := liveBulkArchiveFiles()
+	if err != nil {
+		return DisplayArchive{}, err
+	}
+	for paddingLength := 0; paddingLength < DiagnosticMaximumPadding; paddingLength++ {
+		archive, err := assembleDisplayArchive(files, paddingLength)
+		if err != nil {
+			return DisplayArchive{}, err
+		}
+		if len(archive) > MaxPayloadLength {
+			return DisplayArchive{}, &ProtocolError{
+				Kind:     ErrorPayloadTooLarge,
+				Declared: uint32(len(archive)),
+				Limit:    MaxPayloadLength,
+			}
+		}
+		if firmwareSafeArchive(archive) {
+			return DisplayArchive{Data: archive, PaddingLength: paddingLength}, nil
+		}
+	}
+	return DisplayArchive{}, fmt.Errorf("no firmware-safe live bulk archive padding below %d bytes", DiagnosticMaximumPadding)
+}
+
+func LiveBulkDisplayFrame() (Frame, error) {
+	archive, err := BuildLiveBulkDisplayArchive()
+	if err != nil {
+		return Frame{}, err
+	}
+	return CompleteDisplayUploadFrame(archive.Data)
+}
+
+func liveBulkArchiveFiles() ([]displayArchiveFile, error) {
+	icons := make([][]byte, DiagnosticSquareIconCount+1)
+	paths := make([]string, len(icons))
+	for index := 0; index < DiagnosticSquareIconCount; index++ {
+		data, err := liveBulkPNG(DiagnosticSquareWidth, 20+index)
+		if err != nil {
+			return nil, fmt.Errorf("encode live bulk square tile %02d: %w", index, err)
+		}
+		icons[index] = data
+		paths[index] = contentDerivedIconPath(data)
+	}
+	wide, err := liveBulkPNG(DiagnosticWideWidth, 20+DiagnosticSquareIconCount)
+	if err != nil {
+		return nil, fmt.Errorf("encode live bulk wide tile: %w", err)
+	}
+	icons[len(icons)-1] = wide
+	paths[len(paths)-1] = contentDerivedIconPath(wide)
+
+	manifest := liveBulkManifest(paths)
+	manifestCompressed, err := deflateRaw(manifest)
+	if err != nil {
+		return nil, fmt.Errorf("compress live bulk manifest: %w", err)
+	}
+	files := []displayArchiveFile{{
+		name:             "manifest.json",
+		compression:      8,
+		uncompressedData: manifest,
+		compressedData:   manifestCompressed,
+		checksum:         crc32.ChecksumIEEE(manifest),
+	}}
+	for index, data := range icons {
+		compressed, err := deflateRaw(data)
+		if err != nil {
+			return nil, fmt.Errorf("compress live bulk tile %02d: %w", index, err)
+		}
+		files = append(files, displayArchiveFile{
+			name:             paths[index],
+			compression:      8,
+			uncompressedData: data,
+			compressedData:   compressed,
+			checksum:         crc32.ChecksumIEEE(data),
+		})
+	}
+	return files, nil
+}
+
+func contentDerivedIconPath(data []byte) string {
+	digest := sha256.Sum256(data)
+	return "Images/" + hex.EncodeToString(digest[:]) + ".png"
+}
+
+func liveBulkManifest(paths []string) []byte {
+	type manifestEntry struct {
+		coordinate string
+		iconPath   string
+	}
+	entries := make([]manifestEntry, 0, DiagnosticSquareIconCount+1)
+	for row := 0; row < 3; row++ {
+		for column := 0; column < 5; column++ {
+			if column == 4 && row == 2 {
+				continue
+			}
+			position := row*5 + column
+			iconPath := paths[position]
+			if column == 3 && row == 2 {
+				iconPath = paths[DiagnosticSquareIconCount]
+			}
+			entries = append(entries, manifestEntry{
+				coordinate: fmt.Sprintf("%d_%d", column, row),
+				iconPath:   iconPath,
+			})
+		}
+	}
+	var manifest bytes.Buffer
+	manifest.WriteString("{\n")
+	for index, entry := range entries {
+		appendManifestEntry(&manifest, entry.coordinate, entry.iconPath, index == len(entries)-1)
+	}
+	manifest.WriteString("}")
+	return manifest.Bytes()
+}
+
+const (
+	partialDisplayPresetSquareA      = "square-a"
+	partialDisplayPresetSquareB      = "square-b"
+	partialDisplayPresetSquareBFresh = "square-b-fresh"
+	partialDisplayPresetWide         = "wide"
+	partialDisplayFontName           = "Source Han Sans SC"
+	partialDisplaySquareIcon         = "Images/live-square.png"
+	partialDisplayMaxExtra           = 4_096
+)
+
+type partialDisplayPresetDefinition struct {
+	coordinate           string
+	label                string
+	width                int
+	iconPath             string
+	includeSmallViewMode bool
+	border               color.RGBA
+}
+
+// BuildPartialDisplayUploadArchive creates the square-a compatibility
+// archive. Its only members are the manifest and the bounded square tile.
+func BuildPartialDisplayUploadArchive() (DisplayArchive, error) {
+	return BuildPartialDisplayUploadArchiveForPreset(partialDisplayPresetSquareA)
+}
+
+// BuildPartialDisplayUploadArchiveForPreset creates one bounded experimental
+// archive for the exact physical-probe preset name.
+func BuildPartialDisplayUploadArchiveForPreset(preset string) (DisplayArchive, error) {
+	definition, err := partialDisplayPreset(preset)
+	if err != nil {
+		return DisplayArchive{}, err
+	}
+	pngData, err := partialDisplayPNG(definition.width, definition.label, definition.border)
+	if err != nil {
+		return DisplayArchive{}, fmt.Errorf("encode partial display tile: %w", err)
+	}
+	iconPath := definition.iconPath
+	if iconPath == "" {
+		hash := sha256.Sum256(pngData)
+		iconPath = "Images/" + hex.EncodeToString(hash[:]) + ".png"
+	}
+	manifest, err := partialDisplayManifest(definition.coordinate, iconPath, definition.label, definition.includeSmallViewMode)
+	if err != nil {
+		return DisplayArchive{}, fmt.Errorf("encode partial display manifest: %w", err)
+	}
+	manifestCompressed, err := deflateRaw(manifest)
+	if err != nil {
+		return DisplayArchive{}, fmt.Errorf("compress partial display manifest: %w", err)
+	}
+	pngCompressed, err := deflateRaw(pngData)
+	if err != nil {
+		return DisplayArchive{}, fmt.Errorf("compress partial display tile: %w", err)
+	}
+	files := []displayArchiveFile{
+		{
+			name:             "manifest.json",
+			compression:      8,
+			uncompressedData: manifest,
+			compressedData:   manifestCompressed,
+			checksum:         crc32.ChecksumIEEE(manifest),
+		},
+		{
+			name:             iconPath,
+			compression:      8,
+			uncompressedData: pngData,
+			compressedData:   pngCompressed,
+			checksum:         crc32.ChecksumIEEE(pngData),
+		},
+	}
+	return buildPartialDisplayArchive(files)
+}
+
+func partialDisplayPreset(preset string) (partialDisplayPresetDefinition, error) {
+	switch preset {
+	case partialDisplayPresetSquareA:
+		return partialDisplayPresetDefinition{
+			coordinate: partialDisplayCoordinateSquare,
+			label:      "LIVE-A",
+			width:      DiagnosticSquareWidth,
+			iconPath:   partialDisplaySquareIcon,
+			border:     color.RGBA{R: 0, G: 220, B: 255, A: 255},
+		}, nil
+	case partialDisplayPresetSquareB:
+		return partialDisplayPresetDefinition{
+			coordinate: partialDisplayCoordinateSquare,
+			label:      "LIVE-B",
+			width:      DiagnosticSquareWidth,
+			iconPath:   partialDisplaySquareIcon,
+			border:     color.RGBA{R: 255, G: 0, B: 220, A: 255},
+		}, nil
+	case partialDisplayPresetSquareBFresh:
+		return partialDisplayPresetDefinition{
+			coordinate: partialDisplayCoordinateSquare,
+			label:      "LIVE-B",
+			width:      DiagnosticSquareWidth,
+			border:     color.RGBA{R: 255, G: 0, B: 220, A: 255},
+		}, nil
+	case partialDisplayPresetWide:
+		return partialDisplayPresetDefinition{
+			coordinate:           partialDisplayCoordinateWide,
+			label:                "LIVE-WIDE",
+			width:                DiagnosticWideWidth,
+			includeSmallViewMode: true,
+			border:               color.RGBA{R: 255, G: 220, B: 0, A: 255},
+		}, nil
+	default:
+		return partialDisplayPresetDefinition{}, fmt.Errorf("unknown partial display preset %q", preset)
+	}
+}
+
+// PartialDisplayUploadFrame returns the square-a logical experimental 0x000d
+// frame for callers that do not need to select a preset.
+func PartialDisplayUploadFrame() (Frame, error) {
+	return PartialDisplayUploadFrameForPreset(partialDisplayPresetSquareA)
+}
+
+// PartialDisplayUploadFrameForPreset returns one logical experimental 0x000d
+// frame for the exact physical-probe preset name.
+func PartialDisplayUploadFrameForPreset(preset string) (Frame, error) {
+	archive, err := BuildPartialDisplayUploadArchiveForPreset(preset)
+	if err != nil {
+		return Frame{}, err
+	}
+	return NewFrame(CommandPartialDisplayUpload, archive.Data), nil
+}
+
+const (
+	partialDisplayCoordinateSquare = "0_0"
+	partialDisplayCoordinateWide   = "3_2"
+)
+
+type partialDisplayManifestEntry struct {
+	SmallViewMode int                       `json:"SmallViewMode,omitempty"`
+	State         int                       `json:"State"`
+	ViewParam     []partialDisplayViewParam `json:"ViewParam"`
+}
+
+type partialDisplayViewParam struct {
+	Font partialDisplayFont `json:"Font"`
+	Icon string             `json:"Icon"`
+	Text string             `json:"Text"`
+}
+
+type partialDisplayFont struct {
+	Align     string `json:"Align"`
+	Color     int    `json:"Color"`
+	FontName  string `json:"FontName"`
+	ShowTitle bool   `json:"ShowTitle"`
+	Size      int    `json:"Size"`
+	Weight    int    `json:"Weight"`
+}
+
+func partialDisplayManifest(coordinate, iconPath, label string, includeSmallViewMode bool) ([]byte, error) {
+	entry := partialDisplayManifestEntry{
+		State: 0,
+		ViewParam: []partialDisplayViewParam{{
+			Font: partialDisplayFont{
+				Align:     "bottom",
+				Color:     16_777_215,
+				FontName:  partialDisplayFontName,
+				ShowTitle: true,
+				Size:      10,
+				Weight:    80,
+			},
+			Icon: iconPath,
+			Text: label,
+		}},
+	}
+	if includeSmallViewMode {
+		entry.SmallViewMode = 2
+	}
+	return json.Marshal(map[string]partialDisplayManifestEntry{coordinate: entry})
+}
+
+func buildPartialDisplayArchive(files []displayArchiveFile) (DisplayArchive, error) {
+	if len(files) != 2 {
+		return DisplayArchive{}, fmt.Errorf("partial display archive has %d files, want exactly 2", len(files))
+	}
+	for extraLength := 0; extraLength <= partialDisplayMaxExtra; extraLength++ {
+		candidateFiles := append([]displayArchiveFile(nil), files...)
+		if extraLength > 0 {
+			candidateFiles[0].extra = partialDisplayArchiveExtra(extraLength)
+		}
+		archive, err := assembleDisplayArchive(candidateFiles, 0)
+		if err != nil {
+			return DisplayArchive{}, err
+		}
+		if len(archive) > MaxPayloadLength {
+			return DisplayArchive{}, &ProtocolError{
+				Kind:     ErrorPayloadTooLarge,
+				Declared: uint32(len(archive)),
+				Limit:    MaxPayloadLength,
+			}
+		}
+		if firmwareSafeArchive(archive) {
+			return DisplayArchive{Data: archive, PaddingLength: extraLength}, nil
+		}
+	}
+	return DisplayArchive{}, fmt.Errorf("no firmware-safe partial display archive extra field below %d bytes", partialDisplayMaxExtra)
+}
+
+func partialDisplayArchiveExtra(length int) []byte {
+	if length < 4 {
+		return nil
+	}
+	extra := make([]byte, length)
+	binary.LittleEndian.PutUint16(extra[0:2], 0xD200)
+	binary.LittleEndian.PutUint16(extra[2:4], uint16(length-4))
+	for index := 4; index < len(extra); index++ {
+		extra[index] = 0xA5
+	}
+	return extra
+}
+
 type displayArchiveFile struct {
 	name             string
 	compression      uint16
+	extra            []byte
 	uncompressedData []byte
 	compressedData   []byte
 	checksum         uint32
@@ -199,6 +533,9 @@ func assembleDisplayArchive(files []displayArchiveFile, paddingLength int) ([]by
 		if len(file.compressedData) > 0xFFFFFFFF || len(file.uncompressedData) > 0xFFFFFFFF || archive.Len() > 0xFFFFFFFF {
 			return nil, fmt.Errorf("display archive field overflow")
 		}
+		if len(file.extra) > 0xFFFF {
+			return nil, fmt.Errorf("display archive extra field too long")
+		}
 		localOffsets[index] = uint32(archive.Len())
 		writeUint32(&archive, 0x04034B50)
 		if file.compression == 0 {
@@ -214,8 +551,9 @@ func assembleDisplayArchive(files []displayArchiveFile, paddingLength int) ([]by
 		writeUint32(&archive, uint32(len(file.compressedData)))
 		writeUint32(&archive, uint32(len(file.uncompressedData)))
 		writeUint16(&archive, uint16(len(name)))
-		writeUint16(&archive, 0)
+		writeUint16(&archive, uint16(len(file.extra)))
 		_, _ = archive.Write(name)
+		_, _ = archive.Write(file.extra)
 		_, _ = archive.Write(file.compressedData)
 	}
 
@@ -240,13 +578,14 @@ func assembleDisplayArchive(files []displayArchiveFile, paddingLength int) ([]by
 		writeUint32(&archive, uint32(len(file.compressedData)))
 		writeUint32(&archive, uint32(len(file.uncompressedData)))
 		writeUint16(&archive, uint16(len(name)))
-		writeUint16(&archive, 0)
+		writeUint16(&archive, uint16(len(file.extra)))
 		writeUint16(&archive, 0)
 		writeUint16(&archive, 0)
 		writeUint16(&archive, 0)
 		writeUint32(&archive, 0)
 		writeUint32(&archive, localOffsets[index])
 		_, _ = archive.Write(name)
+		_, _ = archive.Write(file.extra)
 	}
 
 	centralSize := archive.Len() - centralOffset
@@ -304,6 +643,160 @@ func diagnosticPNG(width, label int) ([]byte, error) {
 		return nil, err
 	}
 	return encoded.Bytes(), nil
+}
+
+func liveBulkPNG(width, label int) ([]byte, error) {
+	imageData := image.NewRGBA(image.Rect(0, 0, width, DiagnosticTileHeight))
+	background := color.RGBA{
+		R: uint8(18 + (label*7)%32),
+		G: uint8(5 + (label*5)%24),
+		B: uint8(30 + (label*11)%40),
+		A: 255,
+	}
+	accent := color.RGBA{
+		R: uint8(120 + (label*17)%120),
+		G: uint8(50 + (label*31)%150),
+		B: uint8(80 + (label*43)%150),
+		A: 255,
+	}
+	draw.Draw(imageData, imageData.Bounds(), image.NewUniform(background), image.Point{}, draw.Src)
+	drawBorder(imageData, 5, accent)
+	drawNumber(imageData, label, accent)
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, imageData); err != nil {
+		return nil, err
+	}
+	return encoded.Bytes(), nil
+}
+
+var partialDisplayGlyphs = map[rune][]string{
+	'-': {
+		"00000",
+		"00000",
+		"00000",
+		"11111",
+		"00000",
+		"00000",
+		"00000",
+	},
+	'0': {
+		"11111",
+		"10001",
+		"10001",
+		"10001",
+		"10001",
+		"10001",
+		"11111",
+	},
+	'D': {
+		"11110",
+		"10001",
+		"10001",
+		"10001",
+		"10001",
+		"10001",
+		"11110",
+	},
+	'E': {
+		"11111",
+		"10000",
+		"10000",
+		"11110",
+		"10000",
+		"10000",
+		"11111",
+	},
+	'I': {
+		"11111",
+		"00100",
+		"00100",
+		"00100",
+		"00100",
+		"00100",
+		"11111",
+	},
+	'L': {
+		"10000",
+		"10000",
+		"10000",
+		"10000",
+		"10000",
+		"10000",
+		"11111",
+	},
+	'V': {
+		"10001",
+		"10001",
+		"10001",
+		"10001",
+		"10001",
+		"01010",
+		"00100",
+	},
+	'W': {
+		"10001",
+		"10001",
+		"10001",
+		"10101",
+		"10101",
+		"11011",
+		"10001",
+	},
+	'?': {
+		"11110",
+		"00001",
+		"00010",
+		"00100",
+		"00100",
+		"00000",
+		"00100",
+	},
+}
+
+func partialDisplayPNG(width int, label string, border color.RGBA) ([]byte, error) {
+	if width <= 0 || DiagnosticTileHeight <= 0 {
+		return nil, fmt.Errorf("partial display tile dimensions must be positive")
+	}
+	imageData := image.NewRGBA(image.Rect(0, 0, width, DiagnosticTileHeight))
+	draw.Draw(imageData, imageData.Bounds(), image.NewUniform(color.RGBA{A: 255}), image.Point{}, draw.Src)
+	drawBorder(imageData, 6, border)
+	drawPartialDisplayLabel(imageData, label, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, imageData); err != nil {
+		return nil, err
+	}
+	return encoded.Bytes(), nil
+}
+
+func drawPartialDisplayLabel(imageData *image.RGBA, label string, foreground color.RGBA) {
+	const (
+		glyphWidth  = 5
+		glyphHeight = 7
+		glyphGap    = 1
+		scale       = 3
+	)
+	runes := []rune(label)
+	totalWidth := len(runes)*glyphWidth*scale + (len(runes)-1)*glyphGap*scale
+	originX := (imageData.Bounds().Dx() - totalWidth) / 2
+	originY := (imageData.Bounds().Dy() - glyphHeight*scale) / 2
+	uniform := image.NewUniform(foreground)
+	for index, value := range runes {
+		pattern, ok := partialDisplayGlyphs[value]
+		if !ok {
+			pattern = partialDisplayGlyphs['?']
+		}
+		glyphX := originX + index*(glyphWidth+glyphGap)*scale
+		for row, line := range pattern {
+			for column, bit := range line {
+				if bit != '1' {
+					continue
+				}
+				x := glyphX + column*scale
+				y := originY + row*scale
+				draw.Draw(imageData, image.Rect(x, y, x+scale, y+scale), uniform, image.Point{}, draw.Src)
+			}
+		}
+	}
 }
 
 func drawBorder(imageData *image.RGBA, thickness int, border color.Color) {

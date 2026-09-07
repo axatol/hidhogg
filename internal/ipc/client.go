@@ -46,6 +46,36 @@ func (c *Client) Call(ctx context.Context, method Method, instanceID string) (Re
 	})
 }
 
+// ListProfiles requests the ordered profile summaries from the runtime.
+func (c *Client) ListProfiles(ctx context.Context, instanceID string) (Response, error) {
+	return c.Call(ctx, MethodProfilesList, instanceID)
+}
+
+// ActivateProfile requests one case-sensitive profile activation.
+func (c *Client) ActivateProfile(ctx context.Context, instanceID, profileID string) (Response, error) {
+	requestID, err := NewUUID()
+	if err != nil {
+		return Response{}, err
+	}
+	return c.CallRequest(ctx, Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       requestID,
+		Method:          MethodProfilesActivate,
+		InstanceID:      instanceID,
+		ProfileID:       profileID,
+	})
+}
+
+// ProfilesList is an explicit alias for ListProfiles.
+func (c *Client) ProfilesList(ctx context.Context, instanceID string) (Response, error) {
+	return c.ListProfiles(ctx, instanceID)
+}
+
+// ProfilesActivate is an explicit alias for ActivateProfile.
+func (c *Client) ProfilesActivate(ctx context.Context, instanceID, profileID string) (Response, error) {
+	return c.ActivateProfile(ctx, instanceID, profileID)
+}
+
 func (c *Client) CallRequest(ctx context.Context, request Request) (Response, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -56,8 +86,14 @@ func (c *Client) CallRequest(ctx context.Context, request Request) (Response, er
 	if !isCanonicalUUID(request.RequestID) || !isCanonicalUUID(request.InstanceID) {
 		return Response{}, errors.New("request identifiers must be canonical UUIDs")
 	}
-	if request.Method != MethodHealth && request.Method != MethodStatus {
+	if !isSupportedMethod(request.Method) {
 		return Response{}, errors.New("request method is not supported")
+	}
+	if request.Method == MethodProfilesActivate && request.ProfileID == "" {
+		return Response{}, errors.New("profile ID is required")
+	}
+	if request.Method != MethodProfilesActivate && request.ProfileID != "" {
+		return Response{}, errors.New("profile ID is not permitted")
 	}
 	if _, err := validateGenerationDirectory(filepath.Dir(c.socketPath)); err != nil {
 		return Response{}, err

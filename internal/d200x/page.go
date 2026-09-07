@@ -189,6 +189,25 @@ func PositionBackground(position Position) (color.RGBA, error) {
 	return ParseBackgroundColor(position.Background)
 }
 
+// ValidatePosition checks one configured display position without requiring a
+// complete page. Targeted live updates use the same field and coordinate
+// invariants as complete page uploads.
+func ValidatePosition(position Position) error {
+	if _, ok := LookupPosition(position.Position); !ok {
+		return fmt.Errorf("D200X display position %q is unsupported", position.Position)
+	}
+	if !validPositionID(position.ID) {
+		return fmt.Errorf("D200X display position has an invalid ID")
+	}
+	if !validPositionLabel(position.Label) {
+		return fmt.Errorf("D200X display position has an invalid label")
+	}
+	if _, err := PositionBackground(position); err != nil {
+		return fmt.Errorf("D200X display position background: %w", err)
+	}
+	return nil
+}
+
 func ParseBackgroundColor(value string) (color.RGBA, error) {
 	if len(value) != 7 && len(value) != 9 || value[0] != '#' {
 		return color.RGBA{}, fmt.Errorf("colour must be #RRGGBB or #RRGGBBAA")
@@ -234,7 +253,23 @@ func PageFrame(page Page) (Frame, error) {
 	if err != nil {
 		return Frame{}, err
 	}
-	return CompleteDisplayUploadFrame(archive.Data)
+	return completeDisplayUploadFrame(archive.Data)
+}
+
+// SendPageUpload validates and renders one configured complete-page upload
+// before taking the session write lock. It is the typed operation for callers
+// that need a page upload without startup brightness or wake primitives.
+func (s *Session) SendPageUpload(ctx context.Context, page Page) error {
+	if s == nil {
+		return &ProtocolError{Kind: ErrorSessionClosed}
+	}
+	display, err := PageFrame(page)
+	if err != nil {
+		return err
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return s.sendFrameLocked(ctx, display)
 }
 
 // SendPage performs the only supported page-start sequence. Archive creation

@@ -138,7 +138,7 @@ func TestFrameLimitsAreEnforced(t *testing.T) {
 	if _, err := EncodeFrame(NewFrame(CommandCompleteDisplayUpload, tooLarge)); !hasProtocolKind(err, ErrorPayloadTooLarge) {
 		t.Fatalf("oversize encode error = %v", err)
 	}
-	if _, err := CompleteDisplayUploadFrame(tooLarge); !hasProtocolKind(err, ErrorPayloadTooLarge) {
+	if _, err := completeDisplayUploadFrame(tooLarge); !hasProtocolKind(err, ErrorPayloadTooLarge) {
 		t.Fatalf("oversize upload frame error = %v", err)
 	}
 
@@ -191,6 +191,48 @@ func TestBrightnessFrameClampsOnlyAtPrimitiveBoundary(t *testing.T) {
 	}
 	if got := BrightnessFrame(37).Payload; string(got) != "37" {
 		t.Fatalf("normal brightness payload = %q", got)
+	}
+}
+
+func TestInboundMalformedErrorRequiresExplicitOriginWrapping(t *testing.T) {
+	allowed := []ProtocolErrorKind{
+		ErrorInvalidReportLength,
+		ErrorUnsupportedReportID,
+		ErrorInvalidFrameMagic,
+		ErrorPayloadTooLarge,
+		ErrorTruncatedPayload,
+		ErrorUnexpectedContinuation,
+		ErrorMalformedInputPayload,
+	}
+	terminal := []ProtocolErrorKind{
+		ErrorAmbiguousDeviceSelection,
+		ErrorNoMatchingDevice,
+		ErrorIneligibleDevice,
+		ErrorInvalidBrightness,
+		ErrorTransportShortWrite,
+		ErrorUnsafeOutboundCommand,
+		ErrorSessionClosed,
+		ErrorNoActiveTransport,
+		ProtocolErrorKind("future-unknown"),
+	}
+	for _, kind := range append(append([]ProtocolErrorKind(nil), allowed...), terminal...) {
+		err := &ProtocolError{Kind: kind}
+		if IsInboundMalformed(err) {
+			t.Fatalf("unwrapped %q error was treated as proven inbound malformation", kind)
+		}
+	}
+	for _, kind := range allowed {
+		err := &ProtocolError{Kind: kind}
+		wrapped := &InboundMalformedError{Err: err}
+		if !IsInboundMalformed(wrapped) || !hasProtocolKind(wrapped, kind) {
+			t.Fatalf("wrapped %q error did not retain origin and kind", kind)
+		}
+	}
+	for _, kind := range terminal {
+		wrapped := &InboundMalformedError{Err: &ProtocolError{Kind: kind}}
+		if IsInboundMalformed(wrapped) {
+			t.Fatalf("wrapped terminal %q error was treated as inbound malformation", kind)
+		}
 	}
 }
 

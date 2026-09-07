@@ -8,7 +8,7 @@ import (
 
 const jsonSchemaDraft4 = "http://json-schema.org/draft-04/schema#"
 
-//go:generate go run ./generate-schema -output ../../schema/hidhogg-d200x-v1.json
+//go:generate go run ./generate-schema -output ../../schema/hidhogg-d200x-v2.json
 
 // JSONSchema reflects the canonical Config DTO and adds constraints that are
 // stable for this milestone. Reflection supplies property names and types;
@@ -19,8 +19,8 @@ func JSONSchema() (*jsonschema.Schema, error) {
 		return nil, err
 	}
 	document.Schema = jsonSchemaDraft4
-	document.Title = "Hidhogg Ulanzi D200X configuration v1"
-	document.Description = "Milestone-private single-file configuration for one Ulanzi D200X page."
+	document.Title = "Hidhogg Ulanzi D200X configuration v2"
+	document.Description = "Strict named-profile configuration for one Ulanzi D200X adapter."
 
 	configureConfigSchema(document)
 	return document, nil
@@ -50,7 +50,7 @@ func configureConfigSchema(document *jsonschema.Schema) {
 		return
 	}
 	if field := document.Properties["schema_version"]; field != nil {
-		field.Enum = []any{SchemaVersionV1}
+		field.Enum = []any{SchemaVersionV2}
 	}
 	if field := document.Properties["adapter"]; field != nil {
 		field.Enum = []any{AdapterUlanziD200X}
@@ -59,34 +59,59 @@ func configureConfigSchema(document *jsonschema.Schema) {
 		field.Minimum = schemaNumber(float64(MinimumBrightness))
 		field.Maximum = schemaNumber(float64(MaximumBrightness))
 	}
-	if field := document.Properties["pages"]; field != nil {
+	if field := document.Properties["idle_timeout_seconds"]; field != nil {
+		field.Minimum = schemaNumber(0)
+		field.Maximum = schemaNumber(float64(MaximumIdleTimeoutSeconds))
+		field.Default = json.RawMessage("300")
+	}
+	if field := document.Properties["default_profile_id"]; field != nil {
+		configureStableIDSchema(field)
+	}
+	if field := document.Properties["profiles"]; field != nil {
 		field.Type = "array"
 		field.Types = nil
-		field.MinItems = schemaInt(RequiredPageCount)
-		field.MaxItems = schemaInt(RequiredPageCount)
+		field.MinItems = schemaInt(1)
+		field.MaxItems = schemaInt(MaximumProfileCount)
+		field.UniqueItems = true
 		if field.Items != nil {
-			configurePageSchema(field.Items)
+			configureProfileSchema(field.Items)
 		}
 	}
+	// The decoder applies the default when this optional field is omitted.
+	document.Required = withoutRequired(document.Required, "idle_timeout_seconds")
 }
 
-func configurePageSchema(page *jsonschema.Schema) {
-	if page == nil || page.Properties == nil {
-		return
+func withoutRequired(required []string, omitted string) []string {
+	filtered := make([]string, 0, len(required))
+	for _, property := range required {
+		if property != omitted {
+			filtered = append(filtered, property)
+		}
 	}
-	positions := page.Properties["positions"]
-	if positions == nil {
-		return
-	}
-	positions.Type = "array"
-	positions.Types = nil
-	positions.MinItems = schemaInt(RequiredPositionCount)
-	positions.MaxItems = schemaInt(RequiredPositionCount)
-	positions.UniqueItems = true
-	if positions.Items != nil {
-		configurePositionSchema(positions.Items)
-	}
+	return filtered
+}
 
+func configureProfileSchema(profileSchema *jsonschema.Schema) {
+	if profileSchema == nil || profileSchema.Properties == nil {
+		return
+	}
+	if field := profileSchema.Properties["id"]; field != nil {
+		configureStableIDSchema(field)
+	}
+	if field := profileSchema.Properties["label"]; field != nil {
+		field.MinLength = schemaInt(1)
+		field.MaxLength = schemaInt(MaximumLabelRunes)
+	}
+	if field := profileSchema.Properties["positions"]; field != nil {
+		field.Type = "array"
+		field.Types = nil
+		field.MinItems = schemaInt(RequiredPositionCount)
+		field.MaxItems = schemaInt(RequiredPositionCount)
+		field.UniqueItems = true
+		if field.Items != nil {
+			configurePositionSchema(field.Items)
+		}
+	}
 }
 
 func configurePositionSchema(position *jsonschema.Schema) {
@@ -94,9 +119,7 @@ func configurePositionSchema(position *jsonschema.Schema) {
 		return
 	}
 	if field := position.Properties["id"]; field != nil {
-		field.Pattern = stableIDPattern.String()
-		field.MinLength = schemaInt(1)
-		field.MaxLength = schemaInt(MaximumStableIDRunes)
+		configureStableIDSchema(field)
 	}
 	if field := position.Properties["position"]; field != nil {
 		field.Enum = make([]any, 0, len(supportedPositionSpecs))
@@ -111,6 +134,35 @@ func configurePositionSchema(position *jsonschema.Schema) {
 	if field := position.Properties["background"]; field != nil {
 		field.Pattern = backgroundPattern.String()
 	}
+	if field := position.Properties["action"]; field != nil {
+		configureActionSchema(field)
+	}
+}
+
+func configureActionSchema(action *jsonschema.Schema) {
+	if action == nil || action.Properties == nil {
+		return
+	}
+	if field := action.Properties["type"]; field != nil {
+		field.Enum = []any{profileActionType}
+	}
+	if field := action.Properties["gesture"]; field != nil {
+		field.Enum = []any{profileActionGesture}
+	}
+	if field := action.Properties["profile_id"]; field != nil {
+		configureStableIDSchema(field)
+	}
+}
+
+const (
+	profileActionType    = "activate_profile"
+	profileActionGesture = "press"
+)
+
+func configureStableIDSchema(field *jsonschema.Schema) {
+	field.Pattern = stableIDPattern.String()
+	field.MinLength = schemaInt(1)
+	field.MaxLength = schemaInt(MaximumStableIDRunes)
 }
 
 func schemaInt(value int) *int {

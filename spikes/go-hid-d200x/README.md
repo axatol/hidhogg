@@ -24,13 +24,128 @@ and one rejected keyboard collection (`0x0001:0x0006`). Consequently, filtered
 re-enumeration is expected to return exactly one eligible candidate. The spike
 does not deduplicate collections or select between opaque hashes.
 
-The CLI has no default action. Every outbound command requires both an explicit
+The original `cmd/d200x` CLI has no default action. Every outbound command requires both an explicit
 action and `--confirm`. Brightness is accepted only in the range `0` through
 `100`; the library constructor also clamps programmatic callers. The
 `diagnostic-display` builds a deterministic numbered archive containing the
 13 square icons and wide tile from the D200X layout, sends it as a complete
 `0x0001` upload, then sends `0x0010` unlock. It does not send `0x000f` and the
 spike never sends arbitrary commands.
+
+## Raw one-frame probe
+
+`cmd/d200xprobe` is an isolated research CLI for the 12 known command IDs. It
+has exactly two mutually exclusive modes:
+
+```text
+d200xprobe --action <symbolic-name> [--parameters <value>]
+d200xprobe --listen [--duration <positive-duration>]
+```
+
+There is no `--confirm` flag. The action and its parameters are fully built and
+validated before HID enumeration. An action then selects exactly one eligible
+interface-0 collection, opens it once, writes exactly one logical frame, and
+closes it. A complete-display upload does not send an unlock frame. Writes are
+never retried: the first transport error or short write stops the process.
+Success means only that the write completed; it does not mean the device
+accepted the command or exhibited any particular behavior.
+
+| Symbolic action | ID | Observed direction/status | Parameters |
+| --- | ---: | --- | --- |
+| `complete-display-upload` | `0x0001` | host to device | required preset `diagnostic` or `live-bulk`; deterministic bounded in-memory archive |
+| `enable-input-stream` | `0x0002` | host to device | none |
+| `observed-host-lock` | `0x0004` | host to device, observed | none |
+| `small-window-refresh` | `0x0006` | host to device, observed | optional exact preset or strict JSON mode object; absent means an empty payload |
+| `brightness` | `0x000a` | host to device | required canonical decimal `0` through `100` |
+| `label-style` | `0x000b` | host to device, observed | none |
+| `partial-display-upload` | `0x000d` | host to device, observed | none |
+| `lock-screen` | `0x000f` | host to device | none |
+| `unlock-screen` | `0x0010` | host to device | none |
+| `input-event` | `0x0101` | device to host, observed; outbound probe is experimental | none |
+| `acknowledgement` | `0x010b` | device to host, observed; outbound probe is experimental | none |
+| `device-information` | `0x0303` | device to host, observed; outbound probe is experimental | none |
+
+Canonical brightness excludes signs, padding, whitespace, and alternate numeric
+forms. Every action other than brightness, complete-display-upload, and
+small-window-refresh rejects `--parameters`, including an explicitly empty
+value.
+
+The `live-bulk` complete-display preset is a physical protocol spike for live
+redraw. Run it only from a freshly verified default-display baseline:
+
+```sh
+CGO_ENABLED=0 go run ./cmd/d200xprobe --action complete-display-upload --parameters live-bulk
+```
+
+It opens one eligible interface, writes exactly one logical `0x0001` archive,
+and closes it. The archive contains all 14 canonical positions: thirteen
+196x196 square images and the 458x196 `3_2` wide image. Each image has a
+distinct numbered/colorized diagnostic design, and its `Images/<sha256>.png`
+name is derived from the exact PNG bytes. The probe sends no brightness,
+unlock, input-enable, retry, or recovery command. Record whether the owned
+D200X redraws all positions in bulk, redraws them progressively, or leaves the
+existing page unchanged; a successful host write alone does not establish any
+of those device outcomes.
+
+`small-window-refresh` accepts one of the exact presets `metrics`, `dial-time`,
+`background`, `date-time-weekday`, `time-weekday`, `date-time`, and `time`, or
+a typed JSON object with only the fields `mode`, `cpu`, `ram`, `time`, `gpu`,
+`format`, `date`, and `weekday`. Presets capture one local clock snapshot and
+use `24H`. The `metrics` preset generates independent cryptographically secure
+synthetic CPU/RAM/GPU values in the inclusive range `1` through `99`; the
+values are reported only after its one frame write completes. Other context
+presets use zero CPU/RAM/GPU values and include only the fields required by
+their mode. The `background` preset remains the exact payload `2|`; its role as
+a display-selection/background context is observed or hypothesized, and no
+causal relationship with mode-0 metric updates is asserted. Preset names are
+case-sensitive and must not be padded. The JSON form retains the supported
+modes `0`, `1`, `2`, `200`, `201`, `202`, and `203`; mode `2` requires only
+`mode`, while other modes require the five common fields (`cpu`, `ram`, `time`,
+`gpu`, and `format`) and produce `mode|cpu|ram|HH:mm:ss|gpu|12H-or-24H|suffix`.
+Modes `200`, `201`, and `202` respectively require date plus weekday, weekday
+only, and date only. Modes `0`, `1`, and `203` forbid both date and weekday.
+Metrics, time, date, weekday, and format values are validated strictly, and
+unknown or duplicate JSON fields, trailing JSON, unsupported modes, and
+noncanonical JSON types are rejected before HID enumeration. For example:
+
+```json
+{"mode":200,"cpu":16,"ram":72,"time":"20:50:26","gpu":7,"format":"12H","date":"2026/08/12","weekday":"Wed"}
+```
+
+Passive listen opens one eligible collection and sends zero frames. It runs
+indefinitely until `SIGINT` or `SIGTERM` unless the optional `--duration` is
+supplied; a supplied duration must be positive. `--duration` is valid only
+with `--listen`. It logs every complete input and non-input frame as bounded
+command, payload length, SHA-256 digest, and decoded input metadata where
+valid. It never logs a raw payload, device path, serial number, or other
+device identity. A signal or duration expiry at a frame boundary is successful
+completion; cancellation after a partial frame is a failure.
+
+Run passive listen first, then use one fresh process per action in increasing
+uncertainty:
+
+```text
+brightness
+enable-input-stream
+unlock-screen
+complete-display-upload
+lock-screen
+observed-host-lock
+small-window-refresh
+label-style
+partial-display-upload
+device-information
+acknowledgement
+input-event
+```
+
+Keep Ulanzi Studio stopped. The final three commands are direction-unverified
+or inbound-observed and must remain last. Stop at the first write error, short
+write, disconnect, reset, display corruption, keyboard effect, unexpected
+device state, or need to reconnect. Do not automatically retry, recover,
+unlock, or continue to the next action after a failure. If a recovery action is
+needed, run and record it separately rather than appending it to the tested
+command.
 
 ## Automatic validation
 
@@ -40,6 +155,7 @@ Run from this directory:
 go test ./...
 CGO_ENABLED=0 go test ./...
 CGO_ENABLED=0 go build ./cmd/d200x
+CGO_ENABLED=0 go build ./cmd/d200xprobe
 CGO_ENABLED=0 go vet ./...
 ```
 

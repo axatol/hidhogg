@@ -5,7 +5,7 @@
       "type": "integer",
       "description": "configuration schema version",
       "enum": [
-        1
+        2
       ]
     },
     "adapter": {
@@ -21,11 +21,38 @@
       "minimum": 0,
       "maximum": 100
     },
-    "pages": {
+    "idle_timeout_seconds": {
+      "type": "integer",
+      "description": "application-owned idle timeout in seconds",
+      "default": 300,
+      "minimum": 0,
+      "maximum": 86400
+    },
+    "default_profile_id": {
+      "type": "string",
+      "description": "profile selected at startup",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "profiles": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string",
+            "description": "case-sensitive stable profile identifier",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+          },
+          "label": {
+            "type": "string",
+            "description": "display profile label",
+            "minLength": 1,
+            "maxLength": 64
+          },
           "positions": {
             "type": "array",
             "items": {
@@ -68,6 +95,42 @@
                   "type": "string",
                   "description": "hexadecimal background colour",
                   "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                },
+                "action": {
+                  "type": [
+                    "null",
+                    "object"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "description": "action type",
+                      "enum": [
+                        "activate_profile"
+                      ]
+                    },
+                    "gesture": {
+                      "type": "string",
+                      "description": "input gesture",
+                      "enum": [
+                        "press"
+                      ]
+                    },
+                    "profile_id": {
+                      "type": "string",
+                      "description": "case-sensitive target profile identifier",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                    }
+                  },
+                  "description": "optional press action binding",
+                  "required": [
+                    "type",
+                    "gesture",
+                    "profile_id"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -85,23 +148,27 @@
           }
         },
         "required": [
+          "id",
+          "label",
           "positions"
         ],
         "additionalProperties": false
       },
-      "description": "configured display pages",
+      "description": "ordered configured display profiles",
       "minItems": 1,
-      "maxItems": 1
+      "maxItems": 31,
+      "uniqueItems": true
     }
   },
   "$schema": "http://json-schema.org/draft-04/schema#",
-  "title": "Hidhogg Ulanzi D200X configuration v1",
-  "description": "Milestone-private single-file configuration for one Ulanzi D200X page.",
+  "title": "Hidhogg Ulanzi D200X configuration v2",
+  "description": "Strict named-profile configuration for one Ulanzi D200X adapter.",
   "required": [
     "schema_version",
     "adapter",
     "brightness",
-    "pages"
+    "default_profile_id",
+    "profiles"
   ],
   "additionalProperties": false
 }

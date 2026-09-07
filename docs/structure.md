@@ -1,7 +1,7 @@
 # Repository structure
 
-Status: M-02 config-driven D200X slice complete
-Updated: 2026-08-26
+Status: M-02, M-02-F01, and M-03 complete
+Updated: 2026-09-04
 
 ```text
 hidhogg/
@@ -24,16 +24,20 @@ hidhogg/
 │   └── protocol/v1/       internal IPC contract fixtures and specification
 ├── cmd/
 │   ├── hidhogg/           Go runtime entry point
+│   ├── hidhoggdiag/       bounded owner-run D200X diagnostic entry point
 │   └── hidhoggctl/        local CLI entry point
 ├── internal/
 │   ├── config/            strict milestone-private TOML model and schema generation
 │   ├── d200x/             production D200X protocol, transport, rendering, and session
+│   ├── diagnostic/        bounded physical-test orchestration and evidence output
+│   ├── discovery/         locked runtime-directory lifecycle and generation discovery
 │   ├── ipc/               local transport and message handling
 │   └── runtime/           orchestration and lifecycle
 ├── macos/
 │   ├── Hidhogg/           SwiftUI menu-bar application
 │   └── HidhoggTests/      supervisor, security, fixture, and live IPC tests
-└── spikes/                retained feasibility evidence
+├── scripts/diagnostics/   owner-run archival wrappers and synthetic validation
+└── spikes/                retained feasibility and one-frame protocol evidence
 ```
 
 Config and device ports are declared only at exercised consumer boundaries. `M-02` introduced production TOML loading and D200X packages; action and notification packages remain deferred.
@@ -47,8 +51,9 @@ The Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-run
 | HID spike | Transport feasibility and physical evidence | Production session architecture |
 | Config spike | Lossless mutation and conflict behavior | Published configuration compatibility |
 | Documentation | Verified facts, decisions, gates, and handoff | Unsupported hardware claims |
-| Go runtime | Lifecycle, strict configuration orchestration, one D200X session, diagnostic events, and bounded health/status service | Actions, notifications, reload, and multi-device policy |
+| Go runtime | Lifecycle, strict configuration orchestration, one D200X session, runtime-owned keepalive/idle coordinator, diagnostic events, and bounded health/status service | Actions, notifications, reload, and multi-device policy |
 | M-02 configuration | Strict single-file decode, semantic validation, and deterministic schema | File watching, mutation, root/device composition |
 | D200X adapter | Exact device selection, framing, configured page rendering, serialized session, and input decoding | Runtime policy, actions, notifications, reconnect |
+| Runtime discovery | Persistent advisory lock, strict readiness metadata, guarded stale recovery, and client identity revalidation | HID policy, remote discovery, PID authority, and non-cooperating same-UID processes |
 | SwiftUI client | Menu-bar status, runtime supervision, and local health client | Direct HID ownership and settings editing |
 | Internal IPC | Versioned, bounded local messages and process health | Remote access and executable commands |

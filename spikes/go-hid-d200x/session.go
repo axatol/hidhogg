@@ -144,6 +144,10 @@ func (s *Session) SendFrame(ctx context.Context, frame Frame) error {
 	if !frame.Command.IsSafeOutbound() {
 		return &ProtocolError{Kind: ErrorUnsafeOutboundCommand, Command: frame.Command}
 	}
+	return s.sendFrame(ctx, frame)
+}
+
+func (s *Session) sendFrame(ctx context.Context, frame Frame) error {
 	reports, err := EncodeFrame(frame)
 	if err != nil {
 		return err

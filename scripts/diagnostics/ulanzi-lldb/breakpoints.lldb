@@ -1,0 +1,7 @@
+target modules lookup --address 0x100030184
+target modules lookup --address 0x100513cbc
+target modules lookup --name hid_write
+target modules lookup --name hid_read_timeout
+breakpoint set --address 0x100030184 --shlib UlanziDeck --breakpoint-name d200x_outbound
+breakpoint set --address 0x100513cbc --shlib UlanziDeck --breakpoint-name d200x_dispatch
+breakpoint list
