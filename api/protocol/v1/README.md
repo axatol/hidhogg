@@ -31,8 +31,8 @@ All fields are required. No other fields are permitted.
 |---|---|
 | `protocol_version` | JSON integer exactly `1`; `1.0` is invalid |
 | `request_id` | canonical lowercase hyphenated UUID |
-| `method` | case-sensitive `health`, `status`, `profiles.list`, or `profiles.activate` |
-| `params` | object containing `instance_id`; `profiles.activate` additionally requires `profile_id` |
+| `method` | case-sensitive `health`, `status`, `profiles.list`, `profiles.activate`, `executions.list`, or `executions.get` |
+| `params` | object containing `instance_id`; `profiles.activate` additionally requires `profile_id`; `executions.list` optionally accepts integer `limit` (1 through 32, default 20); `executions.get` requires non-empty exact `execution_id` |
 | `params.instance_id` | canonical lowercase UUID matching the launched generation |
 | `params.profile_id` | non-empty case-sensitive profile identifier; no case normalization is performed |
 
@@ -70,6 +70,10 @@ Exactly one of `result` and `error` is non-null. A safely decoded and valid requ
 
 Configuration accepts at most 31 profiles. The encoder checks the complete LF-terminated response frame, including the newline; a 31-summary worst-case response is 15,880 bytes and fits the 16,384-byte bound. A corresponding 32-summary boundary fixture is exactly 16,387 bytes and is rejected before transmission.
 
+`executions.list` is read-only and returns a result containing exactly `instance_id` and `executions`. The array is newest-first, bounded by the requested limit, and each summary contains only `execution_id`, `profile_id`, `position_id`, `state`, `submitted_at`, `started_at`, `finished_at`, `duration_ns`, `exit_code`, `signal`, and `supervision_error`. Timestamps are RFC3339Nano strings or `null`; `duration_ns` is a non-negative integer; optional exit and signal values are integers or `null`. No executable path, command, argument, environment, working directory, or output is present in a summary.
+
+`executions.get` is read-only and returns a result containing exactly `instance_id` and `execution`. The record has the summary fields plus `stdout`, `stdout_total_bytes`, `stdout_truncated`, `stderr`, `stderr_total_bytes`, and `stderr_truncated`. `stdout` and `stderr` are canonical standard base64 strings containing the bounded output tails. Total-byte counters include discarded bytes and are never smaller than the decoded tail length. The record contains no executable path, command, argument, environment, working directory, or trigger controls. Valid list and get responses, including their LF terminator, remain below 16,384 bytes under the execution worker's 32-entry and 4,096-byte tail bounds.
+
 Stable error codes:
 
 | Code | Meaning |
@@ -85,6 +89,8 @@ Stable error codes:
 | `device_write_failed` | a profile page write failed or left device state uncertain |
 | `shutting_down` | the runtime is stopping or no longer accepts activation work |
 | `busy` | bounded activation work is unavailable before the request deadline |
+| `execution_not_found` | the exact requested execution ID is not retained in generation-local history |
+| `history_unavailable` | the execution history adapter is unavailable or failed a read-only query |
 | `internal` | bounded unexpected server failure |
 
 Validation precedence is normative:
@@ -102,7 +108,7 @@ Validation precedence is normative:
 
 The request ID is echoed only after duplicate-key validation and canonical request-ID validation succeed. It is null for all earlier failures and for any duplicate key, including a duplicate unrelated field.
 
-Clients reject any response schema deviation. Every response has exactly four required top-level fields with no duplicates or extras: integer `protocol_version` equal to `1`, canonical `request_id` or null as allowed by the failure, and exactly one non-null value among `result` and `error`. A `health`, `status`, or `profiles.list` result uses the requested instance ID; health/status state is exactly `ready`, profiles.list contains only the ordered summaries besides that ID, and a `profiles.activate` result has only `profile_id` and `changed`. An error object has exactly string fields `code` and `message`; the code is from the stable allowlist and the message is at most 256 UTF-8 bytes.
+Clients reject any response schema deviation. Every response has exactly four required top-level fields with no duplicates or extras: integer `protocol_version` equal to `1`, canonical `request_id` or null as allowed by the failure, and exactly one non-null value among `result` and `error`. A `health`, `status`, `profiles.list`, or execution-history result uses the requested instance ID; health/status state is exactly `ready`, profiles.list contains only the ordered summaries besides that ID, execution results contain only their documented bounded history fields, and a `profiles.activate` result has only `profile_id` and `changed`. An error object has exactly string fields `code` and `message`; the code is from the stable allowlist and the message is at most 256 UTF-8 bytes.
 
 ## Endpoint lifecycle and security
 

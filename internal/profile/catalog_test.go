@@ -72,6 +72,43 @@ func TestCatalogDefensivelyCopiesNestedValues(t *testing.T) {
 	}
 }
 
+func TestCatalogPreservesAndCopiesExecuteAction(t *testing.T) {
+	profiles := validProfiles()
+	profiles[0].Values[0].Action = &Action{
+		Type:       ExecuteActionType,
+		Gesture:    PressGesture,
+		Executable: "/bin/echo",
+		Arguments:  []string{"--mode", "test"},
+	}
+	catalog, err := NewCatalog("default", profiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiles[0].Values[0].Action.Arguments[0] = "changed source"
+	returned, ok := catalog.Default()
+	if !ok || returned.Values[0].Action == nil {
+		t.Fatalf("default profile = %#v, %v", returned, ok)
+	}
+	returnedAction := returned.Values[0].Action
+	if returnedAction.Type != ExecuteActionType || returnedAction.Gesture != PressGesture || returnedAction.Executable != "/bin/echo" || returnedAction.TimeoutSeconds != DefaultExecuteTimeoutSeconds || len(returnedAction.Arguments) != 2 || returnedAction.Arguments[0] != "--mode" {
+		t.Fatalf("execute action = %#v", returnedAction)
+	}
+	returnedAction.Arguments[0] = "changed result"
+	returnedActionAgain, ok := catalog.Default()
+	if !ok || returnedActionAgain.Values[0].Action == nil || returnedActionAgain.Values[0].Action.Arguments[0] != "--mode" {
+		t.Fatalf("catalog action changed through returned copy: %#v, %v", returnedActionAgain, ok)
+	}
+	bindings := returnedActionAgain.Bindings()
+	if len(bindings) != 1 || bindings[0].Action.Executable != "/bin/echo" || len(bindings[0].Action.Arguments) != 2 || bindings[0].Action.Arguments[1] != "test" {
+		t.Fatalf("execute bindings = %#v", bindings)
+	}
+	bindings[0].Action.Arguments[0] = "changed binding"
+	final, ok := catalog.Default()
+	if !ok || final.Values[0].Action.Arguments[0] != "--mode" {
+		t.Fatalf("catalog action changed through binding copy: %#v, %v", final, ok)
+	}
+}
+
 func TestNewCatalogRejectsInvalidDefinitions(t *testing.T) {
 	tests := []struct {
 		name string

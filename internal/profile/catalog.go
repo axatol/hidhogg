@@ -5,7 +5,9 @@ package profile
 
 import (
 	"fmt"
+	"path"
 	"regexp"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -20,17 +22,28 @@ const (
 
 const (
 	ActivateProfileType = "activate_profile"
+	ExecuteActionType   = "execute"
 	PressGesture        = "press"
+
+	DefaultExecuteTimeoutSeconds = 10
+	MinimumExecuteTimeoutSeconds = 1
+	MaximumExecuteTimeoutSeconds = 60
+	MaximumExecuteArgumentCount  = 32
+	MaximumExecuteArgumentBytes  = 1024
+	MaximumExecuteArgumentsBytes = 8192
 )
 
 var stableIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
-// Action is the only action shape supported by the profile catalog. The
-// containing Value supplies the physical button binding location.
+// Action is a validated press action. The containing Value supplies the
+// physical button binding location.
 type Action struct {
-	Type      string
-	Gesture   string
-	ProfileID string
+	Type           string
+	Gesture        string
+	ProfileID      string
+	Executable     string
+	Arguments      []string
+	TimeoutSeconds int
 }
 
 // Value is a complete neutral description of one D200X display position.
@@ -82,6 +95,7 @@ func NewCatalog(defaultProfileID string, profiles []Profile) (Catalog, error) {
 	}
 
 	owned := cloneProfiles(profiles)
+	normalizeActionDefaults(owned)
 	profileByID := make(map[string]int, len(owned))
 	for index, current := range owned {
 		if !validStableID(current.ID) {
@@ -259,27 +273,78 @@ func validateActions(values []Value, profileByID map[string]int) error {
 		if err := validateAction(*value.Action, profileByID); err != nil {
 			return fmt.Errorf("value %d action: %w", index, err)
 		}
-		if _, ok := profileByID[value.Action.ProfileID]; !ok {
-			return fmt.Errorf("value %d action target %q does not resolve to exactly one profile", index, value.Action.ProfileID)
+		if value.Action.Type == ActivateProfileType {
+			if _, ok := profileByID[value.Action.ProfileID]; !ok {
+				return fmt.Errorf("value %d action target %q does not resolve to exactly one profile", index, value.Action.ProfileID)
+			}
 		}
 	}
 	return nil
 }
 
 func validateAction(action Action, profileByID map[string]int) error {
-	if action.Type != ActivateProfileType {
-		return fmt.Errorf("type must be %q", ActivateProfileType)
+	if action.Type != ActivateProfileType && action.Type != ExecuteActionType {
+		return fmt.Errorf("type must be %q or %q", ActivateProfileType, ExecuteActionType)
 	}
 	if action.Gesture != PressGesture {
 		return fmt.Errorf("gesture must be %q", PressGesture)
 	}
-	if !validStableID(action.ProfileID) {
-		return fmt.Errorf("profile ID %q is invalid", action.ProfileID)
-	}
-	if profileByID != nil {
-		if _, ok := profileByID[action.ProfileID]; !ok {
-			return fmt.Errorf("target %q does not resolve to exactly one profile", action.ProfileID)
+	switch action.Type {
+	case ActivateProfileType:
+		if action.Executable != "" {
+			return fmt.Errorf("executable is forbidden for %q action", ActivateProfileType)
 		}
+		if action.Arguments != nil {
+			return fmt.Errorf("arguments are forbidden for %q action", ActivateProfileType)
+		}
+		if action.TimeoutSeconds != 0 {
+			return fmt.Errorf("timeout_seconds is forbidden for %q action", ActivateProfileType)
+		}
+		if !validStableID(action.ProfileID) {
+			return fmt.Errorf("profile ID %q is invalid", action.ProfileID)
+		}
+		if profileByID != nil {
+			if _, ok := profileByID[action.ProfileID]; !ok {
+				return fmt.Errorf("target %q does not resolve to exactly one profile", action.ProfileID)
+			}
+		}
+	case ExecuteActionType:
+		if action.ProfileID != "" {
+			return fmt.Errorf("profile_id is forbidden for %q action", ExecuteActionType)
+		}
+		if !validExecutable(action.Executable) {
+			return fmt.Errorf("executable must be a non-empty absolute UTF-8 path without NUL")
+		}
+		if err := validateExecuteArguments(action.Arguments); err != nil {
+			return err
+		}
+		if action.TimeoutSeconds < MinimumExecuteTimeoutSeconds || action.TimeoutSeconds > MaximumExecuteTimeoutSeconds {
+			return fmt.Errorf("timeout_seconds must be between %d and %d", MinimumExecuteTimeoutSeconds, MaximumExecuteTimeoutSeconds)
+		}
+	}
+	return nil
+}
+
+func validExecutable(value string) bool {
+	return value != "" && path.IsAbs(value) && utf8.ValidString(value) && !strings.ContainsRune(value, '\x00')
+}
+
+func validateExecuteArguments(arguments []string) error {
+	if len(arguments) > MaximumExecuteArgumentCount {
+		return fmt.Errorf("arguments must contain at most %d arguments", MaximumExecuteArgumentCount)
+	}
+	aggregateBytes := 0
+	for index, argument := range arguments {
+		if !utf8.ValidString(argument) || strings.ContainsRune(argument, '\x00') {
+			return fmt.Errorf("argument %d must be valid UTF-8 without NUL", index)
+		}
+		if len([]byte(argument)) > MaximumExecuteArgumentBytes {
+			return fmt.Errorf("argument %d must be at most %d UTF-8 bytes", index, MaximumExecuteArgumentBytes)
+		}
+		aggregateBytes += len([]byte(argument))
+	}
+	if aggregateBytes > MaximumExecuteArgumentsBytes {
+		return fmt.Errorf("arguments must total at most %d UTF-8 bytes", MaximumExecuteArgumentsBytes)
 	}
 	return nil
 }
@@ -362,7 +427,34 @@ func cloneAction(source *Action) *Action {
 		return nil
 	}
 	owned := *source
+	owned.Arguments = cloneArguments(source.Arguments)
 	return &owned
+}
+
+func cloneArguments(source []string) []string {
+	if source == nil {
+		return nil
+	}
+	owned := make([]string, len(source))
+	copy(owned, source)
+	return owned
+}
+
+func normalizeActionDefaults(profiles []Profile) {
+	for profileIndex := range profiles {
+		for valueIndex := range profiles[profileIndex].Values {
+			action := profiles[profileIndex].Values[valueIndex].Action
+			if action == nil || action.Type != ExecuteActionType {
+				continue
+			}
+			if action.Arguments == nil {
+				action.Arguments = []string{}
+			}
+			if action.TimeoutSeconds == 0 {
+				action.TimeoutSeconds = DefaultExecuteTimeoutSeconds
+			}
+		}
+	}
 }
 
 var supportedPositions = [...]string{

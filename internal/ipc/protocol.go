@@ -2,20 +2,27 @@ package ipc
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
+	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"hidhogg/internal/execution"
 )
 
 const (
-	ProtocolVersion     = 1
-	MaxFrameBytes       = 16 * 1024
-	ReadyState          = "ready"
-	maxProfileSummaries = 31
+	ProtocolVersion              = 1
+	MaxFrameBytes                = 16 * 1024
+	ReadyState                   = "ready"
+	maxProfileSummaries          = 31
+	DefaultExecutionHistoryLimit = 20
+	MaxExecutionHistoryLimit     = execution.HistoryLimit
 )
 
 type Method string
@@ -25,6 +32,8 @@ const (
 	MethodStatus           Method = "status"
 	MethodProfilesList     Method = "profiles.list"
 	MethodProfilesActivate Method = "profiles.activate"
+	MethodExecutionsList   Method = "executions.list"
+	MethodExecutionsGet    Method = "executions.get"
 )
 
 type Request struct {
@@ -33,6 +42,8 @@ type Request struct {
 	Method          Method `json:"method"`
 	InstanceID      string `json:"instance_id"`
 	ProfileID       string `json:"profile_id,omitempty"`
+	Limit           int    `json:"limit,omitempty"`
+	ExecutionID     string `json:"execution_id,omitempty"`
 }
 
 // ProfileSummary is the intentionally narrow profile discovery shape. Layout
@@ -50,13 +61,21 @@ type ActivationResult struct {
 	Changed   bool   `json:"changed"`
 }
 
+// ExecutionSummary and ExecutionRecord alias the execution package's public,
+// command-free history types. EncodeResponse projects them onto strict wire
+// shapes so executable paths, arguments, and environment cannot be serialized.
+type ExecutionSummary = execution.Summary
+type ExecutionRecord = execution.Record
+
 type Result struct {
-	InstanceID      string           `json:"instance_id"`
-	State           string           `json:"state"`
-	ProtocolVersion *int             `json:"protocol_version,omitempty"`
-	Profiles        []ProfileSummary `json:"profiles,omitempty"`
-	ProfileID       string           `json:"profile_id,omitempty"`
-	Changed         bool             `json:"changed,omitempty"`
+	InstanceID      string             `json:"instance_id"`
+	State           string             `json:"state"`
+	ProtocolVersion *int               `json:"protocol_version,omitempty"`
+	Profiles        []ProfileSummary   `json:"profiles,omitempty"`
+	ProfileID       string             `json:"profile_id,omitempty"`
+	Changed         bool               `json:"changed,omitempty"`
+	Executions      []ExecutionSummary `json:"-"`
+	Execution       *ExecutionRecord   `json:"-"`
 }
 
 type Error struct {
@@ -85,44 +104,52 @@ const (
 	ErrorDeviceWriteFailed  = "device_write_failed"
 	ErrorShuttingDown       = "shutting_down"
 	ErrorBusy               = "busy"
+	ErrorExecutionNotFound  = "execution_not_found"
+	ErrorHistoryUnavailable = "history_unavailable"
 )
 
 var stableErrorCodes = map[string]struct{}{
-	ErrorInvalidJSON:       {},
-	ErrorInvalidEnvelope:   {},
-	ErrorUnsupportedVers:   {},
-	ErrorUnknownMethod:     {},
-	ErrorInstanceMismatch:  {},
-	ErrorMessageTooLarge:   {},
-	ErrorInternal:          {},
-	ErrorProfileNotFound:   {},
-	ErrorActivationFailed:  {},
-	ErrorDeviceWriteFailed: {},
-	ErrorShuttingDown:      {},
-	ErrorBusy:              {},
+	ErrorInvalidJSON:        {},
+	ErrorInvalidEnvelope:    {},
+	ErrorUnsupportedVers:    {},
+	ErrorUnknownMethod:      {},
+	ErrorInstanceMismatch:   {},
+	ErrorMessageTooLarge:    {},
+	ErrorInternal:           {},
+	ErrorProfileNotFound:    {},
+	ErrorActivationFailed:   {},
+	ErrorDeviceWriteFailed:  {},
+	ErrorShuttingDown:       {},
+	ErrorBusy:               {},
+	ErrorExecutionNotFound:  {},
+	ErrorHistoryUnavailable: {},
 }
 
 const (
-	messageInvalidJSON       = "request is not valid JSON"
-	messageInvalidEnvelope   = "request envelope is invalid"
-	messageUnsupportedVers   = "protocol version is not supported"
-	messageUnknownMethod     = "request method is not supported"
-	messageInstanceMismatch  = "runtime instance does not match"
-	messageMessageTooLarge   = "request message is too large"
-	messageInternal          = "internal server error"
-	messageProfileNotFound   = "requested profile does not exist"
-	messageActivationFailed  = "profile activation failed"
-	messageDeviceWriteFailed = "device write failed"
-	messageShuttingDown      = "runtime is shutting down"
-	messageBusy              = "runtime is busy"
+	messageInvalidJSON        = "request is not valid JSON"
+	messageInvalidEnvelope    = "request envelope is invalid"
+	messageUnsupportedVers    = "protocol version is not supported"
+	messageUnknownMethod      = "request method is not supported"
+	messageInstanceMismatch   = "runtime instance does not match"
+	messageMessageTooLarge    = "request message is too large"
+	messageInternal           = "internal server error"
+	messageProfileNotFound    = "requested profile does not exist"
+	messageActivationFailed   = "profile activation failed"
+	messageDeviceWriteFailed  = "device write failed"
+	messageShuttingDown       = "runtime is shutting down"
+	messageBusy               = "runtime is busy"
+	messageExecutionNotFound  = "execution was not found"
+	messageHistoryUnavailable = "execution history is unavailable"
 )
 
 var (
-	ErrProfileNotFound   = errors.New("profile not found")
-	ErrActivationFailed  = errors.New("profile activation failed")
-	ErrDeviceWriteFailed = errors.New("device write failed")
-	ErrShuttingDown      = errors.New("runtime is shutting down")
-	ErrBusy              = errors.New("runtime is busy")
+	ErrProfileNotFound    = errors.New("profile not found")
+	ErrActivationFailed   = errors.New("profile activation failed")
+	ErrDeviceWriteFailed  = errors.New("device write failed")
+	ErrShuttingDown       = errors.New("runtime is shutting down")
+	ErrBusy               = errors.New("runtime is busy")
+	ErrExecutionNotFound  = errors.New("execution not found")
+	ErrHistoryUnavailable = errors.New("execution history unavailable")
 )
 
 var profileIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
@@ -255,35 +282,70 @@ func DecodeRequest(frame []byte) (Request, Response, error) {
 		return Request{}, failure.response(), nil
 	}
 
-	paramsFields := []string{"instance_id"}
-	if request.Method == MethodProfilesActivate {
-		paramsFields = append(paramsFields, "profile_id")
-	}
-	if !hasExactly(paramsValue.object, paramsFields...) {
+	if err := decodeRequestParams(&request, paramsValue); err != nil {
 		failure := newProtocolError(ErrorInvalidEnvelope, messageInvalidEnvelope)
 		failure.requestID = requestID
 		failure.echoID = true
 		return Request{}, failure.response(), nil
+	}
+	return request, Response{}, nil
+}
+
+func decodeRequestParams(request *Request, paramsValue jsonValue) error {
+	if paramsValue.kind != jsonObject {
+		return errors.New("request params are invalid")
 	}
 	instanceID := canonicalString(paramsValue.object["instance_id"])
 	if instanceID == "" {
-		failure := newProtocolError(ErrorInvalidEnvelope, messageInvalidEnvelope)
-		failure.requestID = requestID
-		failure.echoID = true
-		return Request{}, failure.response(), nil
+		return errors.New("request instance ID is invalid")
 	}
 	request.InstanceID = instanceID
-	if request.Method == MethodProfilesActivate {
+	switch request.Method {
+	case MethodHealth, MethodStatus, MethodProfilesList:
+		if !hasExactly(paramsValue.object, "instance_id") {
+			return errors.New("request params fields are invalid")
+		}
+	case MethodProfilesActivate:
+		if !hasExactly(paramsValue.object, "instance_id", "profile_id") {
+			return errors.New("request activation params are invalid")
+		}
 		profileValue := paramsValue.object["profile_id"]
 		if profileValue.kind != jsonString || profileValue.string == "" {
-			failure := newProtocolError(ErrorInvalidEnvelope, messageInvalidEnvelope)
-			failure.requestID = requestID
-			failure.echoID = true
-			return Request{}, failure.response(), nil
+			return errors.New("request profile ID is invalid")
 		}
 		request.ProfileID = profileValue.string
+	case MethodExecutionsList:
+		if len(paramsValue.object) < 1 || len(paramsValue.object) > 2 {
+			return errors.New("request execution list params are invalid")
+		}
+		if len(paramsValue.object) == 2 {
+			if _, present := paramsValue.object["limit"]; !present {
+				return errors.New("request execution list fields are invalid")
+			}
+		}
+		if _, present := paramsValue.object["limit"]; present {
+			value := paramsValue.object["limit"]
+			limit, err := decodeInteger(value)
+			if err != nil || limit < 1 || limit > MaxExecutionHistoryLimit {
+				return errors.New("request execution limit is invalid")
+			}
+			request.Limit = int(limit)
+		} else {
+			request.Limit = DefaultExecutionHistoryLimit
+		}
+	case MethodExecutionsGet:
+		if !hasExactly(paramsValue.object, "instance_id", "execution_id") {
+			return errors.New("request execution get params are invalid")
+		}
+		executionID := paramsValue.object["execution_id"]
+		if executionID.kind != jsonString || !validExecutionID(executionID.string) {
+			return errors.New("request execution ID is invalid")
+		}
+		request.ExecutionID = executionID.string
+	default:
+		return errors.New("request method is invalid")
 	}
-	return request, Response{}, nil
+	return nil
 }
 
 func ValidateRequest(frame []byte, runtimeInstanceID string) (Request, Response, error) {
@@ -313,19 +375,18 @@ func EncodeRequest(request Request) ([]byte, error) {
 	if !isSupportedMethod(request.Method) {
 		return nil, errors.New("request method is not supported")
 	}
-	if request.Method == MethodProfilesActivate && request.ProfileID == "" {
-		return nil, errors.New("profile ID is required")
-	}
-	if request.Method != MethodProfilesActivate && request.ProfileID != "" {
-		return nil, errors.New("profile ID is not permitted")
+	if err := validateRequestFields(request); err != nil {
+		return nil, err
 	}
 	payload := struct {
 		ProtocolVersion int    `json:"protocol_version"`
 		RequestID       string `json:"request_id"`
 		Method          Method `json:"method"`
 		Params          struct {
-			InstanceID string `json:"instance_id"`
-			ProfileID  string `json:"profile_id,omitempty"`
+			InstanceID  string `json:"instance_id"`
+			ProfileID   string `json:"profile_id,omitempty"`
+			Limit       *int   `json:"limit,omitempty"`
+			ExecutionID string `json:"execution_id,omitempty"`
 		} `json:"params"`
 	}{
 		ProtocolVersion: request.ProtocolVersion,
@@ -334,7 +395,45 @@ func EncodeRequest(request Request) ([]byte, error) {
 	}
 	payload.Params.InstanceID = request.InstanceID
 	payload.Params.ProfileID = request.ProfileID
+	if request.Method == MethodExecutionsList && request.Limit != 0 {
+		limit := request.Limit
+		payload.Params.Limit = &limit
+	}
+	payload.Params.ExecutionID = request.ExecutionID
 	return encodeJSONFrame(payload)
+}
+
+func validateRequestFields(request Request) error {
+	switch request.Method {
+	case MethodHealth, MethodStatus, MethodProfilesList:
+		if request.ProfileID != "" || request.Limit != 0 || request.ExecutionID != "" {
+			return errors.New("request fields are not permitted for method")
+		}
+	case MethodProfilesActivate:
+		if request.ProfileID == "" {
+			return errors.New("profile ID is required")
+		}
+		if request.Limit != 0 || request.ExecutionID != "" {
+			return errors.New("request fields are not permitted for method")
+		}
+	case MethodExecutionsList:
+		if request.ProfileID != "" || request.ExecutionID != "" {
+			return errors.New("request fields are not permitted for method")
+		}
+		if request.Limit != 0 && (request.Limit < 1 || request.Limit > MaxExecutionHistoryLimit) {
+			return errors.New("execution history limit must be between one and thirty-two")
+		}
+	case MethodExecutionsGet:
+		if request.ProfileID != "" || request.Limit != 0 {
+			return errors.New("request fields are not permitted for method")
+		}
+		if !validExecutionID(request.ExecutionID) {
+			return errors.New("execution ID is required")
+		}
+	default:
+		return errors.New("request method is not supported")
+	}
+	return nil
 }
 
 func EncodeResponse(response Response) ([]byte, error) {
@@ -369,6 +468,19 @@ func EncodeResponse(response Response) ([]byte, error) {
 			profileID, changed := result.ProfileID, result.Changed
 			encodedResult.ProfileID = &profileID
 			encodedResult.Changed = &changed
+		case MethodExecutionsList:
+			instanceID := result.InstanceID
+			summaries := make([]executionSummaryJSON, len(result.Executions))
+			for index, summary := range result.Executions {
+				summaries[index] = encodeExecutionSummary(summary)
+			}
+			encodedResult.InstanceID = &instanceID
+			encodedResult.Executions = &summaries
+		case MethodExecutionsGet:
+			instanceID := result.InstanceID
+			encodedRecord := encodeExecutionRecord(result.Execution)
+			encodedResult.InstanceID = &instanceID
+			encodedResult.Execution = encodedRecord
 		}
 		payload.Result = encodedResult
 	}
@@ -376,12 +488,342 @@ func EncodeResponse(response Response) ([]byte, error) {
 }
 
 type resultJSON struct {
-	InstanceID      *string           `json:"instance_id,omitempty"`
-	State           *string           `json:"state,omitempty"`
-	ProtocolVersion *int              `json:"protocol_version,omitempty"`
-	Profiles        *[]ProfileSummary `json:"profiles,omitempty"`
-	ProfileID       *string           `json:"profile_id,omitempty"`
-	Changed         *bool             `json:"changed,omitempty"`
+	InstanceID      *string                 `json:"instance_id,omitempty"`
+	State           *string                 `json:"state,omitempty"`
+	ProtocolVersion *int                    `json:"protocol_version,omitempty"`
+	Profiles        *[]ProfileSummary       `json:"profiles,omitempty"`
+	ProfileID       *string                 `json:"profile_id,omitempty"`
+	Changed         *bool                   `json:"changed,omitempty"`
+	Executions      *[]executionSummaryJSON `json:"executions,omitempty"`
+	Execution       *executionRecordJSON    `json:"execution,omitempty"`
+}
+
+type executionSummaryJSON struct {
+	ExecutionID      string  `json:"execution_id"`
+	ProfileID        string  `json:"profile_id"`
+	PositionID       string  `json:"position_id"`
+	State            string  `json:"state"`
+	SubmittedAt      *string `json:"submitted_at"`
+	StartedAt        *string `json:"started_at"`
+	FinishedAt       *string `json:"finished_at"`
+	DurationNS       int64   `json:"duration_ns"`
+	ExitCode         *int    `json:"exit_code"`
+	Signal           *int    `json:"signal"`
+	SupervisionError bool    `json:"supervision_error"`
+}
+
+type executionRecordJSON struct {
+	ExecutionID      string  `json:"execution_id"`
+	ProfileID        string  `json:"profile_id"`
+	PositionID       string  `json:"position_id"`
+	State            string  `json:"state"`
+	SubmittedAt      *string `json:"submitted_at"`
+	StartedAt        *string `json:"started_at"`
+	FinishedAt       *string `json:"finished_at"`
+	DurationNS       int64   `json:"duration_ns"`
+	ExitCode         *int    `json:"exit_code"`
+	Signal           *int    `json:"signal"`
+	SupervisionError bool    `json:"supervision_error"`
+	Stdout           string  `json:"stdout"`
+	StdoutTotalBytes uint64  `json:"stdout_total_bytes"`
+	StdoutTruncated  bool    `json:"stdout_truncated"`
+	Stderr           string  `json:"stderr"`
+	StderrTotalBytes uint64  `json:"stderr_total_bytes"`
+	StderrTruncated  bool    `json:"stderr_truncated"`
+}
+
+func encodeExecutionSummary(summary execution.Summary) executionSummaryJSON {
+	return executionSummaryJSON{
+		ExecutionID:      summary.ID,
+		ProfileID:        summary.ProfileID,
+		PositionID:       summary.PositionID,
+		State:            string(summary.State),
+		SubmittedAt:      encodeTimestamp(summary.SubmittedAt),
+		StartedAt:        encodeTimestamp(summary.StartedAt),
+		FinishedAt:       encodeTimestamp(summary.FinishedAt),
+		DurationNS:       int64(summary.Duration),
+		ExitCode:         cloneIntPointer(summary.ExitCode),
+		Signal:           cloneIntPointer(summary.Signal),
+		SupervisionError: summary.SupervisionError,
+	}
+}
+
+func encodeExecutionRecord(record *execution.Record) *executionRecordJSON {
+	if record == nil {
+		return nil
+	}
+	return &executionRecordJSON{
+		ExecutionID:      record.ID,
+		ProfileID:        record.ProfileID,
+		PositionID:       record.PositionID,
+		State:            string(record.State),
+		SubmittedAt:      encodeTimestamp(record.SubmittedAt),
+		StartedAt:        encodeTimestamp(record.StartedAt),
+		FinishedAt:       encodeTimestamp(record.FinishedAt),
+		DurationNS:       int64(record.Duration),
+		ExitCode:         cloneIntPointer(record.ExitCode),
+		Signal:           cloneIntPointer(record.Signal),
+		SupervisionError: record.SupervisionError,
+		Stdout:           base64.StdEncoding.EncodeToString(record.Stdout.Tail),
+		StdoutTotalBytes: record.Stdout.TotalBytes,
+		StdoutTruncated:  record.Stdout.Truncated,
+		Stderr:           base64.StdEncoding.EncodeToString(record.Stderr.Tail),
+		StderrTotalBytes: record.Stderr.TotalBytes,
+		StderrTruncated:  record.Stderr.Truncated,
+	}
+}
+
+func decodeExecutionSummary(value jsonValue) (execution.Summary, error) {
+	if value.kind != jsonObject || !hasExactly(value.object,
+		"execution_id", "profile_id", "position_id", "state", "submitted_at", "started_at", "finished_at",
+		"duration_ns", "exit_code", "signal", "supervision_error") {
+		return execution.Summary{}, errors.New("execution summary fields are invalid")
+	}
+	common, err := decodeExecutionSummaryFields(value.object)
+	if err != nil {
+		return execution.Summary{}, err
+	}
+	return execution.Summary{
+		ID:               common.executionID,
+		ProfileID:        common.profileID,
+		PositionID:       common.positionID,
+		State:            execution.State(common.state),
+		SubmittedAt:      common.submittedAt,
+		StartedAt:        common.startedAt,
+		FinishedAt:       common.finishedAt,
+		Duration:         common.duration,
+		ExitCode:         common.exitCode,
+		Signal:           common.signal,
+		SupervisionError: common.supervisionError,
+	}, nil
+}
+
+func decodeExecutionRecord(value jsonValue) (execution.Record, error) {
+	if value.kind != jsonObject || !hasExactly(value.object,
+		"execution_id", "profile_id", "position_id", "state", "submitted_at", "started_at", "finished_at",
+		"duration_ns", "exit_code", "signal", "supervision_error", "stdout", "stdout_total_bytes", "stdout_truncated",
+		"stderr", "stderr_total_bytes", "stderr_truncated") {
+		return execution.Record{}, errors.New("execution record fields are invalid")
+	}
+	common, err := decodeExecutionSummaryFields(value.object)
+	if err != nil {
+		return execution.Record{}, err
+	}
+	stdout, stdoutTotal, stdoutTruncated, err := decodeOutputFields(value.object, "stdout")
+	if err != nil {
+		return execution.Record{}, err
+	}
+	stderr, stderrTotal, stderrTruncated, err := decodeOutputFields(value.object, "stderr")
+	if err != nil {
+		return execution.Record{}, err
+	}
+	return execution.Record{
+		ID:               common.executionID,
+		ProfileID:        common.profileID,
+		PositionID:       common.positionID,
+		State:            execution.State(common.state),
+		SubmittedAt:      common.submittedAt,
+		StartedAt:        common.startedAt,
+		FinishedAt:       common.finishedAt,
+		Duration:         common.duration,
+		ExitCode:         common.exitCode,
+		Signal:           common.signal,
+		SupervisionError: common.supervisionError,
+		Stdout:           execution.Output{Tail: stdout, TotalBytes: stdoutTotal, Truncated: stdoutTruncated},
+		Stderr:           execution.Output{Tail: stderr, TotalBytes: stderrTotal, Truncated: stderrTruncated},
+	}, nil
+}
+
+type decodedExecutionSummaryFields struct {
+	executionID      string
+	profileID        string
+	positionID       string
+	state            string
+	submittedAt      time.Time
+	startedAt        time.Time
+	finishedAt       time.Time
+	duration         time.Duration
+	exitCode         *int
+	signal           *int
+	supervisionError bool
+}
+
+func decodeExecutionSummaryFields(values map[string]jsonValue) (decodedExecutionSummaryFields, error) {
+	executionID := values["execution_id"]
+	profileID := values["profile_id"]
+	positionID := values["position_id"]
+	state := values["state"]
+	if executionID.kind != jsonString || !validExecutionID(executionID.string) ||
+		profileID.kind != jsonString || !validStableID(profileID.string) ||
+		positionID.kind != jsonString || !validStableID(positionID.string) ||
+		state.kind != jsonString || !validExecutionState(state.string) {
+		return decodedExecutionSummaryFields{}, errors.New("execution summary values are invalid")
+	}
+	submittedAt, err := decodeTimestamp(values["submitted_at"])
+	if err != nil {
+		return decodedExecutionSummaryFields{}, errors.New("execution submitted_at is invalid")
+	}
+	startedAt, err := decodeTimestamp(values["started_at"])
+	if err != nil {
+		return decodedExecutionSummaryFields{}, errors.New("execution started_at is invalid")
+	}
+	finishedAt, err := decodeTimestamp(values["finished_at"])
+	if err != nil {
+		return decodedExecutionSummaryFields{}, errors.New("execution finished_at is invalid")
+	}
+	duration, err := decodeInteger(values["duration_ns"])
+	if err != nil || duration < 0 {
+		return decodedExecutionSummaryFields{}, errors.New("execution duration is invalid")
+	}
+	exitCode, err := decodeOptionalInt(values["exit_code"])
+	if err != nil {
+		return decodedExecutionSummaryFields{}, errors.New("execution exit code is invalid")
+	}
+	signal, err := decodeOptionalInt(values["signal"])
+	if err != nil {
+		return decodedExecutionSummaryFields{}, errors.New("execution signal is invalid")
+	}
+	supervisionError := values["supervision_error"]
+	if supervisionError.kind != jsonBool {
+		return decodedExecutionSummaryFields{}, errors.New("execution supervision error is invalid")
+	}
+	return decodedExecutionSummaryFields{
+		executionID: executionID.string, profileID: profileID.string, positionID: positionID.string,
+		state: state.string, submittedAt: submittedAt, startedAt: startedAt, finishedAt: finishedAt,
+		duration: time.Duration(duration), exitCode: exitCode, signal: signal,
+		supervisionError: supervisionError.bool,
+	}, nil
+}
+
+func decodeOutputFields(values map[string]jsonValue, prefix string) ([]byte, uint64, bool, error) {
+	tailValue := values[prefix]
+	if tailValue.kind != jsonString {
+		return nil, 0, false, errors.New("execution output is invalid")
+	}
+	tail, err := base64.StdEncoding.Strict().DecodeString(tailValue.string)
+	if err != nil || base64.StdEncoding.EncodeToString(tail) != tailValue.string {
+		return nil, 0, false, errors.New("execution output is not canonical base64")
+	}
+	total, err := decodeUnsignedInteger(values[prefix+"_total_bytes"])
+	if err != nil || total < uint64(len(tail)) {
+		return nil, 0, false, errors.New("execution output total is invalid")
+	}
+	truncated := values[prefix+"_truncated"]
+	if truncated.kind != jsonBool {
+		return nil, 0, false, errors.New("execution output truncation is invalid")
+	}
+	return tail, total, truncated.bool, nil
+}
+
+func encodeTimestamp(value time.Time) *string {
+	if value.IsZero() {
+		return nil
+	}
+	formatted := value.UTC().Format(time.RFC3339Nano)
+	return &formatted
+}
+
+func decodeTimestamp(value jsonValue) (time.Time, error) {
+	if value.kind == jsonNull {
+		return time.Time{}, nil
+	}
+	if value.kind != jsonString {
+		return time.Time{}, errors.New("timestamp is not a string")
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value.string)
+	if err != nil || parsed.IsZero() {
+		return time.Time{}, errors.New("timestamp is invalid")
+	}
+	return parsed, nil
+}
+
+func cloneIntPointer(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func decodeInteger(value jsonValue) (int64, error) {
+	if value.kind != jsonNumber {
+		return 0, errors.New("value is not an integer")
+	}
+	parsed, err := strconv.ParseInt(value.number.String(), 10, 64)
+	if err != nil {
+		return 0, errors.New("value is not an integer")
+	}
+	return parsed, nil
+}
+
+func decodeUnsignedInteger(value jsonValue) (uint64, error) {
+	if value.kind != jsonNumber {
+		return 0, errors.New("value is not an unsigned integer")
+	}
+	parsed, err := strconv.ParseUint(value.number.String(), 10, 64)
+	if err != nil {
+		return 0, errors.New("value is not an unsigned integer")
+	}
+	return parsed, nil
+}
+
+func decodeOptionalInt(value jsonValue) (*int, error) {
+	if value.kind == jsonNull {
+		return nil, nil
+	}
+	parsed, err := decodeInteger(value)
+	if err != nil || (strconv.IntSize == 32 && (parsed < -1<<31 || parsed > 1<<31-1)) {
+		return nil, errors.New("value is not an int")
+	}
+	result := int(parsed)
+	return &result, nil
+}
+
+func validExecutionID(value string) bool {
+	return validStableID(value)
+}
+
+func validStableID(value string) bool {
+	return utf8.ValidString(value) && profileIDPattern.MatchString(value)
+}
+
+func validExecutionState(value string) bool {
+	switch execution.State(value) {
+	case execution.StateRunning, execution.StateExited, execution.StateSignaled, execution.StateTimedOut,
+		execution.StateCanceled, execution.StateStartFailed, execution.StateRejectedBusy:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateExecutionSummary(summary execution.Summary) error {
+	if !validExecutionID(summary.ID) || !validStableID(summary.ProfileID) || !validStableID(summary.PositionID) || !validExecutionState(string(summary.State)) {
+		return errors.New("execution summary values are invalid")
+	}
+	if summary.Duration < 0 {
+		return errors.New("execution summary duration is invalid")
+	}
+	return nil
+}
+
+func validateExecutionRecord(record execution.Record) error {
+	if err := validateExecutionSummary(recordToSummary(record)); err != nil {
+		return err
+	}
+	if record.Stdout.TotalBytes < uint64(len(record.Stdout.Tail)) || record.Stderr.TotalBytes < uint64(len(record.Stderr.Tail)) {
+		return errors.New("execution output totals are invalid")
+	}
+	return nil
+}
+
+func recordToSummary(record execution.Record) execution.Summary {
+	return execution.Summary{
+		ID: record.ID, ProfileID: record.ProfileID, PositionID: record.PositionID, State: record.State,
+		SubmittedAt: record.SubmittedAt, StartedAt: record.StartedAt, FinishedAt: record.FinishedAt,
+		Duration: record.Duration, ExitCode: record.ExitCode, Signal: record.Signal,
+		SupervisionError: record.SupervisionError,
+	}
 }
 
 func DecodeResponse(frame []byte, expectedRequestID, expectedMethod, expectedInstanceID string) (Response, error) {
@@ -543,6 +985,45 @@ func decodeResult(value jsonValue, method, expectedInstanceID string) (Result, e
 			return Result{}, errors.New("response result values are invalid")
 		}
 		return Result{ProfileID: profileID.string, Changed: changed.bool}, nil
+	case MethodExecutionsList:
+		if !hasExactly(value.object, "instance_id", "executions") {
+			return Result{}, errors.New("response execution list fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		if instanceID == "" || (expectedInstanceID != "" && instanceID != expectedInstanceID) {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		executionsValue := value.object["executions"]
+		if executionsValue.kind != jsonArray || len(executionsValue.array) > MaxExecutionHistoryLimit {
+			return Result{}, errors.New("response executions are invalid")
+		}
+		executions := make([]execution.Summary, len(executionsValue.array))
+		seenIDs := make(map[string]struct{}, len(executions))
+		for index, executionValue := range executionsValue.array {
+			summary, err := decodeExecutionSummary(executionValue)
+			if err != nil {
+				return Result{}, fmt.Errorf("response execution summary %d: %w", index, err)
+			}
+			if _, exists := seenIDs[summary.ID]; exists {
+				return Result{}, errors.New("response execution IDs are duplicated")
+			}
+			seenIDs[summary.ID] = struct{}{}
+			executions[index] = summary
+		}
+		return Result{InstanceID: instanceID, Executions: executions}, nil
+	case MethodExecutionsGet:
+		if !hasExactly(value.object, "instance_id", "execution") {
+			return Result{}, errors.New("response execution get fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		if instanceID == "" || (expectedInstanceID != "" && instanceID != expectedInstanceID) {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		record, err := decodeExecutionRecord(value.object["execution"])
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{InstanceID: instanceID, Execution: &record}, nil
 	default:
 		return Result{}, errors.New("response method is invalid")
 	}
@@ -551,21 +1032,21 @@ func decodeResult(value jsonValue, method, expectedInstanceID string) (Result, e
 func validateResultForMethod(result Result, method Method, expectedInstanceID string) error {
 	switch method {
 	case MethodHealth:
-		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != ReadyState || result.Profiles != nil || result.ProfileID != "" || result.Changed {
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != ReadyState || result.Profiles != nil || result.ProfileID != "" || result.Changed || result.Executions != nil || result.Execution != nil {
 			return errors.New("response result is invalid")
 		}
 		if result.ProtocolVersion != nil {
 			return errors.New("health result has an unexpected protocol version")
 		}
 	case MethodStatus:
-		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != ReadyState || result.Profiles != nil || result.ProfileID != "" || result.Changed {
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != ReadyState || result.Profiles != nil || result.ProfileID != "" || result.Changed || result.Executions != nil || result.Execution != nil {
 			return errors.New("response result is invalid")
 		}
 		if result.ProtocolVersion == nil || *result.ProtocolVersion != ProtocolVersion {
 			return errors.New("status result protocol version is invalid")
 		}
 	case MethodProfilesList:
-		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != "" || result.ProtocolVersion != nil || result.ProfileID != "" || result.Profiles == nil || len(result.Profiles) > maxProfileSummaries {
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != "" || result.ProtocolVersion != nil || result.ProfileID != "" || result.Profiles == nil || len(result.Profiles) > maxProfileSummaries || result.Executions != nil || result.Execution != nil {
 			return errors.New("response profile list is invalid")
 		}
 		for _, summary := range result.Profiles {
@@ -574,8 +1055,29 @@ func validateResultForMethod(result Result, method Method, expectedInstanceID st
 			}
 		}
 	case MethodProfilesActivate:
-		if result.InstanceID != "" || result.State != "" || result.ProtocolVersion != nil || result.Profiles != nil || !validProfileID(result.ProfileID) {
+		if result.InstanceID != "" || result.State != "" || result.ProtocolVersion != nil || result.Profiles != nil || result.Executions != nil || result.Execution != nil || !validProfileID(result.ProfileID) {
 			return errors.New("response activation is invalid")
+		}
+	case MethodExecutionsList:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != "" || result.ProtocolVersion != nil || result.ProfileID != "" || result.Profiles != nil || result.Executions == nil || result.Execution != nil || len(result.Executions) > MaxExecutionHistoryLimit {
+			return errors.New("response execution list is invalid")
+		}
+		seenIDs := make(map[string]struct{}, len(result.Executions))
+		for _, summary := range result.Executions {
+			if err := validateExecutionSummary(summary); err != nil {
+				return err
+			}
+			if _, exists := seenIDs[summary.ID]; exists {
+				return errors.New("response execution IDs are duplicated")
+			}
+			seenIDs[summary.ID] = struct{}{}
+		}
+	case MethodExecutionsGet:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != "" || result.ProtocolVersion != nil || result.ProfileID != "" || result.Profiles != nil || result.Executions != nil || result.Execution == nil {
+			return errors.New("response execution record is invalid")
+		}
+		if err := validateExecutionRecord(*result.Execution); err != nil {
+			return err
 		}
 	default:
 		return errors.New("response method is invalid")
@@ -586,6 +1088,12 @@ func validateResultForMethod(result Result, method Method, expectedInstanceID st
 func resultMethod(result *Result) Method {
 	if result == nil {
 		return ""
+	}
+	if result.Execution != nil {
+		return MethodExecutionsGet
+	}
+	if result.Executions != nil {
+		return MethodExecutionsList
 	}
 	if result.Profiles != nil {
 		return MethodProfilesList
@@ -604,7 +1112,7 @@ func resultMethod(result *Result) Method {
 
 func isSupportedMethod(method Method) bool {
 	switch method {
-	case MethodHealth, MethodStatus, MethodProfilesList, MethodProfilesActivate:
+	case MethodHealth, MethodStatus, MethodProfilesList, MethodProfilesActivate, MethodExecutionsList, MethodExecutionsGet:
 		return true
 	default:
 		return false

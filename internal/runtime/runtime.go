@@ -14,11 +14,24 @@ import (
 	appconfig "hidhogg/internal/config"
 	"hidhogg/internal/d200x"
 	"hidhogg/internal/discovery"
+	"hidhogg/internal/execution"
 	"hidhogg/internal/ipc"
 	"hidhogg/internal/profile"
 )
 
 const maximumEventLineBytes = 4 * 1024
+
+var errExecutionSupervisionFailed = errors.New("runtime execution supervision failed")
+
+type executionWorker interface {
+	executionSubmitter
+	Faults() <-chan error
+	ListSummaries(int) ([]execution.Summary, error)
+	Get(string) (execution.Record, bool)
+	Close() error
+}
+
+type executionWorkerFactory func() (executionWorker, error)
 
 // Config contains the process-owned runtime dependencies. ConfigPath is
 // intentionally explicit: the runtime never discovers or watches a config
@@ -35,24 +48,25 @@ type Config struct {
 	TransportFactory d200x.TransportFactory
 	Stdout           io.Writer
 	Stderr           io.Writer
-	// Terminal is called once when an activation write leaves the device
-	// state uncertain. Runtime also withdraws readiness and cancels its active
-	// serving context before invoking this callback.
+	// Terminal is called once when an activation write leaves device state
+	// uncertain or execution supervision cannot confirm child reap. Runtime
+	// withdraws readiness and cancels serving before invoking this callback.
 	Terminal func(error)
 }
 
-// Runtime owns one configured D200X session and the existing health/status
-// IPC server. The endpoint is preflighted and bound before HID access, while
-// discovery metadata is withheld until both device initialization and IPC
+// Runtime owns one configured D200X session, one execution worker generation,
+// and the IPC server. The endpoint is preflighted and bound before HID access,
+// while discovery metadata is withheld until device initialization and IPC
 // serving are ready.
 type Runtime struct {
-	server     *ipc.Server
-	generation *discovery.Generation
-	config     Config
-	factory    d200x.TransportFactory
-	stdout     io.Writer
-	stderr     io.Writer
-	clock      Clock
+	server           *ipc.Server
+	generation       *discovery.Generation
+	config           Config
+	factory          d200x.TransportFactory
+	stdout           io.Writer
+	stderr           io.Writer
+	clock            Clock
+	executionFactory executionWorkerFactory
 
 	startMu          sync.Mutex
 	mu               sync.Mutex
@@ -60,6 +74,7 @@ type Runtime struct {
 	closed           bool
 	session          *d200x.Session
 	profileService   *RuntimeProfileService
+	executionWorker  executionWorker
 	defaultProfileID string
 	plan             devicePlan
 	startupCompleted time.Time
@@ -105,18 +120,20 @@ func New(config Config) (*Runtime, error) {
 		clock = realClock{}
 	}
 	runtime := &Runtime{
-		config:  normalized,
-		factory: factory,
-		stdout:  stdout,
-		stderr:  stderr,
-		clock:   clock,
+		config:           normalized,
+		factory:          factory,
+		stdout:           stdout,
+		stderr:           stderr,
+		clock:            clock,
+		executionFactory: func() (executionWorker, error) { return execution.New() },
 	}
 	if normalized.RuntimeDir == "" {
 		runtime.server, err = ipc.NewServer(ipc.ServerConfig{
-			SocketPath:     normalized.SocketPath,
-			InstanceID:     normalized.InstanceID,
-			Deadlines:      normalized.Deadlines,
-			ProfileService: runtimeIPCProfileService{runtime: runtime},
+			SocketPath:       normalized.SocketPath,
+			InstanceID:       normalized.InstanceID,
+			Deadlines:        normalized.Deadlines,
+			ProfileService:   runtimeIPCProfileService{runtime: runtime},
+			ExecutionHistory: runtimeExecutionHistory{runtime: runtime},
 		})
 		if err != nil {
 			return nil, err
@@ -196,6 +213,35 @@ func (r *Runtime) ActivateProfile(ctx context.Context, profileID string) (Activa
 
 type runtimeIPCProfileService struct {
 	runtime *Runtime
+}
+
+type runtimeExecutionHistory struct {
+	runtime *Runtime
+}
+
+func (history runtimeExecutionHistory) ListSummaries(limit int) ([]execution.Summary, error) {
+	worker := history.worker()
+	if worker == nil {
+		return nil, execution.ErrClosed
+	}
+	return worker.ListSummaries(limit)
+}
+
+func (history runtimeExecutionHistory) Get(id string) (execution.Record, bool) {
+	worker := history.worker()
+	if worker == nil {
+		return execution.Record{}, false
+	}
+	return worker.Get(id)
+}
+
+func (history runtimeExecutionHistory) worker() executionWorker {
+	if history.runtime == nil {
+		return nil
+	}
+	history.runtime.mu.Lock()
+	defer history.runtime.mu.Unlock()
+	return history.runtime.executionWorker
 }
 
 func (service runtimeIPCProfileService) ListProfiles() []ipc.ProfileSummary {
@@ -373,10 +419,12 @@ func (r *Runtime) Run(ctx context.Context) error {
 	policyPlan := r.plan
 	startupCompleted := r.startupCompleted
 	policyActionService := r.profileService
+	policyExecutionWorker := r.executionWorker
 	r.mu.Unlock()
 	go func() {
-		policyDone <- runIdlePolicy(serveContext, r.clock, policySession, policyPlan, startupCompleted, inputObservations, r.stdout, policyActionService)
+		policyDone <- runIdlePolicyWithExecutor(serveContext, r.clock, policySession, policyPlan, startupCompleted, inputObservations, r.stdout, policyActionService, policyExecutionWorker)
 	}()
+	executionFaults := policyExecutionWorker.Faults()
 
 	select {
 	case <-ctx.Done():
@@ -408,6 +456,15 @@ func (r *Runtime) Run(ctx context.Context) error {
 		closeErr := r.Close()
 		inputErr := <-inputDone
 		return joinRuntimeFailures(err, policyErr, inputErr, metadataErr, r.terminalError(), closeErr)
+	case <-executionFaults:
+		r.signalExecutionFault()
+		metadataErr := withdrawRuntimeMetadata(generation)
+		cancelServe()
+		policyErr := <-policyDone
+		serveErr := <-serveDone
+		closeErr := r.Close()
+		inputErr := <-inputDone
+		return joinRuntimeFailures(errExecutionSupervisionFailed, policyErr, inputErr, serveErr, metadataErr, r.terminalError(), closeErr)
 	}
 }
 
@@ -428,15 +485,26 @@ func (r *Runtime) terminalError() error {
 }
 
 func (r *Runtime) signalTerminal(err error) {
+	r.signalTerminalFailure(ErrProfileStateUncertain, err)
+}
+
+func (r *Runtime) signalExecutionFault() {
+	r.signalTerminalFailure(errExecutionSupervisionFailed, errExecutionSupervisionFailed)
+}
+
+func (r *Runtime) signalTerminalFailure(terminalErr, callbackErr error) {
 	if r == nil {
 		return
 	}
 	r.terminalOnce.Do(func() {
-		if err == nil {
-			err = ErrProfileStateUncertain
+		if terminalErr == nil {
+			terminalErr = ErrProfileStateUncertain
+		}
+		if callbackErr == nil {
+			callbackErr = terminalErr
 		}
 		r.mu.Lock()
-		r.terminalErr = ErrProfileStateUncertain
+		r.terminalErr = terminalErr
 		generation := r.generation
 		cancel := r.terminalCancel
 		callback := r.config.Terminal
@@ -448,7 +516,7 @@ func (r *Runtime) signalTerminal(err error) {
 			cancel()
 		}
 		if callback != nil {
-			callback(err)
+			callback(callbackErr)
 		}
 	})
 }
@@ -493,6 +561,8 @@ func (r *Runtime) closeLocked() error {
 	r.session = nil
 	profileService := r.profileService
 	r.profileService = nil
+	executionWorker := r.executionWorker
+	r.executionWorker = nil
 	r.terminalCancel = nil
 	server := r.server
 	generation := r.generation
@@ -502,6 +572,16 @@ func (r *Runtime) closeLocked() error {
 	if generation != nil {
 		if err := generation.WithdrawMetadata(); err != nil {
 			failures = append(failures, sanitizeFailure("withdraw runtime metadata", err))
+		}
+	}
+	if executionWorker != nil {
+		if err := executionWorker.Close(); err != nil {
+			if errors.Is(err, execution.ErrReapUnconfirmed) {
+				r.signalExecutionFault()
+				failures = append(failures, errExecutionSupervisionFailed)
+			} else {
+				failures = append(failures, sanitizeFailure("close execution worker", err))
+			}
 		}
 	}
 	if profileService != nil {
@@ -557,6 +637,16 @@ func (r *Runtime) start(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return r.startFailure(err)
 	}
+	executionWorker, err := r.executionFactory()
+	if err != nil {
+		return r.startFailure(sanitizeFailure("initialize execution worker", err))
+	}
+	if executionWorker == nil {
+		return r.startFailure(errors.New("initialize execution worker failed"))
+	}
+	r.mu.Lock()
+	r.executionWorker = executionWorker
+	r.mu.Unlock()
 
 	if err := r.prepareIPC(); err != nil {
 		return r.startFailure(err)
@@ -641,10 +731,11 @@ func (r *Runtime) prepareIPC() error {
 		config.InstanceID = generation.InstanceID()
 		if server == nil {
 			server, err = ipc.NewServer(ipc.ServerConfig{
-				SocketPath:     config.SocketPath,
-				InstanceID:     config.InstanceID,
-				Deadlines:      config.Deadlines,
-				ProfileService: runtimeIPCProfileService{runtime: r},
+				SocketPath:       config.SocketPath,
+				InstanceID:       config.InstanceID,
+				Deadlines:        config.Deadlines,
+				ProfileService:   runtimeIPCProfileService{runtime: r},
+				ExecutionHistory: runtimeExecutionHistory{runtime: r},
 			})
 			if err != nil {
 				return err
@@ -900,6 +991,10 @@ func joinRuntimeFailures(failures ...error) error {
 		}
 		if errors.Is(failure, ErrProfileStateUncertain) {
 			nonNil = append(nonNil, ErrProfileStateUncertain)
+			continue
+		}
+		if errors.Is(failure, errExecutionSupervisionFailed) {
+			nonNil = append(nonNil, errExecutionSupervisionFailed)
 			continue
 		}
 		nonNil = append(nonNil, sanitizeFailure("runtime operation", failure))

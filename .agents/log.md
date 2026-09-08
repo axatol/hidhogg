@@ -746,3 +746,40 @@
 - Repeating IPC activation of the already-current `alternate` profile returned `changed:false` and emitted no profile transition.
 - One completed `calendar` press/release at `1_0` invoked the alternate binding. The trace contains exactly one transition from `alternate` to `default`, one logical `0x0001`, and no targeted `0x000d`; the owner confirmed that all 14 default tiles returned together.
 - Clean shutdown removed `runtime.sock` and `runtime.json` and retained `runtime.lock`. M-04 is complete. “Together” is the owner's visible observation and is not a claim of device-side atomicity; cross-firmware behavior remains unverified.
+
+## 2026-09-08 — M-05-P01 executable-action contract confirmed
+
+- The owner selected a thin synchronous executable-action slice. “Synchronous” means one isolated worker starts and waits for one child; HID input, idle/keepalive, profiles, and IPC do not wait for it. One child may run globally and there is no queue; another completed executable gesture records `rejected_busy` and launches nothing.
+- Configuration uses an additive strict schema-version-2 `execute`/`press` variant with an absolute executable, literal bounded argument vector, and optional 1..60-second timeout defaulting to 10. The child uses `/` and a fixed minimal `PATH`; M-05 has no shell, inherited environment, configured environment, or configured working directory.
+- Timeout and runtime shutdown use process-group TERM, a two-second grace period, KILL if necessary, and direct-child reap. Process failure is recorded but is not a D200X runtime failure. History is generation-local RAM, retains 32 entries, keeps separate 4,096-byte stdout/stderr tails with totals/truncation, and never records command material.
+- Read-only `executions.list` and `executions.get` expose bounded summaries/details; output is base64. IPC cannot start, retry, cancel, or provide commands. Async execution, long/double press, persistence, config reload, Swift, and visible failure feedback remain deferred.
+- The owner suggested future env-file lists for Hidhogg and child commands. This is a separate future contract: runtime loading and child exposure are distinct, and child exposure should require explicit variable-name allowlists rather than forwarding the entire runtime environment. No `.env` content was read.
+
+## 2026-09-08 — M-05-C01 executable-action configuration passed
+
+- Strict schema version 2 now accepts an additive `execute`/`press` action with absolute NUL-free executable, optional literal argument array defaulting empty, and optional timeout defaulting to 10 seconds. It preserves the existing `activate_profile` variant and rejects cross-variant, shell, working-directory, environment, and unknown fields.
+- Semantic validation enforces at most 32 arguments, 1,024 UTF-8 bytes per argument, 8,192 aggregate bytes, valid UTF-8/no NUL, and timeout 1..60. The immutable profile catalog defensively copies argument slices.
+- JSON Schema rejects NUL and represents structural/count/character bounds. Its description explicitly states that Go semantic validation is authoritative for encoded-byte and aggregate bounds because JSON Schema `maxLength` counts characters and cannot express aggregate UTF-8 bytes.
+- Independent verification passed deterministic regeneration, scoped race tests, vet, and diff checks. Schema-v1 rejection and required migration remain the already accepted compatibility policy.
+
+## 2026-09-08 — M-05-E01 execution worker passed
+
+- `internal/execution` owns one active child with no queue. Submit returns without waiting for execution; busy attempts launch nothing and enter history. Children receive literal arguments, `/` as working directory, exactly the fixed minimal `PATH`, no inherited environment, and a new process group.
+- Timeout and Close perform bounded group TERM/grace/KILL/reap supervision. Signal errors are retained; unconfirmed reap remains truthfully running with `supervision_error`, keeps the worker occupied, returns stable errors, and publishes one nonblocking generation fault rather than claiming completion.
+- History retains the active record under busy pressure, evicts the oldest terminal entry, bounds output to separate 4,096-byte tails with totals, exposes output-free limited summaries, and defensively copies results. UUIDv7-style IDs increment only the 74 non-reserved bits and carry into the timestamp.
+- Architecture A02 defects covering active eviction, unbounded reap, ignored signal failures, list sizing, and UUID reserved-bit carry were remediated. Independent full race and 50-repeat lifecycle/carry gates passed. A combined Submit/List/Get/Close test then passed 20 race-detected repetitions. Remaining OS risk is a child that cannot be killed or reaped; the fail-closed worker and fault channel make that state observable to runtime integration.
+
+## 2026-09-08 — M-05-R01 runtime and history integration passed automatic gates
+
+- Completed execute press actions submit an immutable request containing the committed originating profile/value IDs, absolute executable, cloned literal arguments, and bounded timeout. Submission does not wait for the child; existing wake, transition, matched press/release, and activate-profile behavior remains intact. Busy is retained history and is never retried.
+- Runtime owns one execution generation, exposes only read-only history to IPC, closes execution admission before other service teardown, and monitors the one-shot supervision-fault channel. Ordinary child results are nonterminal; unconfirmed reap produces a sanitized terminal runtime failure and readiness withdrawal.
+- Internal protocol v1 now includes strict read-only `executions.list` and `executions.get`. No IPC method supplies, starts, retries, or cancels commands. List summaries exclude output and command material; get returns separate canonical-base64 output tails with totals/truncation. Discovery and legacy CLI modes support both queries.
+- Architecture review accepted the integrated boundary. Exact maximum-width fixtures produce a 16,007-byte list frame and 11,743-byte get frame including LF, below the 16,384-byte limit. Main full race, test, generation, vet, build, diff, and unsandboxed socket E2E gates passed. Independent focused race, socket, and 50-repeat worker gates found no defect; its monolithic full-race attempt was interrupted, so the main full-race run is the source for that aggregate gate.
+
+## 2026-09-08 — M-05-V01 physical executable-action acceptance passed
+
+- A temporary owner-visible schema-v2 profile bound square `0_0` to absolute `/usr/bin/printf` with literal arguments `literal:%s\n` and `a;$(not-executed)|*.txt`. The owner pressed and released that tile once.
+- Verbose input recorded the expected wire-index-0 pressed/released pair. `executions.list` returned one terminal `exited` record with exit code 0, no signal, and no supervision error. `executions.get` returned 32 stdout bytes, zero stderr bytes, and no truncation; canonical base64 decoded exactly to `literal:a;$(not-executed)|*.txt\n`.
+- The literal output establishes that shell metacharacters were passed as argv data rather than evaluated. Controlled SIGINT shutdown removed the generation socket and metadata; the owner-only discovery directory retained only its persistent `runtime.lock`.
+- Independent milestone-close review passed the configuration, worker, runtime-routing, IPC/CLI, physical evidence, privacy, and lifecycle mapping with no blocker. The final unrestricted whole-tree generation, race, vet, build, and diff gate also passed.
+- This closes the direct-Go M-05 vertical slice on the owned D200X. It does not broaden the contract to environment files, configurable child environment/current directory, asynchronous or concurrent execution, configuration reload, long/double press, or persistent history.

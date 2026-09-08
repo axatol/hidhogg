@@ -5,6 +5,8 @@ Updated: 2026-09-08
 ## Current canonical checkpoint
 
 - M-04 is complete as of 2026-09-08. The final runtime uses one typed content-addressed full-page `0x0001` for live activation; automatic and owner-visible physical acceptance pass.
+- M-05 is complete as of 2026-09-08. Strict schema-v2 `execute`/`press` actions run one absolute executable with literal argv through a single nonblocking runtime-owned worker, retain bounded generation-local history, and expose read-only `executions.list/get` IPC and CLI queries.
+- M-05 automatic, architecture, and independent focused gates passed. The owner-visible D200X acceptance bound `0_0` to `/usr/bin/printf`; one press exited 0 and captured exactly `literal:a;$(not-executed)|*.txt\n` with no stderr, truncation, signal, or supervision error. Shutdown removed socket/metadata and retained the persistent lock.
 - C01 introduced strict schema version 2 with one default and 1..31 complete profiles, exact optional `activate_profile`/`press` actions, and an immutable profile catalog. Independent V02 passed race, vet, schema determinism, boundary, invalid-input, and defensive-copy gates.
 - R01 restored full-tree compilation and added the bounded transactional runtime profile service. Independent V04 passed activation, queue saturation, fail-stop, dynamic binding, idle suppression, diagnostics default selection, owned-reader cancellation, race, vet, compile, and diff gates.
 - I01 added strict profile list/activate IPC and discovery-aware `hidhoggctl` commands. Independent V01 passed boundary, protocol, adapter, CLI, race, build, vet, and unsandboxed Unix-socket gates; 31 maximum-width summaries frame at 15,880 bytes and 32 at 16,387 bytes/rejected.
@@ -32,7 +34,7 @@ Updated: 2026-09-08
 
 ### Current next action
 
-Plan M-05 as a thin synchronous executable-action slice: exact ordinary-press binding, explicit executable and argument vector without implicit shell evaluation, bounded execution timeout/output, and queryable execution history through IPC and `hidhoggctl`. Keep asynchronous supervision, long/double press, configuration watching, and Swift foreground-app mapping outside the initial contract until separately confirmed.
+Select and plan the next post-M-05 vertical slice before implementation. Candidate deferred boundaries include configuration reload, Swift foreground-application profile mapping, asynchronous action execution/history, and explicit env-file variable allowlisting. Env-file loading/exposure remains a separate future milestone and no `.env` content may be inspected without explicit authorization.
 
 All older checkpoints below are retained as historical evidence. Their `next action` statements are superseded by this section.
 

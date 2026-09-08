@@ -76,6 +76,47 @@ func (c *Client) ProfilesActivate(ctx context.Context, instanceID, profileID str
 	return c.ActivateProfile(ctx, instanceID, profileID)
 }
 
+// ListExecutions requests newest-first, output-free execution summaries. A
+// zero limit selects the protocol default of twenty entries.
+func (c *Client) ListExecutions(ctx context.Context, instanceID string, limit int) (Response, error) {
+	requestID, err := NewUUID()
+	if err != nil {
+		return Response{}, err
+	}
+	return c.CallRequest(ctx, Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       requestID,
+		Method:          MethodExecutionsList,
+		InstanceID:      instanceID,
+		Limit:           limit,
+	})
+}
+
+// GetExecution requests one exact execution ID and its bounded output tails.
+func (c *Client) GetExecution(ctx context.Context, instanceID, executionID string) (Response, error) {
+	requestID, err := NewUUID()
+	if err != nil {
+		return Response{}, err
+	}
+	return c.CallRequest(ctx, Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       requestID,
+		Method:          MethodExecutionsGet,
+		InstanceID:      instanceID,
+		ExecutionID:     executionID,
+	})
+}
+
+// ExecutionsList is an explicit alias for ListExecutions.
+func (c *Client) ExecutionsList(ctx context.Context, instanceID string, limit int) (Response, error) {
+	return c.ListExecutions(ctx, instanceID, limit)
+}
+
+// ExecutionsGet is an explicit alias for GetExecution.
+func (c *Client) ExecutionsGet(ctx context.Context, instanceID, executionID string) (Response, error) {
+	return c.GetExecution(ctx, instanceID, executionID)
+}
+
 func (c *Client) CallRequest(ctx context.Context, request Request) (Response, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -89,11 +130,8 @@ func (c *Client) CallRequest(ctx context.Context, request Request) (Response, er
 	if !isSupportedMethod(request.Method) {
 		return Response{}, errors.New("request method is not supported")
 	}
-	if request.Method == MethodProfilesActivate && request.ProfileID == "" {
-		return Response{}, errors.New("profile ID is required")
-	}
-	if request.Method != MethodProfilesActivate && request.ProfileID != "" {
-		return Response{}, errors.New("profile ID is not permitted")
+	if err := validateRequestFields(request); err != nil {
+		return Response{}, err
 	}
 	if _, err := validateGenerationDirectory(filepath.Dir(c.socketPath)); err != nil {
 		return Response{}, err

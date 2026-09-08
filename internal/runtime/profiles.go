@@ -421,7 +421,7 @@ func matchesProfileActionSnapshot(expected profileActionSnapshot, currentID stri
 		return false
 	}
 	for index := range expected.bindings {
-		if expected.bindings[index] != currentBindings[index] {
+		if !equalProfileBinding(expected.bindings[index], currentBindings[index]) {
 			return false
 		}
 	}

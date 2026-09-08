@@ -33,16 +33,31 @@ func runWithOutput(args []string, output io.Writer) error {
 	socketPath := flags.String("socket-path", "", "exact Unix socket endpoint")
 	instanceID := flags.String("instance-id", "", "runtime generation UUID")
 	profileID := flags.String("profile-id", "", "case-sensitive profile identifier")
-	methodFlag := flags.String("method", "health", "health, status, profiles.list, or profiles.activate")
+	limit := flags.Int("limit", 0, "execution history summary limit (1-32)")
+	executionID := flags.String("execution-id", "", "exact execution history identifier")
+	methodFlag := flags.String("method", "health", "health, status, profiles.list, profiles.activate, executions.list, or executions.get")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	limitSet := false
+	executionIDSet := false
+	flags.Visit(func(flag *flag.Flag) {
+		switch flag.Name {
+		case "limit":
+			limitSet = true
+		case "execution-id":
+			executionIDSet = true
+		}
+	})
 	method, commandProfileID, err := parseCommand(*methodFlag, *profileID, flags.Args())
 	if err != nil {
 		return err
 	}
 	if commandProfileID != "" {
 		*profileID = commandProfileID
+	}
+	if err := validateExecutionFlags(ipc.Method(method), *limit, limitSet, *executionID, executionIDSet); err != nil {
+		return err
 	}
 	if *runtimeDir != "" && *socketPath != "" {
 		return fmt.Errorf("--runtime-dir and --socket-path are mutually exclusive")
@@ -81,6 +96,10 @@ func runWithOutput(args []string, output io.Writer) error {
 		response, err = client.ActivateProfile(context.Background(), *instanceID, *profileID)
 	} else if ipc.Method(method) == ipc.MethodProfilesList {
 		response, err = client.ListProfiles(context.Background(), *instanceID)
+	} else if ipc.Method(method) == ipc.MethodExecutionsList {
+		response, err = client.ListExecutions(context.Background(), *instanceID, *limit)
+	} else if ipc.Method(method) == ipc.MethodExecutionsGet {
+		response, err = client.GetExecution(context.Background(), *instanceID, *executionID)
 	} else {
 		response, err = client.Call(context.Background(), ipc.Method(method), *instanceID)
 	}
@@ -156,12 +175,66 @@ func parseCommand(defaultMethod, profileID string, args []string) (string, strin
 		if profileID == "" {
 			return "", "", fmt.Errorf("profiles activate requires --profile-id or a profile ID argument")
 		}
-	default:
+	case ipc.MethodExecutionsList, ipc.MethodExecutionsGet:
 		if profileID != "" {
 			return "", "", fmt.Errorf("--profile-id is only valid for profiles activate")
 		}
+	case ipc.MethodHealth, ipc.MethodStatus:
+		if profileID != "" {
+			return "", "", fmt.Errorf("--profile-id is only valid for profiles activate")
+		}
+	default:
+		return "", "", fmt.Errorf("method %q is not supported", method)
 	}
 	return method, profileID, nil
+}
+
+func validateExecutionFlags(method ipc.Method, limit int, limitSet bool, executionID string, executionIDSet bool) error {
+	switch method {
+	case ipc.MethodExecutionsList:
+		if executionIDSet || executionID != "" {
+			return fmt.Errorf("--execution-id is only valid for executions.get")
+		}
+		if limitSet && (limit < 1 || limit > ipc.MaxExecutionHistoryLimit) {
+			return fmt.Errorf("--limit must be between 1 and %d", ipc.MaxExecutionHistoryLimit)
+		}
+	case ipc.MethodExecutionsGet:
+		if limitSet || limit != 0 {
+			return fmt.Errorf("--limit is only valid for executions.list")
+		}
+		if !validCLIExecutionID(executionID) {
+			return fmt.Errorf("--execution-id is required")
+		}
+	default:
+		if limitSet || limit != 0 {
+			return fmt.Errorf("--limit is only valid for executions.list")
+		}
+		if executionIDSet || executionID != "" {
+			return fmt.Errorf("--execution-id is only valid for executions.get")
+		}
+	}
+	return nil
+}
+
+func validCLIExecutionID(value string) bool {
+	if value == "" {
+		return false
+	}
+	for index, character := range value {
+		if index == 0 {
+			if !((character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9')) {
+				return false
+			}
+			continue
+		}
+		if !((character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') || character == '.' || character == '_' || character == '-') {
+			return false
+		}
+		if index >= 64 {
+			return false
+		}
+	}
+	return true
 }
 
 func parseCommandFlags(args []string) ([]string, string, error) {

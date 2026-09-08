@@ -49,6 +49,12 @@ Task IDs are immutable.
 | M-04-P02 | Complete | Resolve content-addressed full-page live redraw behavior | M-04-V02 |
 | M-04-R03 | Complete | Replace sequential live updates with one typed content-addressed full-page upload | M-04-P02 |
 | M-04-V03 | Complete | Verify final bulk profile switching automatically and on the owned D200X | M-04-R03 |
+| M-05 | Complete | Execute one bounded synchronous button action and expose generation-local history | M-04 |
+| M-05-P01 | Complete | Freeze executable-action, worker, lifecycle, history, IPC, and CLI contracts | M-05 |
+| M-05-C01 | Complete | Add the strict executable-action configuration and catalog variant | M-05-P01 |
+| M-05-E01 | Complete | Implement the isolated one-slot execution worker and bounded history | M-05-C01 |
+| M-05-R01 | Complete | Integrate completed presses, runtime lifecycle, and execution IPC/CLI | M-05-E01 |
+| M-05-V01 | Complete | Independently verify schema, execution, concurrency, lifecycle, IPC, and CLI gates | M-05-R01 |
 
 ## P-01 — Planning baseline
 
@@ -367,6 +373,50 @@ Task IDs are immutable.
 - Goal: verify default startup plus IPC- and button-driven profile transitions use the final content-addressed bulk operation on the owned D200X.
 - Acceptance: default renders; IPC activation changes all 14 positions without visible progressive replacement; repeated current activation is zero-write; completed configured button press returns to the default profile; shutdown removes generation metadata and socket.
 - Dependencies: M-04-R03.
+
+## M-05 — Bounded executable press actions
+
+- Status: complete on 2026-09-08 after automatic, architecture, independent, and owner-visible physical acceptance passed.
+- Goal: execute one trusted owner-configured program from a completed ordinary button press without blocking HID input, idle/keepalive behavior, profile activation, or IPC, and retain bounded queryable results.
+- Scope: additive strict schema-version-2 `execute` action; absolute executable plus literal argument vector; one isolated runtime-owned worker and one active child globally; timeout and shutdown process-group termination; generation-local bounded execution history; read-only list/get IPC and CLI.
+- Constraints: no shell, command string, interpolation, `PATH` lookup, inherited runtime environment, configurable environment, configurable working directory, queue, concurrent children, persistence, IPC-triggered execution, retry, Swift changes, configuration reload, or long/double press. The child working directory is `/`; its environment contains only a fixed minimal `PATH`. Execution failure does not fail-stop the D200X runtime.
+- Bounds: default timeout 10 seconds; accepted timeout 1..60 seconds; at most 32 literal arguments, 1,024 UTF-8 bytes each and 8,192 bytes total; one active child with busy attempts retained; 32 history entries; separate 4,096-byte stdout/stderr tails plus total-byte and truncation metadata.
+- Lifecycle: start the child in a new process group; timeout or runtime shutdown sends group `SIGTERM`, waits at most two seconds, then sends group `SIGKILL` and reaps the direct child. Shutdown closes admission before cancellation and does not wait for the configured action timeout.
+- Privacy: history never stores or returns executable paths, arguments, working directory, or environment. Output remains generation-local memory and is base64 in IPC. IPC cannot start, retry, cancel, or supply a command.
+- Future boundary: configured env-file loading for Hidhogg and explicit variable-name exposure to child actions require a separate contract. They must not implicitly forward the runtime environment and are outside M-05.
+
+### M-05-P01 — Freeze executable-action contracts
+
+- Status: complete on 2026-09-08 after owner confirmation and architecture review A01.
+- Goal: define the smallest secure synchronous child-execution slice without blocking runtime coordinators.
+- Acceptance: configuration, execution, concurrency, lifecycle, output/history, IPC, CLI, privacy, and failure semantics are explicit and bounded.
+
+### M-05-C01 — Executable-action configuration
+
+- Status: complete on 2026-09-08 after schema regeneration and independent semantic, strictness, immutability, race, vet, and diff verification passed.
+- Goal: add an immutable strict `execute`/`press` action variant with absolute executable, literal bounded arguments, and optional bounded timeout.
+- Acceptance: schema generation and semantic tests cover every bound and reject relative paths, shell-shaped fields, unknown fields, NUL, invalid UTF-8, unsupported gestures, environment, and working-directory fields.
+- Dependencies: M-05-P01.
+
+### M-05-E01 — Execution worker and history
+
+- Status: complete on 2026-09-08 after architecture remediation and independent process, lifecycle, history, UUID, concurrency, race, vet, and cgo-free gates passed.
+- Goal: implement one nonblocking runtime-owned worker that synchronously supervises one process and records bounded generation-local results.
+- Dependencies: M-05-C01.
+
+### M-05-R01 — Runtime, IPC, and CLI integration
+
+- Status: complete on 2026-09-08 after architecture acceptance and main/independent automatic gates passed.
+- Goal: route completed presses to the worker and expose strict read-only `executions.list`/`executions.get` discovery and legacy CLI operations.
+- Dependencies: M-05-E01.
+
+### M-05-V01 — Independent executable-action verification
+
+- Status: complete on 2026-09-08. Automatic and architecture gates passed; the owner-visible local execution/history slice passed on the owned D200X.
+- Goal: verify configuration, literal argv, minimal environment, nonblocking runtime behavior, busy rejection, output bounds, all terminal states, bounded shutdown, history eviction, IPC framing, and CLI behavior without executing arbitrary host programs or accessing HID/network.
+- Dependencies: M-05-R01.
+- Physical acceptance: a temporary schema-v2 profile bound top-left `0_0` to absolute `/usr/bin/printf` with literal metacharacters in its argument. One owner-confirmed press/release produced one exited history entry with exit code 0, no signal or supervision error, 32 stdout bytes, empty stderr, and no truncation. `executions.get` decoded exactly to `literal:a;$(not-executed)|*.txt\n`, demonstrating that `;`, `$()`, `|`, and `*` were not interpreted by a shell. Controlled shutdown removed `runtime.sock` and generation metadata while retaining `runtime.lock`.
+- Evidence boundary: this proves the configured direct-argv vertical slice on the owned D200X and the queried generation. It does not prove arbitrary executable compatibility, persistent history across generations, asynchronous/concurrent child support, configuration reload, long/double press, or environment-file exposure; those remain outside M-05.
 
 ## M-02-F01 — Screensaver wake and keepalive correction
 

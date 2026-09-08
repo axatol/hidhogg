@@ -7,6 +7,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"hidhogg/internal/execution"
 )
 
 type Deadlines struct {
@@ -51,14 +53,23 @@ type ProfileService interface {
 	ActivateProfile(context.Context, string) (ActivationResult, error)
 }
 
+// ExecutionHistory is the read-only history boundary consumed by the IPC
+// server. The execution worker owns admission and lifecycle; IPC only queries
+// its defensive copies.
+type ExecutionHistory interface {
+	ListSummaries(int) ([]execution.Summary, error)
+	Get(string) (execution.Record, bool)
+}
+
 type ServerConfig struct {
-	SocketPath     string
-	InstanceID     string
-	Deadlines      Deadlines
-	MaxConnections int
-	Handler        Handler
-	ProfileService ProfileService
-	PeerVerifier   func(net.Conn) error
+	SocketPath       string
+	InstanceID       string
+	Deadlines        Deadlines
+	MaxConnections   int
+	Handler          Handler
+	ProfileService   ProfileService
+	ExecutionHistory ExecutionHistory
+	PeerVerifier     func(net.Conn) error
 }
 
 type Server struct {
@@ -261,6 +272,9 @@ func (s *Server) handleRequest(request Request) (response Response) {
 	if isProfileMethod(request.Method) {
 		return s.handleProfileRequest(request)
 	}
+	if isExecutionMethod(request.Method) {
+		return s.handleExecutionRequest(request)
+	}
 	result, err := s.config.Handler.Handle(context.Background(), request)
 	if err != nil {
 		return internalResponse(request.RequestID)
@@ -273,6 +287,53 @@ func (s *Server) handleRequest(request Request) (response Response) {
 		return internalResponse(request.RequestID)
 	}
 	return response
+}
+
+func (s *Server) handleExecutionRequest(request Request) Response {
+	requestID := request.RequestID
+	if s.config.ExecutionHistory == nil {
+		return historyErrorResponse(requestID, ErrHistoryUnavailable)
+	}
+	switch request.Method {
+	case MethodExecutionsList:
+		summaries, err := s.config.ExecutionHistory.ListSummaries(request.Limit)
+		if err != nil {
+			return historyErrorResponse(requestID, err)
+		}
+		if summaries == nil {
+			summaries = make([]execution.Summary, 0)
+		}
+		result := Result{InstanceID: request.InstanceID, Executions: summaries}
+		if err := validateResultForMethod(result, request.Method, request.InstanceID); err != nil {
+			return internalResponse(requestID)
+		}
+		return Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &result}
+	case MethodExecutionsGet:
+		record, ok := s.config.ExecutionHistory.Get(request.ExecutionID)
+		if !ok {
+			return historyErrorResponse(requestID, ErrExecutionNotFound)
+		}
+		result := Result{InstanceID: request.InstanceID, Execution: &record}
+		if err := validateResultForMethod(result, request.Method, request.InstanceID); err != nil {
+			return internalResponse(requestID)
+		}
+		return Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &result}
+	default:
+		return internalResponse(requestID)
+	}
+}
+
+func historyErrorResponse(requestID string, err error) Response {
+	id := requestID
+	code, message := classifyHistoryError(err)
+	return Response{ProtocolVersion: ProtocolVersion, RequestID: &id, Error: &Error{Code: code, Message: message}}
+}
+
+func classifyHistoryError(err error) (string, string) {
+	if errors.Is(err, ErrExecutionNotFound) {
+		return ErrorExecutionNotFound, messageExecutionNotFound
+	}
+	return ErrorHistoryUnavailable, messageHistoryUnavailable
 }
 
 func (s *Server) handleProfileRequest(request Request) Response {
@@ -335,6 +396,10 @@ func classifyProfileError(err error) (string, string) {
 
 func isProfileMethod(method Method) bool {
 	return method == MethodProfilesList || method == MethodProfilesActivate
+}
+
+func isExecutionMethod(method Method) bool {
+	return method == MethodExecutionsList || method == MethodExecutionsGet
 }
 
 func internalResponse(requestID string) Response {

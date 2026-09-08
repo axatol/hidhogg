@@ -3,8 +3,11 @@ package runtime
 import (
 	"context"
 	"errors"
+	"slices"
+	"time"
 
 	"hidhogg/internal/d200x"
+	"hidhogg/internal/execution"
 	"hidhogg/internal/profile"
 )
 
@@ -27,13 +30,19 @@ type profileActionCandidate struct {
 	marker    d200x.InputMarker
 	snapshot  profileActionSnapshot
 	binding   profile.Binding
+	position  eventPosition
 }
 
 type profileActionController struct {
 	service    ProfileService
+	executor   executionSubmitter
 	positions  func() map[byte]eventPosition
 	transition *profileTransitionGate
 	candidate  *profileActionCandidate
+}
+
+type executionSubmitter interface {
+	Submit(execution.Request) (execution.Record, error)
 }
 
 type profileActionSnapshotProvider interface {
@@ -44,11 +53,14 @@ type profileActionActivator interface {
 	activateProfileForAction(context.Context, profileActionSnapshot, string) (ActivationResult, error)
 }
 
-func newProfileActionController(service ProfileService, positions func() map[byte]eventPosition) *profileActionController {
+func newProfileActionController(service ProfileService, positions func() map[byte]eventPosition, executors ...executionSubmitter) *profileActionController {
 	if service == nil {
 		return nil
 	}
 	controller := &profileActionController{service: service, positions: positions}
+	if len(executors) > 0 {
+		controller.executor = executors[0]
+	}
 	if source, ok := service.(profileTransitionSource); ok {
 		controller.transition = source.profileTransitionGate()
 		controller.transition.registerReset(controller.reset)
@@ -83,8 +95,9 @@ func (controller *profileActionController) observe(ctx context.Context, event d2
 }
 
 type profileActionActivation struct {
-	snapshot  profileActionSnapshot
-	profileID string
+	snapshot   profileActionSnapshot
+	binding    profile.Binding
+	positionID string
 }
 
 func (controller *profileActionController) observeState(event d200x.InputEvent) *profileActionActivation {
@@ -125,6 +138,7 @@ func (controller *profileActionController) observeState(event d200x.InputEvent) 
 			marker:    event.Marker,
 			snapshot:  snapshot.clone(),
 			binding:   binding,
+			position:  position,
 		}
 		return nil
 	case d200x.InputActionReleased:
@@ -137,8 +151,9 @@ func (controller *profileActionController) observeState(event d200x.InputEvent) 
 			return nil
 		}
 		return &profileActionActivation{
-			snapshot:  candidate.snapshot,
-			profileID: candidate.binding.Action.ProfileID,
+			snapshot:   candidate.snapshot,
+			binding:    candidate.binding,
+			positionID: candidate.position.id,
 		}
 	default:
 		controller.reset()
@@ -172,11 +187,28 @@ func (controller *profileActionController) activate(ctx context.Context, activat
 	if controller == nil || controller.service == nil || activation == nil {
 		return nil
 	}
+	if activation.binding.Action.Type == profile.ExecuteActionType {
+		if controller.executor == nil {
+			return nil
+		}
+		action := activation.binding.Action
+		_, err := controller.executor.Submit(execution.Request{
+			ProfileID:  activation.snapshot.profileID,
+			PositionID: activation.positionID,
+			Executable: action.Executable,
+			Arguments:  slices.Clone(action.Arguments),
+			Timeout:    time.Duration(action.TimeoutSeconds) * time.Second,
+		})
+		if errors.Is(err, execution.ErrClosed) && ctx != nil && ctx.Err() != nil {
+			return nil
+		}
+		return err
+	}
 	var err error
 	if activator, ok := controller.service.(profileActionActivator); ok {
-		_, err = activator.activateProfileForAction(ctx, activation.snapshot, activation.profileID)
+		_, err = activator.activateProfileForAction(ctx, activation.snapshot, activation.binding.Action.ProfileID)
 	} else {
-		_, err = controller.service.ActivateProfile(ctx, activation.profileID)
+		_, err = controller.service.ActivateProfile(ctx, activation.binding.Action.ProfileID)
 	}
 	if errors.Is(err, errProfileActionBindingChanged) {
 		return nil
@@ -192,7 +224,7 @@ func (candidate profileActionCandidate) matches(snapshot profileActionSnapshot, 
 		return false
 	}
 	binding, ok := actionBindingAt(snapshot, position.position)
-	return ok && binding == candidate.binding
+	return ok && equalProfileBinding(binding, candidate.binding)
 }
 
 func actionBindingAt(snapshot profileActionSnapshot, position string) (profile.Binding, bool) {
@@ -202,13 +234,24 @@ func actionBindingAt(snapshot profileActionSnapshot, position string) (profile.B
 		if current.Position != position {
 			continue
 		}
-		if found || current.Action.Type != profile.ActivateProfileType || current.Action.Gesture != profile.PressGesture {
+		if found || current.Action.Gesture != profile.PressGesture ||
+			(current.Action.Type != profile.ActivateProfileType && current.Action.Type != profile.ExecuteActionType) {
 			return profile.Binding{}, false
 		}
 		binding = current
 		found = true
 	}
 	return binding, found
+}
+
+func equalProfileBinding(left, right profile.Binding) bool {
+	return left.Position == right.Position &&
+		left.Action.Type == right.Action.Type &&
+		left.Action.Gesture == right.Action.Gesture &&
+		left.Action.ProfileID == right.Action.ProfileID &&
+		left.Action.Executable == right.Action.Executable &&
+		slices.Equal(left.Action.Arguments, right.Action.Arguments) &&
+		left.Action.TimeoutSeconds == right.Action.TimeoutSeconds
 }
 
 func isOrdinaryPressOrRelease(event d200x.InputEvent) bool {

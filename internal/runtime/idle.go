@@ -98,6 +98,24 @@ func runIdlePolicy(
 	stdout io.Writer,
 	actionServices ...ProfileService,
 ) error {
+	var actionService ProfileService
+	if len(actionServices) > 0 {
+		actionService = actionServices[0]
+	}
+	return runIdlePolicyWithExecutor(ctx, clock, sender, plan, startupAt, input, stdout, actionService, nil)
+}
+
+func runIdlePolicyWithExecutor(
+	ctx context.Context,
+	clock Clock,
+	sender frameSender,
+	plan devicePlan,
+	startupAt time.Time,
+	input <-chan inputObservation,
+	stdout io.Writer,
+	actionService ProfileService,
+	executor executionSubmitter,
+) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -113,10 +131,6 @@ func runIdlePolicy(
 	if startupAt.IsZero() {
 		startupAt = clock.Now()
 	}
-	var actionService ProfileService
-	if len(actionServices) > 0 {
-		actionService = actionServices[0]
-	}
 	controller := &idlePolicyController{
 		clock:     clock,
 		sender:    sender,
@@ -124,7 +138,7 @@ func runIdlePolicy(
 		startupAt: startupAt,
 		input:     input,
 		stdout:    stdout,
-		actions:   newProfileActionController(actionService, plan.eventPositions),
+		actions:   newProfileActionController(actionService, plan.eventPositions, executor),
 		state: idlePolicyState{
 			idleDeadline: idleDeadline(startupAt, plan.idleTimeout),
 			keepaliveAt:  startupAt.Add(keepaliveInterval),

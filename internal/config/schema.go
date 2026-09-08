@@ -140,18 +140,87 @@ func configurePositionSchema(position *jsonschema.Schema) {
 }
 
 func configureActionSchema(action *jsonschema.Schema) {
-	if action == nil || action.Properties == nil {
+	if action == nil {
 		return
 	}
-	if field := action.Properties["type"]; field != nil {
-		field.Enum = []any{profileActionType}
+	// Reflection sees one Go struct containing all variant fields. Replace that
+	// projection with a strict nullable oneOf so each TOML action shape has its
+	// own required and forbidden property set.
+	action.Type = ""
+	action.Types = nil
+	action.Properties = nil
+	action.Required = nil
+	action.AdditionalProperties = nil
+	action.PropertyOrder = nil
+	action.OneOf = []*jsonschema.Schema{
+		{Type: "null"},
+		activateProfileActionSchema(),
+		executeActionSchema(),
 	}
-	if field := action.Properties["gesture"]; field != nil {
-		field.Enum = []any{profileActionGesture}
+}
+
+func activateProfileActionSchema() *jsonschema.Schema {
+	return actionObjectSchema(
+		map[string]*jsonschema.Schema{
+			"type":       actionStringSchema("action type", []any{profileActionType}),
+			"gesture":    actionStringSchema("input gesture", []any{profileActionGesture}),
+			"profile_id": stableIDActionSchema("case-sensitive target profile identifier"),
+		},
+		[]string{"type", "gesture", "profile_id"},
+		[]string{"type", "gesture", "profile_id"},
+	)
+}
+
+func executeActionSchema() *jsonschema.Schema {
+	arguments := &jsonschema.Schema{
+		Type:        "array",
+		Description: "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+		Items: &jsonschema.Schema{
+			Type:      "string",
+			MaxLength: schemaInt(MaximumExecuteArgumentBytes),
+			Pattern:   `^[^\x00]*$`,
+		},
+		MaxItems: schemaInt(MaximumExecuteArgumentCount),
+		Default:  json.RawMessage("[]"),
 	}
-	if field := action.Properties["profile_id"]; field != nil {
-		configureStableIDSchema(field)
+	timeout := &jsonschema.Schema{
+		Type:        "integer",
+		Description: "maximum synchronous execution time in seconds",
+		Default:     json.RawMessage("10"),
+		Minimum:     schemaNumber(MinimumExecuteTimeoutSeconds),
+		Maximum:     schemaNumber(MaximumExecuteTimeoutSeconds),
 	}
+	return actionObjectSchema(
+		map[string]*jsonschema.Schema{
+			"type":            actionStringSchema("action type", []any{ExecuteActionType}),
+			"gesture":         actionStringSchema("input gesture", []any{profileActionGesture}),
+			"executable":      {Type: "string", Description: "absolute executable path without NUL", MinLength: schemaInt(1), Pattern: `^/[^\x00]*$`},
+			"arguments":       arguments,
+			"timeout_seconds": timeout,
+		},
+		[]string{"type", "gesture", "executable"},
+		[]string{"type", "gesture", "executable", "arguments", "timeout_seconds"},
+	)
+}
+
+func actionObjectSchema(properties map[string]*jsonschema.Schema, required, order []string) *jsonschema.Schema {
+	return &jsonschema.Schema{
+		Type:                 "object",
+		Properties:           properties,
+		Required:             required,
+		AdditionalProperties: &jsonschema.Schema{Not: &jsonschema.Schema{}},
+		PropertyOrder:        order,
+	}
+}
+
+func actionStringSchema(description string, enum []any) *jsonschema.Schema {
+	return &jsonschema.Schema{Type: "string", Description: description, Enum: enum}
+}
+
+func stableIDActionSchema(description string) *jsonschema.Schema {
+	field := &jsonschema.Schema{Type: "string", Description: description}
+	configureStableIDSchema(field)
+	return field
 }
 
 const (

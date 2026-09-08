@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -24,16 +25,23 @@ const (
 	SchemaVersionV2 = 2
 	SchemaVersion   = SchemaVersionV2
 
-	AdapterUlanziD200X        = "ulanzi.d200x"
-	RequiredPositionCount     = 14
-	MaximumProfileCount       = 31
-	MinimumBrightness         = 0
-	MaximumBrightness         = 100
-	DefaultIdleTimeoutSeconds = 300
-	MaximumIdleTimeoutSeconds = 86400
-	MaximumStableIDRunes      = 64
-	MaximumLabelRunes         = 64
-	MaximumLabelBytes         = 256
+	AdapterUlanziD200X           = "ulanzi.d200x"
+	RequiredPositionCount        = 14
+	MaximumProfileCount          = 31
+	MinimumBrightness            = 0
+	MaximumBrightness            = 100
+	DefaultIdleTimeoutSeconds    = 300
+	MaximumIdleTimeoutSeconds    = 86400
+	MaximumStableIDRunes         = 64
+	MaximumLabelRunes            = 64
+	MaximumLabelBytes            = 256
+	ExecuteActionType            = "execute"
+	DefaultExecuteTimeoutSeconds = 10
+	MinimumExecuteTimeoutSeconds = 1
+	MaximumExecuteTimeoutSeconds = 60
+	MaximumExecuteArgumentCount  = 32
+	MaximumExecuteArgumentBytes  = 1024
+	MaximumExecuteArgumentsBytes = 8192
 )
 
 // Config is the strict schema-v2 D200X configuration.
@@ -66,12 +74,15 @@ type Position struct {
 	Action     *Action `toml:"action" json:"action,omitempty" jsonschema:"optional press action binding"`
 }
 
-// Action is the only action shape accepted by schema v2. Its position binding
-// is supplied by the containing Position rather than by another field.
+// Action is a schema-v2 press action. The Type field selects one of the
+// activate_profile and execute variants; each variant has a strict field set.
 type Action struct {
-	Type      string `toml:"type" json:"type" jsonschema:"action type"`
-	Gesture   string `toml:"gesture" json:"gesture" jsonschema:"input gesture"`
-	ProfileID string `toml:"profile_id" json:"profile_id" jsonschema:"case-sensitive target profile identifier"`
+	Type           string   `toml:"type" json:"type" jsonschema:"action type"`
+	Gesture        string   `toml:"gesture" json:"gesture" jsonschema:"input gesture"`
+	ProfileID      string   `toml:"profile_id" json:"profile_id,omitempty" jsonschema:"case-sensitive target profile identifier"`
+	Executable     string   `toml:"executable" json:"executable,omitempty" jsonschema:"absolute executable path"`
+	Arguments      []string `toml:"arguments" json:"arguments,omitempty" jsonschema:"executable arguments"`
+	TimeoutSeconds int      `toml:"timeout_seconds" json:"timeout_seconds,omitempty" jsonschema:"maximum synchronous execution time in seconds"`
 }
 
 // DisplayPosition and Tile are compatibility aliases for callers that use
@@ -173,11 +184,87 @@ func Decode(data []byte) (Config, error) {
 	if _, ok := raw["idle_timeout_seconds"]; !ok {
 		decoded.IdleTimeoutSeconds = DefaultIdleTimeoutSeconds
 	}
+	applyActionDefaults(&decoded, raw)
+	if issues := validateRawActionFields(raw, decoded); len(issues) > 0 {
+		return Config{}, newValidationError(issues...)
+	}
 
 	if err := decoded.Validate(); err != nil {
 		return Config{}, err
 	}
 	return decoded, nil
+}
+
+func applyActionDefaults(decoded *Config, raw map[string]any) {
+	for profileIndex, profileValue := range rawSlice(raw["profiles"]) {
+		profileMap, ok := profileValue.(map[string]any)
+		if !ok || profileIndex >= len(decoded.Profiles) {
+			continue
+		}
+		for positionIndex, positionValue := range rawSlice(profileMap["positions"]) {
+			positionMap, ok := positionValue.(map[string]any)
+			if !ok || positionIndex >= len(decoded.Profiles[profileIndex].Positions) {
+				continue
+			}
+			actionMap, ok := positionMap["action"].(map[string]any)
+			if !ok || decoded.Profiles[profileIndex].Positions[positionIndex].Action == nil {
+				continue
+			}
+			action := decoded.Profiles[profileIndex].Positions[positionIndex].Action
+			if action.Type != ExecuteActionType {
+				continue
+			}
+			if _, exists := actionMap["arguments"]; !exists {
+				action.Arguments = []string{}
+			}
+			if _, exists := actionMap["timeout_seconds"]; !exists {
+				action.TimeoutSeconds = DefaultExecuteTimeoutSeconds
+			}
+		}
+	}
+}
+
+func validateRawActionFields(raw map[string]any, decoded Config) []ValidationIssue {
+	var issues []ValidationIssue
+	for profileIndex, profileValue := range rawSlice(raw["profiles"]) {
+		profileMap, ok := profileValue.(map[string]any)
+		if !ok || profileIndex >= len(decoded.Profiles) {
+			continue
+		}
+		for positionIndex, positionValue := range rawSlice(profileMap["positions"]) {
+			positionMap, ok := positionValue.(map[string]any)
+			if !ok || positionIndex >= len(decoded.Profiles[profileIndex].Positions) {
+				continue
+			}
+			actionMap, ok := positionMap["action"].(map[string]any)
+			if !ok || decoded.Profiles[profileIndex].Positions[positionIndex].Action == nil {
+				continue
+			}
+			actionPath := fmt.Sprintf("profiles[%d].positions[%d].action", profileIndex, positionIndex)
+			action := decoded.Profiles[profileIndex].Positions[positionIndex].Action
+			switch action.Type {
+			case ExecuteActionType:
+				if _, exists := actionMap["profile_id"]; exists {
+					issues = append(issues, ValidationIssue{Path: actionPath + ".profile_id", Message: "is forbidden for execute actions"})
+				}
+				if _, exists := actionMap["timeout_seconds"]; exists && action.TimeoutSeconds == 0 {
+					issues = append(issues, ValidationIssue{Path: actionPath + ".timeout_seconds", Message: fmt.Sprintf("must be between %d and %d", MinimumExecuteTimeoutSeconds, MaximumExecuteTimeoutSeconds)})
+				}
+			case profileActionType:
+				for _, field := range []string{"executable", "arguments", "timeout_seconds"} {
+					if _, exists := actionMap[field]; exists {
+						issues = append(issues, ValidationIssue{Path: actionPath + "." + field, Message: "is forbidden for activate_profile actions"})
+					}
+				}
+			}
+		}
+	}
+	return issues
+}
+
+func rawSlice(value any) []any {
+	slice, _ := value.([]any)
+	return slice
 }
 
 func missingRequiredFields(raw map[string]any) []ValidationIssue {
@@ -215,9 +302,12 @@ func (c Config) ProfileCatalog() (profile.Catalog, error) {
 			}
 			if value.Action != nil {
 				converted.Action = &profile.Action{
-					Type:      value.Action.Type,
-					Gesture:   value.Action.Gesture,
-					ProfileID: value.Action.ProfileID,
+					Type:           value.Action.Type,
+					Gesture:        value.Action.Gesture,
+					ProfileID:      value.Action.ProfileID,
+					Executable:     value.Action.Executable,
+					Arguments:      cloneArguments(value.Action.Arguments),
+					TimeoutSeconds: value.Action.TimeoutSeconds,
 				}
 			}
 			values[positionIndex] = converted
@@ -422,24 +512,80 @@ func validatePosition(issues *[]ValidationIssue, path string, position Position,
 		return
 	}
 	actionPath := path + ".action"
-	if position.Action.Type != "activate_profile" {
-		*issues = append(*issues, ValidationIssue{Path: actionPath + ".type", Message: "must equal \"activate_profile\""})
+	if position.Action.Type != profileActionType && position.Action.Type != ExecuteActionType {
+		*issues = append(*issues, ValidationIssue{Path: actionPath + ".type", Message: fmt.Sprintf("must equal %q or %q", profileActionType, ExecuteActionType)})
 	}
-	if position.Action.Gesture != "press" {
+	if position.Action.Gesture != profileActionGesture {
 		*issues = append(*issues, ValidationIssue{Path: actionPath + ".gesture", Message: "must equal \"press\""})
 	}
-	if !validStableID(position.Action.ProfileID) {
-		*issues = append(*issues, ValidationIssue{
-			Path:    actionPath + ".profile_id",
-			Message: "must start with an ASCII letter or digit and contain only ASCII letters, digits, '.', '_' or '-' (maximum 64 characters)",
-		})
+	switch position.Action.Type {
+	case profileActionType:
+		if position.Action.Executable != "" {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".executable", Message: "is forbidden for activate_profile actions"})
+		}
+		if position.Action.Arguments != nil {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".arguments", Message: "is forbidden for activate_profile actions"})
+		}
+		if position.Action.TimeoutSeconds != 0 {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".timeout_seconds", Message: "is forbidden for activate_profile actions"})
+		}
+		if !validStableID(position.Action.ProfileID) {
+			*issues = append(*issues, ValidationIssue{
+				Path:    actionPath + ".profile_id",
+				Message: "must start with an ASCII letter or digit and contain only ASCII letters, digits, '.', '_' or '-' (maximum 64 characters)",
+			})
+		}
+		if occurrences := profileOccurrences[position.Action.ProfileID]; len(occurrences) != 1 {
+			*issues = append(*issues, ValidationIssue{
+				Path:    actionPath + ".profile_id",
+				Message: fmt.Sprintf("must resolve to exactly one profile (found %d)", len(occurrences)),
+			})
+		}
+	case ExecuteActionType:
+		if position.Action.ProfileID != "" {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".profile_id", Message: "is forbidden for execute actions"})
+		}
+		if !validExecutable(position.Action.Executable) {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".executable", Message: "must be a non-empty absolute UTF-8 path without NUL"})
+		}
+		validateExecuteArguments(issues, actionPath, position.Action.Arguments)
+		if position.Action.TimeoutSeconds != 0 && (position.Action.TimeoutSeconds < MinimumExecuteTimeoutSeconds || position.Action.TimeoutSeconds > MaximumExecuteTimeoutSeconds) {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".timeout_seconds", Message: fmt.Sprintf("must be between %d and %d", MinimumExecuteTimeoutSeconds, MaximumExecuteTimeoutSeconds)})
+		}
 	}
-	if occurrences := profileOccurrences[position.Action.ProfileID]; len(occurrences) != 1 {
-		*issues = append(*issues, ValidationIssue{
-			Path:    actionPath + ".profile_id",
-			Message: fmt.Sprintf("must resolve to exactly one profile (found %d)", len(occurrences)),
-		})
+}
+
+func validExecutable(value string) bool {
+	return value != "" && path.IsAbs(value) && utf8.ValidString(value) && !strings.ContainsRune(value, '\x00')
+}
+
+func validateExecuteArguments(issues *[]ValidationIssue, actionPath string, arguments []string) {
+	if len(arguments) > MaximumExecuteArgumentCount {
+		*issues = append(*issues, ValidationIssue{Path: actionPath + ".arguments", Message: fmt.Sprintf("must contain at most %d arguments", MaximumExecuteArgumentCount)})
 	}
+	aggregateBytes := 0
+	for index, argument := range arguments {
+		argumentPath := fmt.Sprintf("%s.arguments[%d]", actionPath, index)
+		if !utf8.ValidString(argument) || strings.ContainsRune(argument, '\x00') {
+			*issues = append(*issues, ValidationIssue{Path: argumentPath, Message: "must be valid UTF-8 without NUL"})
+		}
+		if len([]byte(argument)) > MaximumExecuteArgumentBytes {
+			*issues = append(*issues, ValidationIssue{Path: argumentPath, Message: fmt.Sprintf("must be at most %d UTF-8 bytes", MaximumExecuteArgumentBytes)})
+		}
+		aggregateBytes += len([]byte(argument))
+	}
+	if aggregateBytes > MaximumExecuteArgumentsBytes {
+		*issues = append(*issues, ValidationIssue{Path: actionPath + ".arguments", Message: fmt.Sprintf("must total at most %d UTF-8 bytes", MaximumExecuteArgumentsBytes)})
+	}
+}
+
+func cloneArguments(source []string) []string {
+	if source == nil {
+		return nil
+	}
+	owned := make([]string, len(source))
+	copy(owned, source)
+	return owned
 }
 
 func validStableID(value string) bool {

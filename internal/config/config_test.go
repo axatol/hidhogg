@@ -119,6 +119,117 @@ func TestDecodeRejectsUnknownOrDuplicateActionFields(t *testing.T) {
 	}
 }
 
+func TestDecodeExecuteActionAppliesDefaults(t *testing.T) {
+	decoded, err := Decode(executeFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := decoded.Profiles[0].Positions[0].Action
+	if action == nil || action.Type != ExecuteActionType || action.Gesture != profileActionGesture || action.Executable != "/bin/echo" {
+		t.Fatalf("execute action = %#v", action)
+	}
+	if action.Arguments == nil || len(action.Arguments) != 0 {
+		t.Fatalf("arguments = %#v, want non-nil empty slice", action.Arguments)
+	}
+	if action.TimeoutSeconds != DefaultExecuteTimeoutSeconds {
+		t.Fatalf("timeout = %d, want %d", action.TimeoutSeconds, DefaultExecuteTimeoutSeconds)
+	}
+	catalog, err := decoded.ProfileCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, ok := catalog.Default()
+	if !ok || profile.Values[0].Action == nil || profile.Values[0].Action.TimeoutSeconds != DefaultExecuteTimeoutSeconds || profile.Values[0].Action.Arguments == nil {
+		t.Fatalf("catalog execute action = %#v, %v", profile.Values[0].Action, ok)
+	}
+}
+
+func TestValidateExecuteActionBoundsAndStrictFields(t *testing.T) {
+	tests := []struct {
+		name  string
+		edit  func(*Action)
+		valid bool
+	}{
+		{name: "timeout omitted", edit: func(action *Action) { action.TimeoutSeconds = 0 }, valid: true},
+		{name: "timeout minimum", edit: func(action *Action) { action.TimeoutSeconds = MinimumExecuteTimeoutSeconds }, valid: true},
+		{name: "timeout maximum", edit: func(action *Action) { action.TimeoutSeconds = MaximumExecuteTimeoutSeconds }, valid: true},
+		{name: "timeout maximum plus one", edit: func(action *Action) { action.TimeoutSeconds = MaximumExecuteTimeoutSeconds + 1 }, valid: false},
+		{name: "argument count maximum", edit: func(action *Action) { action.Arguments = make([]string, MaximumExecuteArgumentCount) }, valid: true},
+		{name: "argument count maximum plus one", edit: func(action *Action) { action.Arguments = make([]string, MaximumExecuteArgumentCount+1) }, valid: false},
+		{name: "argument bytes maximum", edit: func(action *Action) { action.Arguments = []string{strings.Repeat("a", MaximumExecuteArgumentBytes)} }, valid: true},
+		{name: "argument bytes maximum plus one", edit: func(action *Action) { action.Arguments = []string{strings.Repeat("a", MaximumExecuteArgumentBytes+1)} }, valid: false},
+		{name: "aggregate bytes maximum", edit: func(action *Action) {
+			action.Arguments = executeArgumentsWithBytes(MaximumExecuteArgumentsBytes)
+		}, valid: true},
+		{name: "aggregate bytes maximum plus one", edit: func(action *Action) {
+			action.Arguments = executeArgumentsWithBytes(MaximumExecuteArgumentsBytes + 1)
+		}, valid: false},
+		{name: "NUL argument", edit: func(action *Action) { action.Arguments = []string{"a\x00b"} }, valid: false},
+		{name: "invalid UTF-8 argument", edit: func(action *Action) { action.Arguments = []string{string([]byte{0xff})} }, valid: false},
+		{name: "relative executable", edit: func(action *Action) { action.Executable = "echo" }, valid: false},
+		{name: "empty executable", edit: func(action *Action) { action.Executable = "" }, valid: false},
+		{name: "NUL executable", edit: func(action *Action) { action.Executable = "/bin/e\x00cho" }, valid: false},
+		{name: "wrong gesture", edit: func(action *Action) { action.Gesture = "release" }, valid: false},
+		{name: "profile ID", edit: func(action *Action) { action.ProfileID = "alternate" }, valid: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configuration := decodeValidFixture(t)
+			action := configuration.Profiles[0].Positions[0].Action
+			action.Type = ExecuteActionType
+			action.Gesture = profileActionGesture
+			action.ProfileID = ""
+			action.Executable = "/bin/echo"
+			action.Arguments = nil
+			action.TimeoutSeconds = 0
+			test.edit(action)
+			err := configuration.Validate()
+			if (err == nil) != test.valid {
+				t.Fatalf("Validate error = %v, valid = %v", err, test.valid)
+			}
+		})
+	}
+}
+
+func TestDecodeRejectsExecuteVariantExclusionsAndUnknownFields(t *testing.T) {
+	base := executeFixture()
+	variants := []struct {
+		name string
+		data []byte
+	}{
+		{name: "timeout zero", data: bytes.Replace(base, []byte("executable = \"/bin/echo\"\n"), []byte("executable = \"/bin/echo\"\ntimeout_seconds = 0\n"), 1)},
+		{name: "timeout maximum plus one", data: bytes.Replace(base, []byte("executable = \"/bin/echo\"\n"), []byte("executable = \"/bin/echo\"\ntimeout_seconds = 61\n"), 1)},
+		{name: "profile ID", data: bytes.Replace(base, []byte("executable = \"/bin/echo\"\n"), []byte("executable = \"/bin/echo\"\nprofile_id = \"alternate\"\n"), 1)},
+	}
+	for _, field := range []string{"cwd", "environment", "shell", "unknown"} {
+		variants = append(variants, struct {
+			name string
+			data []byte
+		}{name: field, data: bytes.Replace(base, []byte("executable = \"/bin/echo\"\n"), []byte("executable = \"/bin/echo\"\n"+field+" = \"value\"\n"), 1)})
+	}
+	activate := validFixture
+	for _, field := range []string{"executable", "arguments", "timeout_seconds"} {
+		value := field + " = \"/bin/echo\"\n"
+		if field == "arguments" {
+			value = "arguments = []\n"
+		}
+		if field == "timeout_seconds" {
+			value = "timeout_seconds = 0\n"
+		}
+		variants = append(variants, struct {
+			name string
+			data []byte
+		}{name: "activate " + field, data: bytes.Replace(activate, []byte("profile_id = \"alternate\"\n"), []byte("profile_id = \"alternate\"\n"+value), 1)})
+	}
+	for _, variant := range variants {
+		t.Run(variant.name, func(t *testing.T) {
+			if _, err := Decode(variant.data); err == nil {
+				t.Fatal("Decode accepted forbidden or unknown action field")
+			}
+		})
+	}
+}
+
 func TestDecodeRejectsObsoletePagesField(t *testing.T) {
 	data := bytes.Replace(validFixture, []byte("default_profile_id = \"default\"\n"), []byte("default_profile_id = \"default\"\npages = []\n"), 1)
 	_, err := Decode(data)
@@ -404,6 +515,24 @@ func decodeValidFixture(t *testing.T) Config {
 		t.Fatal(err)
 	}
 	return decoded
+}
+
+func executeFixture() []byte {
+	data := bytes.Replace(validFixture, []byte("type = \"activate_profile\"\n"), []byte("type = \"execute\"\nexecutable = \"/bin/echo\"\n"), 1)
+	return bytes.Replace(data, []byte("profile_id = \"alternate\"\n"), nil, 1)
+}
+
+func executeArgumentsWithBytes(total int) []string {
+	arguments := make([]string, 0, (total/MaximumExecuteArgumentBytes)+1)
+	for total > 0 {
+		argumentBytes := total
+		if argumentBytes > MaximumExecuteArgumentBytes {
+			argumentBytes = MaximumExecuteArgumentBytes
+		}
+		arguments = append(arguments, strings.Repeat("a", argumentBytes))
+		total -= argumentBytes
+	}
+	return arguments
 }
 
 func appendProfiles(source []Profile, count int) []Profile {
