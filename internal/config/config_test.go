@@ -6,10 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"unicode"
+	"unicode/utf8"
+
+	toml "github.com/pelletier/go-toml/v2"
 )
 
 //go:embed testdata/valid.toml
@@ -474,6 +480,187 @@ func TestLoadFile(t *testing.T) {
 	}
 	if _, err := LoadFile(path); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLoadReturnsTypedSafeDiagnostics(t *testing.T) {
+	const secret = "DIAGNOSTIC_SECRET_SENTINEL"
+	tests := []struct {
+		name         string
+		data         []byte
+		category     DiagnosticCategory
+		key          string
+		wantLocation bool
+		wantDetail   string
+		wantDecode   bool
+		wantValidate bool
+	}{
+		{
+			name:         "type mismatch",
+			data:         bytes.Replace(validFixture, []byte("brightness = 80"), []byte("brightness = \""+secret+"\""), 1),
+			category:     DiagnosticDecode,
+			key:          "brightness",
+			wantLocation: true,
+			wantDetail:   "TOML syntax or value type is invalid",
+			wantDecode:   true,
+		},
+		{
+			name:         "malformed syntax",
+			data:         append(append([]byte(nil), validFixture...), []byte("\n[["+secret)...),
+			category:     DiagnosticDecode,
+			wantLocation: true,
+			wantDetail:   "TOML syntax or value type is invalid",
+			wantDecode:   true,
+		},
+		{
+			name:         "nested unknown key",
+			data:         bytes.Replace(validFixture, []byte("profile_id = \"alternate\"\n"), []byte("profile_id = \"alternate\"\nunknown = \""+secret+"\"\n"), 1),
+			category:     DiagnosticUnknownKey,
+			key:          "profiles.positions.action.unknown",
+			wantLocation: true,
+			wantDetail:   "key is not supported",
+			wantDecode:   true,
+		},
+		{
+			name:         "obsolete pages",
+			data:         bytes.Replace(validFixture, []byte("default_profile_id = \"default\"\n"), []byte("default_profile_id = \"default\"\npages = [\""+secret+"\"]\n"), 1),
+			category:     DiagnosticUnknownKey,
+			key:          "pages",
+			wantLocation: true,
+			wantDetail:   "pages is obsolete; use profiles",
+			wantDecode:   true,
+		},
+		{
+			name:         "schema version",
+			data:         bytes.Replace(validFixture, []byte("schema_version = 2"), []byte("schema_version = 1 # "+secret), 1),
+			category:     DiagnosticSchemaVersion,
+			key:          "schema_version",
+			wantDetail:   "use schema_version = 2",
+			wantValidate: true,
+		},
+		{
+			name:         "missing required",
+			data:         bytes.Replace(validFixture, []byte("default_profile_id = \"default\"\n"), []byte("# "+secret+"\n"), 1),
+			category:     DiagnosticMissingKey,
+			key:          "default_profile_id",
+			wantDetail:   "required key is missing",
+			wantValidate: true,
+		},
+		{
+			name:         "indexed validation",
+			data:         bytes.Replace(validFixture, []byte("background = \"#102030\""), []byte("background = \""+secret+"\""), 1),
+			category:     DiagnosticValidation,
+			key:          "profiles[0].positions[0].background",
+			wantDetail:   "value violates configuration constraints",
+			wantValidate: true,
+		},
+		{
+			name:         "indexed missing field",
+			data:         bytes.Replace(validFixture, []byte("label = \"Clock\"\n"), []byte("# "+secret+"\n"), 1),
+			category:     DiagnosticValidation,
+			key:          "profiles[0].positions[0].label",
+			wantDetail:   "value violates configuration constraints",
+			wantValidate: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, test.data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(path)
+			var diagnostic *Diagnostic
+			if !errors.As(err, &diagnostic) {
+				t.Fatalf("Load error = %T %v, want *Diagnostic", err, err)
+			}
+			if diagnostic.Path != path || diagnostic.Category != test.category || diagnostic.Key != test.key || diagnostic.Detail != test.wantDetail {
+				t.Fatalf("diagnostic = %#v", diagnostic)
+			}
+			if test.wantLocation != (diagnostic.Line > 0 && diagnostic.Column > 0) {
+				t.Fatalf("diagnostic location = %d:%d", diagnostic.Line, diagnostic.Column)
+			}
+			var decodeError *toml.DecodeError
+			if errors.As(err, &decodeError) != test.wantDecode {
+				t.Fatalf("DecodeError preservation = %t, want %t", decodeError != nil, test.wantDecode)
+			}
+			var validationError *ValidationError
+			if errors.As(err, &validationError) != test.wantValidate {
+				t.Fatalf("ValidationError preservation = %t, want %t", validationError != nil, test.wantValidate)
+			}
+			assertSafeDiagnosticText(t, diagnostic, secret)
+		})
+	}
+}
+
+func TestLoadReadDiagnosticsPreserveErrorsIs(t *testing.T) {
+	missingPath := filepath.Join(t.TempDir(), "missing.toml")
+	_, err := Load(missingPath)
+	var diagnostic *Diagnostic
+	if !errors.As(err, &diagnostic) || diagnostic.Category != DiagnosticReadNotFound || diagnostic.Path != missingPath {
+		t.Fatalf("missing diagnostic = %#v, %v", diagnostic, err)
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("missing error did not preserve fs.ErrNotExist: %v", err)
+	}
+
+	for _, test := range []struct {
+		cause    error
+		category DiagnosticCategory
+	}{
+		{cause: fmt.Errorf("wrapped: %w", fs.ErrPermission), category: DiagnosticReadDenied},
+		{cause: fmt.Errorf("wrapped: %w", fs.ErrInvalid), category: DiagnosticReadInvalid},
+		{cause: errors.New("opaque read failure"), category: DiagnosticRead},
+	} {
+		diagnostic := newDiagnostic("relative.toml", test.cause)
+		if diagnostic.Category != test.category || !filepath.IsAbs(diagnostic.Path) {
+			t.Fatalf("read diagnostic = %#v", diagnostic)
+		}
+		if !errors.Is(diagnostic, test.cause) {
+			t.Fatalf("diagnostic did not preserve cause %v", test.cause)
+		}
+	}
+}
+
+func TestDiagnosticProjectionIsFixedBoundedAndPathFree(t *testing.T) {
+	diagnostic := &Diagnostic{
+		Path:     "/private/SECRET_PATH",
+		Category: DiagnosticUnknownKey,
+		Key:      "pages\n",
+		Line:     MaximumDiagnosticLocation + 1,
+		Column:   4,
+		Detail:   "SECRET_DETAIL",
+		cause:    errors.New("SECRET_CAUSE"),
+	}
+	projection := diagnostic.SafeProjection()
+	if projection == nil || projection.Category != DiagnosticUnknownKey || projection.Key != "pages" || projection.Detail != "pages is obsolete; use profiles" || projection.Line != 0 || projection.Column != 0 {
+		t.Fatalf("safe projection = %#v", projection)
+	}
+	encoded := fmt.Sprintf("%+v", projection)
+	for _, secret := range []string{"SECRET_PATH", "SECRET_DETAIL", "SECRET_CAUSE"} {
+		if strings.Contains(encoded, secret) {
+			t.Fatalf("projection exposed %q: %s", secret, encoded)
+		}
+	}
+	fallback := SafeDiagnosticProjection(errors.New("SECRET_OPAQUE"))
+	if fallback.Category != DiagnosticDecode || fallback.Key != "" || fallback.Line != 0 || fallback.Column != 0 || fallback.Detail != "TOML syntax or value type is invalid" {
+		t.Fatalf("fallback projection = %#v", fallback)
+	}
+}
+
+func assertSafeDiagnosticText(t *testing.T, diagnostic *Diagnostic, secret string) {
+	t.Helper()
+	output := diagnostic.Error()
+	if strings.Contains(output, secret) {
+		t.Fatalf("diagnostic exposed configuration value: %q", output)
+	}
+	if !utf8.ValidString(output) || len(diagnostic.Detail) > MaximumDiagnosticDetailBytes {
+		t.Fatalf("diagnostic is invalid or unbounded: %q", output)
+	}
+	for _, character := range diagnostic.Detail {
+		if unicode.IsControl(character) || unicode.Is(unicode.Cf, character) {
+			t.Fatalf("diagnostic detail contains control character: %q", diagnostic.Detail)
+		}
 	}
 }
 

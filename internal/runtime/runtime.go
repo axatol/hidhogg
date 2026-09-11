@@ -119,6 +119,7 @@ func New(config Config) (*Runtime, error) {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
+	stderr = newSerializedOutput(stderr)
 	clock := config.Clock
 	if clock == nil {
 		clock = realClock{}
@@ -278,12 +279,30 @@ func (service runtimeIPCConfigService) Status() ipc.ConfigStatus {
 	}
 	status := service.runtime.ReloadStatus()
 	return ipc.ConfigStatus{
-		Revision: status.Revision,
-		Active:   status.Active,
-		State:    string(status.State),
-		Outcome:  string(status.Outcome),
-		Reason:   string(status.Reason),
+		Revision:   status.Revision,
+		Active:     status.Active,
+		State:      string(status.State),
+		Outcome:    string(status.Outcome),
+		Reason:     string(status.Reason),
+		Diagnostic: configDiagnosticForIPC(status.Diagnostic),
 	}
+}
+
+func configDiagnosticForIPC(source *appconfig.DiagnosticProjection) *ipc.ConfigDiagnostic {
+	if source == nil {
+		return nil
+	}
+	diagnostic := &ipc.ConfigDiagnostic{Category: string(source.Category), Detail: source.Detail}
+	if source.Key != "" {
+		key := source.Key
+		diagnostic.Key = &key
+	}
+	if source.Line > 0 && source.Column > 0 {
+		line, column := source.Line, source.Column
+		diagnostic.Line = &line
+		diagnostic.Column = &column
+	}
+	return diagnostic
 }
 
 func (history runtimeExecutionHistory) ListSummaries(limit int) ([]execution.Summary, error) {
@@ -930,12 +949,7 @@ func loadConfiguration(path string) (appconfig.Config, error) {
 	}
 	configuration, err := appconfig.Load(path)
 	if err != nil {
-		// config.Load includes its source path in filesystem errors. Do not
-		// return that error because paths can contain credentials or secrets.
-		if appconfig.IsValidationError(err) {
-			return appconfig.Config{}, errors.New("invalid configuration")
-		}
-		return appconfig.Config{}, errors.New("configuration could not be loaded")
+		return appconfig.Config{}, err
 	}
 	return configuration, nil
 }

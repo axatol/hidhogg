@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -156,6 +158,94 @@ func TestRuntimeBindsBeforeHIDAndPublishesReadinessAfterServing(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(generation, discovery.LockFileName)); err != nil {
 		t.Fatalf("persistent runtime lock after shutdown: %v", err)
+	}
+}
+
+func TestRuntimeSerializesAllStderrWriters(t *testing.T) {
+	const iterations = 32
+	configurationPath := filepath.Join(t.TempDir(), "config.toml")
+	configuration := runtimeMultiProfileConfiguration()
+	if err := os.WriteFile(configurationPath, configuration, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stderr := &deliberatelyUnsynchronizedWriter{}
+	transport := newRuntimeFakeTransport()
+	runtimeProcess, err := New(Config{
+		RuntimeDir:       m03RuntimeSecureDirectory(t),
+		ConfigPath:       configurationPath,
+		Verbose:          true,
+		TransportFactory: &recordingFactory{transport: transport},
+		Stderr:           stderr,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtimeProcess.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtimeProcess.Close() })
+
+	invalid := bytes.Replace(configuration, []byte("brightness = 73"), []byte("brightness = \"SERIALIZATION_SECRET\""), 1)
+	if bytes.Equal(invalid, configuration) {
+		t.Fatal("test configuration did not contain expected brightness")
+	}
+	if err := os.WriteFile(configurationPath, invalid, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	var wait sync.WaitGroup
+	errorsFound := make(chan error, iterations*2)
+	wait.Add(3)
+	go func() {
+		defer wait.Done()
+		<-start
+		for range iterations {
+			if err := runtimeProcess.session.SendFrame(context.Background(), d200x.BrightnessFrame(55)); err != nil {
+				errorsFound <- err
+			}
+		}
+	}()
+	go func() {
+		defer wait.Done()
+		<-start
+		for range iterations {
+			runtimeProcess.profileService.logTransition("concurrent", "default", "alternate", 1)
+		}
+	}()
+	go func() {
+		defer wait.Done()
+		<-start
+		for range iterations {
+			if _, err := runtimeProcess.Reload(context.Background()); err == nil {
+				errorsFound <- errors.New("invalid reload succeeded")
+			}
+		}
+	}()
+	close(start)
+	wait.Wait()
+	close(errorsFound)
+	for err := range errorsFound {
+		t.Error(err)
+	}
+
+	output := stderr.String()
+	if strings.Contains(output, "SERIALIZATION_SECRET") {
+		t.Fatalf("stderr exposed configuration value: %q", output)
+	}
+	if count := strings.Count(output, "runtime config reload rejected:"); count != iterations {
+		t.Fatalf("reload diagnostic lines = %d, want %d", count, iterations)
+	}
+	if count := strings.Count(output, "runtime profile transition phase=concurrent"); count != iterations {
+		t.Fatalf("profile diagnostic lines = %d, want %d", count, iterations)
+	}
+	if count := strings.Count(output, "d200x outbound command=brightness"); count < iterations {
+		t.Fatalf("brightness diagnostic lines = %d, want at least %d", count, iterations)
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(output, "\n"), "\n") {
+		if !strings.HasPrefix(line, "d200x ") && !strings.HasPrefix(line, "runtime profile transition ") && !strings.HasPrefix(line, "runtime config reload rejected: ") {
+			t.Fatalf("corrupted stderr line: %q", line)
+		}
 	}
 }
 
@@ -1335,6 +1425,22 @@ func (writer failingWriter) Write([]byte) (int, error) {
 type synchronizedWriter struct {
 	mu   sync.Mutex
 	data strings.Builder
+}
+
+type deliberatelyUnsynchronizedWriter struct {
+	data []byte
+}
+
+func (writer *deliberatelyUnsynchronizedWriter) Write(data []byte) (int, error) {
+	for _, value := range data {
+		writer.data = append(writer.data, value)
+		goruntime.Gosched()
+	}
+	return len(data), nil
+}
+
+func (writer *deliberatelyUnsynchronizedWriter) String() string {
+	return string(writer.data)
 }
 
 func (writer *synchronizedWriter) Write(data []byte) (int, error) {

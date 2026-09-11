@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	appconfig "hidhogg/internal/config"
 )
 
 const cliTestInstanceID = "11111111-1111-4111-8111-111111111111"
@@ -115,5 +119,31 @@ func TestRunArgsRequiresAbsoluteConfigPath(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "absolute") {
 		t.Fatalf("relative config path error = %v", err)
+	}
+}
+
+func TestStartupPrintsOneSafeConfigurationDiagnostic(t *testing.T) {
+	configurationPath := filepath.Join(t.TempDir(), "missing.toml")
+	var stderr bytes.Buffer
+	exit := exitCode([]string{
+		"--socket-path", filepath.Join(t.TempDir(), "runtime.sock"),
+		"--instance-id", cliTestInstanceID,
+		"--config-path", configurationPath,
+	}, &stderr)
+	if exit != 1 {
+		t.Fatalf("exit code = %d", exit)
+	}
+	output := stderr.String()
+	if strings.Count(output, "configuration path=") != 1 || strings.Count(output, "\n") != 1 {
+		t.Fatalf("startup diagnostic = %q", output)
+	}
+	err := runArgs([]string{
+		"--socket-path", filepath.Join(t.TempDir(), "runtime.sock"),
+		"--instance-id", cliTestInstanceID,
+		"--config-path", configurationPath,
+	})
+	var diagnostic *appconfig.Diagnostic
+	if !errors.As(err, &diagnostic) || diagnostic.Category != appconfig.DiagnosticReadNotFound {
+		t.Fatalf("startup error = %#v, %v", diagnostic, err)
 	}
 }

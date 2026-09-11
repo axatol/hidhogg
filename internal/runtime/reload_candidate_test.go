@@ -2,23 +2,25 @@ package runtime
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	appconfig "hidhogg/internal/config"
 )
 
 func TestBuildReloadCandidateRejectsInvalidAndUnreadableConfiguration(t *testing.T) {
 	base := reloadTestConfiguration()
 
 	for _, test := range []struct {
-		name string
-		data []byte
-		path string
-		want string
+		name     string
+		data     []byte
+		path     string
+		category appconfig.DiagnosticCategory
 	}{
-		{name: "invalid", data: bytes.Replace(base, []byte("brightness = 73"), []byte("brightness = 101"), 1), want: "invalid configuration"},
-		{name: "unreadable", path: filepath.Join(t.TempDir(), "missing.toml"), want: "configuration could not be loaded"},
+		{name: "invalid", data: bytes.Replace(base, []byte("brightness = 73"), []byte("brightness = 101"), 1), category: appconfig.DiagnosticValidation},
+		{name: "unreadable", path: filepath.Join(t.TempDir(), "missing.toml"), category: appconfig.DiagnosticReadNotFound},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path := test.path
@@ -26,11 +28,9 @@ func TestBuildReloadCandidateRejectsInvalidAndUnreadableConfiguration(t *testing
 				path = writeReloadConfiguration(t, test.data)
 			}
 			_, err := buildReloadCandidate(path, "default")
-			if err == nil || err.Error() != test.want {
-				t.Fatalf("buildReloadCandidate error = %v, want %q", err, test.want)
-			}
-			if strings.Contains(err.Error(), path) {
-				t.Fatalf("error exposed configuration path: %q", err)
+			var diagnostic *appconfig.Diagnostic
+			if !errors.As(err, &diagnostic) || diagnostic.Category != test.category || diagnostic.Path != path {
+				t.Fatalf("buildReloadCandidate diagnostic = %#v, %v", diagnostic, err)
 			}
 		})
 	}

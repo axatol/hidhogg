@@ -93,14 +93,31 @@ func TestConfigResponseRoundTripsAndPreservesFalseFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode status response: %v", err)
 	}
-	assertObjectKeys(t, encoded, "result", []string{"instance_id", "revision", "active", "state", "outcome", "reason"})
+	assertObjectKeys(t, encoded, "result", []string{"instance_id", "revision", "active", "state", "outcome", "reason", "diagnostic"})
+	assertValueKindAtPath(t, encoded, []string{"result", "diagnostic"}, jsonNull)
 	assertFalseFields(t, encoded, "result", []string{"active"})
 	decoded, err = DecodeResponse(encoded, configTestRequestID, string(MethodConfigStatus), testInstanceID)
 	if err != nil {
 		t.Fatalf("decode status response: %v", err)
 	}
-	if decoded.Result == nil || decoded.Result.Revision != 7 || decoded.Result.Active || decoded.Result.State != "idle" || decoded.Result.Outcome != "unchanged" || decoded.Result.Reason != "none" {
+	if decoded.Result == nil || decoded.Result.Revision != 7 || decoded.Result.Active || decoded.Result.State != "idle" || decoded.Result.Outcome != "unchanged" || decoded.Result.Reason != "none" || decoded.Result.Diagnostic != nil {
 		t.Fatalf("decoded status response = %#v", decoded)
+	}
+
+	line, column := 12, 9
+	key := "profiles.positions.action.unknown"
+	status.Result.Outcome = "rejected"
+	status.Result.Reason = "candidate-rejected"
+	status.Result.Diagnostic = &ConfigDiagnostic{Category: "unknown-key", Key: &key, Line: &line, Column: &column, Detail: "key is not supported"}
+	encoded, err = EncodeResponse(status)
+	if err != nil {
+		t.Fatalf("encode rejected status response: %v", err)
+	}
+	assertObjectKeys(t, encoded, "result", []string{"instance_id", "revision", "active", "state", "outcome", "reason", "diagnostic"})
+	assertObjectKeysAtPath(t, encoded, []string{"result", "diagnostic"}, []string{"category", "key", "line", "column", "detail"})
+	decoded, err = DecodeResponse(encoded, configTestRequestID, string(MethodConfigStatus), testInstanceID)
+	if err != nil || decoded.Result == nil || !reflect.DeepEqual(decoded.Result.Diagnostic, status.Result.Diagnostic) {
+		t.Fatalf("decode rejected status = %#v, %v", decoded, err)
 	}
 }
 
@@ -165,15 +182,45 @@ func TestConfigResponseRejectsMissingExtraWrongTypeAndEnumFields(t *testing.T) {
 		body string
 	}{
 		{name: "missing reason", body: strings.Replace(status, `,"reason":"none"`, "", 1)},
+		{name: "missing diagnostic", body: strings.Replace(status, `,"diagnostic":null`, "", 1)},
 		{name: "wrong active type", body: strings.Replace(status, `"active":false`, `"active":"false"`, 1)},
 		{name: "invalid state", body: strings.Replace(status, `"state":"idle"`, `"state":"ready"`, 1)},
 		{name: "invalid outcome", body: strings.Replace(status, `"outcome":"unchanged"`, `"outcome":"applied"`, 1)},
 		{name: "invalid reason", body: strings.Replace(status, `"reason":"none"`, `"reason":"toml"`, 1)},
+		{name: "diagnostic on success", body: strings.Replace(status, `"diagnostic":null`, `"diagnostic":{"category":"decode","key":null,"line":null,"column":null,"detail":"TOML syntax or value type is invalid"}`, 1)},
 	}
 	for _, test := range statusTests {
 		t.Run("status/"+test.name, func(t *testing.T) {
 			if _, err := DecodeResponse([]byte(test.body), configTestRequestID, string(MethodConfigStatus), testInstanceID); err == nil {
 				t.Fatal("malformed configuration status response was accepted")
+			}
+		})
+	}
+
+	rejected := string(configRejectedStatusFrame(t))
+	rejectedTests := []struct {
+		name string
+		body string
+	}{
+		{name: "null diagnostic", body: replaceDiagnosticObject(rejected, "null")},
+		{name: "extra field", body: strings.Replace(rejected, `"detail":"key is not supported"`, `"detail":"key is not supported","path":"/private/secret"`, 1)},
+		{name: "unknown category", body: strings.Replace(rejected, `"category":"unknown-key"`, `"category":"parser"`, 1)},
+		{name: "wrong key type", body: strings.Replace(rejected, `"key":"pages"`, `"key":false`, 1)},
+		{name: "empty key", body: strings.Replace(rejected, `"key":"pages"`, `"key":""`, 1)},
+		{name: "control key", body: string(configRejectedStatusFrameWithDiagnostic(t, "pages\n", "key is not supported"))},
+		{name: "wrong line type", body: strings.Replace(rejected, `"line":4`, `"line":"4"`, 1)},
+		{name: "zero line", body: strings.Replace(rejected, `"line":4`, `"line":0`, 1)},
+		{name: "unbounded column", body: strings.Replace(rejected, `"column":2`, `"column":1000001`, 1)},
+		{name: "partial location", body: strings.Replace(rejected, `"column":2`, `"column":null`, 1)},
+		{name: "wrong detail type", body: strings.Replace(rejected, `"detail":"key is not supported"`, `"detail":false`, 1)},
+		{name: "control detail", body: string(configRejectedStatusFrameWithDiagnostic(t, "pages", "unsafe\ntext"))},
+		{name: "wrong outcome", body: strings.Replace(rejected, `"outcome":"rejected"`, `"outcome":"unchanged"`, 1)},
+		{name: "wrong reason", body: strings.Replace(rejected, `"reason":"candidate-rejected"`, `"reason":"none"`, 1)},
+	}
+	for _, test := range rejectedTests {
+		t.Run("status/diagnostic/"+test.name, func(t *testing.T) {
+			if _, err := DecodeResponse([]byte(test.body), configTestRequestID, string(MethodConfigStatus), testInstanceID); err == nil {
+				t.Fatal("malformed configuration diagnostic was accepted")
 			}
 		})
 	}
@@ -328,23 +375,141 @@ func configStatusFrame(t *testing.T) []byte {
 	return frame
 }
 
+func configRejectedStatusFrame(t *testing.T) []byte {
+	t.Helper()
+	key, line, column := "pages", 4, 2
+	response := Response{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       stringPointer(configTestRequestID),
+		Result: &Result{
+			InstanceID: testInstanceID,
+			Revision:   1,
+			State:      "idle",
+			Outcome:    "rejected",
+			Reason:     "candidate-rejected",
+			Diagnostic: &ConfigDiagnostic{Category: "unknown-key", Key: &key, Line: &line, Column: &column, Detail: "key is not supported"},
+		},
+	}
+	frame, err := EncodeResponse(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return frame
+}
+
+type configStatusWire struct {
+	ProtocolVersion int                    `json:"protocol_version"`
+	RequestID       *string                `json:"request_id"`
+	Result          configStatusResultWire `json:"result"`
+	Error           *Error                 `json:"error"`
+}
+
+type configStatusResultWire struct {
+	InstanceID string            `json:"instance_id"`
+	Revision   uint64            `json:"revision"`
+	Active     bool              `json:"active"`
+	State      string            `json:"state"`
+	Outcome    string            `json:"outcome"`
+	Reason     string            `json:"reason"`
+	Diagnostic *ConfigDiagnostic `json:"diagnostic"`
+}
+
+func configRejectedStatusFrameWithDiagnostic(t *testing.T, key, detail string) []byte {
+	t.Helper()
+	line, column := 4, 2
+	requestID := configTestRequestID
+	frame, err := json.Marshal(configStatusWire{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       &requestID,
+		Result: configStatusResultWire{
+			InstanceID: testInstanceID,
+			Revision:   1,
+			State:      "idle",
+			Outcome:    "rejected",
+			Reason:     "candidate-rejected",
+			Diagnostic: &ConfigDiagnostic{Category: "unknown-key", Key: &key, Line: &line, Column: &column, Detail: detail},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(frame, '\n')
+}
+
+func replaceDiagnosticObject(frame, replacement string) string {
+	start := strings.Index(frame, `"diagnostic":{`)
+	if start < 0 {
+		return frame
+	}
+	objectStart := start + len(`"diagnostic":`)
+	depth := 0
+	for index := objectStart; index < len(frame); index++ {
+		switch frame[index] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return frame[:objectStart] + replacement + frame[index+1:]
+			}
+		}
+	}
+	return frame
+}
+
 func assertObjectKeys(t *testing.T, frame []byte, field string, want []string) {
+	t.Helper()
+	assertObjectKeysAtPath(t, frame, []string{field}, want)
+}
+
+func assertObjectKeysAtPath(t *testing.T, frame []byte, path, want []string) {
 	t.Helper()
 	value, err := decodeJSONFrame(bytes.TrimSuffix(frame, []byte{'\n'}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	object := value.object[field]
+	for _, field := range path {
+		if value.kind != jsonObject {
+			t.Fatalf("%s is not an object", strings.Join(path, "."))
+		}
+		var ok bool
+		value, ok = value.object[field]
+		if !ok {
+			t.Fatalf("%s is missing", strings.Join(path, "."))
+		}
+	}
+	object := value
 	if object.kind != jsonObject {
-		t.Fatalf("%s is not an object", field)
+		t.Fatalf("%s is not an object", strings.Join(path, "."))
 	}
 	if len(object.object) != len(want) {
-		t.Fatalf("%s fields = %v, want %v", field, object.object, want)
+		t.Fatalf("%s fields = %v, want %v", strings.Join(path, "."), object.object, want)
 	}
 	for _, key := range want {
 		if _, ok := object.object[key]; !ok {
-			t.Fatalf("%s omitted field %q: %v", field, key, object.object)
+			t.Fatalf("%s omitted field %q: %v", strings.Join(path, "."), key, object.object)
 		}
+	}
+}
+
+func assertValueKindAtPath(t *testing.T, frame []byte, path []string, want jsonKind) {
+	t.Helper()
+	value, err := decodeJSONFrame(bytes.TrimSuffix(frame, []byte{'\n'}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range path {
+		if value.kind != jsonObject {
+			t.Fatalf("%s is not an object", strings.Join(path, "."))
+		}
+		var ok bool
+		value, ok = value.object[field]
+		if !ok {
+			t.Fatalf("%s is missing", strings.Join(path, "."))
+		}
+	}
+	if value.kind != want {
+		t.Fatalf("%s kind = %v, want %v", strings.Join(path, "."), value.kind, want)
 	}
 }
 

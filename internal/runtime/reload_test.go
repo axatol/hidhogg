@@ -6,10 +6,12 @@ import (
 	"errors"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	appconfig "hidhogg/internal/config"
 	"hidhogg/internal/d200x"
 	"hidhogg/internal/execution"
 )
@@ -254,6 +256,199 @@ func TestRuntimeReloadBusyAndShutdownAdmission(t *testing.T) {
 	}
 	if _, err := runtimeProcess.Reload(context.Background()); !errors.Is(err, ErrReloadClosed) {
 		t.Fatalf("reload after close = %v", err)
+	}
+}
+
+func TestRuntimeReloadLogsOneSafeCandidateRejectionWithoutVerbose(t *testing.T) {
+	const secret = "RUNTIME_RELOAD_SECRET_SENTINEL"
+	runtimeProcess, path := newReloadTestRuntime(t, reloadTestConfiguration(), &profilePageSender{}, nil)
+	var stderr synchronizedWriter
+	runtimeProcess.stderr = &stderr
+	runtimeProcess.config.Verbose = false
+	invalid := bytes.Replace(reloadTestConfiguration(), []byte("brightness = 73"), []byte("brightness = \""+secret+"\""), 1)
+	writeReloadTestFile(t, path, invalid)
+
+	_, err := runtimeProcess.Reload(context.Background())
+	var diagnostic *appconfig.Diagnostic
+	if !errors.As(err, &diagnostic) || diagnostic.Category != appconfig.DiagnosticDecode {
+		t.Fatalf("reload error = %#v, %v", diagnostic, err)
+	}
+	output := stderr.String()
+	if strings.Count(output, "runtime config reload rejected:") != 1 || strings.Count(output, "\n") != 1 {
+		t.Fatalf("reload diagnostics = %q", output)
+	}
+	if !strings.Contains(output, path) || strings.Contains(output, secret) {
+		t.Fatalf("reload diagnostic disclosure/path = %q", output)
+	}
+	if status := runtimeProcess.ReloadStatus(); status.Outcome != ReloadOutcomeRejected || status.Reason != ReloadReasonCandidateRejected {
+		t.Fatalf("reload status = %+v", status)
+	} else if status.Diagnostic == nil || status.Diagnostic.Category != appconfig.DiagnosticDecode || status.Diagnostic.Key != "brightness" || status.Diagnostic.Line < 1 || status.Diagnostic.Column < 1 || strings.Contains(status.Diagnostic.Detail, secret) {
+		t.Fatalf("reload status diagnostic = %#v", status.Diagnostic)
+	}
+	runtimeProcess.reloadAutomatically(context.Background())
+	output = stderr.String()
+	if strings.Count(output, "runtime config reload rejected:") != 2 || strings.Count(output, "\n") != 2 {
+		t.Fatalf("manual plus automatic reload diagnostics = %q", output)
+	}
+	automaticStatus := runtimeProcess.ReloadStatus()
+	if automaticStatus.Diagnostic == nil {
+		t.Fatal("automatic candidate rejection omitted status diagnostic")
+	}
+	automaticStatus.Diagnostic.Detail = "mutated"
+	if runtimeProcess.ReloadStatus().Diagnostic.Detail == "mutated" {
+		t.Fatal("reload status exposed mutable admission state")
+	}
+	writeReloadTestFile(t, path, reloadTestConfiguration())
+	if _, err := runtimeProcess.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if status := runtimeProcess.ReloadStatus(); status.Outcome != ReloadOutcomeUnchanged || status.Reason != ReloadReasonNone || status.Diagnostic != nil {
+		t.Fatalf("successful reload did not clear diagnostic: %+v", status)
+	}
+}
+
+func TestRuntimeReloadBusyPreservesCompletedDiagnostic(t *testing.T) {
+	runtimeProcess, path := newReloadTestRuntime(t, reloadTestConfiguration(), &profilePageSender{}, nil)
+	invalid := bytes.Replace(reloadTestConfiguration(), []byte("brightness = 73"), []byte("brightness = \"invalid\""), 1)
+	writeReloadTestFile(t, path, invalid)
+	if _, err := runtimeProcess.Reload(context.Background()); err == nil {
+		t.Fatal("invalid reload succeeded")
+	}
+	writeReloadTestFile(t, path, reloadTestConfiguration())
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	runtimeProcess.reloadBuilder = func(path, currentID string) (reloadCandidate, error) {
+		close(started)
+		<-release
+		return buildReloadCandidate(path, currentID)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := runtimeProcess.Reload(context.Background())
+		done <- err
+	}()
+	<-started
+	status := runtimeProcess.ReloadStatus()
+	if !status.Active || status.State != ReloadStateReloading || status.Diagnostic == nil {
+		t.Fatalf("active status lost completed diagnostic: %+v", status)
+	}
+	if _, err := runtimeProcess.Reload(context.Background()); !errors.Is(err, ErrReloadBusy) {
+		t.Fatalf("busy reload error = %v", err)
+	}
+	if status := runtimeProcess.ReloadStatus(); status.Diagnostic == nil {
+		t.Fatalf("busy observation cleared diagnostic: %+v", status)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if status := runtimeProcess.ReloadStatus(); status.Diagnostic != nil || status.Outcome != ReloadOutcomeUnchanged {
+		t.Fatalf("completed success status = %+v", status)
+	}
+}
+
+func TestRuntimeReloadCanceledAttemptClearsCandidateDiagnostic(t *testing.T) {
+	base := reloadTestConfiguration()
+	runtimeProcess, path := newReloadTestRuntime(t, base, &profilePageSender{}, nil)
+	invalid := bytes.Replace(base, []byte("brightness = 73"), []byte("brightness = \"invalid\""), 1)
+	writeReloadTestFile(t, path, invalid)
+	if _, err := runtimeProcess.Reload(context.Background()); err == nil {
+		t.Fatal("invalid reload succeeded")
+	}
+	if status := runtimeProcess.ReloadStatus(); status.Diagnostic == nil || status.Outcome != ReloadOutcomeRejected || status.Reason != ReloadReasonCandidateRejected {
+		t.Fatalf("candidate rejection status = %+v", status)
+	}
+
+	changed := bytes.Replace(base, []byte(`label = "default 0"`), []byte(`label = "canceled 0"`), 1)
+	changedPath := writeReloadConfiguration(t, changed)
+	ctx, cancel := context.WithCancel(context.Background())
+	runtimeProcess.reloadBuilder = func(_ string, currentID string) (reloadCandidate, error) {
+		candidate, err := buildReloadCandidate(changedPath, currentID)
+		cancel()
+		return candidate, err
+	}
+	result, err := runtimeProcess.Reload(ctx)
+	if !errors.Is(err, context.Canceled) || result.Revision != 1 || result.Changed {
+		t.Fatalf("canceled reload = %+v, %v", result, err)
+	}
+	status := runtimeProcess.ReloadStatus()
+	if status.Revision != 1 || status.Active || status.State != ReloadStateIdle || status.Outcome != ReloadOutcomeRejected || status.Reason != ReloadReasonCanceled || status.Diagnostic != nil {
+		t.Fatalf("canceled reload status = %+v", status)
+	}
+}
+
+func TestRuntimeReloadDeviceFailureClearsCandidateDiagnostic(t *testing.T) {
+	base := reloadTestConfiguration()
+	sender := &profilePageSender{}
+	runtimeProcess, path := newReloadTestRuntime(t, base, sender, nil)
+	invalid := bytes.Replace(base, []byte("brightness = 73"), []byte("brightness = \"invalid\""), 1)
+	writeReloadTestFile(t, path, invalid)
+	if _, err := runtimeProcess.Reload(context.Background()); err == nil {
+		t.Fatal("invalid reload succeeded")
+	}
+	if status := runtimeProcess.ReloadStatus(); status.Diagnostic == nil || status.Outcome != ReloadOutcomeRejected || status.Reason != ReloadReasonCandidateRejected {
+		t.Fatalf("candidate rejection status = %+v", status)
+	}
+
+	sender.mu.Lock()
+	sender.err = errors.New("device failure")
+	sender.mu.Unlock()
+	changed := bytes.Replace(base, []byte(`label = "default 0"`), []byte(`label = "device failure 0"`), 1)
+	writeReloadTestFile(t, path, changed)
+	result, err := runtimeProcess.Reload(context.Background())
+	if !errors.Is(err, ErrProfileStateUncertain) || result.Revision != 1 || result.Changed {
+		t.Fatalf("device-failed reload = %+v, %v", result, err)
+	}
+	status := runtimeProcess.ReloadStatus()
+	if status.Revision != 1 || status.Active || status.State != ReloadStateIdle || status.Outcome != ReloadOutcomeRejected || status.Reason != ReloadReasonDeviceWriteFailed || status.Diagnostic != nil {
+		t.Fatalf("device-failed reload status = %+v", status)
+	}
+}
+
+func TestRuntimeReloadDoesNotLogNonCandidateRejections(t *testing.T) {
+	runtimeProcess, _ := newReloadTestRuntime(t, reloadTestConfiguration(), &profilePageSender{}, nil)
+	var stderr synchronizedWriter
+	runtimeProcess.stderr = &stderr
+
+	runtimeProcess.reloadBuilder = func(string, string) (reloadCandidate, error) {
+		return reloadCandidate{}, context.Canceled
+	}
+	if _, err := runtimeProcess.Reload(context.Background()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled reload error = %v", err)
+	}
+
+	runtimeProcess.reload.mu.Lock()
+	runtimeProcess.reload.active = true
+	runtimeProcess.reload.mu.Unlock()
+	if _, err := runtimeProcess.Reload(context.Background()); !errors.Is(err, ErrReloadBusy) {
+		t.Fatalf("busy reload error = %v", err)
+	}
+	runtimeProcess.reload.mu.Lock()
+	runtimeProcess.reload.active = false
+	runtimeProcess.reload.mu.Unlock()
+
+	runtimeProcess.reloadBuilder = func(string, string) (reloadCandidate, error) {
+		return reloadCandidate{}, ErrReloadClosed
+	}
+	if _, err := runtimeProcess.Reload(context.Background()); !errors.Is(err, ErrReloadClosed) {
+		t.Fatalf("closed reload error = %v", err)
+	}
+	if output := stderr.String(); output != "" {
+		t.Fatalf("non-candidate diagnostics = %q", output)
+	}
+
+	deviceSender := &profilePageSender{err: errors.New("device secret")}
+	deviceRuntime, devicePath := newReloadTestRuntime(t, reloadTestConfiguration(), deviceSender, nil)
+	var deviceStderr synchronizedWriter
+	deviceRuntime.stderr = &deviceStderr
+	changed := bytes.Replace(reloadTestConfiguration(), []byte("label = \"default 0\""), []byte("label = \"changed 0\""), 1)
+	writeReloadTestFile(t, devicePath, changed)
+	if _, err := deviceRuntime.Reload(context.Background()); !errors.Is(err, ErrProfileStateUncertain) {
+		t.Fatalf("device reload error = %v", err)
+	}
+	if output := deviceStderr.String(); output != "" {
+		t.Fatalf("device rejection diagnostic = %q", output)
 	}
 }
 

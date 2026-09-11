@@ -86,11 +86,22 @@ type ReloadResult = ConfigReloadResult
 
 // ConfigStatus is the bounded read-only reload coordinator state.
 type ConfigStatus struct {
-	Revision uint64
-	Active   bool
-	State    string
-	Outcome  string
-	Reason   string
+	Revision   uint64
+	Active     bool
+	State      string
+	Outcome    string
+	Reason     string
+	Diagnostic *ConfigDiagnostic
+}
+
+// ConfigDiagnostic is the bounded, path-free cause of the latest rejected
+// configuration candidate. Nil key and location fields mean unavailable.
+type ConfigDiagnostic struct {
+	Category string  `json:"category"`
+	Key      *string `json:"key"`
+	Line     *int    `json:"line"`
+	Column   *int    `json:"column"`
+	Detail   string  `json:"detail"`
 }
 
 // ReloadStatus is an explicit alias for callers that use the runtime name.
@@ -125,6 +136,7 @@ type Result struct {
 	DisplayUpdated         bool               `json:"display_updated,omitempty"`
 	Executions             []ExecutionSummary `json:"-"`
 	Execution              *ExecutionRecord   `json:"-"`
+	Diagnostic             *ConfigDiagnostic  `json:"-"`
 }
 
 type Error struct {
@@ -574,6 +586,8 @@ func EncodeResponse(response Response) ([]byte, error) {
 			encodedResult.State = &state
 			encodedResult.Outcome = &outcome
 			encodedResult.Reason = &reason
+			diagnostic := result.Diagnostic
+			encodedResult.Diagnostic = &diagnostic
 		}
 		payload.Result = encodedResult
 	}
@@ -603,6 +617,7 @@ type resultJSON struct {
 	DisplayUpdated         *bool                   `json:"display_updated,omitempty"`
 	Executions             *[]executionSummaryJSON `json:"executions,omitempty"`
 	Execution              *executionRecordJSON    `json:"execution,omitempty"`
+	Diagnostic             **ConfigDiagnostic      `json:"diagnostic,omitempty"`
 }
 
 type executionSummaryJSON struct {
@@ -947,6 +962,105 @@ func validReloadReason(value string) bool {
 	}
 }
 
+const (
+	maximumConfigDiagnosticTextBytes = 160
+	maximumConfigDiagnosticLocation  = 1_000_000
+)
+
+func decodeConfigDiagnostic(value jsonValue) (*ConfigDiagnostic, error) {
+	if value.kind == jsonNull {
+		return nil, nil
+	}
+	if value.kind != jsonObject || !hasExactly(value.object, "category", "key", "line", "column", "detail") {
+		return nil, errors.New("response configuration diagnostic fields are invalid")
+	}
+	category := value.object["category"]
+	detail := value.object["detail"]
+	if category.kind != jsonString || detail.kind != jsonString {
+		return nil, errors.New("response configuration diagnostic values are invalid")
+	}
+	diagnostic := &ConfigDiagnostic{Category: category.string, Detail: detail.string}
+	key := value.object["key"]
+	switch key.kind {
+	case jsonNull:
+	case jsonString:
+		diagnostic.Key = &key.string
+	default:
+		return nil, errors.New("response configuration diagnostic key is invalid")
+	}
+	line, err := decodeNullableConfigLocation(value.object["line"])
+	if err != nil {
+		return nil, errors.New("response configuration diagnostic line is invalid")
+	}
+	column, err := decodeNullableConfigLocation(value.object["column"])
+	if err != nil {
+		return nil, errors.New("response configuration diagnostic column is invalid")
+	}
+	diagnostic.Line = line
+	diagnostic.Column = column
+	if !validConfigDiagnostic(diagnostic) {
+		return nil, errors.New("response configuration diagnostic is invalid")
+	}
+	return diagnostic, nil
+}
+
+func decodeNullableConfigLocation(value jsonValue) (*int, error) {
+	if value.kind == jsonNull {
+		return nil, nil
+	}
+	parsed, err := decodeInteger(value)
+	if err != nil || parsed < 1 || parsed > maximumConfigDiagnosticLocation {
+		return nil, errors.New("configuration diagnostic location is invalid")
+	}
+	location := int(parsed)
+	return &location, nil
+}
+
+func validConfigDiagnosticStatus(outcome, reason string, diagnostic *ConfigDiagnostic) bool {
+	rejectedCandidate := outcome == "rejected" && reason == "candidate-rejected"
+	if rejectedCandidate != (diagnostic != nil) {
+		return false
+	}
+	return diagnostic == nil || validConfigDiagnostic(diagnostic)
+}
+
+func validConfigDiagnostic(diagnostic *ConfigDiagnostic) bool {
+	if diagnostic == nil || !validConfigDiagnosticCategory(diagnostic.Category) || !validConfigDiagnosticText(diagnostic.Detail, false) {
+		return false
+	}
+	if diagnostic.Key != nil && !validConfigDiagnosticText(*diagnostic.Key, false) {
+		return false
+	}
+	if (diagnostic.Line == nil) != (diagnostic.Column == nil) {
+		return false
+	}
+	if diagnostic.Line != nil && (*diagnostic.Line < 1 || *diagnostic.Line > maximumConfigDiagnosticLocation || *diagnostic.Column < 1 || *diagnostic.Column > maximumConfigDiagnosticLocation) {
+		return false
+	}
+	return true
+}
+
+func validConfigDiagnosticCategory(category string) bool {
+	switch category {
+	case "read-not-found", "read-denied", "read-invalid", "read", "decode", "unknown-key", "missing-key", "schema-version", "validation":
+		return true
+	default:
+		return false
+	}
+}
+
+func validConfigDiagnosticText(value string, allowEmpty bool) bool {
+	if (!allowEmpty && value == "") || !utf8.ValidString(value) || len([]byte(value)) > maximumConfigDiagnosticTextBytes {
+		return false
+	}
+	for _, character := range value {
+		if unicode.IsControl(character) || unicode.Is(unicode.Cf, character) {
+			return false
+		}
+	}
+	return true
+}
+
 func validateExecutionSummary(summary execution.Summary) error {
 	if !validExecutionID(summary.ID) || !validStableID(summary.ProfileID) || !validStableID(summary.PositionID) || !validExecutionState(string(summary.State)) {
 		return errors.New("execution summary values are invalid")
@@ -1241,7 +1355,7 @@ func decodeResult(value jsonValue, method, expectedInstanceID string) (Result, e
 			BrightnessChanged: brightnessChanged, IdleChanged: idleChanged, DisplayUpdated: displayUpdated,
 		}, nil
 	case MethodConfigStatus:
-		if !hasExactly(value.object, "instance_id", "revision", "active", "state", "outcome", "reason") {
+		if !hasExactly(value.object, "instance_id", "revision", "active", "state", "outcome", "reason", "diagnostic") {
 			return Result{}, errors.New("response configuration status fields are invalid")
 		}
 		instanceID := canonicalString(value.object["instance_id"])
@@ -1268,7 +1382,15 @@ func decodeResult(value jsonValue, method, expectedInstanceID string) (Result, e
 		if reason.kind != jsonString || !validReloadReason(reason.string) {
 			return Result{}, errors.New("response configuration reason is invalid")
 		}
-		return Result{InstanceID: instanceID, Revision: revision, Active: active, State: state.string, Outcome: outcome.string, Reason: reason.string}, nil
+		diagnostic, err := decodeConfigDiagnostic(value.object["diagnostic"])
+		if err != nil {
+			return Result{}, err
+		}
+		result := Result{InstanceID: instanceID, Revision: revision, Active: active, State: state.string, Outcome: outcome.string, Reason: reason.string, Diagnostic: diagnostic}
+		if !validConfigDiagnosticStatus(result.Outcome, result.Reason, result.Diagnostic) {
+			return Result{}, errors.New("response configuration diagnostic is incompatible with status")
+		}
+		return result, nil
 	default:
 		return Result{}, errors.New("response method is invalid")
 	}
@@ -1329,7 +1451,7 @@ func validateResultForMethod(result Result, method Method, expectedInstanceID st
 			return errors.New("response configuration reload is invalid")
 		}
 	case MethodConfigStatus:
-		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State == "" || !validReloadState(result.State) || !validReloadOutcome(result.Outcome) || !validReloadReason(result.Reason) || result.ProtocolVersion != nil || result.Profiles != nil || result.ProfileID != "" || result.Executions != nil || result.Execution != nil || result.Changed || result.Effect != "" || result.CatalogChanged || result.DefaultChanged || result.CurrentProfileChanged || result.CurrentProfileFallback || result.ActionChanged || result.DisplayChanged || result.BrightnessChanged || result.IdleChanged || result.DisplayUpdated {
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State == "" || !validReloadState(result.State) || !validReloadOutcome(result.Outcome) || !validReloadReason(result.Reason) || !validConfigDiagnosticStatus(result.Outcome, result.Reason, result.Diagnostic) || result.ProtocolVersion != nil || result.Profiles != nil || result.ProfileID != "" || result.Executions != nil || result.Execution != nil || result.Changed || result.Effect != "" || result.CatalogChanged || result.DefaultChanged || result.CurrentProfileChanged || result.CurrentProfileFallback || result.ActionChanged || result.DisplayChanged || result.BrightnessChanged || result.IdleChanged || result.DisplayUpdated {
 			return errors.New("response configuration status is invalid")
 		}
 	default:
@@ -1339,7 +1461,7 @@ func validateResultForMethod(result Result, method Method, expectedInstanceID st
 }
 
 func hasConfigResultFields(result Result) bool {
-	return result.Revision != 0 || result.Active || result.Outcome != "" || result.Reason != "" || result.Effect != "" || result.CatalogChanged || result.DefaultChanged || result.CurrentProfileChanged || result.CurrentProfileFallback || result.ActionChanged || result.DisplayChanged || result.BrightnessChanged || result.IdleChanged || result.DisplayUpdated
+	return result.Revision != 0 || result.Active || result.Outcome != "" || result.Reason != "" || result.Effect != "" || result.CatalogChanged || result.DefaultChanged || result.CurrentProfileChanged || result.CurrentProfileFallback || result.ActionChanged || result.DisplayChanged || result.BrightnessChanged || result.IdleChanged || result.DisplayUpdated || result.Diagnostic != nil
 }
 
 func resultMethod(result *Result) Method {

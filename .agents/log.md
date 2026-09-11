@@ -842,6 +842,33 @@
 - The current startup path already constructs the configured default page and invokes one complete-page send before readiness. Therefore this is recorded as M-06-F02, an unconfirmed physical-path defect or regression, rather than a known absent feature.
 - Verification must begin with a visibly different retained page and distinguish skipped/ineffective/stale-content startup from an unnecessary duplicate-send workaround. No retry or second startup redraw is authorized without that evidence.
 
+## 2026-09-11 — M-06-F01 contract confirmed and F02 physically reproduced
+
+- The owner confirmed that local configuration diagnostics may include the absolute source path, dotted key, and TOML line/column when available. They must not echo configuration values or source excerpts; IPC remains the bounded sanitized `reload_rejected` surface.
+- F01 must cover startup and runtime-local reload diagnostics for syntax, schema version, obsolete/unknown fields, missing fields, type mismatches, semantic validation, and unreadable paths.
+- The owner reproduced F02 under schema v2: changed initial-profile content was not visible after startup and appeared only after the same configuration was saved again, triggering automatic reload. This confirms a startup-versus-live application defect even though the current startup path invokes one complete-page send before readiness.
+
+## 2026-09-11 — M-06-F01 descriptive local diagnostics completed
+
+- `internal/config` now owns typed safe diagnostics. Local output contains the absolute configured path, a closed category, a canonical dotted or indexed key, and go-toml's typed 1-based line/column when available. Details are fixed and bounded; raw causes, TOML context, source excerpts, and configuration values are never rendered. `errors.Is` and `errors.As` identities remain available internally.
+- Startup emits one local diagnostic. Manual and automatic candidate rejection converge on one runtime-local emission per admitted attempt, independent of verbose mode. Busy, cancellation, shutdown, and device-write failures are excluded. IPC retains the static `reload_rejected` boundary.
+- Independent V01 identified that separate component locks did not serialize multiple producers sharing raw stderr. The runtime now wraps stderr once with a shared serialized writer used by D200X session, profile, reload, and watcher diagnostics; stdout remains unchanged.
+- Independent V02 passed the unsafe byte-writer concurrency stress 20 times under race detection, the broader affected-package race suite, vet, and diff checks. Path/key/location, schema/pages guidance, read/decode/semantic categories, bounded UTF-8/control filtering, secret suppression, exactly-once logging, excluded failures, and static IPC all pass. No confirmed F01 defect remains.
+
+## 2026-09-11 — M-06-F01 reopened for bounded rejected-status metadata
+
+- The owner confirmed that consumers need the latest rejected configuration's safe line or key detail. `config.status` will carry an optional diagnostic containing category, key, line, column, and static detail only when the latest completed attempt is candidate-rejected.
+- The status projection must omit the absolute source path, values, TOML excerpts, action/command/environment material, and raw causes. The `config.reload` error response remains the static `reload_rejected` contract.
+- A later completed attempt whose outcome is not candidate-rejected clears the diagnostic. Busy observation does not manufacture or replace completed-attempt metadata.
+
+## 2026-09-11 — M-06-F01 rejected-status projection completed
+
+- `config.status` now always includes a `diagnostic` field. It is null unless the latest completed attempt is `rejected` for `candidate-rejected`; otherwise it is an exact path-free object containing category, nullable key, nullable paired line/column, and fixed detail.
+- Runtime admission stores outcome, reason, and a defensively copied safe projection under one mutex. Manual and automatic candidate rejection publish it; subsequent successful, canceled, unsupported, closed-attempt, or device-failed completion clears it. Busy/active observation preserves the latest completed-attempt record. Runtime lifecycle closure itself does not erase that record.
+- Strict IPC decoding rejects missing/extra/wrong-type/control-containing/out-of-range diagnostics and incompatible outcome/reason combinations. `config.reload` remains static `reload_rejected`; status excludes path, values, excerpts, raw causes, actions, commands, and environment material.
+- Independent V04 passed runtime cancellation/device clearing, discovery and legacy CLI rendering/non-disclosure, strict codec compatibility, frame bounds, and diff checks for 10 race-detected repetitions. No confirmed defect remains.
+- The owner subsequently confirmed the descriptive rejection behavior works in the live workflow. This is the authoritative owner-visible acceptance for M-06-F01.
+
 ## 2026-09-11 — M-06 transactional configuration reload completed
 
 - Architecture close review passed the single-snapshot transaction, activation serialization, idle-loop ownership, last-known-good/fail-stop boundary, gesture/child isolation, strict IPC privacy, watcher semantics, and lifecycle/degradation design. No production correctness defect remained.

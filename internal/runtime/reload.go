@@ -3,8 +3,10 @@ package runtime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
+	appconfig "hidhogg/internal/config"
 	"hidhogg/internal/profile"
 )
 
@@ -55,11 +57,12 @@ type ReloadResult struct {
 }
 
 type ReloadStatus struct {
-	Revision uint64
-	Active   bool
-	State    ReloadState
-	Outcome  ReloadOutcome
-	Reason   ReloadReason
+	Revision   uint64
+	Active     bool
+	State      ReloadState
+	Outcome    ReloadOutcome
+	Reason     ReloadReason
+	Diagnostic *appconfig.DiagnosticProjection
 }
 
 type idleSettingsApplyResult struct {
@@ -123,12 +126,13 @@ func (snapshot *effectiveSnapshot) withCurrent(current profile.Profile, rendered
 }
 
 type reloadAdmission struct {
-	mu      sync.Mutex
-	active  bool
-	closed  bool
-	dirty   bool
-	outcome ReloadOutcome
-	reason  ReloadReason
+	mu         sync.Mutex
+	active     bool
+	closed     bool
+	dirty      bool
+	outcome    ReloadOutcome
+	reason     ReloadReason
+	diagnostic *appconfig.DiagnosticProjection
 }
 
 func (admission *reloadAdmission) begin() error {
@@ -158,11 +162,12 @@ func (admission *reloadAdmission) beginAutomatic() bool {
 	return true
 }
 
-func (admission *reloadAdmission) finish(outcome ReloadOutcome, reason ReloadReason) bool {
+func (admission *reloadAdmission) finish(outcome ReloadOutcome, reason ReloadReason, diagnostic *appconfig.DiagnosticProjection) bool {
 	admission.mu.Lock()
 	admission.active = false
 	admission.outcome = outcome
 	admission.reason = reason
+	admission.diagnostic = cloneDiagnosticProjection(diagnostic)
 	dirty := admission.dirty && !admission.closed
 	admission.dirty = false
 	admission.mu.Unlock()
@@ -195,18 +200,21 @@ func (r *Runtime) reloadAutomatically(ctx context.Context) {
 func (r *Runtime) reloadStarted(ctx context.Context) (ReloadResult, error) {
 	outcome := ReloadOutcomeRejected
 	reason := ReloadReasonCandidateRejected
+	var statusDiagnostic *appconfig.DiagnosticProjection
 	defer func() {
-		if r.reload.finish(outcome, reason) {
+		if r.reload.finish(outcome, reason, statusDiagnostic) {
 			r.signalAutomaticReload()
 		}
 	}()
 
 	service := r.ProfileService()
 	if service == nil {
+		reason = ReloadReasonClosed
 		return ReloadResult{}, ErrReloadClosed
 	}
 	concrete, ok := service.(*RuntimeProfileService)
 	if !ok {
+		reason = ReloadReasonClosed
 		return ReloadResult{}, ErrReloadClosed
 	}
 	r.mu.Lock()
@@ -216,8 +224,11 @@ func (r *Runtime) reloadStarted(ctx context.Context) (ReloadResult, error) {
 	if build == nil {
 		build = buildReloadCandidate
 	}
+	var candidateErr error
 	result, err := concrete.reload(ctx, func(currentID string) (reloadCandidate, error) {
-		return build(configPath, currentID)
+		candidate, buildErr := build(configPath, currentID)
+		candidateErr = buildErr
+		return candidate, buildErr
 	})
 	if result.Revision == 0 {
 		result.Revision = concrete.revision()
@@ -239,7 +250,26 @@ func (r *Runtime) reloadStarted(ctx context.Context) (ReloadResult, error) {
 	case errors.Is(err, ErrReloadClosed), errors.Is(err, ErrProfileServiceClosed):
 		reason = ReloadReasonClosed
 	}
+	if outcome == ReloadOutcomeRejected && reason == ReloadReasonCandidateRejected {
+		statusDiagnostic = appconfig.SafeDiagnosticProjection(candidateErr)
+	}
+	if candidateErr != nil {
+		r.logConfigCandidateRejection(candidateErr)
+	}
 	return result, err
+}
+
+func (r *Runtime) logConfigCandidateRejection(err error) {
+	var diagnostic *appconfig.Diagnostic
+	if r == nil || !errors.As(err, &diagnostic) || diagnostic == nil {
+		return
+	}
+	r.mu.Lock()
+	writer := r.stderr
+	r.mu.Unlock()
+	if writer != nil {
+		_, _ = fmt.Fprintf(writer, "runtime config reload rejected: %s\n", diagnostic)
+	}
 }
 
 func (r *Runtime) ReloadStatus() ReloadStatus {
@@ -251,6 +281,7 @@ func (r *Runtime) ReloadStatus() ReloadStatus {
 	closed := r.reload.closed
 	outcome := r.reload.outcome
 	reason := r.reload.reason
+	diagnostic := cloneDiagnosticProjection(r.reload.diagnostic)
 	r.reload.mu.Unlock()
 	state := ReloadStateIdle
 	if active {
@@ -260,11 +291,19 @@ func (r *Runtime) ReloadStatus() ReloadStatus {
 	}
 	service := r.ProfileService()
 	if service == nil {
-		return ReloadStatus{Active: active, State: state, Outcome: outcome, Reason: reason}
+		return ReloadStatus{Active: active, State: state, Outcome: outcome, Reason: reason, Diagnostic: diagnostic}
 	}
 	concrete, ok := service.(*RuntimeProfileService)
 	if !ok {
-		return ReloadStatus{Active: active, State: state, Outcome: outcome, Reason: reason}
+		return ReloadStatus{Active: active, State: state, Outcome: outcome, Reason: reason, Diagnostic: diagnostic}
 	}
-	return ReloadStatus{Revision: concrete.revision(), Active: active, State: state, Outcome: outcome, Reason: reason}
+	return ReloadStatus{Revision: concrete.revision(), Active: active, State: state, Outcome: outcome, Reason: reason, Diagnostic: diagnostic}
+}
+
+func cloneDiagnosticProjection(source *appconfig.DiagnosticProjection) *appconfig.DiagnosticProjection {
+	if source == nil {
+		return nil
+	}
+	copy := *source
+	return &copy
 }

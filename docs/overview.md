@@ -1,6 +1,6 @@
 # Hidhogg overview
 
-Status: M-06 transactional configuration reload complete; owner-local diagnostic and startup-reassertion follow-ups deferred
+Status: M-06 and descriptive owner-local configuration diagnostics complete; startup reassertion fix planned
 Updated: 2026-09-11
 
 ## Goal

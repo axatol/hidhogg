@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -14,14 +15,19 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	os.Exit(exitCode(os.Args[1:], os.Stderr))
 }
 
 func run() error {
 	return runArgs(os.Args[1:])
+}
+
+func exitCode(args []string, stderr io.Writer) int {
+	if err := runArgs(args); err != nil {
+		_, _ = fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
 }
 
 func runArgs(args []string) error {

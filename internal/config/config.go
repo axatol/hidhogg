@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -151,11 +152,19 @@ func PositionForWireIndex(index byte) (PositionSpec, bool) {
 
 // Load reads, strictly decodes, and semantically validates one TOML file.
 func Load(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+	absolutePath, err := filepath.Abs(path)
 	if err != nil {
-		return Config{}, fmt.Errorf("read configuration %q: %w", path, err)
+		return Config{}, newDiagnostic(path, err)
 	}
-	return Decode(data)
+	data, err := os.ReadFile(absolutePath)
+	if err != nil {
+		return Config{}, newDiagnostic(absolutePath, err)
+	}
+	configuration, err := Decode(data)
+	if err != nil {
+		return Config{}, newDiagnostic(absolutePath, err)
+	}
+	return configuration, nil
 }
 
 // LoadFile is an explicit alias for Load for callers that want to distinguish
@@ -272,7 +281,7 @@ func missingRequiredFields(raw map[string]any) []ValidationIssue {
 	issues := make([]ValidationIssue, 0, len(fields))
 	for _, field := range fields {
 		if _, ok := raw[field]; !ok {
-			issues = append(issues, ValidationIssue{Path: field, Message: "is required"})
+			issues = append(issues, ValidationIssue{Path: field, Kind: ValidationIssueRequired, Message: "is required"})
 		}
 	}
 	return issues
@@ -330,8 +339,13 @@ func (c Config) Catalog() (profile.Catalog, error) {
 // ValidationIssue identifies one semantic violation by canonical field path.
 type ValidationIssue struct {
 	Path    string
+	Kind    ValidationIssueKind
 	Message string
 }
+
+type ValidationIssueKind string
+
+const ValidationIssueRequired ValidationIssueKind = "required"
 
 // ValidationError reports all semantic violations in deterministic order.
 type ValidationError struct {

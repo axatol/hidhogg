@@ -1,6 +1,6 @@
 # Hidhogg roadmap
 
-Status: M-06 transactional configuration reload complete; M-06-F01 and M-06-F02 deferred
+Status: M-06 and expanded M-06-F01 complete; M-06-F02 planned
 Updated: 2026-09-11
 
 Task IDs are immutable.
@@ -63,8 +63,8 @@ Task IDs are immutable.
 | M-06-I02 | Complete | Add strict bounded config reload/status IPC and CLI operations | M-06-R01 |
 | M-06-W01 | Complete | Watch the configuration parent directory and coalesce dirty hints into reload attempts | M-06-I02 |
 | M-06-V01 | Complete | Independently verify automatic gates and one owner-visible external-edit reload | M-06-W01 |
-| M-06-F01 | Planned | Make owner-local configuration failures identify the source path and failing key or syntax location | M-06-V01 |
-| M-06-F02 | Planned | Verify and correct one startup reassertion of the configured initial profile | M-06-V01 |
+| M-06-F01 | Complete | Make local configuration failures descriptive and expose safe rejection metadata to status consumers | M-06-V01 |
+| M-06-F02 | Planned | Correct the confirmed failure to visibly reassert changed initial-profile content on startup | M-06-F01 |
 
 ## P-01 — Planning baseline
 
@@ -495,21 +495,21 @@ Task IDs are immutable.
 
 ### M-06-F01 — Owner-local configuration diagnostics
 
-- Status: planned after M-06-V01.
+- Status: complete on 2026-09-11 after independent consumer, lifecycle, privacy, codec, frame, and race verification plus owner-visible confirmation that descriptive rejection diagnostics work.
 - Goal: replace the generic local `configuration could not be loaded` message with an actionable diagnostic that identifies the explicit configuration path and the failing key path or TOML line/column.
-- Scope: startup stderr and an explicitly invoked local reload command may report the source path, syntax location, unknown or missing key, type mismatch, and bounded semantic-validation context. Diagnostics must not echo configuration values or unrelated source content.
-- Constraints: IPC response codes/messages and discovery metadata remain bounded and sanitized; automatic watcher failures must not repeatedly emit unstable/raw operating-system details; HID writes remain prohibited until configuration validation succeeds.
-- Acceptance: schema-version mismatch identifies `schema_version`; obsolete `pages` identifies that key and the required `profiles` replacement; malformed TOML identifies line/column; nested unknown/missing/type errors identify a stable dotted key path; unreadable files identify the explicit path and a bounded error category; tests prove secrets/configuration values are not echoed.
+- Scope: startup stderr and runtime-local stderr for manual or automatic reload rejection may report the absolute source path, dotted key, syntax line/column when available, unknown or missing key, type mismatch, and bounded semantic-validation context. Diagnostics must not echo configuration values, source excerpts, or unrelated source content.
+- Constraints: `config.reload` error codes/messages and discovery metadata remain bounded and sanitized; `config.status` may expose only the latest safe category/key/line/column/static detail and never the source path, values, excerpts, or raw cause; automatic watcher failures must not repeatedly emit unstable/raw operating-system details; HID writes remain prohibited until configuration validation succeeds.
+- Acceptance: schema-version mismatch identifies `schema_version`; obsolete `pages` identifies that key and the required `profiles` replacement; malformed TOML identifies line/column; nested unknown/missing/type errors identify a stable dotted key path; unreadable files identify the explicit path and a bounded error category; rejected `config.status` includes the safe projection without path and clears it after the next completed non-candidate-rejected attempt; tests prove secrets/configuration values are not echoed.
 - Dependencies: M-06-V01.
 
 ### M-06-F02 — Startup initial-profile reassertion
 
-- Status: planned investigation after M-06-V01; the defect is not yet reproduced under the current schema-v2 runtime.
+- Status: planned after M-06-F01; owner reproduction on 2026-09-11 confirms the defect under the schema-v2 runtime.
 - Goal: ensure every successful runtime generation sends the configured initial/default profile exactly once before readiness so the D200X cannot retain the previous process's last applied page.
-- Existing evidence: the current startup path constructs the default-profile page and calls the complete-page send operation before publishing readiness. This establishes intended code flow, not successful physical reassertion on every launch.
+- Existing evidence: the current startup path constructs the default-profile page and calls the complete-page send operation before publishing readiness. The owner reports that changed initial-profile content is not visible on startup and becomes visible only after saving the same configuration again, which triggers reload.
 - Acceptance: start from a visibly different retained device page; launch a valid schema-v2 runtime; observe exactly one startup complete-page operation containing the configured default profile; confirm the configured page is visible before health becomes ready; confirm no duplicate startup page send; repeat after a clean prior shutdown without relying on a reload event.
 - Constraints: do not add an unconditional second write, retry, or post-readiness redraw without evidence locating the failure. Preserve fail-stop behavior when the startup write fails.
-- Dependencies: M-06-V01.
+- Dependencies: M-06-F01.
 
 ## M-02-F01 — Screensaver wake and keepalive correction
 

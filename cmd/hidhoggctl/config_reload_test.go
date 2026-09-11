@@ -150,6 +150,72 @@ func TestRunWithOutputConfigOperationsSupportsDiscoveryAndLegacy(t *testing.T) {
 	}
 }
 
+func TestRunWithOutputConfigStatusPrintsRejectedDiagnosticInDiscoveryAndLegacy(t *testing.T) {
+	const (
+		diagnosticCategory = "unknown-key"
+		diagnosticKey      = "profiles.positions.action"
+		diagnosticDetail   = "configuration key is not supported"
+		pathSentinel       = "/private/config.toml"
+		valueSentinel      = "CONFIG_STATUS_VALUE_SENTINEL"
+	)
+	line, column := 12, 9
+	runtimeDir, instanceID, service, cleanup := startConfigCLIControllerRuntime(t)
+	defer cleanup()
+	service.status = ConfigStatusAlias{
+		Revision: 3,
+		State:    "idle",
+		Outcome:  "rejected",
+		Reason:   "candidate-rejected",
+		Diagnostic: &ipc.ConfigDiagnostic{
+			Category: diagnosticCategory,
+			Key:      stringPointerForTest(diagnosticKey),
+			Line:     &line,
+			Column:   &column,
+			Detail:   diagnosticDetail,
+		},
+	}
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "discovery", args: []string{"--runtime-dir", runtimeDir, "config.status"}},
+		{name: "legacy", args: []string{
+			"--socket-path", filepath.Join(runtimeDir, discovery.SocketFileName),
+			"--instance-id", strings.ToUpper(instanceID), "config", "status",
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			if err := runWithOutput(test.args, &output); err != nil {
+				t.Fatalf("config status: %v", err)
+			}
+			response := decodeCLIConfigResponse(t, output.Bytes(), ipc.MethodConfigStatus, instanceID)
+			if response.Error != nil || response.Result == nil {
+				t.Fatalf("config status response = %#v", response)
+			}
+			diagnostic := response.Result.Diagnostic
+			if diagnostic == nil || diagnostic.Category != diagnosticCategory || diagnostic.Key == nil || *diagnostic.Key != diagnosticKey || diagnostic.Line == nil || *diagnostic.Line != line || diagnostic.Column == nil || *diagnostic.Column != column || diagnostic.Detail != diagnosticDetail {
+				t.Fatalf("config status diagnostic = %#v", diagnostic)
+			}
+			for _, fragment := range []string{
+				`"category":"` + diagnosticCategory + `"`,
+				`"key":"` + diagnosticKey + `"`,
+				fmt.Sprintf(`"line":%d`, line),
+				fmt.Sprintf(`"column":%d`, column),
+				`"detail":"` + diagnosticDetail + `"`,
+			} {
+				if !strings.Contains(output.String(), fragment) {
+					t.Fatalf("printed config status omitted %q: %q", fragment, output.String())
+				}
+			}
+			if strings.Contains(output.String(), pathSentinel) || strings.Contains(output.String(), valueSentinel) {
+				t.Fatalf("printed config status leaked path/value sentinel: %q", output.String())
+			}
+		})
+	}
+}
+
 func TestRunWithOutputConfigRejectsForbiddenFlagsBeforeDiscovery(t *testing.T) {
 	methods := []struct {
 		name string
@@ -306,6 +372,10 @@ func (service *configCLIService) Status() ipc.ConfigStatus {
 
 type ConfigReloadResultAlias = ipc.ConfigReloadResult
 type ConfigStatusAlias = ipc.ConfigStatus
+
+func stringPointerForTest(value string) *string {
+	return &value
+}
 
 func startConfigCLIControllerRuntime(t *testing.T) (string, string, *configCLIService, func()) {
 	t.Helper()

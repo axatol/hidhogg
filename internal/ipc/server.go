@@ -421,6 +421,7 @@ func (s *Server) handleConfigRequest(request Request) Response {
 			State:      result.State,
 			Outcome:    result.Outcome,
 			Reason:     result.Reason,
+			Diagnostic: result.Diagnostic,
 		}}
 		if err := validateResultForMethod(*response.Result, request.Method, request.InstanceID); err != nil {
 			return internalResponse(request.RequestID)

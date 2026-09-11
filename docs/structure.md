@@ -1,6 +1,6 @@
 # Repository structure
 
-Status: M-06 transactional configuration reload complete; M-06-F01 and M-06-F02 deferred
+Status: M-06 and M-06-F01 complete; M-06-F02 planned
 Updated: 2026-09-11
 
 ```text
