@@ -34,8 +34,8 @@ type executionWorker interface {
 type executionWorkerFactory func() (executionWorker, error)
 
 // Config contains the process-owned runtime dependencies. ConfigPath is
-// intentionally explicit: the runtime never discovers or watches a config
-// file. TransportFactory, Stdout, and Stderr are injectable for deterministic
+// intentionally explicit: the runtime never discovers a config file.
+// TransportFactory, Stdout, and Stderr are injectable for deterministic
 // tests; nil values select the production HID factory and process streams.
 type Config struct {
 	RuntimeDir       string
@@ -59,14 +59,17 @@ type Config struct {
 // while discovery metadata is withheld until device initialization and IPC
 // serving are ready.
 type Runtime struct {
-	server           *ipc.Server
-	generation       *discovery.Generation
-	config           Config
-	factory          d200x.TransportFactory
-	stdout           io.Writer
-	stderr           io.Writer
-	clock            Clock
-	executionFactory executionWorkerFactory
+	server             *ipc.Server
+	generation         *discovery.Generation
+	config             Config
+	factory            d200x.TransportFactory
+	stdout             io.Writer
+	stderr             io.Writer
+	clock              Clock
+	executionFactory   executionWorkerFactory
+	reloadBuilder      func(string, string) (reloadCandidate, error)
+	configWatchFactory func() (configWatchSource, error)
+	automaticReload    chan struct{}
 
 	startMu          sync.Mutex
 	mu               sync.Mutex
@@ -74,13 +77,14 @@ type Runtime struct {
 	closed           bool
 	session          *d200x.Session
 	profileService   *RuntimeProfileService
+	idleSettings     *idleSettingsBridge
 	executionWorker  executionWorker
-	defaultProfileID string
 	plan             devicePlan
 	startupCompleted time.Time
 	terminalCancel   context.CancelFunc
 	terminalErr      error
 	terminalOnce     sync.Once
+	reload           reloadAdmission
 }
 
 type devicePlan struct {
@@ -120,12 +124,16 @@ func New(config Config) (*Runtime, error) {
 		clock = realClock{}
 	}
 	runtime := &Runtime{
-		config:           normalized,
-		factory:          factory,
-		stdout:           stdout,
-		stderr:           stderr,
-		clock:            clock,
-		executionFactory: func() (executionWorker, error) { return execution.New() },
+		config:             normalized,
+		factory:            factory,
+		stdout:             stdout,
+		stderr:             stderr,
+		clock:              clock,
+		executionFactory:   func() (executionWorker, error) { return execution.New() },
+		reloadBuilder:      buildReloadCandidate,
+		configWatchFactory: newFSNotifyConfigWatchSource,
+		automaticReload:    make(chan struct{}, 1),
+		reload:             reloadAdmission{outcome: ReloadOutcomeReady, reason: ReloadReasonNone},
 	}
 	if normalized.RuntimeDir == "" {
 		runtime.server, err = ipc.NewServer(ipc.ServerConfig{
@@ -134,6 +142,7 @@ func New(config Config) (*Runtime, error) {
 			Deadlines:        normalized.Deadlines,
 			ProfileService:   runtimeIPCProfileService{runtime: runtime},
 			ExecutionHistory: runtimeExecutionHistory{runtime: runtime},
+			ConfigService:    runtimeIPCConfigService{runtime: runtime},
 		})
 		if err != nil {
 			return nil, err
@@ -219,6 +228,64 @@ type runtimeExecutionHistory struct {
 	runtime *Runtime
 }
 
+type runtimeIPCConfigService struct {
+	runtime *Runtime
+}
+
+func (service runtimeIPCConfigService) Reload(ctx context.Context) (ipc.ConfigReloadResult, error) {
+	if service.runtime == nil {
+		return ipc.ConfigReloadResult{}, ipc.ErrShuttingDown
+	}
+	result, err := service.runtime.Reload(ctx)
+	converted := ipc.ConfigReloadResult{
+		Revision:               result.Revision,
+		Changed:                result.Changed,
+		Effect:                 string(result.Effect),
+		CatalogChanged:         result.CatalogChanged,
+		DefaultChanged:         result.DefaultChanged,
+		CurrentProfileChanged:  result.CurrentProfileChanged,
+		CurrentProfileFallback: result.CurrentProfileFallback,
+		ActionChanged:          result.ActionChanged,
+		DisplayChanged:         result.DisplayChanged,
+		BrightnessChanged:      result.BrightnessChanged,
+		IdleChanged:            result.IdleChanged,
+		DisplayUpdated:         result.DisplayUpdated,
+	}
+	if err == nil {
+		return converted, nil
+	}
+	return converted, classifyReloadIPCError(err)
+}
+
+func classifyReloadIPCError(err error) error {
+	switch {
+	case errors.Is(err, ErrReloadBusy):
+		return ipc.ErrBusy
+	case errors.Is(err, ErrReloadClosed), errors.Is(err, ErrProfileServiceClosed):
+		return ipc.ErrShuttingDown
+	case errors.Is(err, ErrProfileStateUncertain):
+		return ipc.ErrDeviceWriteFailed
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return ipc.ErrShuttingDown
+	default:
+		return ipc.ErrReloadRejected
+	}
+}
+
+func (service runtimeIPCConfigService) Status() ipc.ConfigStatus {
+	if service.runtime == nil {
+		return ipc.ConfigStatus{State: string(ReloadStateClosed), Outcome: string(ReloadOutcomeReady), Reason: string(ReloadReasonClosed)}
+	}
+	status := service.runtime.ReloadStatus()
+	return ipc.ConfigStatus{
+		Revision: status.Revision,
+		Active:   status.Active,
+		State:    string(status.State),
+		Outcome:  string(status.Outcome),
+		Reason:   string(status.Reason),
+	}
+}
+
 func (history runtimeExecutionHistory) ListSummaries(limit int) ([]execution.Summary, error) {
 	worker := history.worker()
 	if worker == nil {
@@ -250,13 +317,17 @@ func (service runtimeIPCProfileService) ListProfiles() []ipc.ProfileSummary {
 	}
 	service.runtime.mu.Lock()
 	profileService := service.runtime.profileService
-	defaultID := service.runtime.defaultProfileID
 	service.runtime.mu.Unlock()
 	if profileService == nil {
 		return nil
 	}
-	profiles := profileService.ListProfiles()
-	currentID, _ := profileService.CurrentProfileID()
+	snapshot := profileService.effective.Load()
+	if snapshot == nil {
+		return nil
+	}
+	defaultID := snapshot.defaultID
+	profiles := snapshot.catalog.Profiles()
+	currentID := snapshot.currentID
 	summaries := make([]ipc.ProfileSummary, len(profiles))
 	for index, current := range profiles {
 		summaries[index] = ipc.ProfileSummary{
@@ -419,10 +490,19 @@ func (r *Runtime) Run(ctx context.Context) error {
 	policyPlan := r.plan
 	startupCompleted := r.startupCompleted
 	policyActionService := r.profileService
+	policySettings := r.idleSettings
 	policyExecutionWorker := r.executionWorker
 	r.mu.Unlock()
+	policySettings.activate()
 	go func() {
-		policyDone <- runIdlePolicyWithExecutor(serveContext, r.clock, policySession, policyPlan, startupCompleted, inputObservations, r.stdout, policyActionService, policyExecutionWorker)
+		defer policySettings.deactivate()
+		policyDone <- runIdlePolicyWithExecutor(serveContext, r.clock, policySession, policyPlan, startupCompleted, inputObservations, r.stdout, policyActionService, policyExecutionWorker, policySettings.requests)
+	}()
+	configWatcherDone := r.startConfigWatcher(serveContext)
+	automaticReloadDone := make(chan struct{})
+	go func() {
+		defer close(automaticReloadDone)
+		r.runAutomaticReloads(serveContext)
 	}()
 	executionFaults := policyExecutionWorker.Faults()
 
@@ -430,6 +510,8 @@ func (r *Runtime) Run(ctx context.Context) error {
 	case <-ctx.Done():
 		metadataErr := withdrawRuntimeMetadata(generation)
 		cancelServe()
+		<-configWatcherDone
+		<-automaticReloadDone
 		<-policyDone
 		<-serveDone
 		closeErr := r.Close()
@@ -438,6 +520,8 @@ func (r *Runtime) Run(ctx context.Context) error {
 	case err := <-inputDone:
 		metadataErr := withdrawRuntimeMetadata(generation)
 		cancelServe()
+		<-configWatcherDone
+		<-automaticReloadDone
 		policyErr := <-policyDone
 		serveErr := <-serveDone
 		closeErr := r.Close()
@@ -445,6 +529,8 @@ func (r *Runtime) Run(ctx context.Context) error {
 	case err := <-policyDone:
 		metadataErr := withdrawRuntimeMetadata(generation)
 		cancelServe()
+		<-configWatcherDone
+		<-automaticReloadDone
 		serveErr := <-serveDone
 		closeErr := r.Close()
 		inputErr := <-inputDone
@@ -452,6 +538,8 @@ func (r *Runtime) Run(ctx context.Context) error {
 	case err := <-serveDone:
 		metadataErr := withdrawRuntimeMetadata(generation)
 		cancelServe()
+		<-configWatcherDone
+		<-automaticReloadDone
 		policyErr := <-policyDone
 		closeErr := r.Close()
 		inputErr := <-inputDone
@@ -460,6 +548,8 @@ func (r *Runtime) Run(ctx context.Context) error {
 		r.signalExecutionFault()
 		metadataErr := withdrawRuntimeMetadata(generation)
 		cancelServe()
+		<-configWatcherDone
+		<-automaticReloadDone
 		policyErr := <-policyDone
 		serveErr := <-serveDone
 		closeErr := r.Close()
@@ -551,6 +641,7 @@ func (r *Runtime) Close() error {
 }
 
 func (r *Runtime) closeLocked() error {
+	r.reload.close()
 	r.mu.Lock()
 	if r.closed {
 		r.mu.Unlock()
@@ -561,6 +652,8 @@ func (r *Runtime) closeLocked() error {
 	r.session = nil
 	profileService := r.profileService
 	r.profileService = nil
+	idleSettings := r.idleSettings
+	r.idleSettings = nil
 	executionWorker := r.executionWorker
 	r.executionWorker = nil
 	r.terminalCancel = nil
@@ -583,6 +676,9 @@ func (r *Runtime) closeLocked() error {
 				failures = append(failures, sanitizeFailure("close execution worker", err))
 			}
 		}
+	}
+	if idleSettings != nil {
+		idleSettings.close()
 	}
 	if profileService != nil {
 		if err := profileService.Close(); err != nil {
@@ -630,9 +726,16 @@ func (r *Runtime) start(ctx context.Context) error {
 	}
 	r.mu.Unlock()
 
-	plan, catalog, defaultProfile, err := buildStartupPlan(r.config.ConfigPath)
+	initialCandidate, err := buildReloadCandidate(r.config.ConfigPath, "")
 	if err != nil {
 		return r.startFailure(err)
+	}
+	defaultProfile := initialCandidate.CurrentProfile()
+	plan := devicePlan{
+		page:        initialCandidate.Page(),
+		brightness:  initialCandidate.Settings().brightness,
+		idleTimeout: initialCandidate.Settings().idleTimeout,
+		positions:   eventPositionsForProfile(defaultProfile),
 	}
 	if err := ctx.Err(); err != nil {
 		return r.startFailure(err)
@@ -675,10 +778,13 @@ func (r *Runtime) start(ctx context.Context) error {
 	if err := session.SendPage(ctx, plan.page, plan.brightness); err != nil {
 		return r.startFailure(sanitizeFailure("initialize D200X device", err))
 	}
+	idleSettings := newIdleSettingsBridge()
 	profileService, err := NewProfileService(ProfileServiceOptions{
-		Catalog:          catalog,
+		Catalog:          initialCandidate.Catalog(),
 		Sender:           session,
 		InitialProfileID: defaultProfile.ID,
+		initialSnapshot:  &initialCandidate,
+		settingsApplier:  idleSettings,
 		Terminal:         r.signalTerminal,
 		Verbose:          r.config.Verbose,
 		Logger:           r.stderr,
@@ -688,7 +794,7 @@ func (r *Runtime) start(ctx context.Context) error {
 	}
 	r.mu.Lock()
 	r.profileService = profileService
-	r.defaultProfileID = defaultProfile.ID
+	r.idleSettings = idleSettings
 	r.mu.Unlock()
 	plan.positionsFn = profileService.CurrentEventPositions
 	startupCompleted := r.clock.Now()
@@ -736,6 +842,7 @@ func (r *Runtime) prepareIPC() error {
 				Deadlines:        config.Deadlines,
 				ProfileService:   runtimeIPCProfileService{runtime: r},
 				ExecutionHistory: runtimeExecutionHistory{runtime: r},
+				ConfigService:    runtimeIPCConfigService{runtime: r},
 			})
 			if err != nil {
 				return err

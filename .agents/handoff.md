@@ -1,12 +1,15 @@
 # Hidhogg handoff
 
-Updated: 2026-09-08
+Updated: 2026-09-11
 
 ## Current canonical checkpoint
 
 - M-04 is complete as of 2026-09-08. The final runtime uses one typed content-addressed full-page `0x0001` for live activation; automatic and owner-visible physical acceptance pass.
 - M-05 is complete as of 2026-09-08. Strict schema-v2 `execute`/`press` actions run one absolute executable with literal argv through a single nonblocking runtime-owned worker, retain bounded generation-local history, and expose read-only `executions.list/get` IPC and CLI queries.
 - M-05 automatic, architecture, and independent focused gates passed. The owner-visible D200X acceptance bound `0_0` to `/usr/bin/printf`; one press exited 0 and captured exactly `literal:a;$(not-executed)|*.txt\n` with no stderr, truncation, signal, or supervision error. Shutdown removed socket/metadata and retained the persistent lock.
+- M-06 is complete as of 2026-09-11. The runtime builds immutable candidates, serializes reloads with profile activation, applies brightness and idle-timeout changes through the sole idle-policy owner, exposes strict bounded IPC/CLI methods, and watches the explicit configuration's parent directory with a 200-millisecond trailing debounce. Architecture and comprehensive automatic gates passed; the owner reported the complete manual sequence passed: valid automatic reload, invalid-edit last-known-good retention, valid recovery, and clean shutdown. `config.get` remains deferred.
+- M-06-F01 is planned after V01: owner-local startup/reload diagnostics should identify the explicit configuration path and failing dotted key or TOML line/column without echoing values. IPC/discovery errors remain sanitized. This was prompted by an obsolete schema-v1 deploy file producing only the generic load failure.
+- M-06-F02 is a planned physical investigation: each successful generation must send the configured initial/default profile exactly once before readiness. The current code already intends to do so, so stale retained device content is not yet a confirmed missing implementation; reproduce from a visibly different page before changing write behavior.
 - C01 introduced strict schema version 2 with one default and 1..31 complete profiles, exact optional `activate_profile`/`press` actions, and an immutable profile catalog. Independent V02 passed race, vet, schema determinism, boundary, invalid-input, and defensive-copy gates.
 - R01 restored full-tree compilation and added the bounded transactional runtime profile service. Independent V04 passed activation, queue saturation, fail-stop, dynamic binding, idle suppression, diagnostics default selection, owned-reader cancellation, race, vet, compile, and diff gates.
 - I01 added strict profile list/activate IPC and discovery-aware `hidhoggctl` commands. Independent V01 passed boundary, protocol, adapter, CLI, race, build, vet, and unsandboxed Unix-socket gates; 31 maximum-width summaries frame at 15,880 bytes and 32 at 16,387 bytes/rejected.
@@ -34,7 +37,7 @@ Updated: 2026-09-08
 
 ### Current next action
 
-Select and plan the next post-M-05 vertical slice before implementation. Candidate deferred boundaries include configuration reload, Swift foreground-application profile mapping, asynchronous action execution/history, and explicit env-file variable allowlisting. Env-file loading/exposure remains a separate future milestone and no `.env` content may be inspected without explicit authorization.
+M-06 is complete. Next, choose whether to address M-06-F01 descriptive owner-local configuration diagnostics and M-06-F02 startup initial-profile physical investigation before beginning the next product milestone. `config.get`, env-file loading/exposure, Swift foreground-application mapping, and asynchronous actions remain deferred; no `.env` content may be inspected.
 
 All older checkpoints below are retained as historical evidence. Their `next action` statements are superseded by this section.
 

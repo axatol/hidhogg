@@ -35,7 +35,7 @@ func runWithOutput(args []string, output io.Writer) error {
 	profileID := flags.String("profile-id", "", "case-sensitive profile identifier")
 	limit := flags.Int("limit", 0, "execution history summary limit (1-32)")
 	executionID := flags.String("execution-id", "", "exact execution history identifier")
-	methodFlag := flags.String("method", "health", "health, status, profiles.list, profiles.activate, executions.list, or executions.get")
+	methodFlag := flags.String("method", "health", "health, status, profiles.list, profiles.activate, executions.list, executions.get, config.reload, or config.status")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -100,6 +100,10 @@ func runWithOutput(args []string, output io.Writer) error {
 		response, err = client.ListExecutions(context.Background(), *instanceID, *limit)
 	} else if ipc.Method(method) == ipc.MethodExecutionsGet {
 		response, err = client.GetExecution(context.Background(), *instanceID, *executionID)
+	} else if ipc.Method(method) == ipc.MethodConfigReload {
+		response, err = client.ReloadConfig(context.Background(), *instanceID)
+	} else if ipc.Method(method) == ipc.MethodConfigStatus {
+		response, err = client.ConfigStatus(context.Background(), *instanceID)
 	} else {
 		response, err = client.Call(context.Background(), ipc.Method(method), *instanceID)
 	}
@@ -143,7 +147,18 @@ func parseCommand(defaultMethod, profileID string, args []string) (string, strin
 			return string(ipc.MethodProfilesActivate), commandArgs[1], nil
 		}
 		if commandArgs[0] != "profiles" {
-			return "", "", fmt.Errorf("at most one method argument is permitted")
+			if commandArgs[0] != "config" {
+				return "", "", fmt.Errorf("at most one method argument is permitted")
+			}
+			switch commandArgs[1] {
+			case "reload":
+				method = string(ipc.MethodConfigReload)
+			case "status":
+				method = string(ipc.MethodConfigStatus)
+			default:
+				return "", "", fmt.Errorf("unknown config command %q", commandArgs[1])
+			}
+			break
 		}
 		switch commandArgs[1] {
 		case "list":
@@ -155,6 +170,9 @@ func parseCommand(defaultMethod, profileID string, args []string) (string, strin
 		}
 	case 3:
 		if commandArgs[0] != "profiles" || commandArgs[1] != "activate" || commandArgs[2] == "" {
+			if commandArgs[0] != "profiles" {
+				return "", "", fmt.Errorf("at most one method argument is permitted")
+			}
 			return "", "", fmt.Errorf("profiles activate accepts one profile ID")
 		}
 		if profileID != "" {
@@ -179,7 +197,7 @@ func parseCommand(defaultMethod, profileID string, args []string) (string, strin
 		if profileID != "" {
 			return "", "", fmt.Errorf("--profile-id is only valid for profiles activate")
 		}
-	case ipc.MethodHealth, ipc.MethodStatus:
+	case ipc.MethodHealth, ipc.MethodStatus, ipc.MethodConfigReload, ipc.MethodConfigStatus:
 		if profileID != "" {
 			return "", "", fmt.Errorf("--profile-id is only valid for profiles activate")
 		}

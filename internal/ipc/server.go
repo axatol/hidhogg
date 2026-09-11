@@ -61,6 +61,17 @@ type ExecutionHistory interface {
 	Get(string) (execution.Record, bool)
 }
 
+// ConfigService is the narrow runtime boundary used by configuration reload
+// and status IPC methods. Reload never receives source content or options;
+// Status is read-only.
+type ConfigService interface {
+	Reload(context.Context) (ConfigReloadResult, error)
+	Status() ConfigStatus
+}
+
+// ConfigurationService is an explicit descriptive alias.
+type ConfigurationService = ConfigService
+
 type ServerConfig struct {
 	SocketPath       string
 	InstanceID       string
@@ -69,6 +80,7 @@ type ServerConfig struct {
 	Handler          Handler
 	ProfileService   ProfileService
 	ExecutionHistory ExecutionHistory
+	ConfigService    ConfigService
 	PeerVerifier     func(net.Conn) error
 }
 
@@ -275,6 +287,9 @@ func (s *Server) handleRequest(request Request) (response Response) {
 	if isExecutionMethod(request.Method) {
 		return s.handleExecutionRequest(request)
 	}
+	if isConfigMethod(request.Method) {
+		return s.handleConfigRequest(request)
+	}
 	result, err := s.config.Handler.Handle(context.Background(), request)
 	if err != nil {
 		return internalResponse(request.RequestID)
@@ -367,6 +382,82 @@ func (s *Server) handleProfileRequest(request Request) Response {
 	}
 }
 
+func (s *Server) handleConfigRequest(request Request) Response {
+	if s.config.ConfigService == nil {
+		return internalResponse(request.RequestID)
+	}
+	requestID := request.RequestID
+	switch request.Method {
+	case MethodConfigReload:
+		result, err := s.config.ConfigService.Reload(context.Background())
+		if err != nil {
+			return configErrorResponse(request.RequestID, err)
+		}
+		response := Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &Result{
+			InstanceID:             request.InstanceID,
+			Revision:               result.Revision,
+			Changed:                result.Changed,
+			Effect:                 result.Effect,
+			CatalogChanged:         result.CatalogChanged,
+			DefaultChanged:         result.DefaultChanged,
+			CurrentProfileChanged:  result.CurrentProfileChanged,
+			CurrentProfileFallback: result.CurrentProfileFallback,
+			ActionChanged:          result.ActionChanged,
+			DisplayChanged:         result.DisplayChanged,
+			BrightnessChanged:      result.BrightnessChanged,
+			IdleChanged:            result.IdleChanged,
+			DisplayUpdated:         result.DisplayUpdated,
+		}}
+		if err := validateResultForMethod(*response.Result, request.Method, request.InstanceID); err != nil {
+			return internalResponse(request.RequestID)
+		}
+		return response
+	case MethodConfigStatus:
+		result := s.config.ConfigService.Status()
+		response := Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &Result{
+			InstanceID: request.InstanceID,
+			Revision:   result.Revision,
+			Active:     result.Active,
+			State:      result.State,
+			Outcome:    result.Outcome,
+			Reason:     result.Reason,
+		}}
+		if err := validateResultForMethod(*response.Result, request.Method, request.InstanceID); err != nil {
+			return internalResponse(request.RequestID)
+		}
+		return response
+	default:
+		return internalResponse(request.RequestID)
+	}
+}
+
+func configErrorResponse(requestID string, err error) Response {
+	code, message := classifyConfigError(err)
+	id := requestID
+	return Response{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       &id,
+		Error:           &Error{Code: code, Message: message},
+	}
+}
+
+func classifyConfigError(err error) (string, string) {
+	switch {
+	case errors.Is(err, ErrReloadRejected):
+		return ErrorReloadRejected, messageReloadRejected
+	case errors.Is(err, ErrBusy), errors.Is(err, context.DeadlineExceeded):
+		return ErrorBusy, messageBusy
+	case errors.Is(err, ErrShuttingDown), errors.Is(err, context.Canceled):
+		return ErrorShuttingDown, messageShuttingDown
+	case errors.Is(err, ErrDeviceWriteFailed):
+		return ErrorDeviceWriteFailed, messageDeviceWriteFailed
+	case err != nil:
+		return ErrorReloadRejected, messageReloadRejected
+	default:
+		return ErrorInternal, messageInternal
+	}
+}
+
 func profileErrorResponse(requestID string, err error) Response {
 	code, message := classifyProfileError(err)
 	id := requestID
@@ -400,6 +491,10 @@ func isProfileMethod(method Method) bool {
 
 func isExecutionMethod(method Method) bool {
 	return method == MethodExecutionsList || method == MethodExecutionsGet
+}
+
+func isConfigMethod(method Method) bool {
+	return method == MethodConfigReload || method == MethodConfigStatus
 }
 
 func internalResponse(requestID string) Response {

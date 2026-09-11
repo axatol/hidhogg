@@ -1,7 +1,7 @@
 # Repository structure
 
-Status: M-02, M-02-F01, and M-03 complete
-Updated: 2026-09-04
+Status: M-06 transactional configuration reload complete; M-06-F01 and M-06-F02 deferred
+Updated: 2026-09-11
 
 ```text
 hidhogg/
@@ -40,7 +40,7 @@ hidhogg/
 └── spikes/                retained feasibility and one-frame protocol evidence
 ```
 
-Config and device ports are declared only at exercised consumer boundaries. `M-02` introduced production TOML loading and D200X packages; action and notification packages remain deferred.
+Config and device ports are declared only at exercised consumer boundaries. Production packages now cover strict TOML loading, D200X transport/rendering, profiles, press actions, bounded child execution/history, transactional reload, and parent-directory file watching. Notification behavior remains deferred.
 
 The Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-runtime`. The distinct helper name is required because `Hidhogg` and `hidhogg` collide on the default case-insensitive macOS filesystem.
 
@@ -51,9 +51,10 @@ The Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-run
 | HID spike | Transport feasibility and physical evidence | Production session architecture |
 | Config spike | Lossless mutation and conflict behavior | Published configuration compatibility |
 | Documentation | Verified facts, decisions, gates, and handoff | Unsupported hardware claims |
-| Go runtime | Lifecycle, strict configuration orchestration, one D200X session, runtime-owned keepalive/idle coordinator, diagnostic events, and bounded health/status service | Actions, notifications, reload, and multi-device policy |
-| M-02 configuration | Strict single-file decode, semantic validation, and deterministic schema | File watching, mutation, root/device composition |
+| Go runtime | Lifecycle, strict configuration orchestration, one D200X session, profiles/actions, bounded execution history, runtime-owned keepalive/idle coordinator, transactional reload, and local IPC | Notifications, multi-device policy, and source editing |
+| Configuration | Strict single-file decode, semantic validation, deterministic schema, immutable reload candidates, and semantic diffing | Mutation, lossless preservation, and root/device composition |
+| Configuration watcher | Parent-directory event filtering, trailing debounce, and automatic reload hints | Source mutation, retry of unchanged invalid content, and runtime restart |
 | D200X adapter | Exact device selection, framing, configured page rendering, serialized session, and input decoding | Runtime policy, actions, notifications, reconnect |
 | Runtime discovery | Persistent advisory lock, strict readiness metadata, guarded stale recovery, and client identity revalidation | HID policy, remote discovery, PID authority, and non-cooperating same-UID processes |
 | SwiftUI client | Menu-bar status, runtime supervision, and local health client | Direct HID ownership and settings editing |
-| Internal IPC | Versioned, bounded local messages and process health | Remote access and executable commands |
+| Internal IPC | Versioned, bounded health, profiles, execution history, and reload/status messages | Remote access, executable submission, and configuration contents |

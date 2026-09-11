@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 	"time"
 
 	"hidhogg/internal/d200x"
@@ -72,6 +73,7 @@ type suppressionKey struct {
 type idlePolicyState struct {
 	dimmed        bool
 	suppressedKey *suppressionKey
+	lastActivity  time.Time
 	idleDeadline  time.Time
 	keepaliveAt   time.Time
 }
@@ -85,7 +87,138 @@ type idlePolicyController struct {
 	stdout     io.Writer
 	actions    *profileActionController
 	transition *profileTransitionGate
+	settings   <-chan idleSettingsRequest
 	state      idlePolicyState
+}
+
+type idleSettingsRequest struct {
+	ctx      context.Context
+	settings reloadSettings
+	result   chan idleSettingsResponse
+	state    *idleSettingsRequestState
+}
+
+type idleSettingsRequestState struct {
+	mu      sync.Mutex
+	claimed bool
+	aborted bool
+}
+
+func (state *idleSettingsRequestState) claim() bool {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.aborted {
+		return false
+	}
+	state.claimed = true
+	return true
+}
+
+func (state *idleSettingsRequestState) abort() bool {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.claimed {
+		return false
+	}
+	state.aborted = true
+	return true
+}
+
+type idleSettingsResponse struct {
+	result idleSettingsApplyResult
+	err    error
+}
+
+type idleSettingsBridge struct {
+	mu         sync.Mutex
+	requests   chan idleSettingsRequest
+	active     bool
+	closed     bool
+	activeDone chan struct{}
+}
+
+func newIdleSettingsBridge() *idleSettingsBridge {
+	return &idleSettingsBridge{requests: make(chan idleSettingsRequest)}
+}
+
+func (bridge *idleSettingsBridge) activate() {
+	if bridge == nil {
+		return
+	}
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+	if bridge.closed || bridge.active {
+		return
+	}
+	bridge.active = true
+	bridge.activeDone = make(chan struct{})
+}
+
+func (bridge *idleSettingsBridge) deactivate() {
+	if bridge == nil {
+		return
+	}
+	bridge.mu.Lock()
+	defer bridge.mu.Unlock()
+	if !bridge.active {
+		return
+	}
+	bridge.active = false
+	close(bridge.activeDone)
+	bridge.activeDone = nil
+}
+
+func (bridge *idleSettingsBridge) close() {
+	if bridge == nil {
+		return
+	}
+	bridge.mu.Lock()
+	bridge.closed = true
+	if bridge.active {
+		bridge.active = false
+		close(bridge.activeDone)
+		bridge.activeDone = nil
+	}
+	bridge.mu.Unlock()
+}
+
+func (bridge *idleSettingsBridge) ApplySettings(ctx context.Context, settings reloadSettings) (idleSettingsApplyResult, error) {
+	if bridge == nil {
+		return idleSettingsApplyResult{}, ErrReloadSettingsPending
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	bridge.mu.Lock()
+	if bridge.closed || !bridge.active {
+		bridge.mu.Unlock()
+		return idleSettingsApplyResult{}, ErrReloadSettingsPending
+	}
+	done := bridge.activeDone
+	bridge.mu.Unlock()
+	request := idleSettingsRequest{
+		ctx:      ctx,
+		settings: settings,
+		result:   make(chan idleSettingsResponse, 1),
+		state:    &idleSettingsRequestState{},
+	}
+	select {
+	case <-ctx.Done():
+		return idleSettingsApplyResult{}, ctx.Err()
+	case <-done:
+		return idleSettingsApplyResult{}, ErrReloadSettingsPending
+	case bridge.requests <- request:
+	}
+	select {
+	case response := <-request.result:
+		return response.result, response.err
+	case <-done:
+		if request.state.abort() {
+			return idleSettingsApplyResult{}, ErrReloadSettingsPending
+		}
+		response := <-request.result
+		return response.result, response.err
+	}
 }
 
 func runIdlePolicy(
@@ -115,6 +248,7 @@ func runIdlePolicyWithExecutor(
 	stdout io.Writer,
 	actionService ProfileService,
 	executor executionSubmitter,
+	settingsChannels ...<-chan idleSettingsRequest,
 ) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -131,6 +265,10 @@ func runIdlePolicyWithExecutor(
 	if startupAt.IsZero() {
 		startupAt = clock.Now()
 	}
+	var settings <-chan idleSettingsRequest
+	if len(settingsChannels) > 0 {
+		settings = settingsChannels[0]
+	}
 	controller := &idlePolicyController{
 		clock:     clock,
 		sender:    sender,
@@ -139,7 +277,9 @@ func runIdlePolicyWithExecutor(
 		input:     input,
 		stdout:    stdout,
 		actions:   newProfileActionController(actionService, plan.eventPositions, executor),
+		settings:  settings,
 		state: idlePolicyState{
+			lastActivity: startupAt,
 			idleDeadline: idleDeadline(startupAt, plan.idleTimeout),
 			keepaliveAt:  startupAt.Add(keepaliveInterval),
 		},
@@ -173,11 +313,49 @@ func (controller *idlePolicyController) run(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
+		select {
+		case request := <-controller.settings:
+			var err error
+			idleTimer, err = controller.handleSettingsRequest(ctx, request, idleTimer)
+			if err != nil {
+				return err
+			}
+			continue
+		default:
+		}
+		if transitionDone, active := controller.transitionState(); active {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-transitionDone:
+			case request := <-controller.settings:
+				var err error
+				idleTimer, err = controller.handleSettingsRequest(ctx, request, idleTimer)
+				if err != nil {
+					return err
+				}
+			case observation, ok := <-controller.input:
+				if !ok {
+					return nil
+				}
+				var err error
+				idleTimer, err = controller.handleInputAndSyncTimer(ctx, observation, idleTimer)
+				if err != nil {
+					return err
+				}
+			}
+			continue
+		}
 		now := controller.clock.Now()
 		if !now.Before(controller.state.keepaliveAt) {
 			stopTimer(keepaliveTimer)
-			if err := controller.keepalive(ctx); err != nil {
+			written, err := controller.tryKeepalive(ctx)
+			if err != nil {
 				return err
+			}
+			if !written {
+				keepaliveTimer = controller.armTimer(controller.state.keepaliveAt)
+				continue
 			}
 			controller.state.keepaliveAt = advanceSchedule(controller.state.keepaliveAt, controller.clock.Now())
 			keepaliveTimer = controller.armTimer(controller.state.keepaliveAt)
@@ -188,8 +366,13 @@ func (controller *idlePolicyController) run(ctx context.Context) error {
 			observation, open, ready := receiveReady(controller.input)
 			if !ready {
 				stopTimer(idleTimer)
-				if err := controller.dim(ctx); err != nil {
+				written, err := controller.tryDim(ctx)
+				if err != nil {
 					return err
+				}
+				if !written {
+					idleTimer = controller.armTimer(controller.state.idleDeadline)
+					continue
 				}
 				idleTimer = nil
 				continue
@@ -206,11 +389,15 @@ func (controller *idlePolicyController) run(ctx context.Context) error {
 				continue
 			}
 			stopTimer(idleTimer)
-			if err := controller.dim(ctx); err != nil {
+			written, err := controller.tryDim(ctx)
+			if err != nil {
 				return err
 			}
+			if !written {
+				idleTimer = controller.armTimer(controller.state.idleDeadline)
+				continue
+			}
 			idleTimer = nil
-			var err error
 			idleTimer, err = controller.handleInputAndSyncTimer(ctx, observation, idleTimer)
 			if err != nil {
 				return err
@@ -230,6 +417,12 @@ func (controller *idlePolicyController) run(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+		case request := <-controller.settings:
+			var err error
+			idleTimer, err = controller.handleSettingsRequest(ctx, request, idleTimer)
+			if err != nil {
+				return err
+			}
 		case <-keepaliveTimer.C():
 			stopTimer(keepaliveTimer)
 			keepaliveTimer = controller.armTimer(controller.state.keepaliveAt)
@@ -238,6 +431,76 @@ func (controller *idlePolicyController) run(ctx context.Context) error {
 			idleTimer = controller.armTimer(controller.state.idleDeadline)
 		}
 	}
+}
+
+func (controller *idlePolicyController) transitionState() (<-chan struct{}, bool) {
+	if controller == nil || controller.transition == nil {
+		return nil, false
+	}
+	controller.transition.mu.RLock()
+	defer controller.transition.mu.RUnlock()
+	return controller.transition.activeDone, controller.transition.active
+}
+
+func (controller *idlePolicyController) handleSettingsRequest(_ context.Context, request idleSettingsRequest, timer Timer) (Timer, error) {
+	if request.state != nil && !request.state.claim() {
+		request.result <- idleSettingsResponse{err: ErrReloadSettingsPending}
+		return timer, nil
+	}
+	result, err := controller.applySettings(request.ctx, request.settings)
+	request.result <- idleSettingsResponse{result: result, err: err}
+	if err != nil {
+		if result.writeAttempted {
+			return timer, err
+		}
+		return timer, nil
+	}
+	stopTimer(timer)
+	if controller.state.dimmed || controller.state.idleDeadline.IsZero() {
+		return nil, nil
+	}
+	return controller.armTimer(controller.state.idleDeadline), nil
+}
+
+func (controller *idlePolicyController) applySettings(ctx context.Context, settings reloadSettings) (idleSettingsApplyResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return idleSettingsApplyResult{}, err
+	}
+	now := controller.clock.Now()
+	deadline := idleDeadline(controller.state.lastActivity, settings.idleTimeout)
+	restore := controller.state.dimmed && settings.idleTimeout <= 0
+	dim := !controller.state.dimmed && !deadline.IsZero() && !now.Before(deadline)
+	writeBrightness := -1
+	switch {
+	case restore:
+		writeBrightness = settings.brightness
+	case dim:
+		writeBrightness = 0
+	case !controller.state.dimmed && settings.brightness != controller.plan.brightness:
+		writeBrightness = settings.brightness
+	}
+	result := idleSettingsApplyResult{writeAttempted: writeBrightness >= 0}
+	if writeBrightness >= 0 {
+		if err := controller.sender.SendFrame(ctx, d200x.BrightnessFrame(writeBrightness)); err != nil {
+			return result, sanitizeFailure("write D200X reload brightness", err)
+		}
+	}
+	controller.plan.brightness = settings.brightness
+	controller.plan.idleTimeout = settings.idleTimeout
+	controller.state.idleDeadline = deadline
+	if restore {
+		controller.state.dimmed = false
+		controller.state.suppressedKey = nil
+		controller.actions.reset()
+	}
+	if dim {
+		controller.state.dimmed = true
+		controller.actions.reset()
+	}
+	return result, nil
 }
 
 func (controller *idlePolicyController) armTimer(deadline time.Time) Timer {
@@ -249,38 +512,52 @@ func (controller *idlePolicyController) armTimer(deadline time.Time) Timer {
 }
 
 func (controller *idlePolicyController) keepalive(ctx context.Context) error {
+	_, err := controller.tryKeepalive(ctx)
+	return err
+}
+
+func (controller *idlePolicyController) tryKeepalive(ctx context.Context) (bool, error) {
+	if controller.transition != nil {
+		controller.transition.mu.RLock()
+		defer controller.transition.mu.RUnlock()
+		if controller.transition.active {
+			return false, nil
+		}
+	}
 	if err := controller.sender.SendFrame(ctx, d200x.EnableInputStreamFrame()); err != nil {
 		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
-			return nil
+			return true, nil
 		}
-		return sanitizeFailure("write D200X keepalive", err)
+		return true, sanitizeFailure("write D200X keepalive", err)
 	}
-	return nil
+	return true, nil
 }
 
 func (controller *idlePolicyController) dim(ctx context.Context) error {
+	_, err := controller.tryDim(ctx)
+	return err
+}
+
+func (controller *idlePolicyController) tryDim(ctx context.Context) (bool, error) {
 	if controller.state.dimmed {
-		return nil
+		return true, nil
 	}
 	if controller.transition != nil {
-		if err := controller.transition.waitInactive(ctx); err != nil {
-			if ctx != nil && ctx.Err() != nil {
-				return nil
-			}
-			return err
-		}
 		controller.transition.mu.RLock()
 		defer controller.transition.mu.RUnlock()
+		if controller.transition.active {
+			return false, nil
+		}
 	}
 	if err := controller.sender.SendFrame(ctx, d200x.BrightnessFrame(0)); err != nil {
 		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
-			return nil
+			return true, nil
 		}
-		return sanitizeFailure("write D200X idle brightness", err)
+		return true, sanitizeFailure("write D200X idle brightness", err)
 	}
 	controller.state.dimmed = true
 	controller.actions.reset()
-	return nil
+	return true, nil
 }
 
 func (controller *idlePolicyController) restore(ctx context.Context, event d200x.InputEvent) error {
@@ -292,6 +569,7 @@ func (controller *idlePolicyController) restore(ctx context.Context, event d200x
 	}
 	completedAt := controller.clock.Now()
 	controller.state.dimmed = false
+	controller.state.lastActivity = completedAt
 	controller.state.idleDeadline = idleDeadline(completedAt, controller.plan.idleTimeout)
 	controller.state.suppressedKey = nil
 	controller.actions.reset()
@@ -347,6 +625,7 @@ func (controller *idlePolicyController) handleInputState(ctx context.Context, ob
 	}
 	activation := controller.actions.observeState(event)
 	if known {
+		controller.state.lastActivity = observation.observedAt
 		controller.state.idleDeadline = idleDeadline(observation.observedAt, controller.plan.idleTimeout)
 	}
 	return activation, nil

@@ -34,6 +34,8 @@ const (
 	MethodProfilesActivate Method = "profiles.activate"
 	MethodExecutionsList   Method = "executions.list"
 	MethodExecutionsGet    Method = "executions.get"
+	MethodConfigReload     Method = "config.reload"
+	MethodConfigStatus     Method = "config.status"
 )
 
 type Request struct {
@@ -61,6 +63,39 @@ type ActivationResult struct {
 	Changed   bool   `json:"changed"`
 }
 
+// ConfigReloadResult is the bounded result of one manual configuration
+// reload. Configuration source material and candidate errors never cross the
+// IPC boundary.
+type ConfigReloadResult struct {
+	Revision               uint64
+	Changed                bool
+	Effect                 string
+	CatalogChanged         bool
+	DefaultChanged         bool
+	CurrentProfileChanged  bool
+	CurrentProfileFallback bool
+	ActionChanged          bool
+	DisplayChanged         bool
+	BrightnessChanged      bool
+	IdleChanged            bool
+	DisplayUpdated         bool
+}
+
+// ReloadResult is an explicit alias for callers that use the runtime name.
+type ReloadResult = ConfigReloadResult
+
+// ConfigStatus is the bounded read-only reload coordinator state.
+type ConfigStatus struct {
+	Revision uint64
+	Active   bool
+	State    string
+	Outcome  string
+	Reason   string
+}
+
+// ReloadStatus is an explicit alias for callers that use the runtime name.
+type ReloadStatus = ConfigStatus
+
 // ExecutionSummary and ExecutionRecord alias the execution package's public,
 // command-free history types. EncodeResponse projects them onto strict wire
 // shapes so executable paths, arguments, and environment cannot be serialized.
@@ -68,14 +103,28 @@ type ExecutionSummary = execution.Summary
 type ExecutionRecord = execution.Record
 
 type Result struct {
-	InstanceID      string             `json:"instance_id"`
-	State           string             `json:"state"`
-	ProtocolVersion *int               `json:"protocol_version,omitempty"`
-	Profiles        []ProfileSummary   `json:"profiles,omitempty"`
-	ProfileID       string             `json:"profile_id,omitempty"`
-	Changed         bool               `json:"changed,omitempty"`
-	Executions      []ExecutionSummary `json:"-"`
-	Execution       *ExecutionRecord   `json:"-"`
+	InstanceID             string             `json:"instance_id"`
+	State                  string             `json:"state"`
+	ProtocolVersion        *int               `json:"protocol_version,omitempty"`
+	Profiles               []ProfileSummary   `json:"profiles,omitempty"`
+	ProfileID              string             `json:"profile_id,omitempty"`
+	Changed                bool               `json:"changed,omitempty"`
+	Revision               uint64             `json:"revision,omitempty"`
+	Active                 bool               `json:"active,omitempty"`
+	Outcome                string             `json:"outcome,omitempty"`
+	Reason                 string             `json:"reason,omitempty"`
+	Effect                 string             `json:"effect,omitempty"`
+	CatalogChanged         bool               `json:"catalog_changed,omitempty"`
+	DefaultChanged         bool               `json:"default_changed,omitempty"`
+	CurrentProfileChanged  bool               `json:"current_profile_changed,omitempty"`
+	CurrentProfileFallback bool               `json:"current_profile_fallback,omitempty"`
+	ActionChanged          bool               `json:"action_changed,omitempty"`
+	DisplayChanged         bool               `json:"display_changed,omitempty"`
+	BrightnessChanged      bool               `json:"brightness_changed,omitempty"`
+	IdleChanged            bool               `json:"idle_changed,omitempty"`
+	DisplayUpdated         bool               `json:"display_updated,omitempty"`
+	Executions             []ExecutionSummary `json:"-"`
+	Execution              *ExecutionRecord   `json:"-"`
 }
 
 type Error struct {
@@ -106,6 +155,7 @@ const (
 	ErrorBusy               = "busy"
 	ErrorExecutionNotFound  = "execution_not_found"
 	ErrorHistoryUnavailable = "history_unavailable"
+	ErrorReloadRejected     = "reload_rejected"
 )
 
 var stableErrorCodes = map[string]struct{}{
@@ -123,6 +173,7 @@ var stableErrorCodes = map[string]struct{}{
 	ErrorBusy:               {},
 	ErrorExecutionNotFound:  {},
 	ErrorHistoryUnavailable: {},
+	ErrorReloadRejected:     {},
 }
 
 const (
@@ -140,6 +191,7 @@ const (
 	messageBusy               = "runtime is busy"
 	messageExecutionNotFound  = "execution was not found"
 	messageHistoryUnavailable = "execution history is unavailable"
+	messageReloadRejected     = "configuration reload was rejected"
 )
 
 var (
@@ -150,6 +202,7 @@ var (
 	ErrBusy               = errors.New("runtime is busy")
 	ErrExecutionNotFound  = errors.New("execution not found")
 	ErrHistoryUnavailable = errors.New("execution history unavailable")
+	ErrReloadRejected     = errors.New("configuration reload was rejected")
 )
 
 var profileIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
@@ -301,7 +354,7 @@ func decodeRequestParams(request *Request, paramsValue jsonValue) error {
 	}
 	request.InstanceID = instanceID
 	switch request.Method {
-	case MethodHealth, MethodStatus, MethodProfilesList:
+	case MethodHealth, MethodStatus, MethodProfilesList, MethodConfigReload, MethodConfigStatus:
 		if !hasExactly(paramsValue.object, "instance_id") {
 			return errors.New("request params fields are invalid")
 		}
@@ -405,7 +458,7 @@ func EncodeRequest(request Request) ([]byte, error) {
 
 func validateRequestFields(request Request) error {
 	switch request.Method {
-	case MethodHealth, MethodStatus, MethodProfilesList:
+	case MethodHealth, MethodStatus, MethodProfilesList, MethodConfigReload, MethodConfigStatus:
 		if request.ProfileID != "" || request.Limit != 0 || request.ExecutionID != "" {
 			return errors.New("request fields are not permitted for method")
 		}
@@ -481,6 +534,46 @@ func EncodeResponse(response Response) ([]byte, error) {
 			encodedRecord := encodeExecutionRecord(result.Execution)
 			encodedResult.InstanceID = &instanceID
 			encodedResult.Execution = encodedRecord
+		case MethodConfigReload:
+			instanceID := result.InstanceID
+			revision := result.Revision
+			changed := result.Changed
+			effect := result.Effect
+			catalogChanged := result.CatalogChanged
+			defaultChanged := result.DefaultChanged
+			currentProfileChanged := result.CurrentProfileChanged
+			currentProfileFallback := result.CurrentProfileFallback
+			actionChanged := result.ActionChanged
+			displayChanged := result.DisplayChanged
+			brightnessChanged := result.BrightnessChanged
+			idleChanged := result.IdleChanged
+			displayUpdated := result.DisplayUpdated
+			encodedResult.InstanceID = &instanceID
+			encodedResult.Revision = &revision
+			encodedResult.Changed = &changed
+			encodedResult.Effect = &effect
+			encodedResult.CatalogChanged = &catalogChanged
+			encodedResult.DefaultChanged = &defaultChanged
+			encodedResult.CurrentProfileChanged = &currentProfileChanged
+			encodedResult.CurrentProfileFallback = &currentProfileFallback
+			encodedResult.ActionChanged = &actionChanged
+			encodedResult.DisplayChanged = &displayChanged
+			encodedResult.BrightnessChanged = &brightnessChanged
+			encodedResult.IdleChanged = &idleChanged
+			encodedResult.DisplayUpdated = &displayUpdated
+		case MethodConfigStatus:
+			instanceID := result.InstanceID
+			revision := result.Revision
+			active := result.Active
+			state := result.State
+			outcome := result.Outcome
+			reason := result.Reason
+			encodedResult.InstanceID = &instanceID
+			encodedResult.Revision = &revision
+			encodedResult.Active = &active
+			encodedResult.State = &state
+			encodedResult.Outcome = &outcome
+			encodedResult.Reason = &reason
 		}
 		payload.Result = encodedResult
 	}
@@ -488,14 +581,28 @@ func EncodeResponse(response Response) ([]byte, error) {
 }
 
 type resultJSON struct {
-	InstanceID      *string                 `json:"instance_id,omitempty"`
-	State           *string                 `json:"state,omitempty"`
-	ProtocolVersion *int                    `json:"protocol_version,omitempty"`
-	Profiles        *[]ProfileSummary       `json:"profiles,omitempty"`
-	ProfileID       *string                 `json:"profile_id,omitempty"`
-	Changed         *bool                   `json:"changed,omitempty"`
-	Executions      *[]executionSummaryJSON `json:"executions,omitempty"`
-	Execution       *executionRecordJSON    `json:"execution,omitempty"`
+	InstanceID             *string                 `json:"instance_id,omitempty"`
+	State                  *string                 `json:"state,omitempty"`
+	ProtocolVersion        *int                    `json:"protocol_version,omitempty"`
+	Profiles               *[]ProfileSummary       `json:"profiles,omitempty"`
+	ProfileID              *string                 `json:"profile_id,omitempty"`
+	Changed                *bool                   `json:"changed,omitempty"`
+	Revision               *uint64                 `json:"revision,omitempty"`
+	Active                 *bool                   `json:"active,omitempty"`
+	Outcome                *string                 `json:"outcome,omitempty"`
+	Reason                 *string                 `json:"reason,omitempty"`
+	Effect                 *string                 `json:"effect,omitempty"`
+	CatalogChanged         *bool                   `json:"catalog_changed,omitempty"`
+	DefaultChanged         *bool                   `json:"default_changed,omitempty"`
+	CurrentProfileChanged  *bool                   `json:"current_profile_changed,omitempty"`
+	CurrentProfileFallback *bool                   `json:"current_profile_fallback,omitempty"`
+	ActionChanged          *bool                   `json:"action_changed,omitempty"`
+	DisplayChanged         *bool                   `json:"display_changed,omitempty"`
+	BrightnessChanged      *bool                   `json:"brightness_changed,omitempty"`
+	IdleChanged            *bool                   `json:"idle_changed,omitempty"`
+	DisplayUpdated         *bool                   `json:"display_updated,omitempty"`
+	Executions             *[]executionSummaryJSON `json:"executions,omitempty"`
+	Execution              *executionRecordJSON    `json:"execution,omitempty"`
 }
 
 type executionSummaryJSON struct {
@@ -767,6 +874,13 @@ func decodeUnsignedInteger(value jsonValue) (uint64, error) {
 	return parsed, nil
 }
 
+func decodeBool(value jsonValue) (bool, error) {
+	if value.kind != jsonBool {
+		return false, errors.New("value is not a boolean")
+	}
+	return value.bool, nil
+}
+
 func decodeOptionalInt(value jsonValue) (*int, error) {
 	if value.kind == jsonNull {
 		return nil, nil
@@ -791,6 +905,42 @@ func validExecutionState(value string) bool {
 	switch execution.State(value) {
 	case execution.StateRunning, execution.StateExited, execution.StateSignaled, execution.StateTimedOut,
 		execution.StateCanceled, execution.StateStartFailed, execution.StateRejectedBusy:
+		return true
+	default:
+		return false
+	}
+}
+
+func validReloadEffect(value string) bool {
+	switch value {
+	case "unchanged", "action-only", "display", "brightness", "idle", "default", "catalog":
+		return true
+	default:
+		return false
+	}
+}
+
+func validReloadState(value string) bool {
+	switch value {
+	case "idle", "reloading", "closed":
+		return true
+	default:
+		return false
+	}
+}
+
+func validReloadOutcome(value string) bool {
+	switch value {
+	case "ready", "changed", "unchanged", "rejected", "unsupported":
+		return true
+	default:
+		return false
+	}
+}
+
+func validReloadReason(value string) bool {
+	switch value {
+	case "none", "candidate-rejected", "settings-pending", "canceled", "device-write-failed", "closed":
 		return true
 	default:
 		return false
@@ -1024,6 +1174,101 @@ func decodeResult(value jsonValue, method, expectedInstanceID string) (Result, e
 			return Result{}, err
 		}
 		return Result{InstanceID: instanceID, Execution: &record}, nil
+	case MethodConfigReload:
+		if !hasExactly(value.object,
+			"instance_id", "revision", "changed", "effect", "catalog_changed", "default_changed",
+			"current_profile_changed", "current_profile_fallback", "action_changed", "display_changed",
+			"brightness_changed", "idle_changed", "display_updated") {
+			return Result{}, errors.New("response configuration reload fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		if instanceID == "" || (expectedInstanceID != "" && instanceID != expectedInstanceID) {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		revision, err := decodeUnsignedInteger(value.object["revision"])
+		if err != nil || revision == 0 {
+			return Result{}, errors.New("response configuration revision is invalid")
+		}
+		changed, err := decodeBool(value.object["changed"])
+		if err != nil {
+			return Result{}, errors.New("response configuration changed value is invalid")
+		}
+		effect := value.object["effect"]
+		if effect.kind != jsonString || !validReloadEffect(effect.string) {
+			return Result{}, errors.New("response configuration effect is invalid")
+		}
+		catalogChanged, err := decodeBool(value.object["catalog_changed"])
+		if err != nil {
+			return Result{}, errors.New("response configuration catalog change is invalid")
+		}
+		defaultChanged, err := decodeBool(value.object["default_changed"])
+		if err != nil {
+			return Result{}, errors.New("response configuration default change is invalid")
+		}
+		currentProfileChanged, err := decodeBool(value.object["current_profile_changed"])
+		if err != nil {
+			return Result{}, errors.New("response configuration current profile change is invalid")
+		}
+		currentProfileFallback, err := decodeBool(value.object["current_profile_fallback"])
+		if err != nil {
+			return Result{}, errors.New("response configuration current profile fallback is invalid")
+		}
+		actionChanged, err := decodeBool(value.object["action_changed"])
+		if err != nil {
+			return Result{}, errors.New("response configuration action change is invalid")
+		}
+		displayChanged, err := decodeBool(value.object["display_changed"])
+		if err != nil {
+			return Result{}, errors.New("response configuration display change is invalid")
+		}
+		brightnessChanged, err := decodeBool(value.object["brightness_changed"])
+		if err != nil {
+			return Result{}, errors.New("response configuration brightness change is invalid")
+		}
+		idleChanged, err := decodeBool(value.object["idle_changed"])
+		if err != nil {
+			return Result{}, errors.New("response configuration idle change is invalid")
+		}
+		displayUpdated, err := decodeBool(value.object["display_updated"])
+		if err != nil {
+			return Result{}, errors.New("response configuration display update is invalid")
+		}
+		return Result{
+			InstanceID: instanceID, Revision: revision, Changed: changed, Effect: effect.string,
+			CatalogChanged: catalogChanged, DefaultChanged: defaultChanged,
+			CurrentProfileChanged: currentProfileChanged, CurrentProfileFallback: currentProfileFallback,
+			ActionChanged: actionChanged, DisplayChanged: displayChanged,
+			BrightnessChanged: brightnessChanged, IdleChanged: idleChanged, DisplayUpdated: displayUpdated,
+		}, nil
+	case MethodConfigStatus:
+		if !hasExactly(value.object, "instance_id", "revision", "active", "state", "outcome", "reason") {
+			return Result{}, errors.New("response configuration status fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		if instanceID == "" || (expectedInstanceID != "" && instanceID != expectedInstanceID) {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		revision, err := decodeUnsignedInteger(value.object["revision"])
+		if err != nil {
+			return Result{}, errors.New("response configuration revision is invalid")
+		}
+		active, err := decodeBool(value.object["active"])
+		if err != nil {
+			return Result{}, errors.New("response configuration active value is invalid")
+		}
+		state := value.object["state"]
+		if state.kind != jsonString || !validReloadState(state.string) {
+			return Result{}, errors.New("response configuration state is invalid")
+		}
+		outcome := value.object["outcome"]
+		if outcome.kind != jsonString || !validReloadOutcome(outcome.string) {
+			return Result{}, errors.New("response configuration outcome is invalid")
+		}
+		reason := value.object["reason"]
+		if reason.kind != jsonString || !validReloadReason(reason.string) {
+			return Result{}, errors.New("response configuration reason is invalid")
+		}
+		return Result{InstanceID: instanceID, Revision: revision, Active: active, State: state.string, Outcome: outcome.string, Reason: reason.string}, nil
 	default:
 		return Result{}, errors.New("response method is invalid")
 	}
@@ -1032,21 +1277,21 @@ func decodeResult(value jsonValue, method, expectedInstanceID string) (Result, e
 func validateResultForMethod(result Result, method Method, expectedInstanceID string) error {
 	switch method {
 	case MethodHealth:
-		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != ReadyState || result.Profiles != nil || result.ProfileID != "" || result.Changed || result.Executions != nil || result.Execution != nil {
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != ReadyState || result.Profiles != nil || result.ProfileID != "" || result.Changed || result.Executions != nil || result.Execution != nil || hasConfigResultFields(result) {
 			return errors.New("response result is invalid")
 		}
 		if result.ProtocolVersion != nil {
 			return errors.New("health result has an unexpected protocol version")
 		}
 	case MethodStatus:
-		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != ReadyState || result.Profiles != nil || result.ProfileID != "" || result.Changed || result.Executions != nil || result.Execution != nil {
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != ReadyState || result.Profiles != nil || result.ProfileID != "" || result.Changed || result.Executions != nil || result.Execution != nil || hasConfigResultFields(result) {
 			return errors.New("response result is invalid")
 		}
 		if result.ProtocolVersion == nil || *result.ProtocolVersion != ProtocolVersion {
 			return errors.New("status result protocol version is invalid")
 		}
 	case MethodProfilesList:
-		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != "" || result.ProtocolVersion != nil || result.ProfileID != "" || result.Profiles == nil || len(result.Profiles) > maxProfileSummaries || result.Executions != nil || result.Execution != nil {
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != "" || result.ProtocolVersion != nil || result.ProfileID != "" || result.Profiles == nil || len(result.Profiles) > maxProfileSummaries || result.Executions != nil || result.Execution != nil || hasConfigResultFields(result) {
 			return errors.New("response profile list is invalid")
 		}
 		for _, summary := range result.Profiles {
@@ -1055,11 +1300,11 @@ func validateResultForMethod(result Result, method Method, expectedInstanceID st
 			}
 		}
 	case MethodProfilesActivate:
-		if result.InstanceID != "" || result.State != "" || result.ProtocolVersion != nil || result.Profiles != nil || result.Executions != nil || result.Execution != nil || !validProfileID(result.ProfileID) {
+		if result.InstanceID != "" || result.State != "" || result.ProtocolVersion != nil || result.Profiles != nil || result.Executions != nil || result.Execution != nil || hasConfigResultFields(result) || !validProfileID(result.ProfileID) {
 			return errors.New("response activation is invalid")
 		}
 	case MethodExecutionsList:
-		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != "" || result.ProtocolVersion != nil || result.ProfileID != "" || result.Profiles != nil || result.Executions == nil || result.Execution != nil || len(result.Executions) > MaxExecutionHistoryLimit {
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != "" || result.ProtocolVersion != nil || result.ProfileID != "" || result.Profiles != nil || result.Executions == nil || result.Execution != nil || len(result.Executions) > MaxExecutionHistoryLimit || hasConfigResultFields(result) {
 			return errors.New("response execution list is invalid")
 		}
 		seenIDs := make(map[string]struct{}, len(result.Executions))
@@ -1073,16 +1318,28 @@ func validateResultForMethod(result Result, method Method, expectedInstanceID st
 			seenIDs[summary.ID] = struct{}{}
 		}
 	case MethodExecutionsGet:
-		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != "" || result.ProtocolVersion != nil || result.ProfileID != "" || result.Profiles != nil || result.Executions != nil || result.Execution == nil {
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != "" || result.ProtocolVersion != nil || result.ProfileID != "" || result.Profiles != nil || result.Executions != nil || result.Execution == nil || hasConfigResultFields(result) {
 			return errors.New("response execution record is invalid")
 		}
 		if err := validateExecutionRecord(*result.Execution); err != nil {
 			return err
 		}
+	case MethodConfigReload:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.Revision == 0 || result.State != "" || result.ProtocolVersion != nil || result.Profiles != nil || result.ProfileID != "" || result.Executions != nil || result.Execution != nil || result.Outcome != "" || result.Reason != "" || !validReloadEffect(result.Effect) {
+			return errors.New("response configuration reload is invalid")
+		}
+	case MethodConfigStatus:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State == "" || !validReloadState(result.State) || !validReloadOutcome(result.Outcome) || !validReloadReason(result.Reason) || result.ProtocolVersion != nil || result.Profiles != nil || result.ProfileID != "" || result.Executions != nil || result.Execution != nil || result.Changed || result.Effect != "" || result.CatalogChanged || result.DefaultChanged || result.CurrentProfileChanged || result.CurrentProfileFallback || result.ActionChanged || result.DisplayChanged || result.BrightnessChanged || result.IdleChanged || result.DisplayUpdated {
+			return errors.New("response configuration status is invalid")
+		}
 	default:
 		return errors.New("response method is invalid")
 	}
 	return nil
+}
+
+func hasConfigResultFields(result Result) bool {
+	return result.Revision != 0 || result.Active || result.Outcome != "" || result.Reason != "" || result.Effect != "" || result.CatalogChanged || result.DefaultChanged || result.CurrentProfileChanged || result.CurrentProfileFallback || result.ActionChanged || result.DisplayChanged || result.BrightnessChanged || result.IdleChanged || result.DisplayUpdated
 }
 
 func resultMethod(result *Result) Method {
@@ -1091,6 +1348,9 @@ func resultMethod(result *Result) Method {
 	}
 	if result.Execution != nil {
 		return MethodExecutionsGet
+	}
+	if result.Effect != "" {
+		return MethodConfigReload
 	}
 	if result.Executions != nil {
 		return MethodExecutionsList
@@ -1104,6 +1364,9 @@ func resultMethod(result *Result) Method {
 	if result.ProtocolVersion != nil {
 		return MethodStatus
 	}
+	if result.Revision != 0 || result.Outcome != "" || result.Reason != "" || result.Active || validReloadState(result.State) {
+		return MethodConfigStatus
+	}
 	if result.InstanceID != "" || result.State != "" {
 		return MethodHealth
 	}
@@ -1112,7 +1375,7 @@ func resultMethod(result *Result) Method {
 
 func isSupportedMethod(method Method) bool {
 	switch method {
-	case MethodHealth, MethodStatus, MethodProfilesList, MethodProfilesActivate, MethodExecutionsList, MethodExecutionsGet:
+	case MethodHealth, MethodStatus, MethodProfilesList, MethodProfilesActivate, MethodExecutionsList, MethodExecutionsGet, MethodConfigReload, MethodConfigStatus:
 		return true
 	default:
 		return false

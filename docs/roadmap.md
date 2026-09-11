@@ -1,7 +1,7 @@
 # Hidhogg roadmap
 
-Status: M-04 Go-owned profiles complete
-Updated: 2026-09-08
+Status: M-06 transactional configuration reload complete; M-06-F01 and M-06-F02 deferred
+Updated: 2026-09-11
 
 Task IDs are immutable.
 
@@ -55,6 +55,16 @@ Task IDs are immutable.
 | M-05-E01 | Complete | Implement the isolated one-slot execution worker and bounded history | M-05-C01 |
 | M-05-R01 | Complete | Integrate completed presses, runtime lifecycle, and execution IPC/CLI | M-05-E01 |
 | M-05-V01 | Complete | Independently verify schema, execution, concurrency, lifecycle, IPC, and CLI gates | M-05-R01 |
+| M-06 | Complete | Reload external TOML edits transactionally while retaining the last-known-good runtime state | M-05 |
+| M-06-P01 | Complete | Freeze reload, watcher, transaction, fallback, status, and lifecycle contracts | M-06 |
+| M-06-C01 | Complete | Build immutable reload candidates and semantic device diffs without live mutation | M-06-P01 |
+| M-06-R01 | Complete | Serialize reload application and atomically publish one effective runtime snapshot | M-06-C01 |
+| M-06-I01 | Complete | Apply committed brightness and idle-policy changes through the existing policy owner | M-06-R01 |
+| M-06-I02 | Complete | Add strict bounded config reload/status IPC and CLI operations | M-06-R01 |
+| M-06-W01 | Complete | Watch the configuration parent directory and coalesce dirty hints into reload attempts | M-06-I02 |
+| M-06-V01 | Complete | Independently verify automatic gates and one owner-visible external-edit reload | M-06-W01 |
+| M-06-F01 | Planned | Make owner-local configuration failures identify the source path and failing key or syntax location | M-06-V01 |
+| M-06-F02 | Planned | Verify and correct one startup reassertion of the configured initial profile | M-06-V01 |
 
 ## P-01 — Planning baseline
 
@@ -417,6 +427,89 @@ Task IDs are immutable.
 - Dependencies: M-05-R01.
 - Physical acceptance: a temporary schema-v2 profile bound top-left `0_0` to absolute `/usr/bin/printf` with literal metacharacters in its argument. One owner-confirmed press/release produced one exited history entry with exit code 0, no signal or supervision error, 32 stdout bytes, empty stderr, and no truncation. `executions.get` decoded exactly to `literal:a;$(not-executed)|*.txt\n`, demonstrating that `;`, `$()`, `|`, and `*` were not interpreted by a shell. Controlled shutdown removed `runtime.sock` and generation metadata while retaining `runtime.lock`.
 - Evidence boundary: this proves the configured direct-argv vertical slice on the owned D200X and the queried generation. It does not prove arbitrary executable compatibility, persistent history across generations, asynchronous/concurrent child support, configuration reload, long/double press, or environment-file exposure; those remain outside M-05.
+
+## M-06 — Transactional configuration reload
+
+- Status: complete on 2026-09-11 after architecture, comprehensive automatic, and owner-visible validation passed.
+- Goal: detect external changes to the one explicit TOML configuration, prepare a complete validated candidate, apply only required device changes, and publish one internally consistent effective snapshot without restarting or reopening the D200X.
+- Scope: one runtime-owned reload coordinator; manual `config.reload`; bounded `config.status`; parent-directory filesystem watching; trailing-edge event coalescing; strict load/validation and immutable candidate construction; semantic display/brightness/idle/action diffing; last-known-good retention; serialized HID application; atomic snapshot publication.
+- Constraints: no configuration editing or source preservation, `config.get`, source-path disclosure, raw TOML IPC, environment-file loading, retry loop for invalid stable content, device rollback claim, runtime restart, D200X reopen, multi-device composition, Swift changes, or executable-child cancellation. The existing 16-KiB IPC frame and sanitized error policy remain authoritative.
+- Transaction: filesystem events are dirty hints only. Parse, validate, catalog construction, profile resolution, rendering, and diff preparation occur before live mutation. Required HID writes share the existing serialized transition boundary. The candidate becomes authoritative only after every required write succeeds; readers observe the old or new snapshot, never mixed fields.
+- Failure policy: read, decode, validation, and preparation failures perform zero HID writes, retain the last-known-good snapshot, record a stable bounded attempt outcome, and leave health ready. Any failed or uncertain HID write after application begins publishes no candidate and fail-stops through the existing terminal-readiness path because rollback is not trusted.
+- Active profile: preserve the current ID if it exists in the candidate; otherwise fall back to the candidate `default_profile_id` and report that change. A semantically unchanged effective page is not redrawn.
+- Actions: reset any partial pre-reload gesture. Children admitted before commit continue with copied M-05 request data; post-commit gestures use the new bindings. Reload never cancels, mutates, retries, or relabels a child.
+- Watcher: use maintained `fsnotify`; watch the configured file's parent directory so atomic rename saves remain observable; filter for the configured basename; treat create/write/rename/remove as hints; ignore irrelevant/chmod events. Use one internal 200-millisecond trailing debounce. An event during prepare/apply sets one dirty bit and causes at most one subsequent attempt. Watcher failure degrades automatic reload but leaves manual reload and the HID runtime available.
+- Status: add exact-shape protocol-v1 `config.reload` and `config.status` methods rather than changing strict health/status shapes. Expose bounded revision, state/outcome/reason enums, and reload effect flags; do not expose paths, TOML, command material, environment, raw OS errors, or timestamps without a concrete consumer.
+- Verification: pure candidate/diff tests; deterministic watcher abstraction tests; fake-clock idle tests; fake-transport operation/order/failure tests; concurrent activation/reload/input/IPC race tests; strict IPC frame and CLI tests; whole-tree generation, race, vet, build, format, and diff gates; one owner-visible atomic-save edit proving automatic redraw and invalid-edit last-known-good retention.
+- Dependencies: M-05.
+- Blockers: none. The 200-millisecond debounce is a selected internal policy, not measured device evidence.
+- Parallel boundary: candidate/diff construction and IPC schema design may be investigated independently; live runtime, profile, idle, and watcher integration share state and must be serialized under one implementation owner.
+
+### M-06-P01 — Freeze reload contracts
+
+- Status: complete on 2026-09-11 after owner confirmation and architect review A01.
+- Goal: define the minimum observable reload transaction and its failure boundary before production edits.
+- Acceptance: trigger, watcher, debounce, last-known-good, active-profile fallback, action/child behavior, display/brightness/idle effects, IPC status, shutdown, privacy, and verification rules are explicit.
+
+### M-06-C01 — Candidate snapshot and semantic diff
+
+- Status: complete on 2026-09-11 after independent sanitization, immutability, classification, fallback, deterministic-render, race, and vet verification passed.
+- Goal: read and validate the explicit path into one immutable candidate and calculate required live effects without HID access or authoritative-state mutation.
+- Acceptance: invalid/unreadable candidates are sanitized; equivalent, action-only, display, brightness, idle, default, and current-profile-removal changes are classified deterministically.
+- Dependencies: M-06-P01.
+
+### M-06-R01 — Serialized apply and effective snapshot
+
+- Status: complete on 2026-09-11 after main and independent runtime race, vet, ordering, failure, and snapshot verification.
+- Goal: order reload against profile activation and input handling, perform required live writes, and atomically publish catalog/current/default/bindings/settings/revision.
+- Acceptance: one active reload and no queue; concurrent attempts return busy; partial gestures reset; pre-write cancellation is nonterminal; attempted-write failure is terminal; readers never observe mixed revisions.
+- Dependencies: M-06-C01.
+
+### M-06-I01 — Mutable brightness and idle policy
+
+- Status: complete.
+- Goal: let the existing idle loop remain sole owner of dim/timer state while accepting committed settings updates.
+- Acceptance: awake brightness changes write once; dimmed brightness changes update only the restore target; timeout changes derive from latest activity; zero cancels dimming but not the fixed keepalive; no second timer owner exists.
+- Dependencies: M-06-R01.
+
+### M-06-I02 — Reload/status IPC and CLI
+
+- Status: complete.
+- Goal: expose strict bounded `config.reload` and `config.status` in discovery and legacy modes.
+- Acceptance: exact request/result shapes, stable errors, frame bounds, generation revalidation, privacy, busy, invalid, changed, and unchanged cases pass; no method returns effective configuration content.
+- Dependencies: M-06-R01.
+
+### M-06-W01 — External-edit watcher
+
+- Status: complete.
+- Goal: translate relevant parent-directory change hints into coalesced reload intents through the same coordinator used by IPC.
+- Acceptance: direct writes, atomic rename saves, bursts, removal/recreation, event-during-apply, watcher failure, and shutdown are deterministic; invalid stable content is attempted once per dirty period and never retried autonomously.
+- Dependencies: M-06-I01 and M-06-I02.
+
+### M-06-V01 — Reload verification
+
+- Status: complete on 2026-09-11. The owner reported the complete manual runbook passed: valid automatic edit application, invalid-edit last-known-good retention, subsequent valid recovery, and clean shutdown.
+- Goal: independently verify transaction, concurrency, lifecycle, watcher, protocol, CLI, and owner-visible behavior.
+- Acceptance: all automatic gates pass; a valid external atomic-save edit applies without restart, an invalid edit retains the last-known-good display/actions/settings, a subsequent valid edit recovers, and shutdown removes generation metadata/socket while retaining the lock.
+- Dependencies: M-06-W01.
+
+### M-06-F01 — Owner-local configuration diagnostics
+
+- Status: planned after M-06-V01.
+- Goal: replace the generic local `configuration could not be loaded` message with an actionable diagnostic that identifies the explicit configuration path and the failing key path or TOML line/column.
+- Scope: startup stderr and an explicitly invoked local reload command may report the source path, syntax location, unknown or missing key, type mismatch, and bounded semantic-validation context. Diagnostics must not echo configuration values or unrelated source content.
+- Constraints: IPC response codes/messages and discovery metadata remain bounded and sanitized; automatic watcher failures must not repeatedly emit unstable/raw operating-system details; HID writes remain prohibited until configuration validation succeeds.
+- Acceptance: schema-version mismatch identifies `schema_version`; obsolete `pages` identifies that key and the required `profiles` replacement; malformed TOML identifies line/column; nested unknown/missing/type errors identify a stable dotted key path; unreadable files identify the explicit path and a bounded error category; tests prove secrets/configuration values are not echoed.
+- Dependencies: M-06-V01.
+
+### M-06-F02 — Startup initial-profile reassertion
+
+- Status: planned investigation after M-06-V01; the defect is not yet reproduced under the current schema-v2 runtime.
+- Goal: ensure every successful runtime generation sends the configured initial/default profile exactly once before readiness so the D200X cannot retain the previous process's last applied page.
+- Existing evidence: the current startup path constructs the default-profile page and calls the complete-page send operation before publishing readiness. This establishes intended code flow, not successful physical reassertion on every launch.
+- Acceptance: start from a visibly different retained device page; launch a valid schema-v2 runtime; observe exactly one startup complete-page operation containing the configured default profile; confirm the configured page is visible before health becomes ready; confirm no duplicate startup page send; repeat after a clean prior shutdown without relying on a reload event.
+- Constraints: do not add an unconditional second write, retry, or post-readiness redraw without evidence locating the failure. Preserve fail-stop behavior when the startup write fails.
+- Dependencies: M-06-V01.
 
 ## M-02-F01 — Screensaver wake and keepalive correction
 

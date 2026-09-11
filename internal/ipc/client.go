@@ -117,6 +117,27 @@ func (c *Client) ExecutionsGet(ctx context.Context, instanceID, executionID stri
 	return c.GetExecution(ctx, instanceID, executionID)
 }
 
+// ReloadConfig requests one synchronous reload of the explicit runtime
+// configuration. The request carries no configuration content or options.
+func (c *Client) ReloadConfig(ctx context.Context, instanceID string) (Response, error) {
+	return c.Call(ctx, MethodConfigReload, instanceID)
+}
+
+// ConfigReload is an explicit alias for ReloadConfig.
+func (c *Client) ConfigReload(ctx context.Context, instanceID string) (Response, error) {
+	return c.ReloadConfig(ctx, instanceID)
+}
+
+// ConfigStatus requests the read-only reload coordinator status.
+func (c *Client) ConfigStatus(ctx context.Context, instanceID string) (Response, error) {
+	return c.Call(ctx, MethodConfigStatus, instanceID)
+}
+
+// StatusConfig is an explicit alias for ConfigStatus.
+func (c *Client) StatusConfig(ctx context.Context, instanceID string) (Response, error) {
+	return c.ConfigStatus(ctx, instanceID)
+}
+
 func (c *Client) CallRequest(ctx context.Context, request Request) (Response, error) {
 	if ctx == nil {
 		ctx = context.Background()

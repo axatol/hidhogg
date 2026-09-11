@@ -783,3 +783,68 @@
 - The literal output establishes that shell metacharacters were passed as argv data rather than evaluated. Controlled SIGINT shutdown removed the generation socket and metadata; the owner-only discovery directory retained only its persistent `runtime.lock`.
 - Independent milestone-close review passed the configuration, worker, runtime-routing, IPC/CLI, physical evidence, privacy, and lifecycle mapping with no blocker. The final unrestricted whole-tree generation, race, vet, build, and diff gate also passed.
 - This closes the direct-Go M-05 vertical slice on the owned D200X. It does not broaden the contract to environment files, configurable child environment/current directory, asynchronous or concurrent execution, configuration reload, long/double press, or persistent history.
+
+## 2026-09-11 — M-06-P01 transactional reload contract confirmed
+
+- The owner confirmed automatic external-edit detection as part of M-06. The runtime will use `fsnotify` on the explicit configuration's parent directory, filter the configured basename, treat events only as dirty hints, and use one internal 200-millisecond trailing debounce. Atomic rename-based editor saves are an acceptance case.
+- All triggers feed one reload coordinator. A complete immutable candidate is read, decoded, validated, rendered, and semantically diffed before authoritative mutation. One reload may be active with no queue; a concurrent manual trigger reports busy, while watcher events during an attempt set one dirty bit for at most one subsequent attempt.
+- Invalid, unreadable, or unpreparable candidates retain last-known-good state with zero HID writes and a bounded status failure while health remains ready. Any failed/uncertain write after live application begins publishes no candidate and fail-stops because device rollback cannot be trusted.
+- Reload preserves the current profile when present and otherwise falls back to the candidate default. Only effective page changes redraw. Brightness changes write once while awake but only change the future restore target while dimmed. Idle timeout changes remain owned by the existing policy loop and derive from latest activity.
+- Partial gestures reset at transition. Existing child executions continue with copied request data; reload does not cancel, mutate, retry, or relabel them. Post-commit gestures use new bindings.
+- Strict protocol-v1 `config.reload` and `config.status` will expose bounded revision/outcome/effect metadata without paths, TOML, action material, environment, raw OS errors, or timestamps. The owner proposed `config.get` and then explicitly deferred it.
+- Architect A01 recommends one serialized effective-snapshot boundary and warned that transactionality cannot promise device rollback. Automatic watching remains required by the existing product overview; the transaction coordinator is implemented first and the watcher attaches afterward.
+
+## 2026-09-11 — M-06-C01 immutable candidate and semantic diff passed
+
+- Two runtime-local pure boundaries now build a validated immutable reload candidate from the explicit absolute configuration and compare it with the current effective candidate. They retain no source path or TOML bytes and perform no HID access, goroutine startup, or live mutation.
+- Candidate construction resolves the existing current profile when present and otherwise falls back to the candidate default. It prebuilds the typed live page and retains copied catalog, profile, page, rendered bytes, brightness, and idle timeout for later serialized application.
+- Diff classification covers unchanged, action-only, display, brightness, idle, default, and catalog changes. Display comparison uses deterministic rendered live-page archive bytes; inactive-profile changes remain catalog-only until activated.
+- Independent V01 found no production defect but identified missing direct coverage for an empty current-profile ID. R02 added that boundary; independent V02 passed 20 race-detected repetitions, vet, and diff checks. The main focused runtime race/vet/diff gate also passes.
+
+## 2026-09-11 — M-06-R01 serialized reload application passed
+
+- Reload and profile activation now share one coordinator. Successful reloads publish catalog, current/default profile, bindings, settings, rendered page, and revision through one atomic effective-snapshot pointer; startup begins at revision 1.
+- Invalid and pre-write-cancelled candidates retain the last-known-good snapshot with zero writes. Display changes issue one typed live-page update before commit; a failed attempted write retains the snapshot and enters the existing terminal uncertain state. Action-only and catalog-only changes commit without HID writes.
+- Brightness and idle-timeout changes deliberately remain uncommitted with zero writes and a stable pending result until M-06-I01 routes them through the existing idle-policy owner.
+- Main runtime race and vet gates passed. A transient full-suite brightness diagnostic timing failure passed five focused repetitions and the subsequent full suite. Independent V01B passed the runtime race suite in 21.594 seconds, vet, and diff checks with no production defect.
+- Residual test risk: there is no adversarial concurrent-reader assertion for same-revision multi-field observations; the implementation uses a single atomic snapshot pointer and passes race detection.
+
+## 2026-09-11 — M-06-I01 mutable idle settings passed after race remediation
+
+- Reloaded brightness and idle timeout now pass through an unbuffered bridge consumed by the existing idle-policy loop, retaining one owner for dim state, suppression, activity time, timers, and keepalive scheduling. Awake brightness changes write once; dimmed changes alter only the future restore target; timeout deadlines derive from the last recorded activity.
+- Independent V01 exposed two real lifecycle races: a due keepalive could cross the check-to-transition boundary, and a delivered settings request could block if the policy consumer stopped before responding. Due writes now revalidate and hold the transition read gate through the write. Settings requests now have atomic claim/abort state so shutdown aborts unclaimed requests while claimed requests return their authoritative result.
+- Deterministic tests cover unchanged keepalive scheduling during zero-timeout restore, due keepalive/dim deferral across transition begin, bridge shutdown after delivery, and end-to-end Runtime.Reload recovery with last-known-good revision retained. The end-to-end shutdown case passed 20 race-detected repetitions.
+- Worker and main runtime race/vet/diff gates pass. Independent V02 passed the first two gaps and missed the existing end-to-end reload test during inspection; the main repeated gate supplies the missing evidence. No confirmed I01 defect remains.
+
+## 2026-09-11 — M-06-I02 bounded reload IPC and CLI passed
+
+- Protocol v1 now exposes exact no-option `config.reload` and read-only `config.status` requests. Results contain only instance ID, revision, bounded state/outcome/reason/effect enums, and explicit effect booleans; they exclude configuration content/path, profile/action/command/environment material, timestamps, and raw errors. `config.get` remains deferred.
+- Discovery and explicit legacy CLI modes accept dotted methods and `config reload|status` subcommands, reject irrelevant flags and extra arguments, and revalidate the discovered generation after the call. Maximum response framing remains below 16,384 bytes.
+- Independent V01 found that real HID-write failures were misclassified as `reload_rejected` because the uncertain state did not survive as an error identity. R04 wraps attempted-write failures with `ErrProfileStateUncertain`; the adapter now returns static `device_write_failed`, while pre-write failures retain their nonterminal classifications.
+- Independent V02 passed the real page/settings failure regressions and static server mapping for 10 race-detected repetitions, plus runtime/IPC race, vet, and diff gates. Main affected-package race/vet, full-suite, and diff gates pass. No confirmed I02 defect remains.
+
+## 2026-09-11 — M-06-W01 external-edit watcher passed
+
+- The runtime watches the explicit configuration's parent directory and filters the exact basename, allowing direct writes and atomic rename-based replacement to remain observable. Create, write, rename, and remove events are dirty hints; chmod and unrelated paths are ignored.
+- A fixed 200-millisecond trailing debounce coalesces bursts. A capacity-one automatic signal and one admission dirty bit ensure an event consumed during an active reload produces at most one subsequent attempt; manual concurrent reload remains busy.
+- Watcher setup/runtime failures disable automatic watching with static verbose diagnostics while readiness and manual reload remain available. Watcher and automatic-reload goroutines start only in Run and are joined on every teardown branch.
+- Independent V01 passed 10 race-detected watcher-suite repetitions in 51.735 seconds, the full runtime race suite in 29.192 seconds, vet, and diff checks. Coverage includes filtering, direct/atomic/removal saves, debounce, active-attempt coalescing, invalid-content single attempt/recovery, degradation, Run-only ownership, and shutdown. No production defect remains; physical validation is reserved for M-06-V01.
+
+## 2026-09-11 — Descriptive owner-local configuration diagnostics deferred
+
+- The owner attempted to start the M-06 physical gate with `deploy/hidhogg.toml`; startup returned only `configuration could not be loaded`. Inspection showed that the file used obsolete schema v1 fields (`schema_version = 1`, `pages`) while production accepts schema v2 (`schema_version = 2`, `default_profile_id`, `profiles`).
+- The owner requires future local errors to identify the explicit source path and problematic key or syntax location. M-06-F01 records this work after the current physical gate.
+- The intended boundary distinguishes owner-local diagnostics from IPC privacy: local startup stderr or an explicit local reload may name the configuration path, dotted key, and bounded parse/validation category, but must not echo values or source content. IPC and discovery responses remain sanitized and bounded.
+
+## 2026-09-11 — Startup initial-profile reassertion queued for physical investigation
+
+- The owner requires each successful runtime boot to send the configured initial/default profile once; otherwise the D200X may continue showing the last page applied by an earlier process.
+- The current startup path already constructs the configured default page and invokes one complete-page send before readiness. Therefore this is recorded as M-06-F02, an unconfirmed physical-path defect or regression, rather than a known absent feature.
+- Verification must begin with a visibly different retained page and distinguish skipped/ineffective/stale-content startup from an unnecessary duplicate-send workaround. No retry or second startup redraw is authorized without that evidence.
+
+## 2026-09-11 — M-06 transactional configuration reload completed
+
+- Architecture close review passed the single-snapshot transaction, activation serialization, idle-loop ownership, last-known-good/fail-stop boundary, gesture/child isolation, strict IPC privacy, watcher semantics, and lifecycle/degradation design. No production correctness defect remained.
+- Comprehensive automatic verification passed `go generate ./...`, whole-tree race tests, vet, build, formatting, diff checks, and targeted M-06 race stress with no generated drift.
+- The owner reported that all steps in the manual M-06 runbook passed. This is the authoritative owner-visible evidence for valid automatic external-edit application, invalid-edit retention of the last-known-good runtime, subsequent valid recovery, and clean shutdown.
+- M-06 is complete. Device-side atomicity, rollback, and cross-firmware behavior remain intentionally unclaimed. M-06-F01 descriptive local configuration errors and M-06-F02 startup reassertion investigation remain planned follow-ups rather than milestone blockers.

@@ -456,7 +456,7 @@ func TestProfileServiceCurrentEventPositionsFollowCommittedProfile(t *testing.T)
 
 func TestRuntimeIPCProfileAdapterListsDefaultAndCurrentInOrder(t *testing.T) {
 	service := newTestProfileService(t, &profilePageSender{}, nil)
-	runtimeProcess := &Runtime{profileService: service, defaultProfileID: "default"}
+	runtimeProcess := &Runtime{profileService: service}
 	adapter := runtimeIPCProfileService{runtime: runtimeProcess}
 	summaries := adapter.ListProfiles()
 	if len(summaries) != 2 {
@@ -481,7 +481,7 @@ func TestRuntimeIPCProfileAdapterListsDefaultAndCurrentInOrder(t *testing.T) {
 func TestRuntimeIPCProfileAdapterMapsServiceErrors(t *testing.T) {
 	writeErr := errors.New("injected write failure")
 	service := newTestProfileService(t, &profilePageSender{err: writeErr}, nil)
-	runtimeProcess := &Runtime{profileService: service, defaultProfileID: "default"}
+	runtimeProcess := &Runtime{profileService: service}
 	adapter := runtimeIPCProfileService{runtime: runtimeProcess}
 	if _, err := adapter.ActivateProfile(context.Background(), "missing"); !errors.Is(err, ipc.ErrProfileNotFound) {
 		t.Fatalf("unknown profile error = %v", err)

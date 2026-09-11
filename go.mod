@@ -7,10 +7,13 @@ require (
 	github.com/pelletier/go-toml/v2 v2.4.3
 )
 
-require github.com/go-ctap/hid v0.11.0
+require (
+	github.com/fsnotify/fsnotify v1.10.1
+	github.com/go-ctap/hid v0.11.0
+	golang.org/x/sys v0.47.0
+)
 
 require (
 	github.com/ebitengine/purego v0.10.2 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 )

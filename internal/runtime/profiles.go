@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 
 	"hidhogg/internal/d200x"
 	"hidhogg/internal/profile"
@@ -73,6 +74,8 @@ type ProfileServiceOptions struct {
 	Catalog          profile.Catalog
 	Sender           LivePageSender
 	InitialProfileID string
+	initialSnapshot  *reloadCandidate
+	settingsApplier  idleSettingsApplier
 	Terminal         func(error)
 	Cancel           context.CancelFunc
 	Verbose          bool
@@ -85,7 +88,6 @@ type ProfileServiceOptions struct {
 // physical atomicity is not proven. Failed writes are terminal, and callers
 // may invoke the service concurrently.
 type RuntimeProfileService struct {
-	catalog    profile.Catalog
 	sender     LivePageSender
 	terminal   func(error)
 	cancel     context.CancelFunc
@@ -93,17 +95,16 @@ type RuntimeProfileService struct {
 	logger     io.Writer
 	logMu      sync.Mutex
 	requests   chan profileActivationRequest
+	reloads    chan profileReloadRequest
 	stop       chan struct{}
 	workerDone chan struct{}
 	transition *profileTransitionGate
+	effective  atomic.Pointer[effectiveSnapshot]
+	settings   idleSettingsApplier
 
-	mu             sync.RWMutex
-	closed         bool
-	uncertain      bool
-	current        profile.Profile
-	currentID      string
-	currentBinding []profile.Binding
-
+	mu        sync.RWMutex
+	closed    bool
+	uncertain bool
 	closeOnce sync.Once
 }
 
@@ -116,6 +117,17 @@ type profileActivationRequest struct {
 
 type profileActivationResponse struct {
 	result ActivationResult
+	err    error
+}
+
+type profileReloadRequest struct {
+	ctx    context.Context
+	build  func(string) (reloadCandidate, error)
+	result chan profileReloadResponse
+}
+
+type profileReloadResponse struct {
+	result ReloadResult
 	err    error
 }
 
@@ -134,21 +146,41 @@ func NewProfileService(options ProfileServiceOptions) (*RuntimeProfileService, e
 	if !ok {
 		return nil, fmt.Errorf("profile service initial profile %q does not resolve", initialID)
 	}
-	service := &RuntimeProfileService{
-		catalog:        options.Catalog,
-		sender:         options.Sender,
-		terminal:       options.Terminal,
-		cancel:         options.Cancel,
-		verbose:        options.Verbose && options.Logger != nil,
-		logger:         options.Logger,
-		requests:       make(chan profileActivationRequest, profileActivationCapacity),
-		stop:           make(chan struct{}),
-		workerDone:     make(chan struct{}),
-		transition:     &profileTransitionGate{},
-		current:        initial,
-		currentID:      initial.ID,
-		currentBinding: initial.Bindings(),
+	initialCandidate := reloadCandidate{
+		catalog:          options.Catalog,
+		currentProfile:   cloneRuntimeProfile(initial),
+		currentProfileID: initial.ID,
+		defaultProfileID: options.Catalog.DefaultProfileID(),
 	}
+	if options.initialSnapshot != nil {
+		initialCandidate = *options.initialSnapshot
+	} else {
+		page, err := pageForProfile(initial)
+		if err != nil {
+			return nil, err
+		}
+		update, err := d200x.BuildLivePageUpdate(page)
+		if err != nil {
+			return nil, err
+		}
+		initialCandidate.page = update.Page()
+		initialCandidate.renderedPage = update.Archive().Data
+		initialCandidate.livePageUpdate = update
+	}
+	service := &RuntimeProfileService{
+		sender:     options.Sender,
+		terminal:   options.Terminal,
+		cancel:     options.Cancel,
+		verbose:    options.Verbose && options.Logger != nil,
+		logger:     options.Logger,
+		requests:   make(chan profileActivationRequest, profileActivationCapacity),
+		reloads:    make(chan profileReloadRequest),
+		stop:       make(chan struct{}),
+		workerDone: make(chan struct{}),
+		transition: &profileTransitionGate{},
+		settings:   options.settingsApplier,
+	}
+	service.effective.Store(effectiveSnapshotFromCandidate(initialCandidate, 1))
 	go service.runCoordinator()
 	return service, nil
 }
@@ -163,7 +195,11 @@ func (service *RuntimeProfileService) ListProfiles() []profile.Profile {
 	if service == nil {
 		return nil
 	}
-	return service.catalog.Profiles()
+	snapshot := service.effective.Load()
+	if snapshot == nil {
+		return nil
+	}
+	return snapshot.catalog.Profiles()
 }
 
 // Profiles is an explicit alias for ListProfiles.
@@ -178,12 +214,11 @@ func (service *RuntimeProfileService) CurrentProfile() (profile.Profile, bool) {
 	if service == nil {
 		return profile.Profile{}, false
 	}
-	service.mu.RLock()
-	defer service.mu.RUnlock()
-	if service.currentID == "" {
+	snapshot := service.effective.Load()
+	if snapshot == nil || snapshot.currentID == "" {
 		return profile.Profile{}, false
 	}
-	return cloneRuntimeProfile(service.current), true
+	return cloneRuntimeProfile(snapshot.current), true
 }
 
 // CurrentProfileID returns the last successfully committed profile ID.
@@ -191,9 +226,11 @@ func (service *RuntimeProfileService) CurrentProfileID() (string, bool) {
 	if service == nil {
 		return "", false
 	}
-	service.mu.RLock()
-	defer service.mu.RUnlock()
-	return service.currentID, service.currentID != ""
+	snapshot := service.effective.Load()
+	if snapshot == nil {
+		return "", false
+	}
+	return snapshot.currentID, snapshot.currentID != ""
 }
 
 // CurrentBindings returns the action bindings of the last successfully
@@ -202,20 +239,24 @@ func (service *RuntimeProfileService) CurrentBindings() []profile.Binding {
 	if service == nil {
 		return nil
 	}
-	service.mu.RLock()
-	defer service.mu.RUnlock()
-	return cloneRuntimeBindings(service.currentBinding)
+	snapshot := service.effective.Load()
+	if snapshot == nil {
+		return nil
+	}
+	return cloneRuntimeBindings(snapshot.bindings)
 }
 
 func (service *RuntimeProfileService) currentActionSnapshot() profileActionSnapshot {
 	if service == nil {
 		return profileActionSnapshot{}
 	}
-	service.mu.RLock()
-	defer service.mu.RUnlock()
+	snapshot := service.effective.Load()
+	if snapshot == nil {
+		return profileActionSnapshot{}
+	}
 	return profileActionSnapshot{
-		profileID: service.currentID,
-		bindings:  cloneRuntimeBindings(service.currentBinding),
+		profileID: snapshot.currentID,
+		bindings:  cloneRuntimeBindings(snapshot.bindings),
 	}
 }
 
@@ -226,9 +267,11 @@ func (service *RuntimeProfileService) CurrentEventPositions() map[byte]eventPosi
 	if service == nil {
 		return nil
 	}
-	service.mu.RLock()
-	defer service.mu.RUnlock()
-	return eventPositionsForProfile(service.current)
+	snapshot := service.effective.Load()
+	if snapshot == nil {
+		return nil
+	}
+	return eventPositionsForProfile(snapshot.current)
 }
 
 // Uncertain reports whether a live update write failed after activation began.
@@ -283,6 +326,29 @@ func (service *RuntimeProfileService) enqueueActivation(ctx context.Context, pro
 	}
 }
 
+func (service *RuntimeProfileService) reload(ctx context.Context, build func(string) (reloadCandidate, error)) (ReloadResult, error) {
+	if service == nil || build == nil {
+		return ReloadResult{}, ErrReloadClosed
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	request := profileReloadRequest{ctx: ctx, build: build, result: make(chan profileReloadResponse, 1)}
+	select {
+	case <-ctx.Done():
+		return ReloadResult{}, ctx.Err()
+	case <-service.stop:
+		return ReloadResult{}, ErrReloadClosed
+	case service.reloads <- request:
+	}
+	select {
+	case response := <-request.result:
+		return response.result, response.err
+	case <-service.stop:
+		return ReloadResult{}, ErrReloadClosed
+	}
+}
+
 // Close stops the coordinator after completing at most the request already
 // being processed. Queued requests are completed with ErrProfileServiceClosed
 // and no further live display transition can begin.
@@ -307,6 +373,8 @@ func (service *RuntimeProfileService) runCoordinator() {
 		select {
 		case request := <-service.requests:
 			service.completeRequest(request)
+		case request := <-service.reloads:
+			service.completeReload(request)
 		case <-service.stop:
 			service.drainQueuedRequests()
 			return
@@ -320,6 +388,8 @@ func (service *RuntimeProfileService) drainQueuedRequests() {
 		select {
 		case request := <-service.requests:
 			completeProfileRequest(request, profileActivationResponse{err: err})
+		case request := <-service.reloads:
+			completeReloadRequest(request, profileReloadResponse{err: ErrReloadClosed})
 		default:
 			return
 		}
@@ -347,6 +417,136 @@ func completeProfileRequest(request profileActivationRequest, response profileAc
 	}
 }
 
+func (service *RuntimeProfileService) completeReload(request profileReloadRequest) {
+	response := service.applyReload(request.ctx, request.build)
+	completeReloadRequest(request, response)
+}
+
+func completeReloadRequest(request profileReloadRequest, response profileReloadResponse) {
+	select {
+	case request.result <- response:
+	default:
+	}
+}
+
+func (service *RuntimeProfileService) applyReload(ctx context.Context, build func(string) (reloadCandidate, error)) profileReloadResponse {
+	if err := ctx.Err(); err != nil {
+		return profileReloadResponse{err: err}
+	}
+	current := service.effective.Load()
+	if current == nil {
+		return profileReloadResponse{err: ErrReloadClosed}
+	}
+	candidate, err := build(current.currentID)
+	if err != nil {
+		return profileReloadResponse{result: ReloadResult{Revision: current.revision}, err: err}
+	}
+	diff := compareReloadCandidate(current.candidate(), candidate)
+	result := ReloadResult{
+		Revision:               current.revision,
+		Effect:                 diff.Effect(),
+		CatalogChanged:         diff.CatalogChanged(),
+		DefaultChanged:         diff.DefaultChanged(),
+		CurrentProfileChanged:  diff.CurrentProfileChanged(),
+		CurrentProfileFallback: diff.CurrentProfileFallback(),
+		ActionChanged:          diff.ActionChanged(),
+		DisplayChanged:         diff.DisplayChanged(),
+		BrightnessChanged:      diff.BrightnessChanged(),
+		IdleChanged:            diff.IdleChanged(),
+	}
+	if !diff.anyChanged() {
+		return profileReloadResponse{result: result}
+	}
+	if err := ctx.Err(); err != nil {
+		return profileReloadResponse{result: result, err: err}
+	}
+	service.mu.RLock()
+	closed := service.closed
+	uncertain := service.uncertain
+	service.mu.RUnlock()
+	if closed {
+		return profileReloadResponse{result: result, err: ErrReloadClosed}
+	}
+	if uncertain {
+		return profileReloadResponse{result: result, err: ErrProfileStateUncertain}
+	}
+	service.beginTransition(current.currentID, candidate.CurrentProfileID())
+	defer service.endTransition(current.currentID, candidate.CurrentProfileID())
+	if err := ctx.Err(); err != nil {
+		return profileReloadResponse{result: result, err: err}
+	}
+	displayApplied := false
+	if diff.DisplayChanged() {
+		if err := service.sender.SendLivePageUpdate(ctx, candidate.LivePageUpdate()); err != nil {
+			service.markUncertain(err)
+			return profileReloadResponse{result: result, err: uncertainReloadError(err)}
+		}
+		displayApplied = true
+		result.DisplayUpdated = true
+	}
+	if diff.BrightnessChanged() || diff.IdleChanged() {
+		if service.settings == nil {
+			if displayApplied {
+				service.markUncertain(ErrReloadSettingsPending)
+				return profileReloadResponse{result: result, err: uncertainReloadError(ErrReloadSettingsPending)}
+			}
+			return profileReloadResponse{result: result, err: ErrReloadSettingsPending}
+		}
+		settingsResult, err := service.settings.ApplySettings(ctx, candidate.Settings())
+		if err != nil {
+			if displayApplied || settingsResult.writeAttempted {
+				service.markUncertain(err)
+				return profileReloadResponse{result: result, err: uncertainReloadError(err)}
+			}
+			return profileReloadResponse{result: result, err: err}
+		}
+	}
+	result.Revision++
+	result.Changed = true
+	service.effective.Store(effectiveSnapshotFromCandidate(candidate, result.Revision))
+	return profileReloadResponse{result: result}
+}
+
+func uncertainReloadError(err error) error {
+	if err == nil {
+		return ErrProfileStateUncertain
+	}
+	return fmt.Errorf("%w: %w", ErrProfileStateUncertain, err)
+}
+
+func (service *RuntimeProfileService) revision() uint64 {
+	if service == nil {
+		return 0
+	}
+	snapshot := service.effective.Load()
+	if snapshot == nil {
+		return 0
+	}
+	return snapshot.revision
+}
+
+func (service *RuntimeProfileService) defaultProfileID() string {
+	if service == nil {
+		return ""
+	}
+	snapshot := service.effective.Load()
+	if snapshot == nil {
+		return ""
+	}
+	return snapshot.defaultID
+}
+
+func (service *RuntimeProfileService) effectiveSettings() reloadSettings {
+	if service == nil {
+		return reloadSettings{}
+	}
+	snapshot := service.effective.Load()
+	if snapshot == nil {
+		return reloadSettings{}
+	}
+	return snapshot.settings
+}
+
 func (service *RuntimeProfileService) activate(ctx context.Context, requestedID string, expected ...*profileActionSnapshot) profileActivationResponse {
 	if err := ctx.Err(); err != nil {
 		return profileActivationResponse{err: err}
@@ -355,8 +555,12 @@ func (service *RuntimeProfileService) activate(ctx context.Context, requestedID 
 	if len(expected) > 0 {
 		expectedSnapshot = expected[0]
 	}
+	snapshot := service.effective.Load()
+	if snapshot == nil {
+		return profileActivationResponse{err: ErrProfileServiceClosed}
+	}
 	service.mu.RLock()
-	if expectedSnapshot != nil && !matchesProfileActionSnapshot(*expectedSnapshot, service.currentID, service.currentBinding) {
+	if expectedSnapshot != nil && !matchesProfileActionSnapshot(*expectedSnapshot, snapshot.currentID, snapshot.bindings) {
 		service.mu.RUnlock()
 		return profileActivationResponse{err: errProfileActionBindingChanged}
 	}
@@ -368,12 +572,12 @@ func (service *RuntimeProfileService) activate(ctx context.Context, requestedID 
 		service.mu.RUnlock()
 		return profileActivationResponse{err: ErrProfileServiceClosed}
 	}
-	currentID := service.currentID
+	currentID := snapshot.currentID
 	service.mu.RUnlock()
 	if requestedID == currentID {
 		return profileActivationResponse{result: ActivationResult{ProfileID: currentID, Changed: false}}
 	}
-	target, ok := service.catalog.Lookup(requestedID)
+	target, ok := snapshot.catalog.Lookup(requestedID)
 	if !ok {
 		return profileActivationResponse{err: fmt.Errorf("%w: %q", ErrUnknownProfile, requestedID)}
 	}
@@ -407,11 +611,7 @@ func (service *RuntimeProfileService) activate(ctx context.Context, requestedID 
 		service.logTransition("write-failed", currentID, target.ID, 1)
 		return profileActivationResponse{err: err}
 	}
-	service.mu.Lock()
-	service.current = target
-	service.currentID = target.ID
-	service.currentBinding = target.Bindings()
-	service.mu.Unlock()
+	service.effective.Store(snapshot.withCurrent(target, update.Archive().Data))
 	service.logTransition("committed", currentID, target.ID, 1)
 	return profileActivationResponse{result: ActivationResult{ProfileID: target.ID, Changed: true}}
 }

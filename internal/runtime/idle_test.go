@@ -464,6 +464,220 @@ func TestIdlePolicyWriteFailureStopsWithoutRetry(t *testing.T) {
 	}
 }
 
+func TestIdlePolicyAppliesReloadSettingsFromLatestActivity(t *testing.T) {
+	start := time.Unix(1000, 0)
+	tests := []struct {
+		name       string
+		state      idlePolicyState
+		settings   reloadSettings
+		wantFrames int
+		wantValue  string
+		wantDimmed bool
+		wantDue    time.Time
+	}{
+		{
+			name:       "awake brightness writes once",
+			state:      idlePolicyState{lastActivity: start, idleDeadline: start.Add(time.Minute)},
+			settings:   reloadSettings{brightness: 74, idleTimeout: time.Minute},
+			wantFrames: 1,
+			wantValue:  "74",
+			wantDue:    start.Add(time.Minute),
+		},
+		{
+			name:       "dimmed brightness stages restore target",
+			state:      idlePolicyState{dimmed: true, lastActivity: start, idleDeadline: start.Add(time.Minute)},
+			settings:   reloadSettings{brightness: 74, idleTimeout: time.Minute},
+			wantDimmed: true,
+			wantDue:    start.Add(time.Minute),
+		},
+		{
+			name:       "shortened elapsed timeout dims promptly",
+			state:      idlePolicyState{lastActivity: start.Add(-time.Minute), idleDeadline: start},
+			settings:   reloadSettings{brightness: 73, idleTimeout: 30 * time.Second},
+			wantFrames: 1,
+			wantValue:  "0",
+			wantDimmed: true,
+			wantDue:    start.Add(-30 * time.Second),
+		},
+		{
+			name:     "lengthened timeout preserves activity origin",
+			state:    idlePolicyState{lastActivity: start.Add(-20 * time.Second), idleDeadline: start.Add(40 * time.Second)},
+			settings: reloadSettings{brightness: 73, idleTimeout: 2 * time.Minute},
+			wantDue:  start.Add(100 * time.Second),
+		},
+		{
+			name:       "zero timeout restores dimmed display",
+			state:      idlePolicyState{dimmed: true, lastActivity: start.Add(-time.Minute)},
+			settings:   reloadSettings{brightness: 81},
+			wantFrames: 1,
+			wantValue:  "81",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			clock := newPolicyFakeClock(start)
+			sender := &policyRecordingSender{}
+			controller := &idlePolicyController{
+				clock:   clock,
+				sender:  sender,
+				plan:    devicePlan{brightness: 73, idleTimeout: time.Minute},
+				actions: &profileActionController{},
+				state:   test.state,
+			}
+			result, err := controller.applySettings(context.Background(), test.settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.writeAttempted != (test.wantFrames == 1) || len(sender.payloads()) != test.wantFrames {
+				t.Fatalf("write result/frames = %+v/%d", result, len(sender.payloads()))
+			}
+			if test.wantFrames == 1 && string(sender.payloads()[0]) != test.wantValue {
+				t.Fatalf("brightness payload = %q, want %q", sender.payloads()[0], test.wantValue)
+			}
+			if controller.state.dimmed != test.wantDimmed || !controller.state.idleDeadline.Equal(test.wantDue) {
+				t.Fatalf("state = %+v, want dimmed=%t deadline=%v", controller.state, test.wantDimmed, test.wantDue)
+			}
+			if controller.plan.brightness != test.settings.brightness || controller.plan.idleTimeout != test.settings.idleTimeout {
+				t.Fatalf("plan = %+v", controller.plan)
+			}
+		})
+	}
+}
+
+func TestIdlePolicyReloadWriteFailureRetainsPolicyState(t *testing.T) {
+	start := time.Unix(1100, 0)
+	sender := &policyRecordingSender{failPayload: "74", failErr: errors.New("uncertain")}
+	controller := &idlePolicyController{
+		clock:  newPolicyFakeClock(start),
+		sender: sender,
+		plan:   devicePlan{brightness: 73, idleTimeout: time.Minute},
+		state:  idlePolicyState{lastActivity: start, idleDeadline: start.Add(time.Minute)},
+	}
+	result, err := controller.applySettings(context.Background(), reloadSettings{brightness: 74, idleTimeout: time.Minute})
+	if err == nil || !result.writeAttempted {
+		t.Fatalf("failed settings result = %+v, %v", result, err)
+	}
+	if controller.plan.brightness != 73 || controller.plan.idleTimeout != time.Minute || controller.state.dimmed || !controller.state.idleDeadline.Equal(start.Add(time.Minute)) {
+		t.Fatalf("policy mutated after failed write: plan=%+v state=%+v", controller.plan, controller.state)
+	}
+}
+
+func TestIdlePolicyReloadTimeoutUsesRecordedInputActivity(t *testing.T) {
+	start := time.Unix(1150, 0)
+	clock := newPolicyFakeClock(start)
+	clock.advance(10 * time.Second)
+	activityAt := clock.Now()
+	controller := &idlePolicyController{
+		clock:   clock,
+		sender:  &policyRecordingSender{},
+		plan:    devicePlan{brightness: 73, idleTimeout: time.Minute, positions: map[byte]eventPosition{0: {id: "tile", position: "0_0"}}},
+		stdout:  &synchronizedWriter{},
+		actions: &profileActionController{},
+		state:   idlePolicyState{lastActivity: start, idleDeadline: start.Add(time.Minute)},
+	}
+	if err := controller.handleInput(context.Background(), inputObservation{
+		event:      policyInput(0, d200x.InputMarkerButton, d200x.InputActionPressed),
+		observedAt: activityAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clock.advance(10 * time.Second)
+	if _, err := controller.applySettings(context.Background(), reloadSettings{brightness: 73, idleTimeout: 2 * time.Minute}); err != nil {
+		t.Fatal(err)
+	}
+	if want := activityAt.Add(2 * time.Minute); !controller.state.idleDeadline.Equal(want) {
+		t.Fatalf("reload deadline = %v, want activity-derived %v", controller.state.idleDeadline, want)
+	}
+}
+
+func TestIdlePolicyZeroTimeoutRestorePreservesKeepaliveDeadline(t *testing.T) {
+	start := time.Unix(1175, 0)
+	keepaliveAt := start.Add(17 * time.Second)
+	controller := &idlePolicyController{
+		clock:   newPolicyFakeClock(start),
+		sender:  &policyRecordingSender{},
+		plan:    devicePlan{brightness: 73, idleTimeout: time.Minute},
+		actions: &profileActionController{},
+		state: idlePolicyState{
+			dimmed:       true,
+			lastActivity: start.Add(-time.Minute),
+			keepaliveAt:  keepaliveAt,
+		},
+	}
+	if _, err := controller.applySettings(context.Background(), reloadSettings{brightness: 81}); err != nil {
+		t.Fatal(err)
+	}
+	if !controller.state.keepaliveAt.Equal(keepaliveAt) {
+		t.Fatalf("zero-timeout restore changed keepalive from %v to %v", keepaliveAt, controller.state.keepaliveAt)
+	}
+}
+
+func TestIdlePolicyDueWritesCannotCrossTransitionBegin(t *testing.T) {
+	start := time.Unix(1180, 0)
+	gate := &profileTransitionGate{}
+	sender := &policyRecordingSender{}
+	controller := &idlePolicyController{
+		clock:      newPolicyFakeClock(start),
+		sender:     sender,
+		plan:       devicePlan{brightness: 73, idleTimeout: time.Second},
+		actions:    &profileActionController{},
+		transition: gate,
+		state: idlePolicyState{
+			lastActivity: start.Add(-time.Second),
+			idleDeadline: start,
+			keepaliveAt:  start,
+		},
+	}
+	gate.mu.Lock()
+	keepaliveDone := make(chan bool, 1)
+	go func() {
+		written, _ := controller.tryKeepalive(context.Background())
+		keepaliveDone <- written
+	}()
+	gate.generation++
+	gate.active = true
+	gate.activeDone = make(chan struct{})
+	gate.mu.Unlock()
+	if written := <-keepaliveDone; written {
+		t.Fatal("due keepalive crossed transition begin")
+	}
+	written, err := controller.tryDim(context.Background())
+	if err != nil || written {
+		t.Fatalf("due dim during transition = written %t, error %v", written, err)
+	}
+	if got := sender.commands(); len(got) != 0 {
+		t.Fatalf("writes during transition = %v", got)
+	}
+	gate.end()
+	if written, err := controller.tryKeepalive(context.Background()); err != nil || !written {
+		t.Fatalf("deferred keepalive = written %t, error %v", written, err)
+	}
+	if written, err := controller.tryDim(context.Background()); err != nil || !written {
+		t.Fatalf("deferred dim = written %t, error %v", written, err)
+	}
+	if got := sender.commands(); !equalCommands(got, []d200x.Command{d200x.CommandEnableInputStream, d200x.CommandBrightness}) {
+		t.Fatalf("post-transition writes = %v", got)
+	}
+}
+
+func TestIdleSettingsBridgeShutdownAfterDeliveryUnblocks(t *testing.T) {
+	bridge := newIdleSettingsBridge()
+	bridge.activate()
+	done := make(chan error, 1)
+	go func() {
+		_, err := bridge.ApplySettings(context.Background(), reloadSettings{brightness: 74})
+		done <- err
+	}()
+	request := <-bridge.requests
+	bridge.close()
+	if err := <-done; !errors.Is(err, ErrReloadSettingsPending) {
+		t.Fatalf("ApplySettings after delivered shutdown = %v", err)
+	}
+	if request.state.claim() {
+		t.Fatal("shutdown-aborted settings request remained claimable")
+	}
+}
+
 func policyInput(wire byte, marker d200x.InputMarker, action d200x.InputAction) d200x.InputEvent {
 	return d200x.InputEvent{WireIndex: wire, Marker: marker, Action: action}
 }
