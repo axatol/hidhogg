@@ -39,16 +39,17 @@ has exactly two mutually exclusive modes:
 
 ```text
 d200xprobe --action <symbolic-name> [--parameters <value>]
+d200xprobe --action startup-sequence --parameters <brightness>
 d200xprobe --listen [--duration <positive-duration>]
 ```
 
 There is no `--confirm` flag. The action and its parameters are fully built and
-validated before HID enumeration. An action then selects exactly one eligible
-interface-0 collection, opens it once, writes exactly one logical frame, and
-closes it. A complete-display upload does not send an unlock frame. Writes are
-never retried: the first transport error or short write stops the process.
-Success means only that the write completed; it does not mean the device
-accepted the command or exhibited any particular behavior.
+validated before HID enumeration. A regular action then selects exactly one
+eligible interface-0 collection, opens it once, writes exactly one logical
+frame, and closes it. A complete-display upload does not send an unlock frame.
+Writes are never retried: the first transport error or short write stops the
+process. Success means only that the write completed; it does not mean the
+device accepted the command or exhibited any particular behavior.
 
 | Symbolic action | ID | Observed direction/status | Parameters |
 | --- | ---: | --- | --- |
@@ -64,6 +65,29 @@ accepted the command or exhibited any particular behavior.
 | `input-event` | `0x0101` | device to host, observed; outbound probe is experimental | none |
 | `acknowledgement` | `0x010b` | device to host, observed; outbound probe is experimental | none |
 | `device-information` | `0x0303` | device to host, observed; outbound probe is experimental | none |
+
+### Bounded startup sequence
+
+`d200xprobe --action startup-sequence --parameters <brightness>` is the one
+bounded multi-frame action. The parameter must be canonical decimal `0` through
+`100`; validation
+and construction of all four frames, including the content-addressed
+`live-bulk` archive, complete before HID enumeration. The action selects one
+eligible interface-0 collection, opens one session, and sends exactly this
+order:
+
+```text
+unlock-screen (0x0010)
+complete-display-upload live-bulk (0x0001)
+brightness (0x000a)
+enable-input-stream (0x0002)
+```
+
+Each completed symbolic command is printed without payload, archive contents,
+or device identity. The first transport error or short write stops the
+sequence immediately. The sequence has no delay, retry, rollback, recovery, or
+listen behavior. A failed step is reported with its symbolic command and a
+bounded write-failure message; earlier completed steps remain visible.
 
 Canonical brightness excludes signs, padding, whitespace, and alternate numeric
 forms. Every action other than brightness, complete-display-upload, and

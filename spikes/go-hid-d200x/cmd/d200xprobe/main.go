@@ -22,6 +22,13 @@ type actionDefinition struct {
 	name    string
 }
 
+const startupSequenceAction = "startup-sequence"
+
+type startupSequenceStep struct {
+	name  string
+	frame d200x.Frame
+}
+
 var (
 	actionDefinitions = []actionDefinition{
 		{d200x.CommandCompleteDisplayUpload, "complete-display-upload"},
@@ -123,6 +130,8 @@ func runWithSignalContextAndClockAndRandom(args []string, factory d200x.Transpor
 		fmt.Fprintln(stderr, "       d200xprobe --listen [--duration <positive-duration>]")
 		flags.PrintDefaults()
 		fmt.Fprintln(stderr, "complete-display-upload --parameters live-bulk sends one 0x0001 archive with all 14 positions.")
+		fmt.Fprintln(stderr, "startup-sequence --parameters <brightness> sends unlock-screen, complete-display-upload live-bulk, brightness, and enable-input-stream in order.")
+		fmt.Fprintln(stderr, "startup-sequence accepts canonical brightness 0 through 100 and stops on the first failed or short write without delay, retry, rollback, or recovery.")
 		fmt.Fprintln(stderr, "Expected device observation is bulk redraw, progressive redraw, or no visible change; host write success is not device acceptance.")
 	}
 	action := flags.String("action", "", "one symbolic D200X action")
@@ -157,6 +166,14 @@ func runWithSignalContextAndClockAndRandom(args []string, factory d200x.Transpor
 	if *action == "" {
 		fmt.Fprintln(stderr, "exactly one of --action or --listen is required")
 		return 2
+	}
+	if *action == startupSequenceAction {
+		steps, err := buildStartupSequence(parameters)
+		if err != nil {
+			fmt.Fprintf(stderr, "invalid action request: %v\n", err)
+			return 2
+		}
+		return sendStartupSequence(context.Background(), factory, steps, stdout, stderr)
 	}
 
 	frame, metrics, err := buildActionFrameWithClockAndRandom(*action, parameters, now, source)
@@ -232,6 +249,54 @@ func lookupAction(name string) (actionDefinition, bool) {
 
 func sendActionFrame(ctx context.Context, factory d200x.TransportFactory, name string, frame d200x.Frame, stdout, stderr io.Writer) int {
 	return sendActionFrameWithMetrics(ctx, factory, name, frame, nil, stdout, stderr)
+}
+
+func buildStartupSequence(parameters optionalString) ([]startupSequenceStep, error) {
+	if !parameters.present || !canonicalBrightness.MatchString(parameters.value) {
+		return nil, errors.New("startup-sequence requires canonical decimal --parameters from 0 through 100")
+	}
+	percentage, _ := strconv.Atoi(parameters.value)
+	liveBulk, err := d200x.LiveBulkDisplayFrame()
+	if err != nil {
+		return nil, fmt.Errorf("startup-sequence frame construction failed: %w", err)
+	}
+	return []startupSequenceStep{
+		{name: "unlock-screen", frame: d200x.UnlockScreenFrame()},
+		{name: "complete-display-upload", frame: liveBulk},
+		{name: "brightness", frame: d200x.BrightnessFrame(percentage)},
+		{name: "enable-input-stream", frame: d200x.EnableInputStreamFrame()},
+	}, nil
+}
+
+func sendStartupSequence(ctx context.Context, factory d200x.TransportFactory, steps []startupSequenceStep, stdout, stderr io.Writer) int {
+	candidate, err := selectCandidate(ctx, factory)
+	if err != nil {
+		fmt.Fprintln(stderr, "startup-sequence device selection failed")
+		return 1
+	}
+	session := d200x.NewSession(factory)
+	defer session.Close()
+	if err := session.Replace(ctx, candidate); err != nil {
+		fmt.Fprintln(stderr, "startup-sequence device open failed")
+		return 1
+	}
+	writer := d200x.NewExperimentalProbeWriter(session)
+	for _, step := range steps {
+		if err := writer.SendExperimentalFrame(ctx, step.frame); err != nil {
+			fmt.Fprintf(stderr, "startup-sequence step %s failed: %s\n", step.name, startupSequenceWriteFailure(err))
+			return 1
+		}
+		fmt.Fprintf(stdout, "startup-sequence completed %s (0x%04x)\n", step.name, uint16(step.frame.Command))
+	}
+	return 0
+}
+
+func startupSequenceWriteFailure(err error) string {
+	var protocolErr *d200x.ProtocolError
+	if errors.As(err, &protocolErr) && protocolErr.Kind == d200x.ErrorTransportShortWrite {
+		return "frame write failed (short write)"
+	}
+	return "frame write failed"
 }
 
 func sendActionFrameWithMetrics(ctx context.Context, factory d200x.TransportFactory, name string, frame d200x.Frame, metrics *syntheticMetricValues, stdout, stderr io.Writer) int {

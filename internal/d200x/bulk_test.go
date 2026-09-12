@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"testing"
@@ -164,5 +165,155 @@ func TestSessionSendLivePageFailureIsTerminalWithoutRetry(t *testing.T) {
 	}
 	if len(reports) < transport.failAt {
 		t.Fatalf("test setup expected at least %d reports, got %d", transport.failAt, len(reports))
+	}
+}
+
+func TestSessionSendStartupPageUpdateUsesPrebuiltContentAddressedArchive(t *testing.T) {
+	page := configuredTestPage()
+	update, err := BuildLivePageUpdate(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantArchive, err := BuildLivePageArchive(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(update.Archive().Data, wantArchive.Data) || update.Archive().PaddingLength != wantArchive.PaddingLength {
+		t.Fatal("live page update archive drifted from the canonical archive builder")
+	}
+
+	transport := newFakeTransport()
+	session, _ := openTestSession(t, transport)
+	if err := session.SendStartupPageUpdate(context.Background(), update, 73); err != nil {
+		t.Fatalf("SendStartupPageUpdate: %v", err)
+	}
+	frames := decodeWrittenFrames(t, transport.snapshotWrites())
+	wantCommands := []Command{
+		CommandUnlockScreen,
+		CommandCompleteDisplayUpload,
+		CommandBrightness,
+		CommandEnableInputStream,
+	}
+	if len(frames) != len(wantCommands) {
+		t.Fatalf("startup frames = %d, want %d", len(frames), len(wantCommands))
+	}
+	for index, wantCommand := range wantCommands {
+		if frames[index].Command != wantCommand {
+			t.Fatalf("startup frame %d command = %s, want %s", index, frames[index].Command, wantCommand)
+		}
+	}
+	if !bytes.Equal(frames[1].Payload, update.Archive().Data) {
+		t.Fatal("startup upload did not use the prebuilt update archive")
+	}
+	_ = session.Close()
+}
+
+func TestSessionSendStartupPageUpdateRejectsInvalidInputWithoutWrites(t *testing.T) {
+	valid, err := BuildLivePageUpdate(configuredTestPage())
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidFrame := valid
+	invalidFrame.frame.Payload = []byte("not-the-archive")
+	tests := []struct {
+		name       string
+		update     LivePageUpdate
+		brightness int
+		wantKind   ProtocolErrorKind
+	}{
+		{name: "zero update", update: LivePageUpdate{}, brightness: 73},
+		{name: "invalid brightness below range", update: valid, brightness: -1, wantKind: ErrorInvalidBrightness},
+		{name: "invalid brightness above range", update: valid, brightness: 101, wantKind: ErrorInvalidBrightness},
+		{name: "mismatched frame", update: invalidFrame, brightness: 73},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			transport := newFakeTransport()
+			session, _ := openTestSession(t, transport)
+			err := session.SendStartupPageUpdate(context.Background(), test.update, test.brightness)
+			if err == nil {
+				t.Fatal("invalid startup input returned nil")
+			}
+			if test.wantKind != "" && !hasProtocolKind(err, test.wantKind) {
+				t.Fatalf("error = %v, want %s", err, test.wantKind)
+			}
+			if calls, _, _ := transport.stats(); calls != 0 {
+				t.Fatalf("invalid startup input wrote %d reports, want zero", calls)
+			}
+			if _, active := session.Current(); !active {
+				t.Fatal("invalid startup input invalidated an active session")
+			}
+			_ = session.Close()
+		})
+	}
+}
+
+func TestSessionSendStartupPageUpdateStopsAtEveryWriteBoundary(t *testing.T) {
+	update, err := BuildLivePageUpdate(configuredTestPage())
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := []Frame{
+		UnlockScreenFrame(),
+		update.Frame(),
+		BrightnessFrame(73),
+		EnableInputStreamFrame(),
+	}
+	reportsPerFrame := make([]int, len(frames))
+	for index, frame := range frames {
+		reports, err := EncodeFrame(frame)
+		if err != nil {
+			t.Fatalf("encode frame %d: %v", index, err)
+		}
+		reportsPerFrame[index] = len(reports)
+	}
+
+	for index := range frames {
+		t.Run(fmt.Sprintf("failed primitive %d", index), func(t *testing.T) {
+			failAt := 1
+			for previous := 0; previous < index; previous++ {
+				failAt += reportsPerFrame[previous]
+			}
+			transport := newFakeTransport()
+			transport.failAt = failAt
+			transport.failErr = errors.New("synthetic startup failure")
+			session, _ := openTestSession(t, transport)
+			if err := session.SendStartupPageUpdate(context.Background(), update, 73); err == nil {
+				t.Fatal("failed startup primitive returned nil")
+			}
+			if calls, _, closes := transport.stats(); calls != failAt || closes != 1 {
+				t.Fatalf("failed startup reports/close = %d/%d, want %d/1", calls, closes, failAt)
+			}
+			if _, active := session.Current(); active {
+				t.Fatal("failed startup primitive left session active")
+			}
+			beforeRetry, _, _ := transport.stats()
+			if err := session.SendStartupPageUpdate(context.Background(), update, 73); err == nil {
+				t.Fatal("startup retry returned nil after uncertain write")
+			}
+			if calls, _, _ := transport.stats(); calls != beforeRetry {
+				t.Fatalf("startup retry wrote %d reports, want %d", calls, beforeRetry)
+			}
+		})
+
+		t.Run(fmt.Sprintf("short primitive %d", index), func(t *testing.T) {
+			failAt := 1
+			for previous := 0; previous < index; previous++ {
+				failAt += reportsPerFrame[previous]
+			}
+			transport := newFakeTransport()
+			transport.shortAt = failAt
+			session, _ := openTestSession(t, transport)
+			err := session.SendStartupPageUpdate(context.Background(), update, 73)
+			if !hasProtocolKind(err, ErrorTransportShortWrite) {
+				t.Fatalf("short startup error = %v, want %s", err, ErrorTransportShortWrite)
+			}
+			if calls, _, closes := transport.stats(); calls != failAt || closes != 1 {
+				t.Fatalf("short startup reports/close = %d/%d, want %d/1", calls, closes, failAt)
+			}
+			if _, active := session.Current(); active {
+				t.Fatal("short startup primitive left session active")
+			}
+		})
 	}
 }

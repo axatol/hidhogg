@@ -272,10 +272,9 @@ func (s *Session) SendPageUpload(ctx context.Context, page Page) error {
 	return s.sendFrameLocked(ctx, display)
 }
 
-// SendPage performs the only supported page-start sequence. Archive creation
-// and page validation happen before any transport write; each primitive is
-// serialized as one write transaction and a failed write invalidates the
-// session.
+// SendPage builds the canonical content-addressed page update before any
+// transport write, then delegates the startup transaction to
+// SendStartupPageUpdate.
 func (s *Session) SendPage(ctx context.Context, page Page, brightness int) error {
 	if s == nil {
 		return &ProtocolError{Kind: ErrorSessionClosed}
@@ -283,24 +282,11 @@ func (s *Session) SendPage(ctx context.Context, page Page, brightness int) error
 	if brightness < 0 || brightness > 100 {
 		return &ProtocolError{Kind: ErrorInvalidBrightness, Actual: brightness, Expected: 100}
 	}
-	display, err := PageFrame(page)
+	update, err := BuildLivePageUpdate(page)
 	if err != nil {
 		return err
 	}
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	ctx = normalizeContext(ctx)
-	for _, frame := range []Frame{
-		display,
-		BrightnessFrame(brightness),
-		UnlockScreenFrame(),
-		EnableInputStreamFrame(),
-	} {
-		if err := s.sendFrameLocked(ctx, frame); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.SendStartupPageUpdate(ctx, update, brightness)
 }
 
 func configuredArchiveFiles(positions []Position) ([]displayArchiveFile, error) {

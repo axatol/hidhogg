@@ -131,9 +131,9 @@ func TestProfileServiceUsesOneCanonicalFullPageUpdateAfterStartup(t *testing.T) 
 		t.Fatal(err)
 	}
 	wantStartup := []d200x.Command{
+		d200x.CommandUnlockScreen,
 		d200x.CommandCompleteDisplayUpload,
 		d200x.CommandBrightness,
-		d200x.CommandUnlockScreen,
 		d200x.CommandEnableInputStream,
 	}
 	if len(commands) < len(wantStartup) || !equalCommands(commands[:len(wantStartup)], wantStartup) {

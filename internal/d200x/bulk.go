@@ -100,6 +100,36 @@ func (s *Session) SendLivePageUpdate(ctx context.Context, update LivePageUpdate)
 	return s.sendFrameLocked(ctx, update.frame)
 }
 
+// SendStartupPageUpdate emits the verified startup transaction using one
+// session write lock. The unlock, complete-page upload, brightness, and input
+// enable primitives are deliberately fail-stop and are never retried or
+// rolled back after a transport failure.
+func (s *Session) SendStartupPageUpdate(ctx context.Context, update LivePageUpdate, brightness int) error {
+	if s == nil {
+		return &ProtocolError{Kind: ErrorSessionClosed}
+	}
+	if err := validateLivePageUpdate(update); err != nil {
+		return err
+	}
+	if brightness < 0 || brightness > 100 {
+		return &ProtocolError{Kind: ErrorInvalidBrightness, Actual: brightness, Expected: 100}
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	ctx = normalizeContext(ctx)
+	for _, frame := range []Frame{
+		UnlockScreenFrame(),
+		update.frame,
+		BrightnessFrame(brightness),
+		EnableInputStreamFrame(),
+	} {
+		if err := s.sendFrameLocked(ctx, frame); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func validateLivePageUpdate(update LivePageUpdate) error {
 	if err := ValidatePage(update.page); err != nil {
 		return fmt.Errorf("D200X live page update page: %w", err)

@@ -794,7 +794,7 @@ func (r *Runtime) start(ctx context.Context) error {
 	if err := session.Open(ctx, candidate); err != nil {
 		return r.startFailure(sanitizeFailure("open D200X device", err))
 	}
-	if err := session.SendPage(ctx, plan.page, plan.brightness); err != nil {
+	if err := session.SendStartupPageUpdate(ctx, initialCandidate.LivePageUpdate(), plan.brightness); err != nil {
 		return r.startFailure(sanitizeFailure("initialize D200X device", err))
 	}
 	idleSettings := newIdleSettingsBridge()

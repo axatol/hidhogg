@@ -102,9 +102,9 @@ func TestRuntimeBindsBeforeHIDAndPublishesReadinessAfterServing(t *testing.T) {
 		t.Fatalf("decode startup reports: %v", err)
 	}
 	wantCommands := []d200x.Command{
+		d200x.CommandUnlockScreen,
 		d200x.CommandCompleteDisplayUpload,
 		d200x.CommandBrightness,
-		d200x.CommandUnlockScreen,
 		d200x.CommandEnableInputStream,
 	}
 	if len(commands) < len(wantCommands) || !reflect.DeepEqual(commands[:len(wantCommands)], wantCommands) {
@@ -1257,9 +1257,9 @@ func TestRuntimeStdoutFailureClosesSession(t *testing.T) {
 		t.Fatalf("decode startup reports: %v", err)
 	}
 	wantCommands := []d200x.Command{
+		d200x.CommandUnlockScreen,
 		d200x.CommandCompleteDisplayUpload,
 		d200x.CommandBrightness,
-		d200x.CommandUnlockScreen,
 		d200x.CommandEnableInputStream,
 	}
 	if len(commands) < len(wantCommands) || !reflect.DeepEqual(commands[:len(wantCommands)], wantCommands) {
@@ -1315,9 +1315,9 @@ func countRuntimeCommand(commands []d200x.Command, want d200x.Command) int {
 
 func runtimeStartupCommandSequence() []d200x.Command {
 	return []d200x.Command{
+		d200x.CommandUnlockScreen,
 		d200x.CommandCompleteDisplayUpload,
 		d200x.CommandBrightness,
-		d200x.CommandUnlockScreen,
 		d200x.CommandEnableInputStream,
 	}
 }

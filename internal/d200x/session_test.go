@@ -175,7 +175,7 @@ func openTestSession(t *testing.T, transport Transport, options ...SessionOption
 	return session, candidate
 }
 
-func TestSessionSendPageWritesUploadThenBrightnessUnlockAndInputEnable(t *testing.T) {
+func TestSessionSendPageWritesUnlockUploadBrightnessAndInputEnable(t *testing.T) {
 	transport := newFakeTransport()
 	session, _ := openTestSession(t, transport)
 	if err := session.SendPage(context.Background(), configuredTestPage(), 73); err != nil {
@@ -186,9 +186,9 @@ func TestSessionSendPageWritesUploadThenBrightnessUnlockAndInputEnable(t *testin
 		t.Fatal(err)
 	}
 	want := []Command{
+		CommandUnlockScreen,
 		CommandCompleteDisplayUpload,
 		CommandBrightness,
-		CommandUnlockScreen,
 		CommandEnableInputStream,
 	}
 	if len(commands) != len(want) {

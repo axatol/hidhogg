@@ -1,6 +1,6 @@
 # Hidhogg handoff
 
-Updated: 2026-09-11
+Updated: 2026-09-12
 
 ## Current canonical checkpoint
 
@@ -9,7 +9,8 @@ Updated: 2026-09-11
 - M-05 automatic, architecture, and independent focused gates passed. The owner-visible D200X acceptance bound `0_0` to `/usr/bin/printf`; one press exited 0 and captured exactly `literal:a;$(not-executed)|*.txt\n` with no stderr, truncation, signal, or supervision error. Shutdown removed socket/metadata and retained the persistent lock.
 - M-06 is complete as of 2026-09-11. The runtime builds immutable candidates, serializes reloads with profile activation, applies brightness and idle-timeout changes through the sole idle-policy owner, exposes strict bounded IPC/CLI methods, and watches the explicit configuration's parent directory with a 200-millisecond trailing debounce. Architecture and comprehensive automatic gates passed; the owner reported the complete manual sequence passed: valid automatic reload, invalid-edit last-known-good retention, valid recovery, and clean shutdown. `config.get` remains deferred.
 - M-06-F01 is complete with automatic, independent, and owner-visible acceptance. When the latest completed attempt is candidate-rejected, `config.status` exposes safe category/key/line/column/static detail without path, values, excerpts, or raw cause; every other completed attempt clears it. Non-rejected status encodes explicit `diagnostic:null`; `config.reload` error responses remain static.
-- M-06-F02 is a confirmed schema-v2 startup-display defect. The owner reports that changed initial-profile content is not visible on startup and appears only after saving the configuration again, triggering reload. The code already invokes one startup complete-page send, so F02 must explain the startup-versus-live behavioral difference rather than add an unproven duplicate write.
+- M-06-F02 is complete. Startup applies the already-built configured initial candidate exactly once as unlock → content-addressed live-bulk `0x0001` → configured brightness → input-enable under one session lock before readiness; validation is pre-write and failures fail-stop without retry/rollback. `SendPage` shares this path; diagnostic `SendPageUpload` is unchanged.
+- Automatic and independent gates passed. The owner then cold-started production twice from a deliberately different retained page without saving or reloading the configuration; both runs visibly applied the configured initial page as expected. This is evidence for the owned D200X/current firmware, not a cross-firmware claim.
 - C01 introduced strict schema version 2 with one default and 1..31 complete profiles, exact optional `activate_profile`/`press` actions, and an immutable profile catalog. Independent V02 passed race, vet, schema determinism, boundary, invalid-input, and defensive-copy gates.
 - R01 restored full-tree compilation and added the bounded transactional runtime profile service. Independent V04 passed activation, queue saturation, fail-stop, dynamic binding, idle suppression, diagnostics default selection, owned-reader cancellation, race, vet, compile, and diff gates.
 - I01 added strict profile list/activate IPC and discovery-aware `hidhoggctl` commands. Independent V01 passed boundary, protocol, adapter, CLI, race, build, vet, and unsandboxed Unix-socket gates; 31 maximum-width summaries frame at 15,880 bytes and 32 at 16,387 bytes/rejected.
@@ -37,7 +38,7 @@ Updated: 2026-09-11
 
 ### Current next action
 
-Correct M-06-F02's confirmed startup-display defect by explaining why the existing startup complete-page send does not visibly apply changed content while the subsequent live reload does. Do not add a duplicate write without evidence. `config.get`, env-file loading/exposure, Swift foreground-application mapping, and asynchronous actions remain deferred; no `.env` content may be inspected.
+Run the verified F02 probe sequence once from a visibly different retained page and report whether the live-bulk page appears and inputs remain enabled. Use the result to select the production startup fix; do not add a duplicate write without evidence. `config.get`, env-file loading/exposure, Swift foreground-application mapping, and asynchronous actions remain deferred; no `.env` content may be inspected.
 
 All older checkpoints below are retained as historical evidence. Their `next action` statements are superseded by this section.
 

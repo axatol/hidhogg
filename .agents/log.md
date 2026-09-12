@@ -847,6 +847,12 @@
 - The owner confirmed that local configuration diagnostics may include the absolute source path, dotted key, and TOML line/column when available. They must not echo configuration values or source excerpts; IPC remains the bounded sanitized `reload_rejected` surface.
 - F01 must cover startup and runtime-local reload diagnostics for syntax, schema version, obsolete/unknown fields, missing fields, type mismatches, semantic validation, and unreadable paths.
 - The owner reproduced F02 under schema v2: changed initial-profile content was not visible after startup and appeared only after the same configuration was saved again, triggering automatic reload. This confirms a startup-versus-live application defect even though the current startup path invokes one complete-page send before readiness.
+- Direct code, explorer, and architect review found two startup-versus-reload differences: startup uses legacy fixed icon paths and immediately follows `0x0001` with auxiliary commands, while reload uses content-addressed icons and sends only `0x0001`. The physical report does not distinguish firmware caching from command-processing interference.
+- The owner confirmed a diagnostic-first trial using `d200xprobe`: one fresh session will send unlock, content-addressed live-bulk `0x0001`, configured brightness, and input-enable in that order, exactly once each with no delay or retry. Production remains unchanged until the owner reports the device result.
+- The bounded `startup-sequence` probe is implemented in the spike module. Parser, exact order/count, live-bulk archive identity, safe output, invalid pre-enumeration rejection, and ordinary/short failure at every logical boundary pass focused and full spike race, vet, and build gates.
+- Independent D01-V01 repeated the probe package 10 times under race detection and passed the full spike suite. The owner then ran the verified sequence and confirmed all three observable results: the content-addressed live-bulk page appeared, brightness became 10, and the display remained active.
+- This physical pass validates the combined candidate order but does not isolate fixed-path caching from auxiliary-command timing as the sole cause. It is sufficient to select the tested order for a production implementation; the production cold-start gate remains required.
+- On 2026-09-12 the owner confirmed the production plan: add one typed startup transaction using the already-built content-addressed initial candidate and send unlock, page, brightness, then input-enable under one session lock. Legacy `SendPage` must share the content-addressed builder; no duplicate page, delay, retry, rollback, or post-readiness redraw is authorized.
 
 ## 2026-09-11 — M-06-F01 descriptive local diagnostics completed
 
@@ -875,3 +881,14 @@
 - Comprehensive automatic verification passed `go generate ./...`, whole-tree race tests, vet, build, formatting, diff checks, and targeted M-06 race stress with no generated drift.
 - The owner reported that all steps in the manual M-06 runbook passed. This is the authoritative owner-visible evidence for valid automatic external-edit application, invalid-edit retention of the last-known-good runtime, subsequent valid recovery, and clean shutdown.
 - M-06 is complete. Device-side atomicity, rollback, and cross-firmware behavior remain intentionally unclaimed. M-06-F01 descriptive local configuration errors and M-06-F02 startup reassertion investigation remain planned follow-ups rather than milestone blockers.
+
+## 2026-09-12 — M-06-F02 production correction passed automatic gates
+
+- Production startup now consumes the already-built content-addressed initial `LivePageUpdate` and sends exactly unlock, complete-page upload, configured brightness, then input-enable under one session write lock before readiness. `SendPage` builds the same update and delegates; diagnostic-only fixed-path `SendPageUpload` remains unchanged.
+- All update and brightness validation precedes HID writes. Ordinary or short write failure stops later frames, invalidates the session through the existing transport boundary, performs no retry or rollback, and prevents successful runtime startup/readiness.
+- Independent V01 passed archive/payload identity, exact sequence, all logical failure boundaries, startup readiness unwinding, legacy entrypoint and diagnostic compatibility, profile/reload regression checks, focused race/vet, whole-tree tests/build, and diff checks. The remaining gate is an owner-visible cold start from a visibly different retained page, followed by a clean-shutdown repeat without saving the configuration.
+
+## 2026-09-12 — M-06-F02 physical acceptance completed
+
+- The owner ran the production runtime twice from a deliberately different retained device page without saving or reloading the configuration. Both cold starts visibly replaced the retained page with the configured initial page as expected.
+- Together with the automatic and independent gates, this establishes that the typed unlock, content-addressed page, configured-brightness, and input-enable startup transaction corrects the reproduced startup reassertion defect on the owned D200X and current firmware. Cross-firmware behavior remains unverified. M-06-F02 is complete.

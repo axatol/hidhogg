@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"strings"
 	"sync"
@@ -17,6 +18,9 @@ type probeTransport struct {
 	reads     [][]byte
 	writeN    int
 	writeErr  error
+	failOn    d200x.Command
+	failErr   error
+	failShort bool
 	readReady chan struct{}
 	readOnce  sync.Once
 }
@@ -38,6 +42,15 @@ func (transport *probeTransport) Read(ctx context.Context, destination []byte) (
 
 func (transport *probeTransport) Write(_ context.Context, report []byte) (int, error) {
 	transport.writes = append(transport.writes, append([]byte(nil), report...))
+	if transport.failOn != 0 && probeReportCommand(report) == transport.failOn {
+		if transport.failShort {
+			return len(report) - 1, nil
+		}
+		if transport.failErr != nil {
+			return 0, transport.failErr
+		}
+		return 0, errors.New("injected write failure")
+	}
 	if transport.writeErr != nil {
 		return 0, transport.writeErr
 	}
@@ -54,15 +67,23 @@ type probeFactory struct {
 	transport      *probeTransport
 	enumerateCalls int
 	openCalls      int
+	enumerateErr   error
+	openErr        error
 }
 
 func (factory *probeFactory) Enumerate(context.Context) ([]d200x.Candidate, error) {
 	factory.enumerateCalls++
+	if factory.enumerateErr != nil {
+		return nil, factory.enumerateErr
+	}
 	return factory.candidates, nil
 }
 
 func (factory *probeFactory) Open(context.Context, d200x.Candidate) (d200x.Transport, error) {
 	factory.openCalls++
+	if factory.openErr != nil {
+		return nil, factory.openErr
+	}
 	return factory.transport, nil
 }
 
@@ -71,6 +92,50 @@ func newProbeFactory() *probeFactory {
 		candidates: []d200x.Candidate{d200x.NewCandidate("opaque", d200x.VendorID, d200x.ProductID, d200x.InterfaceNumber)},
 		transport:  &probeTransport{},
 	}
+}
+
+func probeReportCommand(report []byte) d200x.Command {
+	packet, err := d200x.NormalizeReport(report)
+	if err != nil || len(packet) < d200x.FrameHeaderSize || packet[0] != 0x7c || packet[1] != 0x7c {
+		return 0
+	}
+	return d200x.Command(binary.BigEndian.Uint16(packet[2:4]))
+}
+
+func writtenFrameStartCommands(reports [][]byte) []d200x.Command {
+	commands := make([]d200x.Command, 0, len(reports))
+	for _, report := range reports {
+		if command := probeReportCommand(report); command != 0 {
+			commands = append(commands, command)
+		}
+	}
+	return commands
+}
+
+func decodeWrittenFrames(reports [][]byte) ([]d200x.Frame, error) {
+	frames := make([]d200x.Frame, 0)
+	for index := 0; index < len(reports); {
+		assembler, err := d200x.NewFrameAssembler(reports[index])
+		if err != nil {
+			return nil, err
+		}
+		index++
+		for !assembler.Complete() {
+			if index >= len(reports) {
+				return nil, errors.New("incomplete written frame")
+			}
+			if err := assembler.Append(reports[index]); err != nil {
+				return nil, err
+			}
+			index++
+		}
+		frame, err := assembler.Frame()
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, frame)
+	}
+	return frames, nil
 }
 
 func TestActionDefinitionsMapAllKnownSymbolsExactly(t *testing.T) {
@@ -130,7 +195,17 @@ func TestHelpDescribesLiveBulkPresetAndObservation(t *testing.T) {
 		t.Fatalf("help code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	output := stdout.String() + stderr.String()
-	for _, want := range []string{"live-bulk", "0x0001", "bulk redraw", "host write success"} {
+	for _, want := range []string{
+		"live-bulk",
+		"0x0001",
+		"bulk redraw",
+		"host write success",
+		"startup-sequence",
+		"unlock-screen",
+		"complete-display-upload",
+		"brightness",
+		"enable-input-stream",
+	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("help missing %q: %q", want, output)
 		}
@@ -157,6 +232,92 @@ func TestBrightnessRequiresCanonicalDecimal(t *testing.T) {
 		if err != nil || string(frame.Payload) != parameter {
 			t.Fatalf("parameter %q frame=%#v err=%v", parameter, frame, err)
 		}
+	}
+}
+
+func TestStartupSequenceRequiresCanonicalBrightnessBeforeEnumeration(t *testing.T) {
+	for _, parameter := range []string{"", "00", "01", "+1", "-0", " 1", "1 ", "101", "-1", "1.0"} {
+		factory := newProbeFactory()
+		var stdout, stderr bytes.Buffer
+		args := []string{"--action", startupSequenceAction, "--parameters", parameter}
+		if code := run(args, factory, &stdout, &stderr); code != 2 {
+			t.Fatalf("parameter %q code = %d, stderr=%q", parameter, code, stderr.String())
+		}
+		if factory.enumerateCalls != 0 || factory.openCalls != 0 || len(factory.transport.writes) != 0 {
+			t.Fatalf("parameter %q touched HID: enumerate=%d open=%d writes=%d", parameter, factory.enumerateCalls, factory.openCalls, len(factory.transport.writes))
+		}
+		if !strings.Contains(stderr.String(), "canonical decimal") {
+			t.Fatalf("parameter %q error=%q", parameter, stderr.String())
+		}
+	}
+}
+
+func TestStartupSequenceAcceptsCanonicalBounds(t *testing.T) {
+	for _, parameter := range []string{"0", "100"} {
+		factory := newProbeFactory()
+		var stdout, stderr bytes.Buffer
+		args := []string{"--action", startupSequenceAction, "--parameters", parameter}
+		if code := run(args, factory, &stdout, &stderr); code != 0 {
+			t.Fatalf("parameter %q code=%d stderr=%q", parameter, code, stderr.String())
+		}
+		frames, err := decodeWrittenFrames(factory.transport.writes)
+		if err != nil {
+			t.Fatalf("parameter %q decode frames: %v", parameter, err)
+		}
+		if len(frames) != 4 || frames[2].Command != d200x.CommandBrightness || string(frames[2].Payload) != parameter {
+			t.Fatalf("parameter %q frames=%#v", parameter, frames)
+		}
+	}
+}
+
+func TestStartupSequenceSendsExactFramesInOneSession(t *testing.T) {
+	factory := newProbeFactory()
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"--action", startupSequenceAction, "--parameters", "80"}, factory, &stdout, &stderr); code != 0 {
+		t.Fatalf("code=%d stderr=%q", code, stderr.String())
+	}
+	if factory.enumerateCalls != 1 || factory.openCalls != 1 {
+		t.Fatalf("enumerate=%d open=%d", factory.enumerateCalls, factory.openCalls)
+	}
+	frames, err := decodeWrittenFrames(factory.transport.writes)
+	if err != nil {
+		t.Fatalf("decode startup frames: %v", err)
+	}
+	wantCommands := []d200x.Command{
+		d200x.CommandUnlockScreen,
+		d200x.CommandCompleteDisplayUpload,
+		d200x.CommandBrightness,
+		d200x.CommandEnableInputStream,
+	}
+	if len(frames) != len(wantCommands) {
+		t.Fatalf("frame count=%d, want %d", len(frames), len(wantCommands))
+	}
+	for index, command := range wantCommands {
+		if frames[index].Command != command {
+			t.Fatalf("frame %d command=%s, want %s", index, frames[index].Command, command)
+		}
+	}
+	wantLiveBulk, err := d200x.LiveBulkDisplayFrame()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(frames[1].Payload, wantLiveBulk.Payload) {
+		t.Fatal("startup upload differs from existing content-addressed live-bulk archive")
+	}
+	if string(frames[2].Payload) != "80" {
+		t.Fatalf("brightness payload=%q", frames[2].Payload)
+	}
+	for _, commandName := range []string{"unlock-screen", "complete-display-upload", "brightness", "enable-input-stream"} {
+		if !strings.Contains(stdout.String(), "startup-sequence completed "+commandName) {
+			t.Fatalf("output missing completed %s: %q", commandName, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "opaque") ||
+		strings.Contains(stdout.String()+stderr.String(), "serial") ||
+		strings.Contains(stdout.String()+stderr.String(), "path") ||
+		strings.Contains(stdout.String()+stderr.String(), "payload") ||
+		strings.Contains(stdout.String()+stderr.String(), "archive") {
+		t.Fatalf("startup output exposed unsafe detail: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 }
 
@@ -268,6 +429,118 @@ func TestFailedAndShortWritesAreNotRetried(t *testing.T) {
 		if len(transport.writes) != 1 {
 			t.Fatalf("failed write attempts = %d", len(transport.writes))
 		}
+	}
+}
+
+func TestStartupSequenceStopsAtFirstOrdinaryWriteFailure(t *testing.T) {
+	wantCommands := []d200x.Command{
+		d200x.CommandUnlockScreen,
+		d200x.CommandCompleteDisplayUpload,
+		d200x.CommandBrightness,
+		d200x.CommandEnableInputStream,
+	}
+	for failureIndex, command := range wantCommands {
+		factory := newProbeFactory()
+		factory.transport.failOn = command
+		factory.transport.failErr = errors.New("injected-write-secret")
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"--action", startupSequenceAction, "--parameters", "50"}, factory, &stdout, &stderr); code != 1 {
+			t.Fatalf("failure at %s code=%d stdout=%q stderr=%q", command, code, stdout.String(), stderr.String())
+		}
+		written := writtenFrameStartCommands(factory.transport.writes)
+		if len(written) != failureIndex+1 {
+			t.Fatalf("failure at %s wrote command starts=%v, want prefix length %d", command, written, failureIndex+1)
+		}
+		for index, writtenCommand := range written {
+			if writtenCommand != wantCommands[index] {
+				t.Fatalf("failure at %s command %d=%s, want %s", command, index, writtenCommand, wantCommands[index])
+			}
+		}
+		if !strings.Contains(stderr.String(), "startup-sequence step "+command.String()+" failed") ||
+			!strings.Contains(stderr.String(), "frame write failed") ||
+			strings.Contains(stderr.String(), "injected-write-secret") {
+			t.Fatalf("failure at %s unsafe error=%q", command, stderr.String())
+		}
+		if strings.Contains(stdout.String(), "completed "+command.String()) {
+			t.Fatalf("failed command reported completed: %q", stdout.String())
+		}
+		for _, laterCommand := range wantCommands[failureIndex+1:] {
+			if strings.Contains(stdout.String(), "completed "+laterCommand.String()) || strings.Contains(stderr.String(), "step "+laterCommand.String()) {
+				t.Fatalf("failure at %s continued to %s: stdout=%q stderr=%q", command, laterCommand, stdout.String(), stderr.String())
+			}
+		}
+	}
+}
+
+func TestStartupSequenceStopsAtFirstShortWrite(t *testing.T) {
+	wantCommands := []d200x.Command{
+		d200x.CommandUnlockScreen,
+		d200x.CommandCompleteDisplayUpload,
+		d200x.CommandBrightness,
+		d200x.CommandEnableInputStream,
+	}
+	for failureIndex, command := range wantCommands {
+		factory := newProbeFactory()
+		factory.transport.failOn = command
+		factory.transport.failShort = true
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"--action", startupSequenceAction, "--parameters", "50"}, factory, &stdout, &stderr); code != 1 {
+			t.Fatalf("short failure at %s code=%d stdout=%q stderr=%q", command, code, stdout.String(), stderr.String())
+		}
+		written := writtenFrameStartCommands(factory.transport.writes)
+		if len(written) != failureIndex+1 {
+			t.Fatalf("short failure at %s wrote command starts=%v, want prefix length %d", command, written, failureIndex+1)
+		}
+		if !strings.Contains(stderr.String(), "startup-sequence step "+command.String()+" failed") ||
+			!strings.Contains(stderr.String(), "short write") || strings.Contains(stderr.String(), "payload") {
+			t.Fatalf("short failure at %s error=%q", command, stderr.String())
+		}
+		for _, laterCommand := range wantCommands[failureIndex+1:] {
+			if strings.Contains(stdout.String(), "completed "+laterCommand.String()) || strings.Contains(stderr.String(), "step "+laterCommand.String()) {
+				t.Fatalf("short failure at %s continued to %s: stdout=%q stderr=%q", command, laterCommand, stdout.String(), stderr.String())
+			}
+		}
+	}
+}
+
+func TestStartupSequenceSelectionAndOpenFailuresAreSafe(t *testing.T) {
+	tests := []struct {
+		name             string
+		configure        func(*probeFactory)
+		wantEnumerations int
+		wantOpens        int
+		wantError        string
+	}{
+		{
+			name:             "selection",
+			configure:        func(factory *probeFactory) { factory.candidates = nil },
+			wantEnumerations: 1,
+			wantOpens:        0,
+			wantError:        "startup-sequence device selection failed",
+		},
+		{
+			name:             "open",
+			configure:        func(factory *probeFactory) { factory.openErr = errors.New("open-device-secret") },
+			wantEnumerations: 1,
+			wantOpens:        1,
+			wantError:        "startup-sequence device open failed",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			factory := newProbeFactory()
+			test.configure(factory)
+			var stdout, stderr bytes.Buffer
+			if code := run([]string{"--action", startupSequenceAction, "--parameters", "50"}, factory, &stdout, &stderr); code != 1 {
+				t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+			}
+			if factory.enumerateCalls != test.wantEnumerations || factory.openCalls != test.wantOpens || len(factory.transport.writes) != 0 {
+				t.Fatalf("enumerate=%d open=%d writes=%d", factory.enumerateCalls, factory.openCalls, len(factory.transport.writes))
+			}
+			if !strings.Contains(stderr.String(), test.wantError) || strings.Contains(stderr.String(), "secret") || strings.Contains(stderr.String(), "opaque") {
+				t.Fatalf("unsafe error=%q", stderr.String())
+			}
+		})
 	}
 }
 

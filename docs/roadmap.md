@@ -1,7 +1,7 @@
 # Hidhogg roadmap
 
-Status: M-06 and expanded M-06-F01 complete; M-06-F02 planned
-Updated: 2026-09-11
+Status: M-06, M-06-F01, and M-06-F02 complete
+Updated: 2026-09-12
 
 Task IDs are immutable.
 
@@ -64,7 +64,7 @@ Task IDs are immutable.
 | M-06-W01 | Complete | Watch the configuration parent directory and coalesce dirty hints into reload attempts | M-06-I02 |
 | M-06-V01 | Complete | Independently verify automatic gates and one owner-visible external-edit reload | M-06-W01 |
 | M-06-F01 | Complete | Make local configuration failures descriptive and expose safe rejection metadata to status consumers | M-06-V01 |
-| M-06-F02 | Planned | Correct the confirmed failure to visibly reassert changed initial-profile content on startup | M-06-F01 |
+| M-06-F02 | Complete | Correct the confirmed failure to visibly reassert changed initial-profile content on startup | M-06-F01 |
 
 ## P-01 — Planning baseline
 
@@ -504,11 +504,14 @@ Task IDs are immutable.
 
 ### M-06-F02 — Startup initial-profile reassertion
 
-- Status: planned after M-06-F01; owner reproduction on 2026-09-11 confirms the defect under the schema-v2 runtime.
+- Status: complete on 2026-09-12 after automatic, independent, and two-run owner-visible cold-start acceptance.
 - Goal: ensure every successful runtime generation sends the configured initial/default profile exactly once before readiness so the D200X cannot retain the previous process's last applied page.
 - Existing evidence: the current startup path constructs the default-profile page and calls the complete-page send operation before publishing readiness. The owner reports that changed initial-profile content is not visible on startup and becomes visible only after saving the same configuration again, which triggers reload.
-- Acceptance: start from a visibly different retained device page; launch a valid schema-v2 runtime; observe exactly one startup complete-page operation containing the configured default profile; confirm the configured page is visible before health becomes ready; confirm no duplicate startup page send; repeat after a clean prior shutdown without relying on a reload event.
+- Diagnostic gate: `d200xprobe` now has one bounded `startup-sequence` action accepting canonical brightness `0..100`. One fresh session sends exactly unlock, content-addressed live-bulk `0x0001`, brightness, then input-enable; it stops on the first failure and performs no delay, retry, rollback, or recovery. Independent automatic verification passed, and the owner confirmed the content-addressed page appeared, brightness became 10, and the display remained active.
+- Acceptance: the diagnostic sequence has passed physically. Production must now use the same typed order with the configured initial candidate, then start from a visibly different retained page and confirm exactly one content-addressed startup complete-page operation, configured content visible before readiness, no duplicate page send, and repeatability after clean shutdown without a reload event.
 - Constraints: do not add an unconditional second write, retry, or post-readiness redraw without evidence locating the failure. Preserve fail-stop behavior when the startup write fails.
+- Automatic result: production startup now passes the already-built `LivePageUpdate` and emits unlock, content-addressed complete-page upload, configured brightness, then input-enable under one session write lock. Legacy `SendPage` delegates to the same builder and transaction; diagnostic-only `SendPageUpload` is unchanged. Independent V01 passed pre-write validation, exact order/archive identity, ordinary and short-write fail-stop boundaries, runtime readiness failure handling, profile/reload regressions, focused race/vet, whole-tree tests/build, and diff checks.
+- Physical result: the owner started twice from a deliberately different retained page without saving or reloading the configuration. Both cold starts visibly applied the configured initial page as expected. This closes F02 for the owned D200X and current firmware; cross-firmware behavior remains unverified.
 - Dependencies: M-06-F01.
 
 ## M-02-F01 — Screensaver wake and keepalive correction
