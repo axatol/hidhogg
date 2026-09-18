@@ -16,6 +16,7 @@ import (
 	"hidhogg/internal/discovery"
 	"hidhogg/internal/execution"
 	"hidhogg/internal/ipc"
+	"hidhogg/internal/nativeinput"
 	"hidhogg/internal/profile"
 )
 
@@ -67,6 +68,7 @@ type Runtime struct {
 	stderr             io.Writer
 	clock              Clock
 	executionFactory   executionWorkerFactory
+	nativeFactory      nativeWorkerFactory
 	reloadBuilder      func(string, string) (reloadCandidate, error)
 	configWatchFactory func() (configWatchSource, error)
 	automaticReload    chan struct{}
@@ -79,6 +81,7 @@ type Runtime struct {
 	profileService   *RuntimeProfileService
 	idleSettings     *idleSettingsBridge
 	executionWorker  executionWorker
+	nativeWorker     nativeWorker
 	plan             devicePlan
 	startupCompleted time.Time
 	terminalCancel   context.CancelFunc
@@ -131,6 +134,7 @@ func New(config Config) (*Runtime, error) {
 		stderr:             stderr,
 		clock:              clock,
 		executionFactory:   func() (executionWorker, error) { return execution.New() },
+		nativeFactory:      func() nativeWorker { return nativeinput.New() },
 		reloadBuilder:      buildReloadCandidate,
 		configWatchFactory: newFSNotifyConfigWatchSource,
 		automaticReload:    make(chan struct{}, 1),
@@ -144,6 +148,7 @@ func New(config Config) (*Runtime, error) {
 			ProfileService:   runtimeIPCProfileService{runtime: runtime},
 			ExecutionHistory: runtimeExecutionHistory{runtime: runtime},
 			ConfigService:    runtimeIPCConfigService{runtime: runtime},
+			InputService:     runtimeIPCInputService{runtime: runtime},
 		})
 		if err != nil {
 			return nil, err
@@ -306,19 +311,20 @@ func configDiagnosticForIPC(source *appconfig.DiagnosticProjection) *ipc.ConfigD
 }
 
 func (history runtimeExecutionHistory) ListSummaries(limit int) ([]execution.Summary, error) {
-	worker := history.worker()
-	if worker == nil {
-		return nil, execution.ErrClosed
-	}
-	return worker.ListSummaries(limit)
+	return mergedHistory(history.worker(), history.nativeWorker(), limit)
 }
 
 func (history runtimeExecutionHistory) Get(id string) (execution.Record, bool) {
 	worker := history.worker()
-	if worker == nil {
-		return execution.Record{}, false
+	if worker != nil {
+		if record, ok := worker.Get(id); ok {
+			return record, true
+		}
 	}
-	return worker.Get(id)
+	if native := history.nativeWorker(); native != nil {
+		return native.Get(id)
+	}
+	return execution.Record{}, false
 }
 
 func (history runtimeExecutionHistory) worker() executionWorker {
@@ -511,11 +517,12 @@ func (r *Runtime) Run(ctx context.Context) error {
 	policyActionService := r.profileService
 	policySettings := r.idleSettings
 	policyExecutionWorker := r.executionWorker
+	policyNativeWorker := r.nativeWorker
 	r.mu.Unlock()
 	policySettings.activate()
 	go func() {
 		defer policySettings.deactivate()
-		policyDone <- runIdlePolicyWithExecutor(serveContext, r.clock, policySession, policyPlan, startupCompleted, inputObservations, r.stdout, policyActionService, policyExecutionWorker, policySettings.requests)
+		policyDone <- runIdlePolicyWithExecutor(serveContext, r.clock, policySession, policyPlan, startupCompleted, inputObservations, r.stdout, policyActionService, runtimeActionSubmitter{executionSubmitter: policyExecutionWorker, native: policyNativeWorker}, policySettings.requests)
 	}()
 	configWatcherDone := r.startConfigWatcher(serveContext)
 	automaticReloadDone := make(chan struct{})
@@ -675,12 +682,19 @@ func (r *Runtime) closeLocked() error {
 	r.idleSettings = nil
 	executionWorker := r.executionWorker
 	r.executionWorker = nil
+	nativeWorker := r.nativeWorker
+	r.nativeWorker = nil
 	r.terminalCancel = nil
 	server := r.server
 	generation := r.generation
 	r.mu.Unlock()
 
 	var failures []error
+	if nativeWorker != nil {
+		if err := nativeWorker.Close(); err != nil {
+			failures = append(failures, errors.New("close native input worker failed"))
+		}
+	}
 	if generation != nil {
 		if err := generation.WithdrawMetadata(); err != nil {
 			failures = append(failures, sanitizeFailure("withdraw runtime metadata", err))
@@ -768,6 +782,10 @@ func (r *Runtime) start(ctx context.Context) error {
 	}
 	r.mu.Lock()
 	r.executionWorker = executionWorker
+	r.mu.Unlock()
+	nativeWorker := r.nativeFactory()
+	r.mu.Lock()
+	r.nativeWorker = nativeWorker
 	r.mu.Unlock()
 
 	if err := r.prepareIPC(); err != nil {
@@ -862,6 +880,7 @@ func (r *Runtime) prepareIPC() error {
 				ProfileService:   runtimeIPCProfileService{runtime: r},
 				ExecutionHistory: runtimeExecutionHistory{runtime: r},
 				ConfigService:    runtimeIPCConfigService{runtime: r},
+				InputService:     runtimeIPCInputService{runtime: r},
 			})
 			if err != nil {
 				return err

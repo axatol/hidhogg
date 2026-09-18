@@ -102,13 +102,14 @@ func TestProfileActionRequiresSuccessfulActiveEmission(t *testing.T) {
 
 func TestProfileActionRejectsIncompleteAndUnsupportedGestures(t *testing.T) {
 	tests := []struct {
-		name   string
-		events []d200x.InputEvent
+		name       string
+		events     []d200x.InputEvent
+		wantWrites int
 	}{
 		{name: "release only", events: []d200x.InputEvent{
 			actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased),
 		}},
-		{name: "duplicate press", events: []d200x.InputEvent{
+		{name: "duplicate press", wantWrites: 1, events: []d200x.InputEvent{
 			actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed),
 			actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed),
 			actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased),
@@ -151,8 +152,8 @@ func TestProfileActionRejectsIncompleteAndUnsupportedGestures(t *testing.T) {
 					t.Fatalf("observe %#v: %v", event, err)
 				}
 			}
-			if got := sender.callCount(); got != 0 {
-				t.Fatalf("unexpected activation writes = %d", got)
+			if got := sender.callCount(); got != test.wantWrites {
+				t.Fatalf("activation writes = %d, want %d", got, test.wantWrites)
 			}
 		})
 	}
@@ -298,8 +299,8 @@ func TestProfileActionConditionalActivationSerializesWithIPC(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("IPC activation did not reach sender")
 	}
-	if controller.candidate != nil {
-		t.Fatal("press candidate survived activation start")
+	if len(controller.pending) != 0 {
+		t.Fatal("release candidate survived activation start")
 	}
 
 	actionDone := make(chan error, 1)
@@ -500,7 +501,7 @@ func TestRuntimeRunProfileActionFakeTransportFlow(t *testing.T) {
 
 func runtimeActionConfiguration() []byte {
 	var builder strings.Builder
-	builder.WriteString("schema_version = 2\nadapter = \"ulanzi.d200x\"\nbrightness = 73\nidle_timeout_seconds = 5\ndefault_profile_id = \"default\"\n\n")
+	builder.WriteString("schema_version = 3\nadapter = \"ulanzi.d200x\"\nbrightness = 73\nidle_timeout_seconds = 5\ndefault_profile_id = \"default\"\n\n")
 	for _, profileID := range []string{"default", "alternate"} {
 		target := "alternate"
 		if profileID == "alternate" {
@@ -510,7 +511,7 @@ func runtimeActionConfiguration() []byte {
 		for index, spec := range d200x.SupportedPositions() {
 			fmt.Fprintf(&builder, "[[profiles.positions]]\nid = \"%s-%s\"\nposition = \"%s\"\nlabel = \"%s %d\"\nbackground = \"#102030\"\n", profileID, spec.Name, spec.Name, profileID, index)
 			if index == 0 {
-				fmt.Fprintf(&builder, "\n[profiles.positions.action]\ntype = \"activate_profile\"\ngesture = \"press\"\nprofile_id = \"%s\"\n", target)
+				fmt.Fprintf(&builder, "\n[profiles.positions.action]\ntype = \"activate_profile\"\ngesture = \"release\"\nprofile_id = \"%s\"\n", target)
 			}
 			builder.WriteString("\n")
 		}

@@ -32,6 +32,7 @@ type LivePositionUpdate struct {
 // BuildLivePositionUpdate validates one position and builds its complete
 // content-addressed 0x000d archive before any transport write.
 func BuildLivePositionUpdate(position Position) (LivePositionUpdate, error) {
+	position = effectivePositionStyle(position)
 	spec, err := validatedLivePosition(position)
 	if err != nil {
 		return LivePositionUpdate{}, err
@@ -67,8 +68,10 @@ func (update LivePositionUpdate) Frame() Frame {
 }
 
 // BuildLivePositionArchive creates the deterministic two-member archive used
-// for one targeted live display update.
+// for one targeted live display update. The PNG carries only background and
+// border artwork; the manifest carries firmware-rendered label text and style.
 func BuildLivePositionArchive(position Position) (DisplayArchive, error) {
+	position = effectivePositionStyle(position)
 	spec, err := validatedLivePosition(position)
 	if err != nil {
 		return DisplayArchive{}, err
@@ -81,12 +84,17 @@ func BuildLivePositionArchive(position Position) (DisplayArchive, error) {
 	if err != nil {
 		return DisplayArchive{}, fmt.Errorf("render D200X live position %q background: %w", spec.Name, err)
 	}
-	pngData, err := configuredPNG(width, position.Label, background)
+	var pngData []byte
+	if spec.Wide {
+		pngData, err = configuredWidePNG(position, background)
+	} else {
+		pngData, err = configuredPNG(width, background)
+	}
 	if err != nil {
 		return DisplayArchive{}, fmt.Errorf("encode D200X live position %q: %w", spec.Name, err)
 	}
 	iconPath := contentAddressedIconPath(pngData)
-	manifest, err := livePositionManifest(spec.Name, iconPath, position.Label, spec.Wide)
+	manifest, err := livePositionManifest(spec.Name, iconPath, position, spec.Wide)
 	if err != nil {
 		return DisplayArchive{}, fmt.Errorf("encode D200X live position %q manifest: %w", spec.Name, err)
 	}
@@ -149,6 +157,29 @@ type livePositionFont struct {
 	Weight    int    `json:"Weight"`
 }
 
+func positionManifestEntry(position Position, iconPath string, wide bool) livePositionManifestEntry {
+	position = effectivePositionStyle(position)
+	entry := livePositionManifestEntry{
+		State: 0,
+		ViewParam: []livePositionViewParam{{
+			Font: livePositionFont{
+				Align:     position.LabelAlignment,
+				Color:     16_777_215,
+				FontName:  livePositionFontName,
+				ShowTitle: !wide,
+				Size:      position.LabelSize,
+				Weight:    80,
+			},
+			Icon: iconPath,
+			Text: position.Label,
+		}},
+	}
+	if wide {
+		entry.SmallViewMode = 2
+	}
+	return entry
+}
+
 func validatedLivePosition(position Position) (PositionSpec, error) {
 	if err := ValidatePosition(position); err != nil {
 		return PositionSpec{}, err
@@ -162,25 +193,8 @@ func contentAddressedIconPath(pngData []byte) string {
 	return livePositionIconPrefix + hex.EncodeToString(digest[:]) + ".png"
 }
 
-func livePositionManifest(coordinate, iconPath, label string, wide bool) ([]byte, error) {
-	entry := livePositionManifestEntry{
-		State: 0,
-		ViewParam: []livePositionViewParam{{
-			Font: livePositionFont{
-				Align:     "bottom",
-				Color:     16_777_215,
-				FontName:  livePositionFontName,
-				ShowTitle: true,
-				Size:      10,
-				Weight:    80,
-			},
-			Icon: iconPath,
-			Text: label,
-		}},
-	}
-	if wide {
-		entry.SmallViewMode = 2
-	}
+func livePositionManifest(coordinate, iconPath string, position Position, wide bool) ([]byte, error) {
+	entry := positionManifestEntry(position, iconPath, wide)
 	encodedEntry, err := json.Marshal(entry)
 	if err != nil {
 		return nil, err

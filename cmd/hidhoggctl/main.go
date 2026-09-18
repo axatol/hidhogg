@@ -35,7 +35,7 @@ func runWithOutput(args []string, output io.Writer) error {
 	profileID := flags.String("profile-id", "", "case-sensitive profile identifier")
 	limit := flags.Int("limit", 0, "execution history summary limit (1-32)")
 	executionID := flags.String("execution-id", "", "exact execution history identifier")
-	methodFlag := flags.String("method", "health", "health, status, profiles.list, profiles.activate, executions.list, executions.get, config.reload, or config.status")
+	methodFlag := flags.String("method", "health", "health, status, profiles.list, profiles.activate, executions.list, executions.get, config.reload, config.status, input.status, input.request_permission, or doctor")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -140,6 +140,17 @@ func parseCommand(defaultMethod, profileID string, args []string) (string, strin
 	case 1:
 		method = commandArgs[0]
 	case 2:
+		if commandArgs[0] == "input" {
+			switch commandArgs[1] {
+			case "status":
+				method = string(ipc.MethodInputStatus)
+			case "request-permission", "request_permission":
+				method = string(ipc.MethodInputRequestPermission)
+			default:
+				return "", "", fmt.Errorf("unknown input command %q", commandArgs[1])
+			}
+			break
+		}
 		if commandArgs[0] == "profiles.activate" && commandArgs[1] != "" {
 			if profileID != "" {
 				return "", "", fmt.Errorf("profile ID was provided more than once")
@@ -197,7 +208,7 @@ func parseCommand(defaultMethod, profileID string, args []string) (string, strin
 		if profileID != "" {
 			return "", "", fmt.Errorf("--profile-id is only valid for profiles activate")
 		}
-	case ipc.MethodHealth, ipc.MethodStatus, ipc.MethodConfigReload, ipc.MethodConfigStatus:
+	case ipc.MethodHealth, ipc.MethodStatus, ipc.MethodConfigReload, ipc.MethodConfigStatus, ipc.MethodInputStatus, ipc.MethodInputRequestPermission, ipc.MethodDoctor:
 		if profileID != "" {
 			return "", "", fmt.Errorf("--profile-id is only valid for profiles activate")
 		}
@@ -235,7 +246,7 @@ func validateExecutionFlags(method ipc.Method, limit int, limitSet bool, executi
 }
 
 func validCLIExecutionID(value string) bool {
-	if value == "" {
+	if value == "" || len(value) > ipc.MaxExecutionIDBytes {
 		return false
 	}
 	for index, character := range value {

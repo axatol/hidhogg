@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -661,12 +662,21 @@ func pageForProfile(current profile.Profile) (d200x.Page, error) {
 func profilePositions(current profile.Profile) ([]d200x.Position, error) {
 	positions := make([]d200x.Position, 0, len(current.Values))
 	for _, value := range current.Values {
-		positions = append(positions, d200x.Position{
-			ID:         value.ID,
-			Position:   value.Position,
-			Label:      value.Label,
-			Background: value.Background,
-		})
+		position := d200x.Position{
+			ID:             value.ID,
+			Position:       value.Position,
+			Label:          value.Label,
+			Background:     value.Background,
+			LabelAlignment: value.LabelAlignment,
+			LabelSize:      value.LabelSize,
+		}
+		if position.LabelAlignment == "" {
+			position.LabelAlignment = d200x.DefaultLabelAlignment
+		}
+		if position.LabelSize == 0 {
+			position.LabelSize = d200x.DefaultLabelSize
+		}
+		positions = append(positions, position)
 	}
 	if len(positions) != d200x.DisplayPositionCount {
 		return nil, fmt.Errorf("profile has %d positions, want %d", len(positions), d200x.DisplayPositionCount)
@@ -697,6 +707,9 @@ func cloneRuntimeBindings(bindings []profile.Binding) []profile.Binding {
 	}
 	owned := make([]profile.Binding, len(bindings))
 	copy(owned, bindings)
+	for index := range owned {
+		owned[index].Action.Arguments = slices.Clone(bindings[index].Action.Arguments)
+	}
 	return owned
 }
 

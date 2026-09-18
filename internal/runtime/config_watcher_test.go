@@ -324,7 +324,7 @@ func TestAutomaticReloadRejectsInvalidStableContentOnceAndRecoversOnDirty(t *tes
 		defer close(done)
 		runtimeProcess.runAutomaticReloads(ctx)
 	}()
-	writeReloadTestFile(t, path, []byte("schema_version = 2\n"))
+	writeReloadTestFile(t, path, []byte("schema_version = 3\n"))
 	runtimeProcess.signalAutomaticReload()
 	waitForRuntime(t, func() bool {
 		callsMu.Lock()

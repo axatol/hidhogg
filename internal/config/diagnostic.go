@@ -120,7 +120,7 @@ func diagnosticProjectionDetail(category DiagnosticCategory, key string) string 
 	case DiagnosticMissingKey:
 		return "required key is missing"
 	case DiagnosticSchemaVersion:
-		return "use schema_version = 2"
+		return "use schema_version = 3"
 	case DiagnosticValidation:
 		return "value violates configuration constraints"
 	default:
@@ -193,7 +193,7 @@ func newDiagnostic(sourcePath string, cause error) *Diagnostic {
 			switch {
 			case diagnostic.Key == "schema_version":
 				diagnostic.Category = DiagnosticSchemaVersion
-				diagnostic.Detail = "use schema_version = 2"
+				diagnostic.Detail = "use schema_version = 3"
 			case validationError.Issues[0].Kind == ValidationIssueRequired:
 				diagnostic.Category = DiagnosticMissingKey
 				diagnostic.Detail = "required key is missing"

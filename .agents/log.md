@@ -892,3 +892,121 @@
 
 - The owner ran the production runtime twice from a deliberately different retained device page without saving or reloading the configuration. Both cold starts visibly replaced the retained page with the configured initial page as expected.
 - Together with the automatic and independent gates, this establishes that the typed unlock, content-addressed page, configured-brightness, and input-enable startup transaction corrects the reproduced startup reassertion defect on the owned D200X and current firmware. Cross-firmware behavior remains unverified. M-06-F02 is complete.
+
+## 2026-09-15 — M-04-F04 firmware label rendering passed automatic gates
+
+- The owner observed that `*` and `+` appeared as raster fallback `?` glyphs while their separate firmware-rendered labels were correct. Prior controlled Studio evidence already established that `Font.Align` and `Font.Size` change manifest fields without changing PNG bytes, correcting the assumption that Hidhogg should rasterize label text into tile artwork.
+- Position configuration now has optional `label_alignment` and `label_size` with backward-compatible effective defaults `bottom` and `10`; the strict accepted domains are `bottom|center` and `8..32`. Labels remain required visible text. The ignored deployment numpad profile sets all 14 positions to `center` and `24` and retains its literal no-shell `/usr/bin/osascript` press actions.
+- Configured, targeted, and bulk archives now encode text/style in the manifest while PNG members contain only background and border. Equal artwork therefore retains identical PNG bytes/content-addressed paths across label/style changes. Independent V01 passed configuration/schema parity, propagation, manifest/PNG invariants, reload classification, determinism, race, generation, vet, full tests/build, formatting, and diff checks. Physical size-24 rendering and AppleScript input remain unverified.
+
+## 2026-09-16 — M-04-F04 wide-label protocol limitation and fallback
+
+- Owner-visible trials found no `3_2` label with center/24 or Studio-matching bottom/10 while `SmallViewMode: 2` background rendering remained active. Earlier Studio T12 evidence had an empty `Text` field, so it never established wide firmware-title support; square firmware labels remain verified.
+- The implementation now renders only the wide label into its deterministic 458x196 PNG with bundled Go Regular, retains `SmallViewMode: 2`, and sets the wide manifest `ShowTitle` false to avoid a possible duplicate. Square labels remain firmware-rendered and their PNG content addresses stay independent of text/style.
+- Independent P02-V01 passed explicit `Enter`, digits, `.`, `*`, and `+` glyph checks plus configured, targeted, bulk, determinism, content-addressing, square deduplication, race, generation, vet, full test/build, formatting, and diff gates. Owner-visible wide-label acceptance remains pending.
+- The first fallback made `Status` and `Enter` visible, proving that wide PNG text works, but the owner reported the 72-DPI result was very small and bottom-aligned. The bottom placement was the retained diagnostic configuration; `label_size = 24` is a point value, not a requested 24-pixel cap.
+- P03 restores the numpad wide position to center/24 and rasterizes point sizes at 144 DPI, so 24 points produces approximately 48 device pixels. Independent V01 passed metric comparison against a 72-DPI control, focused race, deterministic archives, full generation/vet/test/build, formatting, and diff gates. Final physical size/alignment acceptance remains pending.
+- Position `id` is currently used for semantic execution-history identity, duplicate validation, reload comparison, and logs. It is not required for D200X addressing because the coordinate is already unique within a profile. A future breaking schema may key positions as `[profiles.positions."2_2"]` and derive history identity from profile plus coordinate; `[profiles.2_2]` is rejected as a design because it mixes positions with profile metadata. No schema change is authorized in M-04-F04.
+
+## 2026-09-17 — M-04-F04 display acceptance
+
+- The owner accepted the corrected 144-DPI wide label as slightly smaller than square firmware labels but adequate. Combined with prior automatic and independent verification, this closes the label-display task; exact font parity and cross-firmware support are not claimed.
+- Numpad typing-action acceptance is separate and remains unconfirmed. No additional font tuning or commit is authorized by this acceptance report.
+
+## 2026-09-17 — M-05-F01 action timing contract approved
+
+- The owner approved scalar `gesture = "press"` for initial-down execution and `gesture = "release"` for execution on an up event only after matching down. Omitted gesture defaults to release; duplicate downs do not retrigger; press bindings ignore release; idle-wake gestures remain fully consumed.
+- Because schema v2 `press` meant a completed pair, the owner explicitly rejected backwards compatibility and approved strict schema v3 plus migration of maintained configurations. Numpad bindings move to press; existing profile-switch bindings retain their timing as release. Position-table restructuring is deferred.
+- Separate `gesture` and `trigger` fields were discarded as redundant for the current scope. A string-sequence gesture language was deferred because delay/order/cancellation semantics are unspecified and unnecessary for this vertical slice.
+
+## 2026-09-17 — M-05-F01 automatic implementation verified
+
+- Schema v3 is the sole accepted version; older configurations receive descriptive version-key diagnostics. Omitted gestures become effective release in TOML decoding and immutable catalog construction; explicit empty TOML gestures are rejected. The generated linting artifact is `schema/hidhogg-d200x-v3.json`.
+- Press execution occurs once on initial down; release execution requires a matching down with a still-valid binding. Per-key held state survives profile/reload cancellation while pending release candidates are cleared; suppressed idle/transition events reconcile physical latches without action submission. Multiple configured keys can retain independent release candidates.
+- Independent V01 passed focused and whole-tree race tests, strict/default/schema parity, both action variants, duplicate/orphan/mismatched events, held profile-switch behavior, reload/transition/idle boundaries, bounded-map audit, generation, vet/build, formatting, and diff checks. Maintained examples/fixtures and ignored deployment configuration are migrated to v3; numpad uses press and profile actions use release.
+- No HID or configured real action was executed during implementation. Owner-visible press timing and numpad typing acceptance remain pending; changes are uncommitted.
+
+## 2026-09-17 — First-post-transition input attribution defect
+
+- The owner reported that the first press after switching profiles is ignored. Inspection found that `readInputObservations` snapshots the transition generation before blocking `ReadInput` and rejects an event when the generation changes during that wait, even if the event returns after the transition completes. This software condition matches the symptom; physical causality still requires the corrected owner-run check.
+- The owner authorized M-05-F01-F01: attribute events at reception, preserve active-transition and stale queued-event suppression, and add deterministic input-reader tests. Existing controller-level gesture tests did not cover a blocked read spanning a completed switch.
+- The reader now snapshots transition state once immediately after successful input read return. Independent F01-V01 passed deterministic blocked-read and combined fake-executor tests: first post-completion down submits once immediately; duplicate down/release do not submit; next fresh down submits again. Active-transition observations and stale queued observations remain suppressed with physical latch reconciliation.
+- Focused race repetition (20), full runtime race, whole-tree tests, vet/build, formatting, and diff gates passed. Some earlier whole-tree attempts hit intermittent discovery process-exit and runtime test failures that passed isolated/rerun; no related production defect was reproduced. The corrected hardware behavior remains unconfirmed. Runtime observation is not a hardware arrival timestamp.
+
+## 2026-09-17 — Numpad typing latency investigation
+
+- The owner confirmed the first-post-switch correction works, but reported press-to-visible-text latency. Read-only generation-local execution summaries contained 19 numpad records: 15 exited and four rejected_busy. Completed process durations ranged from 124.384 to 470.662 ms, with median 139.431 ms. Submission-to-start timestamps imply approximately 2–6 ms (median 3 ms) before start, so most measured time is inside the command path rather than worker admission. These are process timings, not hardware-press-to-visible-character measurements.
+- Five authorized no-op `/usr/bin/osascript -e 'return 1'` runs took 30–50 ms each. No typing or application-data access was performed in this benchmark. Apple Events delivery and application rendering were not separately measured. The existing single-slot execution worker intentionally rejects overlapping submissions rather than queues them, matching the four busy records.
+- A native cgo-free implementation can dynamically bind system CoreGraphics keyboard/text event APIs using [purego](https://github.com/ebitengine/purego), which supports macOS arm64/amd64. [RobotGo's current Darwin backend](https://github.com/go-vgo/robotgo/blob/master/darwin/cg.go) demonstrates direct framework loading and symbol registration; its [cgo-free backends](https://github.com/go-vgo/robotgo#cgo-free-builds) are explicitly experimental. No local native-input implementation or benchmark exists yet.
+- [Apple's Unicode-event API](https://developer.apple.com/documentation/coregraphics/cgevent/keyboardsetunicodestring(stringlength:unicodestring:)) supports text payloads but documents that some application frameworks may ignore them. Physical key events and text insertion should therefore be distinct actions; Enter is a key, not a text string. A native approach still needs event-posting permission and must not silently report delivered input merely because posting returned.
+- Recommended next decision: approve a small isolated purego/CoreGraphics input spike before production integration, with permission preflight and fake-only automatic tests; no real event injection until separately authorized. No production code changes were made during investigation.
+
+## 2026-09-17 — S-03 native-input spike approved
+
+- The owner authorized building the isolated Go/purego/CoreGraphics spike. The selected boundary is a standalone `spikes/go-native-input` module; production action configuration and the generic execution worker remain unchanged.
+- Agents may run non-prompting permission preflight and construct/release benchmarks without posting events. Live text/Enter delivery remains owner-run. The probe must distinguish a text payload from a physical key event, allocate both halves before posting, and preserve native pointer/release ownership.
+- `purego v0.10.2` is already an indirect root dependency; the spike pins that version as a direct module dependency instead of adding a new broad desktop-automation framework. A construction benchmark cannot establish end-to-end typing latency or foreground-app delivery.
+
+## 2026-09-17 — S-03 automatic/no-post probe verified
+
+- `spikes/go-native-input` now contains a standalone module, typed text/Enter actions, dynamically loaded system-framework backend, strict CLI, fake tests, and owner runbook. Default prints usage; `--check` never prompts or posts; `--benchmark N` constructs/releases Text("1") pairs; `--text` and `--key enter` are owner-only posting modes with optional focus delay.
+- Independent V01 passed SDK ABI audit, cgo-free dependency graph, UTF-16 surrogate/lifetime checks, allocate-both-before-post, partial-failure release, permission-before/after-delay checks, fake-only race tests, vet, formatting/diff, and Darwin arm64/amd64 builds. No root module or production action code changed for the spike.
+- Approved outside-sandbox final Text("1") benchmark: 1 unmeasured warm-up plus 1,000 iterations; min 1.083 microseconds, median 1.166, p95 2.459, max 12.833; zero events posted. Permission preflight reported granted in that execution context. Sandbox preflight was denied and construction emitted hiservices XPC warnings, so the warning-free outside-sandbox run is the canonical allocation timing.
+- Live posting and visible UI latency remain untested; a stable owner-built binary may need its own permission grant. CoreGraphics posting returns no target-delivery acknowledgement. Next: owner-run harmless-field text and Enter tests, then an explicit decision on production integration and burst handling. Changes remain uncommitted.
+
+## 2026-09-17 — S-03 owner delivery failure and diagnostic extension
+
+- The owner reported granted permission preflight but no text delivery; an Enter test also produced no newline in VS Code, and a subsequent TextEdit test produced no text. These observations do not identify the cause or prove that correctly constructed events reached the target application.
+- The owner authorized isolated construction diagnostics and selectable event source/posting locations. Production actions remain unchanged; agent-run posting, permission prompts, clipboard access, and application-data reads remain outside scope.
+- [Apple's posting API](https://developer.apple.com/documentation/coregraphics/cgevent/post(tap:)) posts at a selected event-stream location and returns no delivery result. Source/tap variations are diagnostic hypotheses, not established fixes. Construction readback will run without posting.
+- Approved outside-sandbox no-post inspection read back Text("1") with combined/session options as down/up types 10/11, keycode 0, flags `0x20000000`, and Unicode `[0031]` matching both events. Default/null-source Enter read back types 10/11, keycode 36, flags `0x20000000`, and native Unicode `[000D]`; Unicode-payload matching is not applicable to physical Enter. Both commands posted zero events and performed no permission checks. This validates these construction observations, not target delivery or a source/tap fix.
+- The isolated extension adds `--inspect` with `--text` or `--key enter`, `--source default|private|combined|hid`, and `--tap hid|session|annotated`. Source states map to null/-1/0/1 and posting locations to 0/1/2. Inspection uses bounded UTF-16 readback and releases both events and any explicit source on success/failure; check/benchmark reject these modifiers. Executor and main race/vet/build/format gates passed; executor also passed both Darwin architectures. Main rebuilt the ignored `deploy/native-input` binary without posting events. Independent extension verification remains pending at this checkpoint.
+- Independent V02 subsequently passed automatic ABI/fake/race/vet/format and both Darwin architecture gates, including oversized-readback cleanup. Its overall report was partial because sandbox native private-source allocation failed and HID-source initialization exceeded 30 seconds with HIServices connection errors; main's warning-free default/combined construction evidence does not establish those variants. Explorer A02 found no production integration or unexpected spike artifacts. Delivery remains unresolved; next owner-run trial is one combined-source/session-tap text pair, not an exhaustive matrix or production integration.
+- After the timed-out source trial, an approved outside-sandbox exact-name PID check found no process named `native-input`; the spike file inventory contained only its ten expected source/module/documentation files. No agent posted events or launched a target application in this extension.
+
+## 2026-09-18 — Native input owner comparison and integration approved
+
+- The owner reported TextEdit text delivery succeeded for explicit combined source/session tap, failed for combined/HID, and failed for default/null source/session. Earlier null/HID tests also failed. These are one-machine application observations, not a proven explanation for the differences or cross-application support.
+- The owner approved built-in `type_text` and `key_press` actions, a bounded native-only FIFO, posting history that does not claim delivery, and runtime-owned permission management. Existing execute behaviour remains unchanged, with no automatic osascript fallback.
+- Additional approved IPC/CLI methods are `input.status`, explicit `input.request_permission`, and a read-only `doctor`. Startup/status/doctor remain non-prompting and never inject test input. The request must originate in the Go runtime that posts events; the future Swift app can reuse IPC.
+- [Apple exposes `CGRequestPostEventAccess`](https://developer.apple.com/documentation/coregraphics/cgrequestposteventaccess()), returning a boolean; permission check/request functions were verified against current documentation on 2026-09-18. Permission UI/process identity and post-grant behaviour remain owner-run gates. No promise is made that a request itself grants access.
+- M-05-F02 is selected with separated contract/native/integration responsibilities. Architecture review is requested before locking lifecycle/interface details; deploy numpad migration remains behind owner Enter/symbol and production acceptance gates.
+
+## 2026-09-18 — Native input review checkpoint
+
+- Strict text/Enter contracts and generated schema are implemented; main focused config/profile tests pass. Runtime compilation passed before the private backend cancellation API revision. Independent automatic review is in progress; this is not milestone completion.
+- Architecture consensus is a combined-session source/session tap with both event flags set to zero. Held physical Cmd/Control behaviour remains an owner-observed gate; no synthetic modifier-release events are added.
+- Per-item cancellation must be checked after preparation immediately before down posting. Once down begins, up follows even if canceled. The narrow final-check/down race can still post a complete pair; cancellation is not an absolute no-post-after-shutdown guarantee. Native ownership is retained if bounded Close times out while a native call remains in flight.
+- Execution history adds an action-type discriminator. Valid maximum IPC fixtures preserve the 16 KiB frame/32-record bounds using producer-sized 36-byte IDs and mutually exclusive exit code/signal; no silent clipping or frame increase is selected. Existing timestamp encoding already normalizes UTC.
+- Detailed owner-review decisions are maintained separately in `docs/native-input-decisions.md`. Deploy configuration remains on osascript; no agent posts or permission prompts occurred.
+
+## 2026-09-18 — M-05-F02 implementation and automatic closure
+
+- Implemented schema-v3 native text/Enter variants, the native-only 16-waiting/one-active FIFO, runtime lifecycle/dispatch/history adapters, strict input permission/status/doctor IPC, CLI mappings, and protocol documentation. Existing execute admission is unchanged. Owner deployment remains unmigrated.
+- Independent full uncached test/race suites, vet, schema comparison, module verification, whitespace checks, and Darwin arm64/amd64 builds passed. Main reran final full uncached test/race/vet gates and native race stress: 10/10. Deterministic tests cover cancellation during preparation, assigned-but-unstarted input, permission-request context cancellation, no replay, deferred release, and close timeout/eventual release.
+- Final architecture review found no remaining correctness blocker. Native initialization is synchronous before IPC under startup serialization; an indefinitely blocked source-creation/preflight call can delay HID startup and Runtime.Close. Ordinary returned failure isolation is not a universal bounded-shutdown guarantee. NI-13 records that limit.
+- Verification ownership lesson: the assigned read-only tester added `internal/nativeinput/worker_test.go` cases and `cmd/hidhoggctl/input_test.go`. Main reviewed/preserved the test-only overlap and reran final gates; no production/doc edits were reported by the tester. Future read-only roles must preserve their explicit write boundary.
+- Generated `/Volumes/Data/tmp/nativeinput-darwin-arm64.test` and `/Volumes/Data/tmp/nativeinput-darwin-amd64.test` were removed and verified absent; both are reproducible build artifacts. No unrelated temporary/user files were touched.
+- Owner-only commands and harmless-field acceptance are in `docs/native-input-runbook.md`. Text/Enter/symbols, VS Code, rapid ordering, held modifiers, permission UI/post-grant behaviour, and shutdown remain physical gates. No process was launched or input posted by agents, no commit was made, and no milestone-completion notification was sent.
+
+## 2026-09-18 — Owner-approved native numpad configuration
+
+- The owner explicitly confirmed replacing deploy numpad osascript actions with native input before manual acceptance. `deploy/hidhogg.toml` now has 13 `type_text` actions for digits/symbols and one Enter `key_press`; all retain `gesture = "press"`. Layout, labels/styles, brightness, initial profile and other profiles were preserved.
+- Strict `config.Load` and assertions for all 14 mappings passed through a temporary verification test alongside config/profile tests. The temporary test was removed. No runtime was launched, input posted, or permission prompt requested. Physical acceptance remains pending; migration alone does not close M-05-F02.
+
+## 2026-09-18 — Native numpad owner acceptance
+
+- Following the deploy migration, the owner reported "all working as expected". This confirms expected behaviour of the deployed native numpad; no new automatic test was required for this report.
+- Specific target application, rapid ordering, held modifiers, runtime permission request/status/doctor and shutdown observations were not supplied. Those scenarios are not inferred from the numpad report. M-05-F02 remains pending scenario confirmation or explicit waiver; no milestone notification or commit was performed.
+
+## 2026-09-18 — M-05-F02 owner functional closure
+
+- When explicitly asked whether input.request_permission, input.status and doctor were also verified, the owner replied "yes, all seems ok". Combined with the deployed numpad report, this closes owner functional acceptance and M-05-F02 on the already-passing automatic/final architecture gates.
+- Specific cross-app, rapid-ordering, held-modifier, revocation/regrant and shutdown observations are not individually claimed. These remain evidence limits, not invented physical test outcomes. Synchronous native initialization can still delay startup/runtime close; NI-13 remains qualified.
+- Closure changes documentation only. No commit, runtime launch, input posting or permission request was performed by agents. Next implementation/commit requires a new owner request.
+- The required milestone `notify-discord` command completed successfully (exit 0) after durable closure records were updated.
+
+## 2026-09-18 — Completed Go checkpoint approved for commit
+
+- The owner approved the recommended sequence: commit completed work, then draft M-07's Go-only notification slice. The commit includes the completed label-rendering and schema-v3 gesture prerequisites, native-input spike and production integration, associated tests/examples/schema, protocol and durable records. Protected user files and compiled artifacts are excluded. `deploy/hidhogg.toml` is ignored and is not force-added.
+- Fresh root tests initially failed unchanged `TestLockReleasedOnProcessExit`: the parent acquired the directory after reading readiness. Source inspection shows the child prints `locked` and immediately returns, allowing process exit before the parent's contention check. The isolated test then passed 10/10 and the full root suite passed on rerun; root vet and standalone native-spike tests passed. This is recorded as a discovery test synchronization follow-up, not a new production-lock defect or silent fix.

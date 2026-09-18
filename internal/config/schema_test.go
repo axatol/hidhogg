@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 func TestCheckedInSchemaIsCurrentAndDeterministic(t *testing.T) {
@@ -22,7 +24,7 @@ func TestCheckedInSchemaIsCurrentAndDeterministic(t *testing.T) {
 		t.Fatal("schema generation is not deterministic")
 	}
 
-	artifactPath := filepath.Join("..", "..", "schema", "hidhogg-d200x-v2.json")
+	artifactPath := filepath.Join("..", "..", "schema", "hidhogg-d200x-v3.json")
 	artifact, err := os.ReadFile(artifactPath)
 	if err != nil {
 		t.Fatal(err)
@@ -37,11 +39,11 @@ func TestCheckedInSchemaIsCurrentAndDeterministic(t *testing.T) {
 	if artifactObject["$schema"] != jsonSchemaDraft4 {
 		t.Fatalf("schema dialect = %v, want %s", artifactObject["$schema"], jsonSchemaDraft4)
 	}
-	if artifactObject["title"] != "Hidhogg Ulanzi D200X configuration v2" {
+	if artifactObject["title"] != "Hidhogg Ulanzi D200X configuration v3" {
 		t.Fatalf("schema title = %v", artifactObject["title"])
 	}
 	if _, exists := artifactObject["properties"].(map[string]any)["pages"]; exists {
-		t.Fatal("v2 schema retained obsolete pages property")
+		t.Fatal("v3 schema retained obsolete pages property")
 	}
 }
 
@@ -100,6 +102,67 @@ func TestSchemaValidatesJSONProjection(t *testing.T) {
 	}
 }
 
+func TestSchemaReflectsLabelStyleContract(t *testing.T) {
+	document, err := JSONSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	positionSchema := document.Properties["profiles"].Items.Properties["positions"].Items
+	alignmentSchema := positionSchema.Properties["label_alignment"]
+	if alignmentSchema == nil || alignmentSchema.Type != "string" || len(alignmentSchema.Enum) != 2 || alignmentSchema.Enum[0] != LabelAlignmentBottom || alignmentSchema.Enum[1] != LabelAlignmentCenter || string(alignmentSchema.Default) != `"bottom"` {
+		t.Fatalf("label_alignment schema = %#v", alignmentSchema)
+	}
+	sizeSchema := positionSchema.Properties["label_size"]
+	if sizeSchema == nil || sizeSchema.Type != "integer" || sizeSchema.Minimum == nil || *sizeSchema.Minimum != MinimumLabelSize || sizeSchema.Maximum == nil || *sizeSchema.Maximum != MaximumLabelSize || string(sizeSchema.Default) != "10" {
+		t.Fatalf("label_size schema = %#v", sizeSchema)
+	}
+
+	document.Schema = "https://json-schema.org/draft/2020-12/schema"
+	resolved, err := document.Resolve(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := decodeValidFixture(t)
+	encoded, err := configuration.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var valid map[string]any
+	if err := json.Unmarshal(encoded, &valid); err != nil {
+		t.Fatal(err)
+	}
+	position := valid["profiles"].([]any)[0].(map[string]any)["positions"].([]any)[0].(map[string]any)
+	delete(position, "label_alignment")
+	delete(position, "label_size")
+	if err := resolved.Validate(valid); err != nil {
+		t.Fatalf("schema rejected omitted label style: %v", err)
+	}
+	for _, test := range []struct {
+		name string
+		edit func(map[string]any)
+	}{
+		{name: "invalid alignment", edit: func(value map[string]any) { value["label_alignment"] = "top" }},
+		{name: "size below minimum", edit: func(value map[string]any) { value["label_size"] = MinimumLabelSize - 1 }},
+		{name: "size above maximum", edit: func(value map[string]any) { value["label_size"] = MaximumLabelSize + 1 }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidateBytes, err := json.Marshal(valid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var candidate map[string]any
+			if err := json.Unmarshal(candidateBytes, &candidate); err != nil {
+				t.Fatal(err)
+			}
+			candidatePosition := candidate["profiles"].([]any)[0].(map[string]any)["positions"].([]any)[0].(map[string]any)
+			test.edit(candidatePosition)
+			if err := resolved.Validate(candidate); err == nil {
+				t.Fatal("schema accepted invalid label style")
+			}
+		})
+	}
+}
+
 func TestSchemaReflectsProfileAndActionBounds(t *testing.T) {
 	document, err := JSONSchema()
 	if err != nil {
@@ -131,8 +194,8 @@ func TestSchemaReflectsProfileAndActionBounds(t *testing.T) {
 	}
 	profiles[0].(map[string]any)["positions"].([]any)[0].(map[string]any)["action"].(map[string]any)["type"] = "activate_profile"
 	delete(profiles[0].(map[string]any)["positions"].([]any)[0].(map[string]any)["action"].(map[string]any), "gesture")
-	if err := resolved.Validate(instance); err == nil {
-		t.Fatal("schema accepted an incomplete action")
+	if err := resolved.Validate(instance); err != nil {
+		t.Fatalf("schema rejected optional action gesture: %v", err)
 	}
 }
 
@@ -143,16 +206,78 @@ func TestSchemaReflectsExecuteActionUnionAndBounds(t *testing.T) {
 	}
 	positionSchema := document.Properties["profiles"].Items.Properties["positions"].Items
 	actionSchema := positionSchema.Properties["action"]
-	if len(actionSchema.OneOf) != 3 || actionSchema.OneOf[0].Type != "null" {
+	if len(actionSchema.OneOf) != 5 || actionSchema.OneOf[0].Type != "null" {
 		t.Fatalf("action oneOf = %#v", actionSchema.OneOf)
 	}
 	activateSchema := actionSchema.OneOf[1]
 	executeSchema := actionSchema.OneOf[2]
+	typeTextSchema := actionSchema.OneOf[3]
+	keyPressSchema := actionSchema.OneOf[4]
+	for _, variant := range []*jsonschema.Schema{activateSchema, executeSchema, typeTextSchema, keyPressSchema} {
+		gesture := variant.Properties["gesture"]
+		if gesture == nil || gesture.Type != "string" || len(gesture.Enum) != 2 || gesture.Enum[0] != "press" || gesture.Enum[1] != "release" || string(gesture.Default) != `"release"` {
+			t.Fatalf("gesture schema = %#v", gesture)
+		}
+		for _, required := range variant.Required {
+			if required == "gesture" {
+				t.Fatalf("gesture is still required in action schema: %#v", variant.Required)
+			}
+		}
+	}
 	if _, exists := activateSchema.Properties["executable"]; exists {
 		t.Fatal("activate_profile schema exposes executable")
 	}
 	if _, exists := executeSchema.Properties["profile_id"]; exists {
 		t.Fatal("execute schema exposes profile_id")
+	}
+	if _, exists := activateSchema.Properties["text"]; exists {
+		t.Fatal("activate_profile schema exposes text")
+	}
+	if _, exists := activateSchema.Properties["key"]; exists {
+		t.Fatal("activate_profile schema exposes key")
+	}
+	if _, exists := executeSchema.Properties["text"]; exists {
+		t.Fatal("execute schema exposes text")
+	}
+	if _, exists := executeSchema.Properties["key"]; exists {
+		t.Fatal("execute schema exposes key")
+	}
+	if _, exists := typeTextSchema.Properties["profile_id"]; exists {
+		t.Fatal("type_text schema exposes profile_id")
+	}
+	if _, exists := typeTextSchema.Properties["executable"]; exists {
+		t.Fatal("type_text schema exposes executable")
+	}
+	if _, exists := typeTextSchema.Properties["arguments"]; exists {
+		t.Fatal("type_text schema exposes arguments")
+	}
+	if _, exists := typeTextSchema.Properties["timeout_seconds"]; exists {
+		t.Fatal("type_text schema exposes timeout_seconds")
+	}
+	if _, exists := typeTextSchema.Properties["key"]; exists {
+		t.Fatal("type_text schema exposes key")
+	}
+	if _, exists := keyPressSchema.Properties["profile_id"]; exists {
+		t.Fatal("key_press schema exposes profile_id")
+	}
+	if _, exists := keyPressSchema.Properties["executable"]; exists {
+		t.Fatal("key_press schema exposes executable")
+	}
+	if _, exists := keyPressSchema.Properties["arguments"]; exists {
+		t.Fatal("key_press schema exposes arguments")
+	}
+	if _, exists := keyPressSchema.Properties["timeout_seconds"]; exists {
+		t.Fatal("key_press schema exposes timeout_seconds")
+	}
+	if _, exists := keyPressSchema.Properties["text"]; exists {
+		t.Fatal("key_press schema exposes text")
+	}
+	textSchema := typeTextSchema.Properties["text"]
+	if textSchema == nil || textSchema.Type != "string" || *textSchema.MinLength != 1 || *textSchema.MaxLength != MaximumTextUTF16Units || textSchema.Pattern != `^[^\x00]*$` {
+		t.Fatalf("text schema = %#v", textSchema)
+	}
+	if keySchema := keyPressSchema.Properties["key"]; keySchema == nil || keySchema.Type != "string" || len(keySchema.Enum) != 1 || keySchema.Enum[0] != "enter" {
+		t.Fatalf("key schema = %#v", keySchema)
 	}
 	if got := string(executeSchema.Properties["arguments"].Default); got != "[]" {
 		t.Fatalf("arguments default = %s, want []", got)
@@ -198,6 +323,8 @@ func TestSchemaReflectsExecuteActionUnionAndBounds(t *testing.T) {
 		{name: "NUL executable", edit: func(value map[string]any) { value["executable"] = "/bin/e\x00cho" }},
 		{name: "profile ID", edit: func(value map[string]any) { value["profile_id"] = "default" }},
 		{name: "missing executable", edit: func(value map[string]any) { delete(value, "executable") }},
+		{name: "invalid gesture", edit: func(value map[string]any) { value["gesture"] = "hold" }},
+		{name: "empty gesture", edit: func(value map[string]any) { value["gesture"] = "" }},
 		{name: "too many arguments", edit: func(value map[string]any) { value["arguments"] = make([]any, MaximumExecuteArgumentCount+1) }},
 		{name: "argument too long", edit: func(value map[string]any) {
 			value["arguments"] = []any{strings.Repeat("a", MaximumExecuteArgumentBytes+1)}
@@ -236,6 +363,49 @@ func TestSchemaReflectsExecuteActionUnionAndBounds(t *testing.T) {
 	activateAction["executable"] = "/bin/echo"
 	if err := resolved.Validate(activateInstance); err == nil {
 		t.Fatal("schema accepted execute field on activate_profile action")
+	}
+
+	for _, test := range []struct {
+		name    string
+		type_   string
+		payload string
+		invalid func(map[string]any)
+	}{
+		{
+			name:    "type_text",
+			type_:   TypeTextActionType,
+			payload: `text = "hello"`,
+			invalid: func(action map[string]any) { action["text"] = "" },
+		},
+		{
+			name:    "key_press",
+			type_:   KeyPressActionType,
+			payload: `key = "enter"`,
+			invalid: func(action map[string]any) { action["key"] = "space" },
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			configuration, err := Decode(nativeActionFixture(test.type_, test.payload))
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := configuration.JSON()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var instance map[string]any
+			if err := json.Unmarshal(encoded, &instance); err != nil {
+				t.Fatal(err)
+			}
+			if err := resolved.Validate(instance); err != nil {
+				t.Fatalf("valid native action rejected: %v", err)
+			}
+			action := instance["profiles"].([]any)[0].(map[string]any)["positions"].([]any)[0].(map[string]any)["action"].(map[string]any)
+			test.invalid(action)
+			if err := resolved.Validate(instance); err == nil {
+				t.Fatal("schema accepted invalid native action")
+			}
+		})
 	}
 }
 

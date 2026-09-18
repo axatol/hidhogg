@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	output := flag.String("output", "schema/hidhogg-d200x-v2.json", "schema artifact path")
+	output := flag.String("output", "schema/hidhogg-d200x-v3.json", "schema artifact path")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		panic("positional arguments are not permitted")

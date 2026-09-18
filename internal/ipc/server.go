@@ -81,6 +81,7 @@ type ServerConfig struct {
 	ProfileService   ProfileService
 	ExecutionHistory ExecutionHistory
 	ConfigService    ConfigService
+	InputService     InputService
 	PeerVerifier     func(net.Conn) error
 }
 
@@ -289,6 +290,9 @@ func (s *Server) handleRequest(request Request) (response Response) {
 	}
 	if isConfigMethod(request.Method) {
 		return s.handleConfigRequest(request)
+	}
+	if request.Method == MethodInputStatus || request.Method == MethodInputRequestPermission || request.Method == MethodDoctor {
+		return s.handleInputRequest(request)
 	}
 	result, err := s.config.Handler.Handle(context.Background(), request)
 	if err != nil {

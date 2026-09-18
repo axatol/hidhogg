@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"hidhogg/internal/d200x"
+	"hidhogg/internal/profile"
 )
 
 func TestIdlePolicyUsesAbsoluteKeepaliveAndDimsAfterDeadline(t *testing.T) {
@@ -226,6 +227,61 @@ func TestIdlePolicyEncoderButtonGesturesWakeAndConsume(t *testing.T) {
 	}
 }
 
+func TestIdlePolicyConsumedWakeReleaseClearsPressActionLatch(t *testing.T) {
+	current := testProfile("default", "Default", "Default")
+	current.Values[0].Action = &profile.Action{
+		Type:           profile.ExecuteActionType,
+		Gesture:        profile.PressGesture,
+		Executable:     "/controlled/helper",
+		Arguments:      []string{},
+		TimeoutSeconds: 3,
+	}
+	catalog, err := profile.NewCatalog("default", []profile.Profile{current})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewProfileService(ProfileServiceOptions{Catalog: catalog, Sender: &profilePageSender{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = service.Close() })
+	worker := newFakeExecutionWorker()
+	clock := newPolicyFakeClock(time.Unix(850, 0))
+	pageSender := &profilePageSender{}
+	frameSender := &policyRecordingSender{}
+	var output synchronizedWriter
+	plan := devicePlan{brightness: 57, idleTimeout: 20 * time.Second, positionsFn: service.CurrentEventPositions}
+	controller := &idlePolicyController{
+		clock:   clock,
+		sender:  &actionPolicySender{page: pageSender, frame: frameSender},
+		plan:    plan,
+		stdout:  &output,
+		actions: newProfileActionController(service, plan.eventPositions, worker),
+		state:   idlePolicyState{dimmed: true},
+	}
+	press := actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)
+	release := actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased)
+	for _, event := range []d200x.InputEvent{press, release} {
+		if err := controller.handleInput(context.Background(), inputObservation{event: event, observedAt: clock.Now()}); err != nil {
+			t.Fatalf("wake event %#v: %v", event, err)
+		}
+	}
+	if len(worker.requestsSnapshot()) != 0 || controller.state.suppressedKey != nil {
+		t.Fatalf("wake gesture action/latch state = %d/%+v", len(worker.requestsSnapshot()), controller.state.suppressedKey)
+	}
+	if got := frameSender.commands(); !equalCommands(got, []d200x.Command{d200x.CommandBrightness}) {
+		t.Fatalf("wake writes = %v", got)
+	}
+	for _, event := range []d200x.InputEvent{press, release} {
+		if err := controller.handleInput(context.Background(), inputObservation{event: event, observedAt: clock.Now()}); err != nil {
+			t.Fatalf("post-wake event %#v: %v", event, err)
+		}
+	}
+	if len(worker.requestsSnapshot()) != 1 {
+		t.Fatalf("post-wake action requests = %d, want one", len(worker.requestsSnapshot()))
+	}
+}
+
 func TestIdlePolicyActiveEncoderButtonGesturesResetIdle(t *testing.T) {
 	clock := newPolicyFakeClock(time.Unix(600, 0))
 	sender := &policyRecordingSender{}
@@ -302,7 +358,7 @@ func TestIdlePolicySuppressionRequiresMatchingMarkerAndWire(t *testing.T) {
 	}
 }
 
-func TestIdlePolicySameEncoderPressClearsStaleSuppression(t *testing.T) {
+func TestIdlePolicySameEncoderPressRemainsSuppressedUntilRelease(t *testing.T) {
 	clock := newPolicyFakeClock(time.Unix(800, 0))
 	sender := &policyRecordingSender{}
 	var output synchronizedWriter
@@ -320,14 +376,29 @@ func TestIdlePolicySameEncoderPressClearsStaleSuppression(t *testing.T) {
 	if err := controller.handleInput(context.Background(), inputObservation{event: policyInput(4, d200x.InputMarkerEncoder, d200x.InputActionPressed), observedAt: clock.Now()}); err != nil {
 		t.Fatalf("same encoder press: %v", err)
 	}
-	if err := controller.handleInput(context.Background(), inputObservation{event: policyInput(4, d200x.InputMarkerEncoder, d200x.InputActionReleased), observedAt: clock.Now()}); err != nil {
-		t.Fatalf("encoder release after stale clear: %v", err)
+	if stringsCount(output.String(), `"wire_index":4`) != 0 {
+		t.Fatalf("duplicate wake press was dispatched: %q", output.String())
 	}
-	if stringsCount(output.String(), `"wire_index":4`) != 2 {
-		t.Fatalf("same-marker press did not clear suppression: %q", output.String())
+	if controller.state.suppressedKey == nil {
+		t.Fatal("duplicate wake press cleared suppression before release")
+	}
+	if err := controller.handleInput(context.Background(), inputObservation{event: policyInput(4, d200x.InputMarkerEncoder, d200x.InputActionReleased), observedAt: clock.Now()}); err != nil {
+		t.Fatalf("encoder release: %v", err)
+	}
+	if output.String() != "" {
+		t.Fatalf("wake gesture was dispatched: %q", output.String())
 	}
 	if controller.state.suppressedKey != nil {
-		t.Fatalf("suppression remained after same-marker press: %+v", controller.state.suppressedKey)
+		t.Fatalf("suppression remained after matching release: %+v", controller.state.suppressedKey)
+	}
+	if err := controller.handleInput(context.Background(), inputObservation{event: policyInput(4, d200x.InputMarkerEncoder, d200x.InputActionPressed), observedAt: clock.Now()}); err != nil {
+		t.Fatalf("post-wake encoder press: %v", err)
+	}
+	if err := controller.handleInput(context.Background(), inputObservation{event: policyInput(4, d200x.InputMarkerEncoder, d200x.InputActionReleased), observedAt: clock.Now()}); err != nil {
+		t.Fatalf("post-wake encoder release: %v", err)
+	}
+	if stringsCount(output.String(), `"wire_index":4`) != 2 {
+		t.Fatalf("post-wake gesture dispatch count = %d, want two: %q", stringsCount(output.String(), `"wire_index":4`), output.String())
 	}
 }
 
@@ -365,8 +436,8 @@ func TestIdlePolicyDiscardsInputsAcrossLiveProfileTransition(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("activation did not reach live sender")
 	}
-	if controller.actions.candidate != nil {
-		t.Fatal("press candidate survived transition start")
+	if len(controller.actions.pending) != 0 {
+		t.Fatal("release candidate survived transition start")
 	}
 	if err := controller.handleInput(context.Background(), inputObservation{
 		event:      actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased),

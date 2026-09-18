@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"hidhogg/internal/profile"
@@ -21,10 +22,13 @@ import (
 
 const (
 	// SchemaVersionV1 is retained so callers and diagnostics can identify the
-	// rejected predecessor format. Decode and Validate accept only v2.
+	// rejected predecessor format. Decode and Validate accept only v3.
 	SchemaVersionV1 = 1
+	// SchemaVersionV2 is retained so callers and diagnostics can identify the
+	// rejected predecessor format. Decode and Validate accept only v3.
 	SchemaVersionV2 = 2
-	SchemaVersion   = SchemaVersionV2
+	SchemaVersionV3 = 3
+	SchemaVersion   = SchemaVersionV3
 
 	AdapterUlanziD200X           = "ulanzi.d200x"
 	RequiredPositionCount        = 14
@@ -36,7 +40,16 @@ const (
 	MaximumStableIDRunes         = 64
 	MaximumLabelRunes            = 64
 	MaximumLabelBytes            = 256
+	LabelAlignmentBottom         = "bottom"
+	LabelAlignmentCenter         = "center"
+	DefaultLabelAlignment        = LabelAlignmentBottom
+	DefaultLabelSize             = 10
+	MinimumLabelSize             = 8
+	MaximumLabelSize             = 32
 	ExecuteActionType            = "execute"
+	TypeTextActionType           = profile.TypeTextActionType
+	KeyPressActionType           = profile.KeyPressActionType
+	MaximumTextUTF16Units        = profile.MaximumTextUTF16Units
 	DefaultExecuteTimeoutSeconds = 10
 	MinimumExecuteTimeoutSeconds = 1
 	MaximumExecuteTimeoutSeconds = 60
@@ -45,7 +58,7 @@ const (
 	MaximumExecuteArgumentsBytes = 8192
 )
 
-// Config is the strict schema-v2 D200X configuration.
+// Config is the strict schema-v3 D200X configuration.
 //
 // The TOML and JSON tags intentionally use the same names. JSON is used for
 // schema projection and fixture validation; TOML is the runtime source format.
@@ -66,24 +79,29 @@ type Profile struct {
 }
 
 // Position describes one physical display position and its rendered content.
-// Action, when present, is bound to this position's completed press gesture.
+// Action, when present, is bound to one input gesture at this position.
 type Position struct {
-	ID         string  `toml:"id" json:"id" jsonschema:"stable position identifier"`
-	Position   string  `toml:"position" json:"position" jsonschema:"supported D200X grid position"`
-	Label      string  `toml:"label" json:"label" jsonschema:"display label"`
-	Background string  `toml:"background" json:"background" jsonschema:"hexadecimal background colour"`
-	Action     *Action `toml:"action" json:"action,omitempty" jsonschema:"optional press action binding"`
+	ID             string  `toml:"id" json:"id" jsonschema:"stable position identifier"`
+	Position       string  `toml:"position" json:"position" jsonschema:"supported D200X grid position"`
+	Label          string  `toml:"label" json:"label" jsonschema:"display label"`
+	Background     string  `toml:"background" json:"background" jsonschema:"hexadecimal background colour"`
+	LabelAlignment string  `toml:"label_alignment,omitempty" json:"label_alignment,omitempty" jsonschema:"firmware-rendered label alignment"`
+	LabelSize      int     `toml:"label_size,omitempty" json:"label_size,omitempty" jsonschema:"firmware-rendered label size"`
+	Action         *Action `toml:"action" json:"action,omitempty" jsonschema:"optional input-gesture action binding"`
 }
 
-// Action is a schema-v2 press action. The Type field selects one of the
-// activate_profile and execute variants; each variant has a strict field set.
+// Action is a schema-v3 input-gesture action. The Type field selects one of
+// the activate_profile and execute variants; each variant has a strict field
+// set. Gesture defaults to release when omitted.
 type Action struct {
 	Type           string   `toml:"type" json:"type" jsonschema:"action type"`
-	Gesture        string   `toml:"gesture" json:"gesture" jsonschema:"input gesture"`
+	Gesture        string   `toml:"gesture" json:"gesture,omitempty" jsonschema:"input gesture"`
 	ProfileID      string   `toml:"profile_id" json:"profile_id,omitempty" jsonschema:"case-sensitive target profile identifier"`
 	Executable     string   `toml:"executable" json:"executable,omitempty" jsonschema:"absolute executable path"`
 	Arguments      []string `toml:"arguments" json:"arguments,omitempty" jsonschema:"executable arguments"`
 	TimeoutSeconds int      `toml:"timeout_seconds" json:"timeout_seconds,omitempty" jsonschema:"maximum synchronous execution time in seconds"`
+	Text           string   `toml:"text" json:"text,omitempty" jsonschema:"UTF-8 text payload"`
+	Key            string   `toml:"key" json:"key,omitempty" jsonschema:"supported physical key"`
 }
 
 // DisplayPosition and Tile are compatibility aliases for callers that use
@@ -194,6 +212,10 @@ func Decode(data []byte) (Config, error) {
 		decoded.IdleTimeoutSeconds = DefaultIdleTimeoutSeconds
 	}
 	applyActionDefaults(&decoded, raw)
+	applyLabelStyleDefaults(&decoded, raw)
+	if issues := validateRawLabelStyleFields(raw, decoded); len(issues) > 0 {
+		return Config{}, newValidationError(issues...)
+	}
 	if issues := validateRawActionFields(raw, decoded); len(issues) > 0 {
 		return Config{}, newValidationError(issues...)
 	}
@@ -202,6 +224,53 @@ func Decode(data []byte) (Config, error) {
 		return Config{}, err
 	}
 	return decoded, nil
+}
+
+func applyLabelStyleDefaults(decoded *Config, raw map[string]any) {
+	for profileIndex, profileValue := range rawSlice(raw["profiles"]) {
+		profileMap, ok := profileValue.(map[string]any)
+		if !ok || profileIndex >= len(decoded.Profiles) {
+			continue
+		}
+		for positionIndex, positionValue := range rawSlice(profileMap["positions"]) {
+			positionMap, ok := positionValue.(map[string]any)
+			if !ok || positionIndex >= len(decoded.Profiles[profileIndex].Positions) {
+				continue
+			}
+			position := &decoded.Profiles[profileIndex].Positions[positionIndex]
+			if _, exists := positionMap["label_alignment"]; !exists {
+				position.LabelAlignment = DefaultLabelAlignment
+			}
+			if _, exists := positionMap["label_size"]; !exists {
+				position.LabelSize = DefaultLabelSize
+			}
+		}
+	}
+}
+
+func validateRawLabelStyleFields(raw map[string]any, decoded Config) []ValidationIssue {
+	var issues []ValidationIssue
+	for profileIndex, profileValue := range rawSlice(raw["profiles"]) {
+		profileMap, ok := profileValue.(map[string]any)
+		if !ok || profileIndex >= len(decoded.Profiles) {
+			continue
+		}
+		for positionIndex, positionValue := range rawSlice(profileMap["positions"]) {
+			positionMap, ok := positionValue.(map[string]any)
+			if !ok || positionIndex >= len(decoded.Profiles[profileIndex].Positions) {
+				continue
+			}
+			position := decoded.Profiles[profileIndex].Positions[positionIndex]
+			positionPath := fmt.Sprintf("profiles[%d].positions[%d]", profileIndex, positionIndex)
+			if _, exists := positionMap["label_alignment"]; exists && position.LabelAlignment == "" {
+				issues = append(issues, ValidationIssue{Path: positionPath + ".label_alignment", Message: fmt.Sprintf("must equal %q or %q", LabelAlignmentBottom, LabelAlignmentCenter)})
+			}
+			if _, exists := positionMap["label_size"]; exists && position.LabelSize == 0 {
+				issues = append(issues, ValidationIssue{Path: positionPath + ".label_size", Message: fmt.Sprintf("must be between %d and %d", MinimumLabelSize, MaximumLabelSize)})
+			}
+		}
+	}
+	return issues
 }
 
 func applyActionDefaults(decoded *Config, raw map[string]any) {
@@ -220,6 +289,9 @@ func applyActionDefaults(decoded *Config, raw map[string]any) {
 				continue
 			}
 			action := decoded.Profiles[profileIndex].Positions[positionIndex].Action
+			if _, exists := actionMap["gesture"]; !exists {
+				action.Gesture = profile.DefaultGesture
+			}
 			if action.Type != ExecuteActionType {
 				continue
 			}
@@ -251,18 +323,38 @@ func validateRawActionFields(raw map[string]any, decoded Config) []ValidationIss
 			}
 			actionPath := fmt.Sprintf("profiles[%d].positions[%d].action", profileIndex, positionIndex)
 			action := decoded.Profiles[profileIndex].Positions[positionIndex].Action
+			if _, exists := actionMap["gesture"]; exists && action.Gesture == "" {
+				issues = append(issues, ValidationIssue{Path: actionPath + ".gesture", Message: fmt.Sprintf("must equal %q or %q", profile.PressGesture, profile.ReleaseGesture)})
+			}
 			switch action.Type {
 			case ExecuteActionType:
 				if _, exists := actionMap["profile_id"]; exists {
 					issues = append(issues, ValidationIssue{Path: actionPath + ".profile_id", Message: "is forbidden for execute actions"})
 				}
+				for _, field := range []string{"text", "key"} {
+					if _, exists := actionMap[field]; exists {
+						issues = append(issues, ValidationIssue{Path: actionPath + "." + field, Message: "is forbidden for execute actions"})
+					}
+				}
 				if _, exists := actionMap["timeout_seconds"]; exists && action.TimeoutSeconds == 0 {
 					issues = append(issues, ValidationIssue{Path: actionPath + ".timeout_seconds", Message: fmt.Sprintf("must be between %d and %d", MinimumExecuteTimeoutSeconds, MaximumExecuteTimeoutSeconds)})
 				}
 			case profileActionType:
-				for _, field := range []string{"executable", "arguments", "timeout_seconds"} {
+				for _, field := range []string{"executable", "arguments", "timeout_seconds", "text", "key"} {
 					if _, exists := actionMap[field]; exists {
 						issues = append(issues, ValidationIssue{Path: actionPath + "." + field, Message: "is forbidden for activate_profile actions"})
+					}
+				}
+			case TypeTextActionType:
+				for _, field := range []string{"profile_id", "executable", "arguments", "timeout_seconds", "key"} {
+					if _, exists := actionMap[field]; exists {
+						issues = append(issues, ValidationIssue{Path: actionPath + "." + field, Message: "is forbidden for type_text actions"})
+					}
+				}
+			case KeyPressActionType:
+				for _, field := range []string{"profile_id", "executable", "arguments", "timeout_seconds", "text"} {
+					if _, exists := actionMap[field]; exists {
+						issues = append(issues, ValidationIssue{Path: actionPath + "." + field, Message: "is forbidden for key_press actions"})
 					}
 				}
 			}
@@ -304,10 +396,12 @@ func (c Config) ProfileCatalog() (profile.Catalog, error) {
 		values := make([]profile.Value, len(source.Positions))
 		for positionIndex, value := range source.Positions {
 			converted := profile.Value{
-				ID:         value.ID,
-				Position:   value.Position,
-				Label:      value.Label,
-				Background: value.Background,
+				ID:             value.ID,
+				Position:       value.Position,
+				Label:          value.Label,
+				Background:     value.Background,
+				LabelAlignment: effectiveLabelAlignment(value.LabelAlignment),
+				LabelSize:      effectiveLabelSize(value.LabelSize),
 			}
 			if value.Action != nil {
 				converted.Action = &profile.Action{
@@ -317,6 +411,8 @@ func (c Config) ProfileCatalog() (profile.Catalog, error) {
 					Executable:     value.Action.Executable,
 					Arguments:      cloneArguments(value.Action.Arguments),
 					TimeoutSeconds: value.Action.TimeoutSeconds,
+					Text:           value.Action.Text,
+					Key:            value.Action.Key,
 				}
 			}
 			values[positionIndex] = converted
@@ -378,10 +474,10 @@ func (e *ValidationError) Error() string {
 // cannot express, including profile/action resolution and position domains.
 func (c Config) Validate() error {
 	var issues []ValidationIssue
-	if c.SchemaVersion != SchemaVersionV2 {
+	if c.SchemaVersion != SchemaVersionV3 {
 		issues = append(issues, ValidationIssue{
 			Path:    "schema_version",
-			Message: fmt.Sprintf("must equal %d", SchemaVersionV2),
+			Message: fmt.Sprintf("must equal %d", SchemaVersionV3),
 		})
 	}
 	if c.Adapter != AdapterUlanziD200X {
@@ -516,6 +612,18 @@ func validatePosition(issues *[]ValidationIssue, path string, position Position,
 			Message: "must contain visible text and be at most 64 characters",
 		})
 	}
+	if position.LabelAlignment != "" && !validLabelAlignment(position.LabelAlignment) {
+		*issues = append(*issues, ValidationIssue{
+			Path:    path + ".label_alignment",
+			Message: fmt.Sprintf("must equal %q or %q", LabelAlignmentBottom, LabelAlignmentCenter),
+		})
+	}
+	if position.LabelSize != 0 && (position.LabelSize < MinimumLabelSize || position.LabelSize > MaximumLabelSize) {
+		*issues = append(*issues, ValidationIssue{
+			Path:    path + ".label_size",
+			Message: fmt.Sprintf("must be between %d and %d", MinimumLabelSize, MaximumLabelSize),
+		})
+	}
 	if !backgroundPattern.MatchString(position.Background) {
 		*issues = append(*issues, ValidationIssue{
 			Path:    path + ".background",
@@ -526,11 +634,11 @@ func validatePosition(issues *[]ValidationIssue, path string, position Position,
 		return
 	}
 	actionPath := path + ".action"
-	if position.Action.Type != profileActionType && position.Action.Type != ExecuteActionType {
-		*issues = append(*issues, ValidationIssue{Path: actionPath + ".type", Message: fmt.Sprintf("must equal %q or %q", profileActionType, ExecuteActionType)})
+	if !validActionType(position.Action.Type) {
+		*issues = append(*issues, ValidationIssue{Path: actionPath + ".type", Message: fmt.Sprintf("must equal %q, %q, %q, or %q", profileActionType, ExecuteActionType, TypeTextActionType, KeyPressActionType)})
 	}
-	if position.Action.Gesture != profileActionGesture {
-		*issues = append(*issues, ValidationIssue{Path: actionPath + ".gesture", Message: "must equal \"press\""})
+	if position.Action.Gesture != "" && position.Action.Gesture != profile.PressGesture && position.Action.Gesture != profile.ReleaseGesture {
+		*issues = append(*issues, ValidationIssue{Path: actionPath + ".gesture", Message: fmt.Sprintf("must equal %q or %q", profile.PressGesture, profile.ReleaseGesture)})
 	}
 	switch position.Action.Type {
 	case profileActionType:
@@ -542,6 +650,12 @@ func validatePosition(issues *[]ValidationIssue, path string, position Position,
 		}
 		if position.Action.TimeoutSeconds != 0 {
 			*issues = append(*issues, ValidationIssue{Path: actionPath + ".timeout_seconds", Message: "is forbidden for activate_profile actions"})
+		}
+		if position.Action.Text != "" {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".text", Message: "is forbidden for activate_profile actions"})
+		}
+		if position.Action.Key != "" {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".key", Message: "is forbidden for activate_profile actions"})
 		}
 		if !validStableID(position.Action.ProfileID) {
 			*issues = append(*issues, ValidationIssue{
@@ -559,6 +673,12 @@ func validatePosition(issues *[]ValidationIssue, path string, position Position,
 		if position.Action.ProfileID != "" {
 			*issues = append(*issues, ValidationIssue{Path: actionPath + ".profile_id", Message: "is forbidden for execute actions"})
 		}
+		if position.Action.Text != "" {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".text", Message: "is forbidden for execute actions"})
+		}
+		if position.Action.Key != "" {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".key", Message: "is forbidden for execute actions"})
+		}
 		if !validExecutable(position.Action.Executable) {
 			*issues = append(*issues, ValidationIssue{Path: actionPath + ".executable", Message: "must be a non-empty absolute UTF-8 path without NUL"})
 		}
@@ -566,7 +686,79 @@ func validatePosition(issues *[]ValidationIssue, path string, position Position,
 		if position.Action.TimeoutSeconds != 0 && (position.Action.TimeoutSeconds < MinimumExecuteTimeoutSeconds || position.Action.TimeoutSeconds > MaximumExecuteTimeoutSeconds) {
 			*issues = append(*issues, ValidationIssue{Path: actionPath + ".timeout_seconds", Message: fmt.Sprintf("must be between %d and %d", MinimumExecuteTimeoutSeconds, MaximumExecuteTimeoutSeconds)})
 		}
+	case TypeTextActionType:
+		if position.Action.ProfileID != "" {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".profile_id", Message: "is forbidden for type_text actions"})
+		}
+		if position.Action.Executable != "" {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".executable", Message: "is forbidden for type_text actions"})
+		}
+		if position.Action.Arguments != nil {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".arguments", Message: "is forbidden for type_text actions"})
+		}
+		if position.Action.TimeoutSeconds != 0 {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".timeout_seconds", Message: "is forbidden for type_text actions"})
+		}
+		if position.Action.Key != "" {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".key", Message: "is forbidden for type_text actions"})
+		}
+		if !validText(position.Action.Text) {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".text", Message: fmt.Sprintf("must be non-empty valid UTF-8 without NUL and at most %d UTF-16 units", MaximumTextUTF16Units)})
+		}
+	case KeyPressActionType:
+		if position.Action.ProfileID != "" {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".profile_id", Message: "is forbidden for key_press actions"})
+		}
+		if position.Action.Executable != "" {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".executable", Message: "is forbidden for key_press actions"})
+		}
+		if position.Action.Arguments != nil {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".arguments", Message: "is forbidden for key_press actions"})
+		}
+		if position.Action.TimeoutSeconds != 0 {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".timeout_seconds", Message: "is forbidden for key_press actions"})
+		}
+		if position.Action.Text != "" {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".text", Message: "is forbidden for key_press actions"})
+		}
+		if position.Action.Key != "enter" {
+			*issues = append(*issues, ValidationIssue{Path: actionPath + ".key", Message: "must equal \"enter\" for key_press actions"})
+		}
 	}
+}
+
+func validActionType(actionType string) bool {
+	switch actionType {
+	case profileActionType, ExecuteActionType, TypeTextActionType, KeyPressActionType:
+		return true
+	default:
+		return false
+	}
+}
+
+func validText(value string) bool {
+	if value == "" || !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
+		return false
+	}
+	return len(utf16.Encode([]rune(value))) <= MaximumTextUTF16Units
+}
+
+func validLabelAlignment(value string) bool {
+	return value == LabelAlignmentBottom || value == LabelAlignmentCenter
+}
+
+func effectiveLabelAlignment(value string) string {
+	if value == "" {
+		return DefaultLabelAlignment
+	}
+	return value
+}
+
+func effectiveLabelSize(value int) int {
+	if value == 0 {
+		return DefaultLabelSize
+	}
+	return value
 }
 
 func validExecutable(value string) bool {

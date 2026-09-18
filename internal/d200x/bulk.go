@@ -59,7 +59,8 @@ func (update LivePageUpdate) Frame() Frame {
 
 // BuildLivePageArchive creates the deterministic full-page archive used for a
 // live profile transition. The manifest contains all fourteen canonical
-// coordinates, thirteen 196x196 square images, and one 458x196 wide image.
+// coordinates, firmware-rendered labels, thirteen 196x196 square images, and
+// one 458x196 wide image.
 func BuildLivePageArchive(page Page) (DisplayArchive, error) {
 	positions, err := validatedPage(page)
 	if err != nil {
@@ -171,7 +172,12 @@ func livePageArchiveFiles(positions []Position) ([]displayArchiveFile, error) {
 		if err != nil {
 			return nil, fmt.Errorf("render D200X live page position %d background: %w", index, err)
 		}
-		pngData, err := configuredPNG(width, position.Label, background)
+		var pngData []byte
+		if spec.Wide {
+			pngData, err = configuredWidePNG(position, background)
+		} else {
+			pngData, err = configuredPNG(width, background)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("encode D200X live page position %d: %w", index, err)
 		}
@@ -225,28 +231,11 @@ func livePageManifest(positions []livePageRenderedPosition) ([]byte, error) {
 		if index > 0 {
 			manifest.WriteByte(',')
 		}
-		entry := livePositionManifestEntry{
-			State: 0,
-			ViewParam: []livePositionViewParam{{
-				Font: livePositionFont{
-					Align:     "bottom",
-					Color:     16_777_215,
-					FontName:  livePositionFontName,
-					ShowTitle: true,
-					Size:      10,
-					Weight:    80,
-				},
-				Icon: item.iconPath,
-				Text: item.position.Label,
-			}},
-		}
 		spec, ok := LookupPosition(item.position.Position)
 		if !ok {
 			return nil, fmt.Errorf("position %q is unsupported", item.position.Position)
 		}
-		if spec.Wide {
-			entry.SmallViewMode = 2
-		}
+		entry := positionManifestEntry(item.position, item.iconPath, spec.Wide)
 		encodedCoordinate, err := json.Marshal(spec.Name)
 		if err != nil {
 			return nil, err

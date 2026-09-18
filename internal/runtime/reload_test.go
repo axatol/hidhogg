@@ -30,7 +30,7 @@ func TestRuntimeReloadPublishesRevisionedSnapshot(t *testing.T) {
 		t.Fatalf("unchanged reload = %+v, %v", result, err)
 	}
 
-	actionOnly := bytes.Replace(base, []byte("background = \"#102030\"\n\n"), []byte("background = \"#102030\"\n\n[profiles.positions.action]\ntype = \"activate_profile\"\ngesture = \"press\"\nprofile_id = \"alternate\"\n\n"), 1)
+	actionOnly := bytes.Replace(base, []byte("background = \"#102030\"\n\n"), []byte("background = \"#102030\"\n\n[profiles.positions.action]\ntype = \"activate_profile\"\ngesture = \"release\"\nprofile_id = \"alternate\"\n\n"), 1)
 	writeReloadTestFile(t, path, actionOnly)
 	result, err = runtimeProcess.Reload(context.Background())
 	if err != nil || !result.Changed || result.Revision != 2 || result.Effect != reloadEffectActionOnly || result.DisplayUpdated {
@@ -72,7 +72,7 @@ func TestRuntimeReloadCommitsSettingsThroughPolicyOwner(t *testing.T) {
 func TestRuntimeReloadInvalidCandidateRetainsReadySnapshot(t *testing.T) {
 	sender := &profilePageSender{}
 	runtimeProcess, path := newReloadTestRuntime(t, reloadTestConfiguration(), sender, nil)
-	writeReloadTestFile(t, path, []byte("schema_version = 2\n"))
+	writeReloadTestFile(t, path, []byte("schema_version = 3\n"))
 	result, err := runtimeProcess.Reload(context.Background())
 	if err == nil || result.Revision != 1 || result.Changed {
 		t.Fatalf("invalid reload = %+v, %v", result, err)
@@ -182,7 +182,7 @@ func TestRuntimeReloadLeavesExistingExecutionRecordUntouched(t *testing.T) {
 
 func TestRuntimeReloadResetsPartialGesture(t *testing.T) {
 	base := reloadTestConfiguration()
-	withAction := bytes.Replace(base, []byte("background = \"#102030\"\n\n"), []byte("background = \"#102030\"\n\n[profiles.positions.action]\ntype = \"activate_profile\"\ngesture = \"press\"\nprofile_id = \"alternate\"\n\n"), 1)
+	withAction := bytes.Replace(base, []byte("background = \"#102030\"\n\n"), []byte("background = \"#102030\"\n\n[profiles.positions.action]\ntype = \"activate_profile\"\ngesture = \"release\"\nprofile_id = \"alternate\"\n\n"), 1)
 	sender := &profilePageSender{}
 	runtimeProcess, path := newReloadTestRuntime(t, withAction, sender, nil)
 	service := runtimeProcess.profileService

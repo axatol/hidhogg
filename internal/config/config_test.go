@@ -15,6 +15,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"hidhogg/internal/profile"
+
 	toml "github.com/pelletier/go-toml/v2"
 )
 
@@ -26,8 +28,8 @@ var invalidFixtures embed.FS
 
 func TestDecodeValidFixture(t *testing.T) {
 	decoded := decodeValidFixture(t)
-	if decoded.SchemaVersion != SchemaVersionV2 {
-		t.Fatalf("schema version = %d, want %d", decoded.SchemaVersion, SchemaVersionV2)
+	if decoded.SchemaVersion != SchemaVersionV3 {
+		t.Fatalf("schema version = %d, want %d", decoded.SchemaVersion, SchemaVersionV3)
 	}
 	if decoded.Adapter != AdapterUlanziD200X {
 		t.Fatalf("adapter = %q, want %q", decoded.Adapter, AdapterUlanziD200X)
@@ -60,9 +62,79 @@ func TestDecodeValidFixture(t *testing.T) {
 				t.Fatalf("profile %d omitted supported position %q", profileIndex, spec.Name)
 			}
 		}
+		for positionIndex, position := range current.Positions {
+			if position.LabelAlignment != DefaultLabelAlignment || position.LabelSize != DefaultLabelSize {
+				t.Fatalf("profile %d position %d style = %s/%d, want %s/%d", profileIndex, positionIndex, position.LabelAlignment, position.LabelSize, DefaultLabelAlignment, DefaultLabelSize)
+			}
+		}
 	}
-	if action := decoded.Profiles[0].Positions[0].Action; action == nil || action.Type != "activate_profile" || action.Gesture != "press" || action.ProfileID != "alternate" {
+	if action := decoded.Profiles[0].Positions[0].Action; action == nil || action.Type != "activate_profile" || action.Gesture != profile.ReleaseGesture || action.ProfileID != "alternate" {
 		t.Fatalf("default action = %#v", action)
+	}
+}
+
+func TestDecodeLabelStyleDefaultsAndExplicitValues(t *testing.T) {
+	data := bytes.Replace(validFixture, []byte("label = \"Clock\"\nbackground = \"#102030\""), []byte("label = \"Clock\"\nlabel_alignment = \"center\"\nlabel_size = 24\nbackground = \"#102030\""), 1)
+	decoded, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	explicit := decoded.Profiles[0].Positions[0]
+	if explicit.LabelAlignment != LabelAlignmentCenter || explicit.LabelSize != 24 {
+		t.Fatalf("explicit label style = %s/%d, want %s/24", explicit.LabelAlignment, explicit.LabelSize, LabelAlignmentCenter)
+	}
+	omitted := decoded.Profiles[0].Positions[1]
+	if omitted.LabelAlignment != DefaultLabelAlignment || omitted.LabelSize != DefaultLabelSize {
+		t.Fatalf("omitted label style = %s/%d, want %s/%d", omitted.LabelAlignment, omitted.LabelSize, DefaultLabelAlignment, DefaultLabelSize)
+	}
+	catalog, err := decoded.ProfileCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, ok := catalog.Default()
+	if !ok || profile.Values[0].LabelAlignment != LabelAlignmentCenter || profile.Values[0].LabelSize != 24 || profile.Values[1].LabelAlignment != DefaultLabelAlignment || profile.Values[1].LabelSize != DefaultLabelSize {
+		t.Fatalf("catalog label styles = %#v, %t", profile.Values[:2], ok)
+	}
+}
+
+func TestDecodeRejectsInvalidLabelStyleFields(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		field string
+		value string
+		want  string
+	}{
+		{name: "alignment enum", field: "label_alignment", value: `"top"`, want: "label_alignment"},
+		{name: "explicit empty alignment", field: "label_alignment", value: `""`, want: "label_alignment"},
+		{name: "size below minimum", field: "label_size", value: fmt.Sprintf("%d", MinimumLabelSize-1), want: "label_size"},
+		{name: "size above maximum", field: "label_size", value: fmt.Sprintf("%d", MaximumLabelSize+1), want: "label_size"},
+		{name: "explicit zero size", field: "label_size", value: "0", want: "label_size"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			needle := "background = \"#102030\""
+			replacement := test.field + " = " + test.value + "\n" + needle
+			data := bytes.Replace(validFixture, []byte(needle), []byte(replacement), 1)
+			_, err := Decode(data)
+			if err == nil || !IsValidationError(err) || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Decode error = %v, want label style validation", err)
+			}
+		})
+	}
+}
+
+func TestDecodeAcceptsLabelStyleBoundaries(t *testing.T) {
+	for _, alignment := range []string{LabelAlignmentBottom, LabelAlignmentCenter} {
+		for _, size := range []int{MinimumLabelSize, DefaultLabelSize, 11, MaximumLabelSize} {
+			data := bytes.Replace(validFixture, []byte("label = \"Clock\"\nbackground = \"#102030\""), []byte(fmt.Sprintf("label = \"Clock\"\nlabel_alignment = %q\nlabel_size = %d\nbackground = \"#102030\"", alignment, size)), 1)
+			decoded, err := Decode(data)
+			if err != nil {
+				t.Fatalf("Decode style %s/%d: %v", alignment, size, err)
+			}
+			position := decoded.Profiles[0].Positions[0]
+			if position.LabelAlignment != alignment || position.LabelSize != size {
+				t.Fatalf("decoded style = %s/%d, want %s/%d", position.LabelAlignment, position.LabelSize, alignment, size)
+			}
+		}
 	}
 }
 
@@ -131,7 +203,7 @@ func TestDecodeExecuteActionAppliesDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	action := decoded.Profiles[0].Positions[0].Action
-	if action == nil || action.Type != ExecuteActionType || action.Gesture != profileActionGesture || action.Executable != "/bin/echo" {
+	if action == nil || action.Type != ExecuteActionType || action.Gesture != profile.ReleaseGesture || action.Executable != "/bin/echo" {
 		t.Fatalf("execute action = %#v", action)
 	}
 	if action.Arguments == nil || len(action.Arguments) != 0 {
@@ -147,6 +219,154 @@ func TestDecodeExecuteActionAppliesDefaults(t *testing.T) {
 	profile, ok := catalog.Default()
 	if !ok || profile.Values[0].Action == nil || profile.Values[0].Action.TimeoutSeconds != DefaultExecuteTimeoutSeconds || profile.Values[0].Action.Arguments == nil {
 		t.Fatalf("catalog execute action = %#v, %v", profile.Values[0].Action, ok)
+	}
+}
+
+func TestDecodeActionGestureDefaultsToRelease(t *testing.T) {
+	data := bytes.Replace(validFixture, []byte("gesture = \"release\"\n"), nil, 1)
+	decoded, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := decoded.Profiles[0].Positions[0].Action
+	if action == nil || action.Gesture != profile.ReleaseGesture {
+		t.Fatalf("decoded omitted gesture = %#v, want %q", action, profile.ReleaseGesture)
+	}
+	catalog, err := decoded.ProfileCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileValue, ok := catalog.Default()
+	if !ok || profileValue.Values[0].Action == nil || profileValue.Values[0].Action.Gesture != profile.ReleaseGesture {
+		t.Fatalf("catalog omitted gesture = %#v, %t", profileValue.Values[0].Action, ok)
+	}
+}
+
+func TestDecodeAcceptsPressAndReleaseActionGestures(t *testing.T) {
+	for _, gesture := range []string{profile.PressGesture, profile.ReleaseGesture} {
+		t.Run(gesture, func(t *testing.T) {
+			data := bytes.Replace(validFixture, []byte("gesture = \"release\"\n"), []byte("gesture = \""+gesture+"\"\n"), 1)
+			decoded, err := Decode(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			action := decoded.Profiles[0].Positions[0].Action
+			if action == nil || action.Gesture != gesture {
+				t.Fatalf("decoded gesture = %#v, want %q", action, gesture)
+			}
+		})
+	}
+}
+
+func TestDecodeRejectsExplicitEmptyActionGesture(t *testing.T) {
+	data := bytes.Replace(validFixture, []byte("gesture = \"release\"\n"), []byte("gesture = \"\"\n"), 1)
+	_, err := Decode(data)
+	if err == nil || !IsValidationError(err) || !strings.Contains(err.Error(), ".gesture") {
+		t.Fatalf("Decode error = %v, want explicit empty gesture validation", err)
+	}
+}
+
+func TestDecodeNativeActionsApplyDefaultsAndConvert(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		data      []byte
+		expected  func(*Action) bool
+		catalogOK func(profile.Action) bool
+	}{
+		{
+			name: "type text",
+			data: nativeActionFixture(TypeTextActionType, `text = "hello"`),
+			expected: func(action *Action) bool {
+				return action.Type == TypeTextActionType && action.Gesture == profile.ReleaseGesture && action.Text == "hello" && action.Key == ""
+			},
+			catalogOK: func(action profile.Action) bool {
+				return action.Type == profile.TypeTextActionType && action.Gesture == profile.ReleaseGesture && action.Text == "hello" && action.Key == ""
+			},
+		},
+		{
+			name: "key press",
+			data: nativeActionFixture(KeyPressActionType, `key = "enter"`),
+			expected: func(action *Action) bool {
+				return action.Type == KeyPressActionType && action.Gesture == profile.ReleaseGesture && action.Text == "" && action.Key == "enter"
+			},
+			catalogOK: func(action profile.Action) bool {
+				return action.Type == profile.KeyPressActionType && action.Gesture == profile.ReleaseGesture && action.Text == "" && action.Key == "enter"
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			decoded, err := Decode(test.data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			action := decoded.Profiles[0].Positions[0].Action
+			if action == nil || !test.expected(action) {
+				t.Fatalf("decoded action = %#v", action)
+			}
+			catalog, err := decoded.ProfileCatalog()
+			if err != nil {
+				t.Fatal(err)
+			}
+			current, ok := catalog.Default()
+			if !ok || current.Values[0].Action == nil || !test.catalogOK(*current.Values[0].Action) {
+				t.Fatalf("catalog action = %#v, %t", current.Values[0].Action, ok)
+			}
+		})
+	}
+}
+
+func TestDecodeNativeActionTextAndKeyBoundaries(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{name: "text ASCII maximum", data: nativeActionFixture(TypeTextActionType, `text = "`+strings.Repeat("a", MaximumTextUTF16Units)+`"`), want: true},
+		{name: "text supplementary maximum", data: nativeActionFixture(TypeTextActionType, `text = "`+strings.Repeat("😀", MaximumTextUTF16Units/2)+`"`), want: true},
+		{name: "text supplementary over maximum", data: nativeActionFixture(TypeTextActionType, `text = "`+strings.Repeat("😀", MaximumTextUTF16Units/2+1)+`"`), want: false},
+		{name: "text empty", data: nativeActionFixture(TypeTextActionType, `text = ""`), want: false},
+		{name: "text NUL", data: nativeActionFixture(TypeTextActionType, `text = "a\u0000b"`), want: false},
+		{name: "key enter", data: nativeActionFixture(KeyPressActionType, `key = "enter"`), want: true},
+		{name: "key unsupported", data: nativeActionFixture(KeyPressActionType, `key = "space"`), want: false},
+		{name: "key empty", data: nativeActionFixture(KeyPressActionType, `key = ""`), want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Decode(test.data)
+			if (err == nil) != test.want {
+				t.Fatalf("Decode error = %v, want accepted = %t", err, test.want)
+			}
+		})
+	}
+}
+
+func TestDecodeRejectsNativeActionForeignFieldsIncludingEmptyValues(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		type_ string
+		field string
+	}{
+		{name: "text profile ID", type_: TypeTextActionType, field: `profile_id = ""`},
+		{name: "text executable", type_: TypeTextActionType, field: `executable = ""`},
+		{name: "text arguments", type_: TypeTextActionType, field: `arguments = []`},
+		{name: "text timeout", type_: TypeTextActionType, field: `timeout_seconds = 0`},
+		{name: "text key", type_: TypeTextActionType, field: `key = ""`},
+		{name: "key press profile ID", type_: KeyPressActionType, field: `profile_id = ""`},
+		{name: "key press executable", type_: KeyPressActionType, field: `executable = ""`},
+		{name: "key press arguments", type_: KeyPressActionType, field: `arguments = []`},
+		{name: "key press timeout", type_: KeyPressActionType, field: `timeout_seconds = 0`},
+		{name: "key press text", type_: KeyPressActionType, field: `text = ""`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			payload := `text = "ok"`
+			if test.type_ == KeyPressActionType {
+				payload = `key = "enter"`
+			}
+			data := nativeActionFixture(test.type_, payload)
+			data = bytes.Replace(data, []byte(payload+"\n"), []byte(payload+"\n"+test.field+"\n"), 1)
+			if _, err := Decode(data); err == nil {
+				t.Fatal("Decode accepted explicitly present foreign action field")
+			}
+		})
 	}
 }
 
@@ -175,7 +395,7 @@ func TestValidateExecuteActionBoundsAndStrictFields(t *testing.T) {
 		{name: "relative executable", edit: func(action *Action) { action.Executable = "echo" }, valid: false},
 		{name: "empty executable", edit: func(action *Action) { action.Executable = "" }, valid: false},
 		{name: "NUL executable", edit: func(action *Action) { action.Executable = "/bin/e\x00cho" }, valid: false},
-		{name: "wrong gesture", edit: func(action *Action) { action.Gesture = "release" }, valid: false},
+		{name: "wrong gesture", edit: func(action *Action) { action.Gesture = "hold" }, valid: false},
 		{name: "profile ID", edit: func(action *Action) { action.ProfileID = "alternate" }, valid: false},
 	}
 	for _, test := range tests {
@@ -183,7 +403,7 @@ func TestValidateExecuteActionBoundsAndStrictFields(t *testing.T) {
 			configuration := decodeValidFixture(t)
 			action := configuration.Profiles[0].Positions[0].Action
 			action.Type = ExecuteActionType
-			action.Gesture = profileActionGesture
+			action.Gesture = profile.ReleaseGesture
 			action.ProfileID = ""
 			action.Executable = "/bin/echo"
 			action.Arguments = nil
@@ -254,9 +474,10 @@ func TestDecodeRejectsV1AndMissingRequiredFields(t *testing.T) {
 		data []byte
 		want string
 	}{
-		{name: "v1", data: bytes.Replace(validFixture, []byte("schema_version = 2"), []byte("schema_version = 1"), 1), want: "schema_version"},
+		{name: "v1", data: bytes.Replace(validFixture, []byte("schema_version = 3"), []byte("schema_version = 1"), 1), want: "schema_version"},
+		{name: "v2", data: bytes.Replace(validFixture, []byte("schema_version = 3"), []byte("schema_version = 2"), 1), want: "schema_version"},
 		{name: "missing-default", data: bytes.Replace(validFixture, []byte("default_profile_id = \"default\"\n"), nil, 1), want: "default_profile_id is required"},
-		{name: "missing-profiles", data: []byte("schema_version = 2\nadapter = \"ulanzi.d200x\"\nbrightness = 80\ndefault_profile_id = \"default\"\n"), want: "profiles is required"},
+		{name: "missing-profiles", data: []byte("schema_version = 3\nadapter = \"ulanzi.d200x\"\nbrightness = 80\ndefault_profile_id = \"default\"\n"), want: "profiles is required"},
 		{name: "missing-brightness", data: bytes.Replace(validFixture, []byte("brightness = 80\n"), nil, 1), want: "brightness is required"},
 	}
 	for _, test := range tests {
@@ -278,7 +499,7 @@ func TestValidateSemanticCases(t *testing.T) {
 		edit func(*Config)
 		want string
 	}{
-		{name: "unsupported-version", edit: func(c *Config) { c.SchemaVersion = SchemaVersionV1 }, want: "schema_version"},
+		{name: "unsupported-version", edit: func(c *Config) { c.SchemaVersion = SchemaVersionV2 }, want: "schema_version"},
 		{name: "unsupported-adapter", edit: func(c *Config) { c.Adapter = "other" }, want: "adapter"},
 		{name: "brightness-too-low", edit: func(c *Config) { c.Brightness = -1 }, want: "brightness"},
 		{name: "brightness-too-high", edit: func(c *Config) { c.Brightness = 101 }, want: "brightness"},
@@ -298,8 +519,11 @@ func TestValidateSemanticCases(t *testing.T) {
 		{name: "invalid-profile-label", edit: func(c *Config) { c.Profiles[0].Label = "\n" }, want: "visible text"},
 		{name: "invalid-position-label", edit: func(c *Config) { c.Profiles[0].Positions[0].Label = "\n" }, want: "visible text"},
 		{name: "invalid-background", edit: func(c *Config) { c.Profiles[0].Positions[0].Background = "red" }, want: "hexadecimal colour"},
+		{name: "invalid-label-alignment", edit: func(c *Config) { c.Profiles[0].Positions[0].LabelAlignment = "top" }, want: "label_alignment"},
+		{name: "label-size-too-low", edit: func(c *Config) { c.Profiles[0].Positions[0].LabelSize = MinimumLabelSize - 1 }, want: "label_size"},
+		{name: "label-size-too-high", edit: func(c *Config) { c.Profiles[0].Positions[0].LabelSize = MaximumLabelSize + 1 }, want: "label_size"},
 		{name: "invalid-action-type", edit: func(c *Config) { c.Profiles[0].Positions[0].Action.Type = "run" }, want: "activate_profile"},
-		{name: "invalid-action-gesture", edit: func(c *Config) { c.Profiles[0].Positions[0].Action.Gesture = "release" }, want: "press"},
+		{name: "invalid-action-gesture", edit: func(c *Config) { c.Profiles[0].Positions[0].Action.Gesture = "hold" }, want: "gesture"},
 		{name: "unknown-action-target", edit: func(c *Config) { c.Profiles[0].Positions[0].Action.ProfileID = "missing" }, want: "resolve to exactly one"},
 	}
 
@@ -432,6 +656,10 @@ func TestJSONProjectionUsesCanonicalNames(t *testing.T) {
 	if _, ok := positions[0].(map[string]any)["action"]; !ok {
 		t.Fatal("JSON projection omitted configured action")
 	}
+	position := positions[0].(map[string]any)
+	if position["label_alignment"] != DefaultLabelAlignment || position["label_size"] != float64(DefaultLabelSize) {
+		t.Fatalf("JSON projection label style = %#v/%#v, want %s/%d", position["label_alignment"], position["label_size"], DefaultLabelAlignment, DefaultLabelSize)
+	}
 	if _, ok := positions[1].(map[string]any)["action"]; ok {
 		t.Fatal("JSON projection emitted absent action")
 	}
@@ -456,9 +684,11 @@ func TestProfileCatalogProvidesOrderedImmutableLookup(t *testing.T) {
 		t.Fatalf("ordered profiles = %#v", ordered)
 	}
 	ordered[0].Values[0].Label = "changed"
+	ordered[0].Values[0].LabelAlignment = LabelAlignmentCenter
+	ordered[0].Values[0].LabelSize = 24
 	ordered[0].Values[0].Action.ProfileID = "changed"
 	defaultProfile, ok := catalog.Default()
-	if !ok || defaultProfile.Values[0].Label != "Clock" || defaultProfile.Values[0].Action.ProfileID != "alternate" {
+	if !ok || defaultProfile.Values[0].Label != "Clock" || defaultProfile.Values[0].LabelAlignment != DefaultLabelAlignment || defaultProfile.Values[0].LabelSize != DefaultLabelSize || defaultProfile.Values[0].Action.ProfileID != "alternate" {
 		t.Fatalf("catalog state changed through returned copy: %#v", defaultProfile)
 	}
 	target, ok := catalog.ResolveTarget("alternate")
@@ -505,6 +735,24 @@ func TestLoadReturnsTypedSafeDiagnostics(t *testing.T) {
 			wantDecode:   true,
 		},
 		{
+			name:         "type text key mismatch",
+			data:         nativeActionFixture(TypeTextActionType, "text = 123"),
+			category:     DiagnosticDecode,
+			key:          "profiles.positions.action.text",
+			wantLocation: true,
+			wantDetail:   "TOML syntax or value type is invalid",
+			wantDecode:   true,
+		},
+		{
+			name:         "key press key mismatch",
+			data:         nativeActionFixture(KeyPressActionType, "key = 123"),
+			category:     DiagnosticDecode,
+			key:          "profiles.positions.action.key",
+			wantLocation: true,
+			wantDetail:   "TOML syntax or value type is invalid",
+			wantDecode:   true,
+		},
+		{
 			name:         "malformed syntax",
 			data:         append(append([]byte(nil), validFixture...), []byte("\n[["+secret)...),
 			category:     DiagnosticDecode,
@@ -532,10 +780,10 @@ func TestLoadReturnsTypedSafeDiagnostics(t *testing.T) {
 		},
 		{
 			name:         "schema version",
-			data:         bytes.Replace(validFixture, []byte("schema_version = 2"), []byte("schema_version = 1 # "+secret), 1),
+			data:         bytes.Replace(validFixture, []byte("schema_version = 3"), []byte("schema_version = 2 # "+secret), 1),
 			category:     DiagnosticSchemaVersion,
 			key:          "schema_version",
-			wantDetail:   "use schema_version = 2",
+			wantDetail:   "use schema_version = 3",
 			wantValidate: true,
 		},
 		{
@@ -707,6 +955,11 @@ func decodeValidFixture(t *testing.T) Config {
 func executeFixture() []byte {
 	data := bytes.Replace(validFixture, []byte("type = \"activate_profile\"\n"), []byte("type = \"execute\"\nexecutable = \"/bin/echo\"\n"), 1)
 	return bytes.Replace(data, []byte("profile_id = \"alternate\"\n"), nil, 1)
+}
+
+func nativeActionFixture(actionType, payload string) []byte {
+	data := bytes.Replace(validFixture, []byte("type = \"activate_profile\"\n"), []byte("type = \""+actionType+"\"\n"), 1)
+	return bytes.Replace(data, []byte("profile_id = \"alternate\"\n"), []byte(payload+"\n"), 1)
 }
 
 func executeArgumentsWithBytes(total int) []string {

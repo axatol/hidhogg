@@ -614,10 +614,12 @@ func buildPlan(path string) (devicePlan, error) {
 	positions := make([]d200x.Position, 0, len(defaultProfile.Values))
 	for _, source := range defaultProfile.Values {
 		positions = append(positions, d200x.Position{
-			ID:         source.ID,
-			Position:   source.Position,
-			Label:      source.Label,
-			Background: source.Background,
+			ID:             source.ID,
+			Position:       source.Position,
+			Label:          source.Label,
+			Background:     source.Background,
+			LabelAlignment: source.LabelAlignment,
+			LabelSize:      source.LabelSize,
 		})
 	}
 	page := d200x.NewPage(positions)

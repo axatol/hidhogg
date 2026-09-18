@@ -168,6 +168,24 @@ func bytesContainSensitiveExecutionField(body []byte) bool {
 	return false
 }
 
+func TestExecutionHistoryRejectsExitCodeAndSignal(t *testing.T) {
+	requestID := "11111111-1111-4111-8111-111111111111"
+	summary := execution.Summary{ID: "record", ProfileID: "default", PositionID: "button", State: execution.StateExited, ExitCode: intPointer(1)}
+	response := Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &Result{InstanceID: testInstanceID, Executions: []execution.Summary{summary}}}
+	encoded, err := EncodeResponse(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalid := bytes.Replace(encoded, []byte(`"signal":null`), []byte(`"signal":2`), 1)
+	if _, err := DecodeResponse(invalid, requestID, string(MethodExecutionsList), testInstanceID); err == nil {
+		t.Fatal("decoder accepted both exit code and signal")
+	}
+	response.Result.Executions[0].Signal = intPointer(2)
+	if _, err := EncodeResponse(response); err == nil {
+		t.Fatal("encoder accepted both exit code and signal")
+	}
+}
+
 func TestExecutionHistoryResponseFrameBounds(t *testing.T) {
 	requestID := "11111111-1111-4111-8111-111111111111"
 	now := time.Date(9999, 12, 31, 23, 59, 59, 999999999, time.UTC)
@@ -178,7 +196,7 @@ func TestExecutionHistoryResponseFrameBounds(t *testing.T) {
 		summaries = append(summaries, execution.Summary{
 			ID: fmt.Sprintf("00000000-0000-4000-8000-%012x", index), ProfileID: profileID, PositionID: positionID,
 			State: execution.StateExited, SubmittedAt: now, StartedAt: now, FinishedAt: now,
-			Duration: time.Duration(1<<63 - 1), ExitCode: intPointer(int(^uint(0) >> 1)), Signal: intPointer(int(^uint(0) >> 1)), SupervisionError: true,
+			Duration: time.Duration(1<<63 - 1), ExitCode: intPointer(int(^uint(0) >> 1)), SupervisionError: true,
 		})
 	}
 	listFrame, err := EncodeResponse(Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &Result{InstanceID: testInstanceID, Executions: summaries}})
@@ -186,6 +204,17 @@ func TestExecutionHistoryResponseFrameBounds(t *testing.T) {
 		t.Fatalf("maximum list frame len=%d err=%v", len(listFrame), err)
 	}
 	t.Logf("maximum list frame including LF: %d bytes", len(listFrame))
+	for index := range summaries {
+		summaries[index].ActionType = "key_press"
+		summaries[index].State = execution.StatePermissionDenied
+		summaries[index].ExitCode = nil
+		summaries[index].SupervisionError = false
+	}
+	nativeFrame, err := EncodeResponse(Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &Result{InstanceID: testInstanceID, Executions: summaries}})
+	if err != nil || len(nativeFrame) >= MaxFrameBytes {
+		t.Fatalf("maximum native list len=%d err=%v", len(nativeFrame), err)
+	}
+	t.Logf("maximum native list including LF: %d bytes", len(nativeFrame))
 	if bytesContainSensitiveExecutionField(listFrame) || bytes.Contains(listFrame, []byte(`"stdout"`)) || bytes.Contains(listFrame, []byte(`"stderr"`)) {
 		t.Fatalf("maximum list privacy violation: %s", listFrame)
 	}
@@ -196,7 +225,7 @@ func TestExecutionHistoryResponseFrameBounds(t *testing.T) {
 	record := execution.Record{
 		ID: "00000000-0000-4000-8000-000000000032", ProfileID: profileID, PositionID: positionID,
 		State: execution.StateExited, SubmittedAt: now, StartedAt: now, FinishedAt: now,
-		Duration: time.Duration(1<<63 - 1), ExitCode: intPointer(int(^uint(0) >> 1)), Signal: intPointer(int(^uint(0) >> 1)), SupervisionError: true,
+		Duration: time.Duration(1<<63 - 1), ExitCode: intPointer(int(^uint(0) >> 1)), SupervisionError: true,
 		Stdout: execution.Output{Tail: tail, TotalBytes: ^uint64(0), Truncated: true}, Stderr: execution.Output{Tail: tail, TotalBytes: ^uint64(0), Truncated: true},
 	}
 	getFrame, err := EncodeResponse(Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &Result{InstanceID: testInstanceID, Execution: &record}})
@@ -206,6 +235,24 @@ func TestExecutionHistoryResponseFrameBounds(t *testing.T) {
 	t.Logf("maximum get frame including LF: %d bytes", len(getFrame))
 	if bytesContainSensitiveExecutionField(getFrame) {
 		t.Fatalf("maximum get privacy violation: %s", getFrame)
+	}
+}
+
+func TestExecutionHistoryTimestampsNormalizeUTC(t *testing.T) {
+	instant := time.Date(2026, 9, 18, 12, 0, 0, 123456789, time.FixedZone("offset", 10*60*60))
+	encoded := encodeTimestamp(instant)
+	if encoded == nil || *encoded != "2026-09-18T02:00:00.123456789Z" {
+		t.Fatalf("timestamp = %v", encoded)
+	}
+}
+
+func TestExecutionIdentifiersHaveBoundedWireLength(t *testing.T) {
+	if !validExecutionID(strings.Repeat("a", MaxExecutionIDBytes)) || validExecutionID(strings.Repeat("a", MaxExecutionIDBytes+1)) {
+		t.Fatal("execution ID boundary is invalid")
+	}
+	request := Request{ProtocolVersion: ProtocolVersion, RequestID: testInstanceID, InstanceID: testInstanceID, Method: MethodExecutionsGet, ExecutionID: strings.Repeat("a", MaxExecutionIDBytes+1)}
+	if _, err := EncodeRequest(request); err == nil {
+		t.Fatal("accepted an overlong execution identifier")
 	}
 }
 

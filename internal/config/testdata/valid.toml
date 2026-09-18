@@ -1,5 +1,5 @@
-# Valid schema-v2 Ulanzi D200X configuration with two ordered profiles.
-schema_version = 2
+# Valid schema-v3 Ulanzi D200X configuration with two ordered profiles.
+schema_version = 3
 adapter = "ulanzi.d200x"
 brightness = 80
 default_profile_id = "default"
@@ -16,7 +16,7 @@ background = "#102030"
 
 [profiles.positions.action]
 type = "activate_profile"
-gesture = "press"
+gesture = "release"
 profile_id = "alternate"
 
 [[profiles.positions]]
@@ -115,7 +115,7 @@ background = "#232111"
 
 [profiles.positions.action]
 type = "activate_profile"
-gesture = "press"
+gesture = "release"
 profile_id = "default"
 
 [[profiles.positions]]

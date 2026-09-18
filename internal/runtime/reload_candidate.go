@@ -234,7 +234,7 @@ func equalProfiles(left, right profile.Profile) bool {
 }
 
 func equalProfileValues(left, right profile.Value) bool {
-	if left.ID != right.ID || left.Position != right.Position || left.Label != right.Label || left.Background != right.Background {
+	if left.ID != right.ID || left.Position != right.Position || left.Label != right.Label || left.Background != right.Background || left.LabelAlignment != right.LabelAlignment || left.LabelSize != right.LabelSize {
 		return false
 	}
 	return equalProfileActions(left.Action, right.Action)
@@ -247,6 +247,8 @@ func equalProfileActions(left, right *profile.Action) bool {
 	return left.Type == right.Type &&
 		left.Gesture == right.Gesture &&
 		left.ProfileID == right.ProfileID &&
+		left.Text == right.Text &&
+		left.Key == right.Key &&
 		left.Executable == right.Executable &&
 		slices.Equal(left.Arguments, right.Arguments) &&
 		left.TimeoutSeconds == right.TimeoutSeconds

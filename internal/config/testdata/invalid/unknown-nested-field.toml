@@ -1,4 +1,4 @@
-schema_version = 2
+schema_version = 3
 adapter = "ulanzi.d200x"
 brightness = 80
 

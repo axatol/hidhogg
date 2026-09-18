@@ -1150,7 +1150,7 @@ func TestDiagnosticRunClosesOwnedReaderOnEveryExit(t *testing.T) {
 			configure: func(t *testing.T, reader *countingReadCloser) Options {
 				t.Helper()
 				path := filepath.Join(t.TempDir(), "invalid-config.toml")
-				if err := os.WriteFile(path, []byte("schema_version = 2\n"), 0o600); err != nil {
+				if err := os.WriteFile(path, []byte("schema_version = 3\n"), 0o600); err != nil {
 					t.Fatal(err)
 				}
 				return Options{
@@ -1577,7 +1577,7 @@ func TestDiagnosticErrorsAreRedactedAndConfigValidationPrecedesEnumeration(t *te
 	}
 
 	invalidPath := filepath.Join(t.TempDir(), "invalid-config.toml")
-	if err := os.WriteFile(invalidPath, []byte("schema_version = 2\n"), 0o600); err != nil {
+	if err := os.WriteFile(invalidPath, []byte("schema_version = 3\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	invalidFactory := &diagnosticFactory{transport: newDiagnosticTransport()}
@@ -1602,7 +1602,7 @@ func TestDiagnosticErrorsAreRedactedAndConfigValidationPrecedesEnumeration(t *te
 func writeDiagnosticConfiguration(t *testing.T, brightness int) string {
 	t.Helper()
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "schema_version = 2\nadapter = \"ulanzi.d200x\"\nbrightness = %d\ndefault_profile_id = \"default\"\n\n", brightness)
+	fmt.Fprintf(&builder, "schema_version = 3\nadapter = \"ulanzi.d200x\"\nbrightness = %d\ndefault_profile_id = \"default\"\n\n", brightness)
 	for _, profileID := range []string{"alternate", "default"} {
 		fmt.Fprintf(&builder, "[[profiles]]\nid = \"%s\"\nlabel = \"%s\"\n\n", profileID, profileID)
 		profileLabel := "Default"

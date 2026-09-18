@@ -8,7 +8,7 @@ import (
 
 func TestNewCatalogPreservesOrderAndResolvesForwardActions(t *testing.T) {
 	definitions := validProfiles()
-	definitions[0].Values[0].Action = &Action{Type: ActivateProfileType, Gesture: PressGesture, ProfileID: "alternate"}
+	definitions[0].Values[0].Action = &Action{Type: ActivateProfileType, Gesture: ReleaseGesture, ProfileID: "alternate"}
 	catalog, err := NewCatalog("default", definitions)
 	if err != nil {
 		t.Fatal(err)
@@ -40,8 +40,8 @@ func TestNewCatalogPreservesOrderAndResolvesForwardActions(t *testing.T) {
 
 func TestCatalogDefensivelyCopiesNestedValues(t *testing.T) {
 	definitions := validProfiles()
-	definitions[0].Values[0].Action = &Action{Type: ActivateProfileType, Gesture: PressGesture, ProfileID: "alternate"}
-	definitions[1].Values[0].Action = &Action{Type: ActivateProfileType, Gesture: PressGesture, ProfileID: "default"}
+	definitions[0].Values[0].Action = &Action{Type: ActivateProfileType, Gesture: ReleaseGesture, ProfileID: "alternate"}
+	definitions[1].Values[0].Action = &Action{Type: ActivateProfileType, Gesture: ReleaseGesture, ProfileID: "default"}
 	catalog, err := NewCatalog("default", definitions)
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestCatalogPreservesAndCopiesExecuteAction(t *testing.T) {
 	profiles := validProfiles()
 	profiles[0].Values[0].Action = &Action{
 		Type:       ExecuteActionType,
-		Gesture:    PressGesture,
+		Gesture:    ReleaseGesture,
 		Executable: "/bin/echo",
 		Arguments:  []string{"--mode", "test"},
 	}
@@ -90,7 +90,7 @@ func TestCatalogPreservesAndCopiesExecuteAction(t *testing.T) {
 		t.Fatalf("default profile = %#v, %v", returned, ok)
 	}
 	returnedAction := returned.Values[0].Action
-	if returnedAction.Type != ExecuteActionType || returnedAction.Gesture != PressGesture || returnedAction.Executable != "/bin/echo" || returnedAction.TimeoutSeconds != DefaultExecuteTimeoutSeconds || len(returnedAction.Arguments) != 2 || returnedAction.Arguments[0] != "--mode" {
+	if returnedAction.Type != ExecuteActionType || returnedAction.Gesture != ReleaseGesture || returnedAction.Executable != "/bin/echo" || returnedAction.TimeoutSeconds != DefaultExecuteTimeoutSeconds || len(returnedAction.Arguments) != 2 || returnedAction.Arguments[0] != "--mode" {
 		t.Fatalf("execute action = %#v", returnedAction)
 	}
 	returnedAction.Arguments[0] = "changed result"
@@ -106,6 +106,112 @@ func TestCatalogPreservesAndCopiesExecuteAction(t *testing.T) {
 	final, ok := catalog.Default()
 	if !ok || final.Values[0].Action.Arguments[0] != "--mode" {
 		t.Fatalf("catalog action changed through binding copy: %#v, %v", final, ok)
+	}
+}
+
+func TestCatalogAcceptsPressAndReleaseGestures(t *testing.T) {
+	for _, gesture := range []string{PressGesture, ReleaseGesture} {
+		t.Run(gesture, func(t *testing.T) {
+			profiles := validProfiles()
+			profiles[0].Values[0].Action = &Action{Type: ActivateProfileType, Gesture: gesture, ProfileID: "alternate"}
+			catalog, err := NewCatalog("default", profiles)
+			if err != nil {
+				t.Fatal(err)
+			}
+			current, ok := catalog.Default()
+			if !ok || current.Values[0].Action == nil || current.Values[0].Action.Gesture != gesture {
+				t.Fatalf("catalog gesture = %#v, %t; want %q", current.Values[0].Action, ok, gesture)
+			}
+			if target, ok := catalog.ResolveActionTarget(*current.Values[0].Action); !ok || target.ID != "alternate" {
+				t.Fatalf("action target = %#v, %t", target, ok)
+			}
+		})
+	}
+}
+
+func TestCatalogDefaultsOmittedGestureToRelease(t *testing.T) {
+	profiles := validProfiles()
+	profiles[0].Values[0].Action = &Action{Type: ActivateProfileType, ProfileID: "alternate"}
+	catalog, err := NewCatalog("default", profiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, ok := catalog.Default()
+	if !ok || current.Values[0].Action == nil || current.Values[0].Action.Gesture != ReleaseGesture {
+		t.Fatalf("catalog omitted gesture = %#v, %t; want %q", current.Values[0].Action, ok, ReleaseGesture)
+	}
+}
+
+func TestCatalogAcceptsNativeActionsAndCopiesPayloads(t *testing.T) {
+	text := strings.Repeat("😀", 32)
+	for _, test := range []struct {
+		name   string
+		action Action
+		check  func(*Action) bool
+	}{
+		{
+			name:   "type text UTF-16 boundary",
+			action: Action{Type: TypeTextActionType, Text: text},
+			check: func(action *Action) bool {
+				return action.Gesture == ReleaseGesture && action.Text == text && action.Key == ""
+			},
+		},
+		{
+			name:   "key press enter",
+			action: Action{Type: KeyPressActionType, Key: "enter"},
+			check: func(action *Action) bool {
+				return action.Gesture == ReleaseGesture && action.Key == "enter" && action.Text == ""
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			profiles := validProfiles()
+			profiles[0].Values[0].Action = &test.action
+			catalog, err := NewCatalog("default", profiles)
+			if err != nil {
+				t.Fatal(err)
+			}
+			current, ok := catalog.Default()
+			if !ok || current.Values[0].Action == nil || !test.check(current.Values[0].Action) {
+				t.Fatalf("catalog action = %#v, %t", current.Values[0].Action, ok)
+			}
+		})
+	}
+}
+
+func TestCatalogRejectsNativeActionBoundariesAndForeignFields(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		action Action
+	}{
+		{name: "text empty", action: Action{Type: TypeTextActionType}},
+		{name: "text invalid UTF-8", action: Action{Type: TypeTextActionType, Text: string([]byte{0xff})}},
+		{name: "text NUL", action: Action{Type: TypeTextActionType, Text: "a\x00b"}},
+		{name: "text over UTF-16 limit", action: Action{Type: TypeTextActionType, Text: strings.Repeat("😀", MaximumTextUTF16Units/2+1)}},
+		{name: "text profile ID", action: Action{Type: TypeTextActionType, Text: "ok", ProfileID: "alternate"}},
+		{name: "text executable", action: Action{Type: TypeTextActionType, Text: "ok", Executable: "/bin/echo"}},
+		{name: "text arguments", action: Action{Type: TypeTextActionType, Text: "ok", Arguments: []string{}}},
+		{name: "text timeout", action: Action{Type: TypeTextActionType, Text: "ok", TimeoutSeconds: 1}},
+		{name: "text key", action: Action{Type: TypeTextActionType, Text: "ok", Key: "enter"}},
+		{name: "key press empty", action: Action{Type: KeyPressActionType}},
+		{name: "key press unsupported", action: Action{Type: KeyPressActionType, Key: "space"}},
+		{name: "key press profile ID", action: Action{Type: KeyPressActionType, Key: "enter", ProfileID: "alternate"}},
+		{name: "key press executable", action: Action{Type: KeyPressActionType, Key: "enter", Executable: "/bin/echo"}},
+		{name: "key press arguments", action: Action{Type: KeyPressActionType, Key: "enter", Arguments: []string{}}},
+		{name: "key press timeout", action: Action{Type: KeyPressActionType, Key: "enter", TimeoutSeconds: 1}},
+		{name: "key press text", action: Action{Type: KeyPressActionType, Key: "enter", Text: "ok"}},
+		{name: "activate text", action: Action{Type: ActivateProfileType, Gesture: ReleaseGesture, ProfileID: "alternate", Text: "ok"}},
+		{name: "activate key", action: Action{Type: ActivateProfileType, Gesture: ReleaseGesture, ProfileID: "alternate", Key: "enter"}},
+		{name: "execute text", action: Action{Type: ExecuteActionType, Gesture: ReleaseGesture, Executable: "/bin/echo", TimeoutSeconds: DefaultExecuteTimeoutSeconds, Text: "ok"}},
+		{name: "execute key", action: Action{Type: ExecuteActionType, Gesture: ReleaseGesture, Executable: "/bin/echo", TimeoutSeconds: DefaultExecuteTimeoutSeconds, Key: "enter"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			profiles := validProfiles()
+			profiles[0].Values[0].Action = &test.action
+			if _, err := NewCatalog("default", profiles); err == nil {
+				t.Fatal("NewCatalog accepted invalid native action")
+			}
+		})
 	}
 }
 
@@ -173,7 +279,7 @@ func TestNewCatalogRejectsInvalidDefinitions(t *testing.T) {
 			name: "invalid action type",
 			edit: func(source []Profile) (string, []Profile) {
 				profiles := cloneProfiles(source)
-				profiles[0].Values[0].Action = &Action{Type: "run", Gesture: PressGesture, ProfileID: "alternate"}
+				profiles[0].Values[0].Action = &Action{Type: "run", Gesture: ReleaseGesture, ProfileID: "alternate"}
 				return "default", profiles
 			},
 			want: "type must be",
@@ -182,7 +288,7 @@ func TestNewCatalogRejectsInvalidDefinitions(t *testing.T) {
 			name: "invalid action gesture",
 			edit: func(source []Profile) (string, []Profile) {
 				profiles := cloneProfiles(source)
-				profiles[0].Values[0].Action = &Action{Type: ActivateProfileType, Gesture: "release", ProfileID: "alternate"}
+				profiles[0].Values[0].Action = &Action{Type: ActivateProfileType, Gesture: "hold", ProfileID: "alternate"}
 				return "default", profiles
 			},
 			want: "gesture must be",
@@ -191,7 +297,7 @@ func TestNewCatalogRejectsInvalidDefinitions(t *testing.T) {
 			name: "unknown action target",
 			edit: func(source []Profile) (string, []Profile) {
 				profiles := cloneProfiles(source)
-				profiles[0].Values[0].Action = &Action{Type: ActivateProfileType, Gesture: PressGesture, ProfileID: "missing"}
+				profiles[0].Values[0].Action = &Action{Type: ActivateProfileType, Gesture: ReleaseGesture, ProfileID: "missing"}
 				return "default", profiles
 			},
 			want: "target",
@@ -247,7 +353,7 @@ func TestNewCatalogRejectsOverflowAndInvisibleLabels(t *testing.T) {
 		func(value []Profile) { value[0].Values[0].ID = tooLong },
 		func(value []Profile) { value[0].Values[0].Label = tooLong },
 		func(value []Profile) {
-			value[0].Values[0].Action = &Action{Type: ActivateProfileType, Gesture: PressGesture, ProfileID: tooLong}
+			value[0].Values[0].Action = &Action{Type: ActivateProfileType, Gesture: ReleaseGesture, ProfileID: tooLong}
 		},
 	} {
 		profiles := validProfiles()

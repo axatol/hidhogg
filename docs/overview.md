@@ -1,7 +1,7 @@
 # Hidhogg overview
 
-Status: M-06 and descriptive owner-local configuration diagnostics complete; startup reassertion fix planned
-Updated: 2026-09-11
+Status: M-06 diagnostics/startup follow-ups and M-05-F02 native input complete
+Updated: 2026-09-18
 
 ## Goal
 
@@ -63,6 +63,10 @@ The direct Go runtime remains the active execution surface while SwiftUI product
 `M-03` adds direct-Go discovery through one caller-owned, owner-only runtime directory. A persistent advisory lock coordinates cooperating runtimes; strict generation metadata becomes visible only after IPC binding, device initialization, and serving readiness. The controller revalidates directory, lock, metadata, socket, peer UID, and generation attribution around each discovered call. Explicit socket and instance arguments mode remains temporarily available for Swift supervision and deterministic tests.
 
 `M-04` adds named profiles and atomic full-page activation. `M-05` adds press-only built-in profile activation and bounded asynchronous executable actions with immutable submission data and read-only execution history. `M-06` adds manual and automatic transactional reload: the runtime prepares a complete immutable candidate, serializes required writes with profile activation, applies brightness and idle settings through the existing policy owner, and publishes one atomic effective revision only after success. The watcher observes the explicit file's parent directory so direct and atomic-save edits are supported; invalid pre-write candidates retain the last-known-good runtime state.
+
+`M-05-F01` changes the strict configuration to schema v3 only. Action `gesture = "press"` executes once on initial down and ignores release; `gesture = "release"` requires a matching prior down with an unchanged binding and is the default when omitted. Duplicate downs do not retrigger. Profile/reload transitions cancel pending actions while held-key state prevents accidental rearming; idle-wake gestures remain consumed. Earlier configuration versions are rejected rather than translated. Generated schema: `schema/hidhogg-d200x-v3.json`.
+
+`M-05-F02` adds native `type_text` and Enter-only `key_press` actions through purego/CoreGraphics, with 16 waiting slots plus one active action. The native FIFO does not change executable admission. Runtime-owned permission checking/requesting, `input.status`, and read-only `doctor` use IPC; startup/status/doctor never prompt or post test input. History is metadata-only and distinguishes posting from verified delivery. The owner approved deploy migration and confirmed numpad and permission/status/doctor functionality on 2026-09-18; automatic and architecture gates pass. Scenario-specific observations and lifecycle limits are qualified in `native-input-decisions.md`; owner commands are in `native-input-runbook.md`.
 
 `M-02-F01` adds bounded owner-run diagnostics and an isolated one-frame `d200xprobe` research CLI. These surfaces measured brightness-zero input, firmware-screensaver wake packets, and captured small-window modes without broadening the experimental outbound-command surface. The selected production policy uses a fixed 50-second `0x0002` keepalive and an optional `idle_timeout_seconds` setting that defaults to 300; zero disables application dimming without disabling keepalive. On idle the runtime sets brightness to zero, then restores configured brightness and consumes the first complete known physical gesture. Automatic and bounded owner-present physical gates passed on 2026-09-03.
 

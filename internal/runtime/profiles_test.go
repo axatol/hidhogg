@@ -13,6 +13,26 @@ import (
 	"hidhogg/internal/profile"
 )
 
+func TestPageForProfilePropagatesEffectiveLabelStyle(t *testing.T) {
+	profileValue := testProfile("default", "Default", "Default")
+	page, err := pageForProfile(profileValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := page.Positions[0]; got.LabelAlignment != d200x.DefaultLabelAlignment || got.LabelSize != d200x.DefaultLabelSize {
+		t.Fatalf("omitted label style = %s/%d, want %s/%d", got.LabelAlignment, got.LabelSize, d200x.DefaultLabelAlignment, d200x.DefaultLabelSize)
+	}
+	profileValue.Values[0].LabelAlignment = d200x.LabelAlignmentCenter
+	profileValue.Values[0].LabelSize = 24
+	page, err = pageForProfile(profileValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := page.Positions[0]; got.LabelAlignment != d200x.LabelAlignmentCenter || got.LabelSize != 24 {
+		t.Fatalf("explicit label style = %s/%d, want %s/24", got.LabelAlignment, got.LabelSize, d200x.LabelAlignmentCenter)
+	}
+}
+
 func TestProfileServiceCurrentAndUnknownActivationDoNotWrite(t *testing.T) {
 	sender := &profilePageSender{}
 	service := newTestProfileService(t, sender, nil)
@@ -533,7 +553,7 @@ func testProfile(id, label, prefix string) profile.Profile {
 	if id == "alternate" {
 		target = "default"
 	}
-	values[0].Action = &profile.Action{Type: profile.ActivateProfileType, Gesture: profile.PressGesture, ProfileID: target}
+	values[0].Action = &profile.Action{Type: profile.ActivateProfileType, Gesture: profile.ReleaseGesture, ProfileID: target}
 	return profile.Profile{ID: id, Label: label, Values: values}
 }
 

@@ -5,7 +5,7 @@
       "type": "integer",
       "description": "configuration schema version",
       "enum": [
-        2
+        3
       ]
     },
     "adapter": {
@@ -96,8 +96,24 @@
                   "description": "hexadecimal background colour",
                   "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
                 },
+                "label_alignment": {
+                  "type": "string",
+                  "description": "firmware-rendered label alignment",
+                  "default": "bottom",
+                  "enum": [
+                    "bottom",
+                    "center"
+                  ]
+                },
+                "label_size": {
+                  "type": "integer",
+                  "description": "firmware-rendered label size",
+                  "default": 10,
+                  "minimum": 8,
+                  "maximum": 32
+                },
                 "action": {
-                  "description": "optional press action binding",
+                  "description": "optional input-gesture action binding",
                   "oneOf": [
                     {
                       "type": "null"
@@ -114,9 +130,11 @@
                         },
                         "gesture": {
                           "type": "string",
-                          "description": "input gesture",
+                          "description": "input gesture; defaults to release when omitted",
+                          "default": "release",
                           "enum": [
-                            "press"
+                            "press",
+                            "release"
                           ]
                         },
                         "profile_id": {
@@ -129,7 +147,6 @@
                       },
                       "required": [
                         "type",
-                        "gesture",
                         "profile_id"
                       ],
                       "additionalProperties": false
@@ -146,9 +163,11 @@
                         },
                         "gesture": {
                           "type": "string",
-                          "description": "input gesture",
+                          "description": "input gesture; defaults to release when omitted",
+                          "default": "release",
                           "enum": [
-                            "press"
+                            "press",
+                            "release"
                           ]
                         },
                         "executable": {
@@ -178,8 +197,73 @@
                       },
                       "required": [
                         "type",
-                        "gesture",
                         "executable"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "description": "action type",
+                          "enum": [
+                            "type_text"
+                          ]
+                        },
+                        "gesture": {
+                          "type": "string",
+                          "description": "input gesture; defaults to release when omitted",
+                          "default": "release",
+                          "enum": [
+                            "press",
+                            "release"
+                          ]
+                        },
+                        "text": {
+                          "type": "string",
+                          "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "pattern": "^[^\\x00]*$"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "text"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "description": "action type",
+                          "enum": [
+                            "key_press"
+                          ]
+                        },
+                        "gesture": {
+                          "type": "string",
+                          "description": "input gesture; defaults to release when omitted",
+                          "default": "release",
+                          "enum": [
+                            "press",
+                            "release"
+                          ]
+                        },
+                        "key": {
+                          "type": "string",
+                          "description": "physical key; only enter is supported",
+                          "enum": [
+                            "enter"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "key"
                       ],
                       "additionalProperties": false
                     }
@@ -214,7 +298,7 @@
     }
   },
   "$schema": "http://json-schema.org/draft-04/schema#",
-  "title": "Hidhogg Ulanzi D200X configuration v2",
+  "title": "Hidhogg Ulanzi D200X configuration v3",
   "description": "Strict named-profile configuration for one Ulanzi D200X adapter.",
   "required": [
     "schema_version",

@@ -44,13 +44,18 @@ var (
 type State string
 
 const (
-	StateRunning      State = "running"
-	StateExited       State = "exited"
-	StateSignaled     State = "signaled"
-	StateTimedOut     State = "timed_out"
-	StateCanceled     State = "canceled"
-	StateStartFailed  State = "start_failed"
-	StateRejectedBusy State = "rejected_busy"
+	StateRunning           State = "running"
+	StateExited            State = "exited"
+	StateSignaled          State = "signaled"
+	StateTimedOut          State = "timed_out"
+	StateCanceled          State = "canceled"
+	StateStartFailed       State = "start_failed"
+	StateRejectedBusy      State = "rejected_busy"
+	StateQueued            State = "queued"
+	StatePosted            State = "posted"
+	StatePermissionDenied  State = "permission_denied"
+	StateFailed            State = "failed"
+	StateRejectedQueueFull State = "rejected_queue_full"
 )
 
 type Request struct {
@@ -68,6 +73,7 @@ type Output struct {
 }
 
 type Record struct {
+	ActionType       string
 	ID               string
 	ProfileID        string
 	PositionID       string
@@ -84,6 +90,7 @@ type Record struct {
 }
 
 type Summary struct {
+	ActionType       string
 	ID               string
 	ProfileID        string
 	PositionID       string
@@ -154,6 +161,7 @@ func (worker *Worker) Submit(request Request) (Record, error) {
 	}
 	now := worker.now()
 	record := Record{
+		ActionType:  "execute",
 		ID:          worker.ids.next(now),
 		ProfileID:   owned.ProfileID,
 		PositionID:  owned.PositionID,
@@ -498,7 +506,8 @@ func (worker *Worker) appendRecordLocked(record Record) {
 
 func summaryOf(record Record) Summary {
 	summary := Summary{
-		ID: record.ID, ProfileID: record.ProfileID, PositionID: record.PositionID,
+		ActionType: record.ActionType,
+		ID:         record.ID, ProfileID: record.ProfileID, PositionID: record.PositionID,
 		State: record.State, SubmittedAt: record.SubmittedAt, StartedAt: record.StartedAt,
 		FinishedAt: record.FinishedAt, Duration: record.Duration,
 		SupervisionError: record.SupervisionError,

@@ -26,6 +26,9 @@ func TestLivePositionArchiveCoversEveryCoordinate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if effective := update.Position(); effective.LabelAlignment != DefaultLabelAlignment || effective.LabelSize != DefaultLabelSize {
+				t.Fatalf("effective update style = %s/%d, want %s/%d", effective.LabelAlignment, effective.LabelSize, DefaultLabelAlignment, DefaultLabelSize)
+			}
 			archive := update.Archive()
 			if len(archive.Data) == 0 || len(archive.Data) > MaxPayloadLength {
 				t.Fatalf("archive length = %d", len(archive.Data))
@@ -41,35 +44,13 @@ func TestLivePositionArchiveCoversEveryCoordinate(t *testing.T) {
 				t.Fatalf("archive members = %d, want exactly 2", len(files))
 			}
 			manifestData := readArchiveFile(t, files, livePositionManifestName)
-			var manifest map[string]json.RawMessage
-			if err := json.Unmarshal(manifestData, &manifest); err != nil {
-				t.Fatalf("manifest JSON: %v", err)
-			}
+			manifest := readManifest(t, manifestData)
 			if len(manifest) != 1 {
 				t.Fatalf("manifest coordinates = %d, want 1", len(manifest))
 			}
-			entryData, ok := manifest[position.Position]
+			entry, ok := manifest[position.Position]
 			if !ok {
 				t.Fatalf("manifest does not target %q", position.Position)
-			}
-			var entry struct {
-				SmallViewMode *int `json:"SmallViewMode"`
-				State         int  `json:"State"`
-				ViewParam     []struct {
-					Font struct {
-						Align     string `json:"Align"`
-						Color     int    `json:"Color"`
-						FontName  string `json:"FontName"`
-						ShowTitle bool   `json:"ShowTitle"`
-						Size      int    `json:"Size"`
-						Weight    int    `json:"Weight"`
-					} `json:"Font"`
-					Icon string `json:"Icon"`
-					Text string `json:"Text"`
-				} `json:"ViewParam"`
-			}
-			if err := json.Unmarshal(entryData, &entry); err != nil {
-				t.Fatalf("manifest entry JSON: %v", err)
 			}
 			if entry.State != 0 || len(entry.ViewParam) != 1 {
 				t.Fatalf("manifest entry = %+v", entry)
@@ -78,12 +59,13 @@ func TestLivePositionArchiveCoversEveryCoordinate(t *testing.T) {
 			if view.Text != position.Label {
 				t.Fatalf("manifest text = %q, want %q", view.Text, position.Label)
 			}
-			if view.Font.Align != "bottom" || view.Font.Color != 16_777_215 || view.Font.FontName != livePositionFontName || !view.Font.ShowTitle || view.Font.Size != 10 || view.Font.Weight != 80 {
-				t.Fatalf("manifest font = %+v", view.Font)
-			}
 			spec, ok := LookupPosition(position.Position)
 			if !ok {
 				t.Fatalf("test position %q is not supported", position.Position)
+			}
+			wantShowTitle := !spec.Wide
+			if view.Font.Align != DefaultLabelAlignment || view.Font.Color != 16_777_215 || view.Font.FontName != livePositionFontName || view.Font.ShowTitle != wantShowTitle || view.Font.Size != DefaultLabelSize || view.Font.Weight != 80 {
+				t.Fatalf("manifest font = %+v", view.Font)
 			}
 			if spec.Wide {
 				if entry.SmallViewMode == nil || *entry.SmallViewMode != 2 {
@@ -161,11 +143,106 @@ func TestLivePositionArchivePathIsStableAndContentAddressed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	changedStyle := base
+	changedStyle.LabelAlignment = LabelAlignmentCenter
+	changedStyle.LabelSize = 24
+	styleArchive, err := BuildLivePositionArchive(changedStyle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	styleUpdate, err := BuildLivePositionUpdate(changedStyle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effective := styleUpdate.Position(); effective.LabelAlignment != LabelAlignmentCenter || effective.LabelSize != 24 {
+		t.Fatalf("explicit targeted update style = %s/%d, want %s/24", effective.LabelAlignment, effective.LabelSize, LabelAlignmentCenter)
+	}
 	basePath := liveArchiveIconPath(t, first.Data)
 	labelPath := liveArchiveIconPath(t, labelArchive.Data)
 	colourPath := liveArchiveIconPath(t, colourArchive.Data)
-	if basePath == labelPath || basePath == colourPath {
-		t.Fatalf("content path did not change: base=%q label=%q colour=%q", basePath, labelPath, colourPath)
+	stylePath := liveArchiveIconPath(t, styleArchive.Data)
+	baseFiles := readArchiveFiles(t, first.Data)
+	labelFiles := readArchiveFiles(t, labelArchive.Data)
+	colourFiles := readArchiveFiles(t, colourArchive.Data)
+	styleFiles := readArchiveFiles(t, styleArchive.Data)
+	baseIcon := readArchiveFile(t, baseFiles, basePath)
+	if basePath != labelPath || basePath != stylePath {
+		t.Fatalf("label/style changed content path: base=%q label=%q style=%q", basePath, labelPath, stylePath)
+	}
+	if !bytes.Equal(baseIcon, readArchiveFile(t, labelFiles, labelPath)) || !bytes.Equal(baseIcon, readArchiveFile(t, styleFiles, stylePath)) {
+		t.Fatal("label/style changed PNG bytes")
+	}
+	baseManifest := readArchiveFile(t, baseFiles, livePositionManifestName)
+	if bytes.Equal(baseManifest, readArchiveFile(t, labelFiles, livePositionManifestName)) {
+		t.Fatal("changing label did not change targeted manifest bytes")
+	}
+	styleEntry := readManifest(t, readArchiveFile(t, styleFiles, livePositionManifestName))[base.Position]
+	if styleEntry.ViewParam[0].Font.Align != LabelAlignmentCenter || styleEntry.ViewParam[0].Font.Size != 24 {
+		t.Fatalf("targeted manifest style = %+v, want %s/24", styleEntry.ViewParam[0].Font, LabelAlignmentCenter)
+	}
+	if bytes.Equal(baseManifest, readArchiveFile(t, styleFiles, livePositionManifestName)) {
+		t.Fatal("changing label style did not change targeted manifest bytes")
+	}
+	if basePath == colourPath || bytes.Equal(baseIcon, readArchiveFile(t, colourFiles, colourPath)) {
+		t.Fatalf("background did not change content-addressed PNG: base=%q colour=%q", basePath, colourPath)
+	}
+}
+
+func TestLivePositionWideLabelFallbackIsRenderedAndContentAddressed(t *testing.T) {
+	base := configuredTestPage().Positions[13]
+	first, err := BuildLivePositionArchive(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := BuildLivePositionArchive(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first.Data, second.Data) || first.PaddingLength != second.PaddingLength {
+		t.Fatal("same wide position produced nondeterministic archive bytes")
+	}
+
+	labelled := base
+	labelled.Label = "Enter 0123456789.*+"
+	labelArchive, err := BuildLivePositionArchive(labelled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	styled := labelled
+	styled.LabelAlignment = LabelAlignmentCenter
+	styled.LabelSize = 24
+	styleArchive, err := BuildLivePositionArchive(styled)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	baseFiles := readArchiveFiles(t, first.Data)
+	labelFiles := readArchiveFiles(t, labelArchive.Data)
+	styleFiles := readArchiveFiles(t, styleArchive.Data)
+	basePath := liveArchiveIconPath(t, first.Data)
+	labelPath := liveArchiveIconPath(t, labelArchive.Data)
+	stylePath := liveArchiveIconPath(t, styleArchive.Data)
+	if basePath == labelPath || basePath == stylePath || labelPath == stylePath {
+		t.Fatalf("wide label/style did not change content path: base=%q label=%q style=%q", basePath, labelPath, stylePath)
+	}
+	basePNG := readArchiveFile(t, baseFiles, basePath)
+	if bytes.Equal(basePNG, readArchiveFile(t, labelFiles, labelPath)) || bytes.Equal(basePNG, readArchiveFile(t, styleFiles, stylePath)) {
+		t.Fatal("wide label/style did not change rendered PNG bytes")
+	}
+
+	manifestFiles := readManifest(t, readArchiveFile(t, labelFiles, livePositionManifestName))
+	entry := manifestFiles[base.Position]
+	if entry.SmallViewMode == nil || *entry.SmallViewMode != 2 {
+		t.Fatalf("wide SmallViewMode = %v, want 2", entry.SmallViewMode)
+	}
+	if entry.ViewParam[0].Text != labelled.Label {
+		t.Fatalf("wide manifest text = %q, want %q", entry.ViewParam[0].Text, labelled.Label)
+	}
+	if entry.ViewParam[0].Font.ShowTitle {
+		t.Fatal("wide manifest retained a firmware title after baking the label into the PNG")
+	}
+	if !hasConfiguredInteriorInk(t, readArchiveFile(t, labelFiles, labelPath), labelled.Background) {
+		t.Fatal("wide live fallback did not render visible interior pixels")
 	}
 }
 
@@ -252,6 +329,28 @@ func TestLivePositionBatchRejectsBeforeAnyWrite(t *testing.T) {
 	}
 	if calls, _, _ := transport.stats(); calls != 0 {
 		t.Fatalf("invalid batch write calls = %d, want 0", calls)
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(*Position)
+	}{
+		{name: "invalid label alignment", mutate: func(position *Position) { position.LabelAlignment = "top" }},
+		{name: "label size below minimum", mutate: func(position *Position) { position.LabelSize = MinimumLabelSize - 1 }},
+		{name: "label size above maximum", mutate: func(position *Position) { position.LabelSize = MaximumLabelSize + 1 }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := append([]Position(nil), page.Positions...)
+			test.mutate(&candidate[0])
+			if err := session.SendLivePositionBatch(context.Background(), candidate); err == nil {
+				t.Fatal("invalid label style batch was accepted")
+			}
+			if calls, _, _ := transport.stats(); calls != 0 {
+				t.Fatalf("invalid label style batch write calls = %d, want 0", calls)
+			}
+			if _, active := session.Current(); !active {
+				t.Fatal("invalid label style validation invalidated the session")
+			}
+		})
 	}
 	duplicate := []Position{page.Positions[0], page.Positions[0]}
 	if err := session.SendLivePositionBatch(context.Background(), duplicate); err == nil {

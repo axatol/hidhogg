@@ -8,6 +8,7 @@ import (
 
 	"hidhogg/internal/d200x"
 	"hidhogg/internal/execution"
+	"hidhogg/internal/nativeinput"
 	"hidhogg/internal/profile"
 )
 
@@ -33,12 +34,19 @@ type profileActionCandidate struct {
 	position  eventPosition
 }
 
+type profileActionKey struct {
+	marker    d200x.InputMarker
+	wireIndex byte
+}
+
 type profileActionController struct {
 	service    ProfileService
 	executor   executionSubmitter
+	native     nativeWorker
 	positions  func() map[byte]eventPosition
 	transition *profileTransitionGate
-	candidate  *profileActionCandidate
+	held       map[profileActionKey]struct{}
+	pending    map[profileActionKey]*profileActionCandidate
 }
 
 type executionSubmitter interface {
@@ -60,6 +68,9 @@ func newProfileActionController(service ProfileService, positions func() map[byt
 	controller := &profileActionController{service: service, positions: positions}
 	if len(executors) > 0 {
 		controller.executor = executors[0]
+		if provider, ok := executors[0].(interface{ nativeInputSubmitter() nativeWorker }); ok {
+			controller.native = provider.nativeInputSubmitter()
+		}
 	}
 	if source, ok := service.(profileTransitionSource); ok {
 		controller.transition = source.profileTransitionGate()
@@ -72,7 +83,41 @@ func (controller *profileActionController) reset() {
 	if controller == nil {
 		return
 	}
-	controller.candidate = nil
+	controller.ensureState()
+	clear(controller.pending)
+}
+
+func (controller *profileActionController) ensureState() {
+	if controller == nil {
+		return
+	}
+	if controller.held == nil {
+		controller.held = make(map[profileActionKey]struct{})
+	}
+	if controller.pending == nil {
+		controller.pending = make(map[profileActionKey]*profileActionCandidate)
+	}
+}
+
+// consumePhysical records a down or up without evaluating the configured
+// action. Idle wake and transition-suppressed events use this to keep the
+// physical latch aligned while deliberately discarding actions.
+func (controller *profileActionController) consumePhysical(event d200x.InputEvent) {
+	if controller == nil {
+		return
+	}
+	key, ok := profileActionKeyFor(event)
+	if !ok {
+		return
+	}
+	controller.ensureState()
+	switch event.Action {
+	case d200x.InputActionPressed:
+		controller.held[key] = struct{}{}
+	case d200x.InputActionReleased:
+		delete(controller.held, key)
+		delete(controller.pending, key)
+	}
 }
 
 func (controller *profileActionController) observe(ctx context.Context, event d200x.InputEvent) error {
@@ -104,7 +149,9 @@ func (controller *profileActionController) observeState(event d200x.InputEvent) 
 	if controller == nil {
 		return nil
 	}
+	controller.ensureState()
 	if controller.transition != nil && controller.transition.active {
+		controller.consumePhysical(event)
 		controller.reset()
 		return nil
 	}
@@ -113,40 +160,53 @@ func (controller *profileActionController) observeState(event d200x.InputEvent) 
 		return nil
 	}
 
-	position, ok := controller.positionFor(event.WireIndex)
-	if !ok {
-		controller.reset()
-		return nil
-	}
-
-	snapshot := controller.currentSnapshot()
+	key := profileActionKey{marker: event.Marker, wireIndex: event.WireIndex}
 	switch event.Action {
 	case d200x.InputActionPressed:
+		if _, held := controller.held[key]; held {
+			return nil
+		}
+		controller.held[key] = struct{}{}
+		position, ok := controller.positionFor(event.WireIndex)
+		if !ok {
+			return nil
+		}
+		snapshot := controller.currentSnapshot()
 		binding, ok := actionBindingAt(snapshot, position.position)
 		if !ok {
-			controller.reset()
 			return nil
 		}
-		if controller.candidate != nil &&
-			controller.candidate.wireIndex == event.WireIndex &&
-			controller.candidate.marker == event.Marker {
-			controller.reset()
-			return nil
-		}
-		controller.candidate = &profileActionCandidate{
+		candidate := &profileActionCandidate{
 			wireIndex: event.WireIndex,
 			marker:    event.Marker,
 			snapshot:  snapshot.clone(),
 			binding:   binding,
 			position:  position,
 		}
+		switch effectiveActionGesture(binding.Action.Gesture) {
+		case profile.PressGesture:
+			return &profileActionActivation{
+				snapshot:   candidate.snapshot,
+				binding:    candidate.binding,
+				positionID: candidate.position.id,
+			}
+		case profile.ReleaseGesture:
+			controller.pending[key] = candidate
+		}
 		return nil
 	case d200x.InputActionReleased:
-		candidate := controller.candidate
-		controller.reset()
-		if candidate == nil || candidate.wireIndex != event.WireIndex || candidate.marker != event.Marker {
+		_, held := controller.held[key]
+		delete(controller.held, key)
+		candidate := controller.pending[key]
+		delete(controller.pending, key)
+		if !held || candidate == nil {
 			return nil
 		}
+		position, ok := controller.positionFor(event.WireIndex)
+		if !ok {
+			return nil
+		}
+		snapshot := controller.currentSnapshot()
 		if !candidate.matches(snapshot, position) {
 			return nil
 		}
@@ -186,6 +246,17 @@ func (controller *profileActionController) currentSnapshot() profileActionSnapsh
 func (controller *profileActionController) activate(ctx context.Context, activation *profileActionActivation) error {
 	if controller == nil || controller.service == nil || activation == nil {
 		return nil
+	}
+	if activation.binding.Action.Type == profile.TypeTextActionType || activation.binding.Action.Type == profile.KeyPressActionType {
+		if controller.native == nil {
+			return nil
+		}
+		action := activation.binding.Action
+		_, err := controller.native.Submit(nativeinput.Request{ProfileID: activation.snapshot.profileID, PositionID: activation.positionID, Text: action.Text, Key: action.Key})
+		if errors.Is(err, nativeinput.ErrClosed) && ctx != nil && ctx.Err() != nil {
+			return nil
+		}
+		return err
 	}
 	if activation.binding.Action.Type == profile.ExecuteActionType {
 		if controller.executor == nil {
@@ -234,8 +305,7 @@ func actionBindingAt(snapshot profileActionSnapshot, position string) (profile.B
 		if current.Position != position {
 			continue
 		}
-		if found || current.Action.Gesture != profile.PressGesture ||
-			(current.Action.Type != profile.ActivateProfileType && current.Action.Type != profile.ExecuteActionType) {
+		if found || !isSupportedAction(current.Action) {
 			return profile.Binding{}, false
 		}
 		binding = current
@@ -244,11 +314,35 @@ func actionBindingAt(snapshot profileActionSnapshot, position string) (profile.B
 	return binding, found
 }
 
+func isSupportedAction(action profile.Action) bool {
+	if action.Type != profile.ActivateProfileType && action.Type != profile.ExecuteActionType && action.Type != profile.TypeTextActionType && action.Type != profile.KeyPressActionType {
+		return false
+	}
+	gesture := effectiveActionGesture(action.Gesture)
+	return gesture == profile.PressGesture || gesture == profile.ReleaseGesture
+}
+
+func effectiveActionGesture(gesture string) string {
+	if gesture == "" {
+		return profile.DefaultGesture
+	}
+	return gesture
+}
+
+func profileActionKeyFor(event d200x.InputEvent) (profileActionKey, bool) {
+	if !isOrdinaryPressOrRelease(event) {
+		return profileActionKey{}, false
+	}
+	return profileActionKey{marker: event.Marker, wireIndex: event.WireIndex}, true
+}
+
 func equalProfileBinding(left, right profile.Binding) bool {
 	return left.Position == right.Position &&
 		left.Action.Type == right.Action.Type &&
-		left.Action.Gesture == right.Action.Gesture &&
+		effectiveActionGesture(left.Action.Gesture) == effectiveActionGesture(right.Action.Gesture) &&
 		left.Action.ProfileID == right.Action.ProfileID &&
+		left.Action.Text == right.Action.Text &&
+		left.Action.Key == right.Action.Key &&
 		left.Action.Executable == right.Action.Executable &&
 		slices.Equal(left.Action.Arguments, right.Action.Arguments) &&
 		left.Action.TimeoutSeconds == right.Action.TimeoutSeconds

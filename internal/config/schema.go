@@ -3,12 +3,14 @@ package config
 import (
 	"encoding/json"
 
+	"hidhogg/internal/profile"
+
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
 const jsonSchemaDraft4 = "http://json-schema.org/draft-04/schema#"
 
-//go:generate go run ./generate-schema -output ../../schema/hidhogg-d200x-v2.json
+//go:generate go run ./generate-schema -output ../../schema/hidhogg-d200x-v3.json
 
 // JSONSchema reflects the canonical Config DTO and adds constraints that are
 // stable for this milestone. Reflection supplies property names and types;
@@ -19,7 +21,7 @@ func JSONSchema() (*jsonschema.Schema, error) {
 		return nil, err
 	}
 	document.Schema = jsonSchemaDraft4
-	document.Title = "Hidhogg Ulanzi D200X configuration v2"
+	document.Title = "Hidhogg Ulanzi D200X configuration v3"
 	document.Description = "Strict named-profile configuration for one Ulanzi D200X adapter."
 
 	configureConfigSchema(document)
@@ -50,7 +52,7 @@ func configureConfigSchema(document *jsonschema.Schema) {
 		return
 	}
 	if field := document.Properties["schema_version"]; field != nil {
-		field.Enum = []any{SchemaVersionV2}
+		field.Enum = []any{SchemaVersionV3}
 	}
 	if field := document.Properties["adapter"]; field != nil {
 		field.Enum = []any{AdapterUlanziD200X}
@@ -131,6 +133,15 @@ func configurePositionSchema(position *jsonschema.Schema) {
 		field.MinLength = schemaInt(1)
 		field.MaxLength = schemaInt(MaximumLabelRunes)
 	}
+	if field := position.Properties["label_alignment"]; field != nil {
+		field.Enum = []any{LabelAlignmentBottom, LabelAlignmentCenter}
+		field.Default = json.RawMessage(`"bottom"`)
+	}
+	if field := position.Properties["label_size"]; field != nil {
+		field.Minimum = schemaNumber(float64(MinimumLabelSize))
+		field.Maximum = schemaNumber(float64(MaximumLabelSize))
+		field.Default = json.RawMessage("10")
+	}
 	if field := position.Properties["background"]; field != nil {
 		field.Pattern = backgroundPattern.String()
 	}
@@ -156,6 +167,8 @@ func configureActionSchema(action *jsonschema.Schema) {
 		{Type: "null"},
 		activateProfileActionSchema(),
 		executeActionSchema(),
+		typeTextActionSchema(),
+		keyPressActionSchema(),
 	}
 }
 
@@ -163,10 +176,10 @@ func activateProfileActionSchema() *jsonschema.Schema {
 	return actionObjectSchema(
 		map[string]*jsonschema.Schema{
 			"type":       actionStringSchema("action type", []any{profileActionType}),
-			"gesture":    actionStringSchema("input gesture", []any{profileActionGesture}),
+			"gesture":    actionGestureSchema(),
 			"profile_id": stableIDActionSchema("case-sensitive target profile identifier"),
 		},
-		[]string{"type", "gesture", "profile_id"},
+		[]string{"type", "profile_id"},
 		[]string{"type", "gesture", "profile_id"},
 	)
 }
@@ -193,13 +206,47 @@ func executeActionSchema() *jsonschema.Schema {
 	return actionObjectSchema(
 		map[string]*jsonschema.Schema{
 			"type":            actionStringSchema("action type", []any{ExecuteActionType}),
-			"gesture":         actionStringSchema("input gesture", []any{profileActionGesture}),
+			"gesture":         actionGestureSchema(),
 			"executable":      {Type: "string", Description: "absolute executable path without NUL", MinLength: schemaInt(1), Pattern: `^/[^\x00]*$`},
 			"arguments":       arguments,
 			"timeout_seconds": timeout,
 		},
-		[]string{"type", "gesture", "executable"},
+		[]string{"type", "executable"},
 		[]string{"type", "gesture", "executable", "arguments", "timeout_seconds"},
+	)
+}
+
+func typeTextActionSchema() *jsonschema.Schema {
+	return actionObjectSchema(
+		map[string]*jsonschema.Schema{
+			"type":    actionStringSchema("action type", []any{TypeTextActionType}),
+			"gesture": actionGestureSchema(),
+			"text": {
+				Type:        "string",
+				Description: "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+				MinLength:   schemaInt(1),
+				MaxLength:   schemaInt(MaximumTextUTF16Units),
+				Pattern:     `^[^\x00]*$`,
+			},
+		},
+		[]string{"type", "text"},
+		[]string{"type", "gesture", "text"},
+	)
+}
+
+func keyPressActionSchema() *jsonschema.Schema {
+	return actionObjectSchema(
+		map[string]*jsonschema.Schema{
+			"type":    actionStringSchema("action type", []any{KeyPressActionType}),
+			"gesture": actionGestureSchema(),
+			"key": {
+				Type:        "string",
+				Description: "physical key; only enter is supported",
+				Enum:        []any{"enter"},
+			},
+		},
+		[]string{"type", "key"},
+		[]string{"type", "gesture", "key"},
 	)
 }
 
@@ -217,6 +264,15 @@ func actionStringSchema(description string, enum []any) *jsonschema.Schema {
 	return &jsonschema.Schema{Type: "string", Description: description, Enum: enum}
 }
 
+func actionGestureSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{
+		Type:        "string",
+		Description: "input gesture; defaults to release when omitted",
+		Enum:        []any{profile.PressGesture, profile.ReleaseGesture},
+		Default:     json.RawMessage(`"release"`),
+	}
+}
+
 func stableIDActionSchema(description string) *jsonschema.Schema {
 	field := &jsonschema.Schema{Type: "string", Description: description}
 	configureStableIDSchema(field)
@@ -224,8 +280,7 @@ func stableIDActionSchema(description string) *jsonschema.Schema {
 }
 
 const (
-	profileActionType    = "activate_profile"
-	profileActionGesture = "press"
+	profileActionType = "activate_profile"
 )
 
 func configureStableIDSchema(field *jsonschema.Schema) {

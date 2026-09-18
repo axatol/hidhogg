@@ -27,7 +27,7 @@ const runtimeTestInstanceID = "11111111-1111-4111-8111-111111111111"
 
 func TestRuntimeRejectsInvalidConfigurationBeforeHID(t *testing.T) {
 	configurationPath := filepath.Join(t.TempDir(), "invalid.toml")
-	if err := os.WriteFile(configurationPath, []byte("schema_version = 2\n"), 0o600); err != nil {
+	if err := os.WriteFile(configurationPath, []byte("schema_version = 3\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	factory := &recordingFactory{}
@@ -1284,7 +1284,7 @@ func TestRuntimeStdoutFailureClosesSession(t *testing.T) {
 
 func runtimeTestConfiguration() []byte {
 	var builder strings.Builder
-	builder.WriteString("schema_version = 2\nadapter = \"ulanzi.d200x\"\nbrightness = 73\ndefault_profile_id = \"default\"\n\n[[profiles]]\nid = \"default\"\nlabel = \"Default\"\n\n")
+	builder.WriteString("schema_version = 3\nadapter = \"ulanzi.d200x\"\nbrightness = 73\ndefault_profile_id = \"default\"\n\n[[profiles]]\nid = \"default\"\nlabel = \"Default\"\n\n")
 	for index, spec := range d200x.SupportedPositions() {
 		fmt.Fprintf(&builder, "[[profiles.positions]]\nid = \"tile-%s\"\nposition = \"%s\"\nlabel = \"Tile %d\"\nbackground = \"#102030\"\n\n", spec.Name, spec.Name, index)
 	}
@@ -1293,7 +1293,7 @@ func runtimeTestConfiguration() []byte {
 
 func runtimeMultiProfileConfiguration() []byte {
 	var builder strings.Builder
-	builder.WriteString("schema_version = 2\nadapter = \"ulanzi.d200x\"\nbrightness = 73\ndefault_profile_id = \"default\"\n\n")
+	builder.WriteString("schema_version = 3\nadapter = \"ulanzi.d200x\"\nbrightness = 73\ndefault_profile_id = \"default\"\n\n")
 	for _, profileID := range []string{"default", "alternate"} {
 		fmt.Fprintf(&builder, "[[profiles]]\nid = \"%s\"\nlabel = \"%s\"\n\n", profileID, profileID)
 		for index, spec := range d200x.SupportedPositions() {

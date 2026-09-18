@@ -92,6 +92,17 @@ func TestReloadCandidateClassifiesDisplayBrightnessIdleDefaultAndCatalogChanges(
 			},
 		},
 		{
+			name:       "label style",
+			changed:    bytes.Replace(base, []byte("background = \"#102030\"\n\n"), []byte("background = \"#102030\"\nlabel_alignment = \"center\"\nlabel_size = 24\n\n"), 1),
+			wantEffect: reloadEffectDisplay,
+			check: func(t *testing.T, diff reloadEffects) {
+				t.Helper()
+				if !diff.DisplayChanged() || !diff.CatalogChanged() || !diff.CurrentProfileChanged() {
+					t.Fatalf("label style diff = %#v", diff)
+				}
+			},
+		},
+		{
 			name:       "brightness",
 			changed:    bytes.Replace(base, []byte("brightness = 73"), []byte("brightness = 74"), 1),
 			wantEffect: reloadEffectBrightness,
@@ -145,6 +156,21 @@ func TestReloadCandidateClassifiesDisplayBrightnessIdleDefaultAndCatalogChanges(
 			}
 			test.check(t, diff)
 		})
+	}
+}
+
+func TestReloadCandidateCarriesLabelStyleToCurrentPage(t *testing.T) {
+	base := reloadTestConfiguration()
+	styled := bytes.Replace(base, []byte("background = \"#102030\"\n\n"), []byte("background = \"#102030\"\nlabel_alignment = \"center\"\nlabel_size = 24\n\n"), 1)
+	candidate := buildReloadCandidateForTest(t, styled, "default")
+	position := candidate.Page().Positions[0]
+	if position.LabelAlignment != appconfig.LabelAlignmentCenter || position.LabelSize != 24 {
+		t.Fatalf("current page label style = %s/%d, want %s/24", position.LabelAlignment, position.LabelSize, appconfig.LabelAlignmentCenter)
+	}
+	defaultCandidate := buildReloadCandidateForTest(t, base, "default")
+	defaultPosition := defaultCandidate.Page().Positions[0]
+	if defaultPosition.LabelAlignment != appconfig.DefaultLabelAlignment || defaultPosition.LabelSize != appconfig.DefaultLabelSize {
+		t.Fatalf("default current page label style = %s/%d, want %s/%d", defaultPosition.LabelAlignment, defaultPosition.LabelSize, appconfig.DefaultLabelAlignment, appconfig.DefaultLabelSize)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -23,8 +24,13 @@ const (
 const (
 	ActivateProfileType = "activate_profile"
 	ExecuteActionType   = "execute"
+	TypeTextActionType  = "type_text"
+	KeyPressActionType  = "key_press"
 	PressGesture        = "press"
+	ReleaseGesture      = "release"
+	DefaultGesture      = ReleaseGesture
 
+	MaximumTextUTF16Units        = 64
 	DefaultExecuteTimeoutSeconds = 10
 	MinimumExecuteTimeoutSeconds = 1
 	MaximumExecuteTimeoutSeconds = 60
@@ -35,8 +41,8 @@ const (
 
 var stableIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
-// Action is a validated press action. The containing Value supplies the
-// physical button binding location.
+// Action is a validated input-gesture action. The containing Value supplies
+// the physical button binding location.
 type Action struct {
 	Type           string
 	Gesture        string
@@ -44,17 +50,21 @@ type Action struct {
 	Executable     string
 	Arguments      []string
 	TimeoutSeconds int
+	Text           string
+	Key            string
 }
 
 // Value is a complete neutral description of one D200X display position.
 // Position identifies the physical coordinate while Action, when non-nil,
-// binds a completed press to another profile.
+// binds an input gesture to another profile or executable.
 type Value struct {
-	ID         string
-	Position   string
-	Label      string
-	Background string
-	Action     *Action
+	ID             string
+	Position       string
+	Label          string
+	Background     string
+	LabelAlignment string
+	LabelSize      int
+	Action         *Action
 }
 
 // Position is an alias retained for consumers that use the physical-layout
@@ -185,7 +195,7 @@ func (c Catalog) ResolveTarget(profileID string) (Profile, bool) {
 // ResolveActionTarget resolves the target named by an action after checking
 // that the action has the catalog's exact supported shape.
 func (c Catalog) ResolveActionTarget(action Action) (Profile, bool) {
-	if action.Type != ActivateProfileType || action.Gesture != PressGesture {
+	if action.Type != ActivateProfileType || !validGesture(action.Gesture) {
 		return Profile{}, false
 	}
 	return c.ResolveTarget(action.ProfileID)
@@ -283,11 +293,11 @@ func validateActions(values []Value, profileByID map[string]int) error {
 }
 
 func validateAction(action Action, profileByID map[string]int) error {
-	if action.Type != ActivateProfileType && action.Type != ExecuteActionType {
-		return fmt.Errorf("type must be %q or %q", ActivateProfileType, ExecuteActionType)
+	if !validActionType(action.Type) {
+		return fmt.Errorf("type must be %q, %q, %q, or %q", ActivateProfileType, ExecuteActionType, TypeTextActionType, KeyPressActionType)
 	}
-	if action.Gesture != PressGesture {
-		return fmt.Errorf("gesture must be %q", PressGesture)
+	if !validGesture(action.Gesture) {
+		return fmt.Errorf("gesture must be %q or %q", PressGesture, ReleaseGesture)
 	}
 	switch action.Type {
 	case ActivateProfileType:
@@ -299,6 +309,12 @@ func validateAction(action Action, profileByID map[string]int) error {
 		}
 		if action.TimeoutSeconds != 0 {
 			return fmt.Errorf("timeout_seconds is forbidden for %q action", ActivateProfileType)
+		}
+		if action.Text != "" {
+			return fmt.Errorf("text is forbidden for %q action", ActivateProfileType)
+		}
+		if action.Key != "" {
+			return fmt.Errorf("key is forbidden for %q action", ActivateProfileType)
 		}
 		if !validStableID(action.ProfileID) {
 			return fmt.Errorf("profile ID %q is invalid", action.ProfileID)
@@ -312,6 +328,12 @@ func validateAction(action Action, profileByID map[string]int) error {
 		if action.ProfileID != "" {
 			return fmt.Errorf("profile_id is forbidden for %q action", ExecuteActionType)
 		}
+		if action.Text != "" {
+			return fmt.Errorf("text is forbidden for %q action", ExecuteActionType)
+		}
+		if action.Key != "" {
+			return fmt.Errorf("key is forbidden for %q action", ExecuteActionType)
+		}
 		if !validExecutable(action.Executable) {
 			return fmt.Errorf("executable must be a non-empty absolute UTF-8 path without NUL")
 		}
@@ -321,8 +343,62 @@ func validateAction(action Action, profileByID map[string]int) error {
 		if action.TimeoutSeconds < MinimumExecuteTimeoutSeconds || action.TimeoutSeconds > MaximumExecuteTimeoutSeconds {
 			return fmt.Errorf("timeout_seconds must be between %d and %d", MinimumExecuteTimeoutSeconds, MaximumExecuteTimeoutSeconds)
 		}
+	case TypeTextActionType:
+		if action.ProfileID != "" {
+			return fmt.Errorf("profile_id is forbidden for %q action", TypeTextActionType)
+		}
+		if action.Executable != "" {
+			return fmt.Errorf("executable is forbidden for %q action", TypeTextActionType)
+		}
+		if action.Arguments != nil {
+			return fmt.Errorf("arguments are forbidden for %q action", TypeTextActionType)
+		}
+		if action.TimeoutSeconds != 0 {
+			return fmt.Errorf("timeout_seconds is forbidden for %q action", TypeTextActionType)
+		}
+		if action.Key != "" {
+			return fmt.Errorf("key is forbidden for %q action", TypeTextActionType)
+		}
+		if !validText(action.Text) {
+			return fmt.Errorf("text must be non-empty valid UTF-8 without NUL and at most %d UTF-16 units", MaximumTextUTF16Units)
+		}
+	case KeyPressActionType:
+		if action.ProfileID != "" {
+			return fmt.Errorf("profile_id is forbidden for %q action", KeyPressActionType)
+		}
+		if action.Executable != "" {
+			return fmt.Errorf("executable is forbidden for %q action", KeyPressActionType)
+		}
+		if action.Arguments != nil {
+			return fmt.Errorf("arguments are forbidden for %q action", KeyPressActionType)
+		}
+		if action.TimeoutSeconds != 0 {
+			return fmt.Errorf("timeout_seconds is forbidden for %q action", KeyPressActionType)
+		}
+		if action.Text != "" {
+			return fmt.Errorf("text is forbidden for %q action", KeyPressActionType)
+		}
+		if action.Key != "enter" {
+			return fmt.Errorf("key must equal %q for %q action", "enter", KeyPressActionType)
+		}
 	}
 	return nil
+}
+
+func validActionType(actionType string) bool {
+	switch actionType {
+	case ActivateProfileType, ExecuteActionType, TypeTextActionType, KeyPressActionType:
+		return true
+	default:
+		return false
+	}
+}
+
+func validText(value string) bool {
+	if value == "" || !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
+		return false
+	}
+	return len(utf16.Encode([]rune(value))) <= MaximumTextUTF16Units
 }
 
 func validExecutable(value string) bool {
@@ -444,7 +520,13 @@ func normalizeActionDefaults(profiles []Profile) {
 	for profileIndex := range profiles {
 		for valueIndex := range profiles[profileIndex].Values {
 			action := profiles[profileIndex].Values[valueIndex].Action
-			if action == nil || action.Type != ExecuteActionType {
+			if action == nil {
+				continue
+			}
+			if action.Gesture == "" {
+				action.Gesture = DefaultGesture
+			}
+			if action.Type != ExecuteActionType {
 				continue
 			}
 			if action.Arguments == nil {
@@ -455,6 +537,10 @@ func normalizeActionDefaults(profiles []Profile) {
 			}
 		}
 	}
+}
+
+func validGesture(gesture string) bool {
+	return gesture == PressGesture || gesture == ReleaseGesture
 }
 
 var supportedPositions = [...]string{

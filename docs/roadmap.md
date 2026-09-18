@@ -1,7 +1,7 @@
 # Hidhogg roadmap
 
-Status: M-06, M-06-F01, and M-06-F02 complete
-Updated: 2026-09-12
+Status: M-06 follow-ups and M-05-F02 complete
+Updated: 2026-09-18
 
 Task IDs are immutable.
 
@@ -10,6 +10,8 @@ Task IDs are immutable.
 | P-01 | Complete | Establish planning baseline and evidence rules | none |
 | S-01 | Complete | Determine whether a cgo-free Go runtime can operate the physical D200X reliably | P-01 |
 | S-02 | Complete | Determine whether required TOML GUI mutations can be lossless; compare JSONC fallback if not | P-01 |
+| S-03 | Diagnostic automatic gates pass; owner combined/session text delivery observed | Prove isolated cgo-free native macOS keyboard/text event construction and owner-run injection | M-05-F01 |
+| M-05-F02 | Complete — automatic, architecture and owner functional acceptance | Built-in native text/key actions, bounded FIFO, explicit permission request, status and doctor | S-03, M-05-F01 |
 | D-01 | Complete | Owner selects runtime architecture and configuration format from the spike report | S-01, S-02 |
 | M-01 | Complete | Scaffold the selected production architecture | D-01 |
 | M-01-F01 | Complete | Embed the required Go runtime in Xcode app products and verify failed-launch cleanup | M-01 |
@@ -49,12 +51,14 @@ Task IDs are immutable.
 | M-04-P02 | Complete | Resolve content-addressed full-page live redraw behavior | M-04-V02 |
 | M-04-R03 | Complete | Replace sequential live updates with one typed content-addressed full-page upload | M-04-P02 |
 | M-04-V03 | Complete | Verify final bulk profile switching automatically and on the owned D200X | M-04-R03 |
+| M-04-F04 | Complete | Separate labels from background artwork where supported and provide a rendered fallback for the wide tile | M-04-V03 |
 | M-05 | Complete | Execute one bounded synchronous button action and expose generation-local history | M-04 |
 | M-05-P01 | Complete | Freeze executable-action, worker, lifecycle, history, IPC, and CLI contracts | M-05 |
 | M-05-C01 | Complete | Add the strict executable-action configuration and catalog variant | M-05-P01 |
 | M-05-E01 | Complete | Implement the isolated one-slot execution worker and bounded history | M-05-C01 |
 | M-05-R01 | Complete | Integrate completed presses, runtime lifecycle, and execution IPC/CLI | M-05-E01 |
 | M-05-V01 | Complete | Independently verify schema, execution, concurrency, lifecycle, IPC, and CLI gates | M-05-R01 |
+| M-05-F01 | Automatic gates complete; physical gate pending | Execute actions on initial press or matched release with strict schema-v3 semantics | M-05-V01, M-04-F04 |
 | M-06 | Complete | Reload external TOML edits transactionally while retaining the last-known-good runtime state | M-05 |
 | M-06-P01 | Complete | Freeze reload, watcher, transaction, fallback, status, and lifecycle contracts | M-06 |
 | M-06-C01 | Complete | Build immutable reload candidates and semantic device diffs without live mutation | M-06-P01 |
@@ -65,6 +69,39 @@ Task IDs are immutable.
 | M-06-V01 | Complete | Independently verify automatic gates and one owner-visible external-edit reload | M-06-W01 |
 | M-06-F01 | Complete | Make local configuration failures descriptive and expose safe rejection metadata to status consumers | M-06-V01 |
 | M-06-F02 | Complete | Correct the confirmed failure to visibly reassert changed initial-profile content on startup | M-06-F01 |
+
+## S-03 — Cgo-free native macOS input spike
+
+- Status: initial and diagnostic automatic/independent ABI and fake gates pass on 2026-09-17; owner reported no visible text or Enter delivery in VS Code or TextEdit despite granted preflight. Diagnostic native readback is correct for default and combined sources; live delivery remains unresolved. No production integration or unattended typing is authorized.
+- Goal: test whether direct CoreGraphics calls remove per-action interpreter overhead without a Swift helper or cgo.
+- Scope: standalone `spikes/go-native-input` module; purego binds system frameworks; separate Unicode text and Enter key actions; permission preflight without prompting; allocation-only benchmark; no-post field readback; selectable null/private/combined/HID sources and HID/session/annotated posting locations; owner-run posting commands with optional focus delay; fake-only automatic tests.
+- Constraints: no root module or production action changes, bundled native shim, clipboard/window/application-data reads, permission prompts, or automatic keyboard injection. Posting success does not guarantee target application delivery. Native construction timing is not press-to-visible-text latency.
+- Acceptance: no-post preflight/benchmark; correct UTF-16 and native ownership; both events allocated before posting; denied permission or allocation failure cannot post; balanced down/up events and releases; strict CLI validation; Darwin arm64/amd64 builds; independent tests/race/vet/build/format/diff gates; owner-run harmless-field text and Enter checks remain separate physical evidence.
+- Roles: executor owns new spike files; independent tester verifies; main owns decisions, supervision, and durable documentation.
+- Dependencies: M-05-F01 event semantics and its attribution correction; actual production integration remains deferred.
+- Verification gates: automatic fake tests, compile on both Darwin architectures, permission preflight, allocation-only benchmark, independent review, owner-run delivery/timing report.
+- Parallel boundary: new module only; existing worktree edits protected.
+- Blockers: permission-granted live delivery requires owner-run testing; not a blocker for implementing the no-post spike.
+- Automatic result: standalone purego v0.10.2 module has no cgo/native shim; independent V01 passed SDK ABI audit, UTF-16 supplementary-character and lifetime checks, allocation/release/error paths, permission checks before/after delay, zero-post CLI/benchmark tests, race/vet/format/diff gates, and Darwin arm64/amd64 builds. The warning-free outside-sandbox Text("1") construction benchmark over 1,000 warm iterations measured median 1.166 microseconds and p95 2.459 microseconds. Permission preflight was granted only in that execution context; sandbox preflight was denied. No live event was posted and these are not UI-latency measurements.
+- Diagnostic result: V02 passed independent race/vet/build/format, SDK ABI, source/tap mappings, no-post/permission-free inspection, bounded readback, and allocation/readback-error release gates. Main rebuilt `deploy/native-input`; outside-sandbox default/combined Text("1") and default Enter construction readbacks were correct and posted zero events. Sandbox private-source allocation failed and HID-source initialization timed out with HIServices connection errors; these source variants remain environment-sensitive and are not proven live fixes. Next owner comparison: combined source/session tap in a harmless TextEdit field.
+
+## M-05-F02 — Native macOS input and permission diagnostics
+
+- Status: complete on 2026-09-18. Automatic and final architecture gates pass; the owner confirmed native numpad behaviour and, when explicitly asked, permission request/status/doctor functionality. Scenario-specific cross-app/held-modifier observations were not supplied and are not claimed.
+- Goal: eliminate numpad interpreter overhead with direct cgo-free CoreGraphics actions and expose actionable permission/readiness diagnostics.
+- Scope: schema-v3 `type_text` and `key_press` action variants; persistent combined-session source, session posting, serialized bounded native FIFO; execution-history integration; `input.status`, explicit `input.request_permission`, and read-only `doctor` IPC/CLI methods.
+- Constraints: existing `execute` admission remains unchanged; no startup permission prompt, automatic fallback/retry, text/executable/environment leakage in history, clipboard/application-data reads, or agent-run input injection. Permission denial, unsupported platform, or native initialization failure must not fail the D200X runtime. Only Enter is initially supported as a physical key.
+- Architecture decisions frozen: 16 waiting slots plus one active item, separate availability/permission, cancel preparing input at shutdown/request start, deferred release during blocked native calls, metadata-only history merge, and strict bounded wire variants. Implementation closure remains independently verified before owner acceptance; detailed limits are in `docs/native-input-decisions.md`.
+- Acceptance: immutable strict action validation/schema; ordered nonblocking admission and explicit queue-full records; permission check before posting; correct balanced UTF-16/key down/up and native cleanup; shutdown discards queued work rather than types later; bounded command-free histories; doctor/status are no-prompt/no-post; only the explicit request invokes the permission API from the runtime process.
+- Roles: main owns interfaces/decisions/docs; executors own separated contract, native backend/worker, and runtime/IPC integration; independent tester verifies; explorer audits touched files.
+- Owner evidence: the initial TextEdit comparison delivered `1` only with combined source/session posting. After explicitly approved native deploy migration, the owner reported all working as expected and subsequently confirmed permission request/status/doctor. This is functional acceptance of the owned setup, not a claim that every application, held-modifier or shutdown scenario was independently observed.
+- Parallel boundaries: contract owns config/profile/schema; native executor owns new native package; integration owns runtime/IPC/controller/execution-history state contracts. No worker edits `.agents` or roadmap documentation.
+- Checklist:
+  - [x] M-05-F02-C01 — strict action/config/schema contracts; focused config/profile tests passed on 2026-09-18.
+  - [x] M-05-F02-N01 — cgo-free native backend, bounded worker close, permission/status API; final architecture review closed correctness blockers. Synchronous initialization can still delay startup/runtime close if an OS call hangs.
+  - [x] M-05-F02-I01 — lifecycle/actions, history, strict IPC/CLI and doctor integration; focused fake race/vet gates pass.
+  - [x] M-05-F02-V01 — independent automatic and final architecture gates; full uncached Go test/race/vet, schema determinism, module verification and both Darwin builds pass. Final native race stress passes 10/10 repeated runs.
+  - [x] M-05-F02-V02 — owner functional acceptance on 2026-09-18: deployed native numpad and explicit permission request/status/doctor confirmed. Unreported scenario-specific results remain evidence limitations; automatic ordering/shutdown tests pass.
 
 ## P-01 — Planning baseline
 
@@ -383,6 +420,31 @@ Task IDs are immutable.
 - Goal: verify default startup plus IPC- and button-driven profile transitions use the final content-addressed bulk operation on the owned D200X.
 - Acceptance: default renders; IPC activation changes all 14 positions without visible progressive replacement; repeated current activation is zero-write; completed configured button press returns to the default profile; shutdown removes generation metadata and socket.
 - Dependencies: M-04-R03.
+
+### M-04-F04 — Firmware-rendered label styling
+
+- Status: complete on 2026-09-17. Automatic and independent gates passed; the owner accepted the corrected 144-DPI wide label as slightly smaller than square labels but adequate. Exact visual font parity remains unclaimed.
+- Goal: separate background artwork from firmware-rendered label text and expose the already observed per-position alignment and size fields without changing existing profile appearance.
+- Scope: square PNGs contain background and border only; wide PNGs include the rendered label. Optional position `label_alignment` and `label_size` fields default to the existing `bottom` and `10`; the numpad deployment profile uses `center` and `24` for all positions.
+- Constraints: profile and position labels remain required; no font-family, weight, colour, title-visibility, arbitrary manifest, or global `0x000b` configuration; existing profiles retain their effective style; only alignment values and size bounds supported by the implementation contract are accepted. Size 24 is a physical trial value because only 10 and 11 were directly captured.
+- Acceptance: strict configuration/schema parity passes; square labels remain firmware-rendered independently of background PNG bytes; the wide tile deterministically renders its label into the background image because `SmallViewMode: 2` did not display manifest text in physical trials; full and targeted content-addressed archives remain deterministic; existing tests pass; the owner confirms readable numpad labels on the owned D200X.
+- Automatic result: optional `label_alignment` and `label_size` default to `bottom` and `10`, accept only `bottom|center` and `8..32`, and propagate through configuration, immutable profiles, runtime/diagnostic conversion, and every configured/targeted/bulk manifest. Square PNGs contain background and border only. The wide tile uses bundled deterministic Go Regular at 144 DPI, retains `SmallViewMode: 2`, and disables the ineffective firmware title to avoid duplication. Independent P02/P03 verification passed explicit glyph, point-to-pixel metric, alignment path, determinism, content-addressing, square-deduplication, manifest, race, generation, vet, full test/build, formatting, and diff gates without HID or action execution. The owner accepted the corrected wide label on 2026-09-17 as slightly smaller but adequate.
+- Dependencies: M-04-V03.
+
+### M-05-F01 — Explicit press/release action timing
+
+- Status: automatic and independent gates passed on 2026-09-17; owner-visible timing acceptance pending.
+- Goal: execute numpad actions immediately on initial press without waiting for release.
+- Scope: schema v3 only; scalar `gesture` accepts `press` and `release`, defaults to `release` when omitted; both executable and profile-switch actions share the event rules. Migrate maintained examples/fixtures and deployment configuration; numpad uses `press`, existing profile-switch bindings use `release`.
+- Constraints: reject earlier schema versions descriptively; no compatibility translation, separate trigger field, timed gesture language, long/double press, or position-map schema change. Preserve idle-wake suppression, immutable submissions, serialized profile/reload transitions, and single execution slot.
+- Acceptance: initial down executes `press` once; duplicate downs and subsequent releases do not retrigger; `release` requires a matching prior down with unchanged binding/snapshot; stale/orphan/mismatched events do not execute; both action types pass independent automatic verification and owner-run timing checks.
+- Roles: contract executor owns config/profile/schema/examples; runtime executor owns event handling, integration tests, and authorized deployment migration; independent tester owns verification; main owns integration and durable documentation.
+- Dependencies: M-05-V01, M-04-F04.
+- Verification gates: strict decoder/schema/default parity, both action timing paths, duplicate/orphan events, profile/reload/idle boundaries, race tests, whole-tree generation/vet/test/build, formatting, diff check, owner-run physical timing.
+- Parallel boundary: contract and runtime executors have disjoint ownership; synchronize exported gesture constants and effective defaults before whole-tree gates.
+- Blockers: none confirmed.
+- Automatic result: strict v3 rejection, optional-release defaults, both action variants, initial-press and matched-release timing, duplicate/orphan/mismatched events, held-profile-switch behavior, multi-key candidates, transition/reload cancellation, idle-consumed latch clearing, bounded state, generated schema, full race tests, vet/build, formatting, and diff gates passed independent V01. Maintained examples/fixtures and ignored deployment config are migrated. No device or configured action was executed during implementation.
+- Reopened physical finding: the owner reported the first press after a profile switch is ignored. M-05-F01-F01 now passes automatic and independent gates: the reader attributes an event using a single transition snapshot after successful read return, not before the blocking wait. Deterministic regressions cover completed-transition first-press execution with a fake executor, duplicate/release non-retriggering, active-transition suppression, stale queued-event rejection, and physical latch reconciliation. Focused repeated race, full runtime race, whole-tree tests, vet/build, formatting, and diff gates passed. Owner-visible correction remains pending; no firmware-exact arrival timestamp is claimed.
 
 ## M-05 — Bounded executable press actions
 

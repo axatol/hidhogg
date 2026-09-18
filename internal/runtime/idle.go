@@ -595,6 +595,7 @@ func (controller *idlePolicyController) handleInput(ctx context.Context, observa
 
 func (controller *idlePolicyController) handleInputState(ctx context.Context, observation inputObservation) (*profileActionActivation, error) {
 	if !controller.allowsObservation(observation) {
+		controller.actions.consumePhysical(observation.event)
 		controller.actions.reset()
 		controller.state.suppressedKey = nil
 		return nil, nil
@@ -602,6 +603,7 @@ func (controller *idlePolicyController) handleInputState(ctx context.Context, ob
 	event := observation.event
 	known := isKnownGesture(event)
 	if controller.state.dimmed {
+		controller.actions.consumePhysical(event)
 		controller.actions.reset()
 		if !known {
 			return nil, controller.emit(event)
@@ -611,13 +613,14 @@ func (controller *idlePolicyController) handleInputState(ctx context.Context, ob
 
 	if controller.state.suppressedKey != nil {
 		if matchingSuppressedRelease(event, *controller.state.suppressedKey) {
+			controller.actions.consumePhysical(event)
 			controller.state.suppressedKey = nil
 			controller.actions.reset()
 			return nil, nil
 		}
 		if matchingSuppressedPress(event, *controller.state.suppressedKey) {
-			controller.state.suppressedKey = nil
-			controller.actions.reset()
+			controller.actions.consumePhysical(event)
+			return nil, nil
 		}
 	}
 	if err := controller.emit(event); err != nil {
@@ -749,7 +752,6 @@ func (r *Runtime) readInputObservations(ctx context.Context, output chan<- input
 	defer close(output)
 	for {
 		transition := r.profileTransitionGate()
-		beforeGeneration, beforeActive := transition.snapshot()
 		event, ok, err := session.ReadInput(ctx)
 		if err != nil {
 			if ctx.Err() != nil || errors.Is(err, context.Canceled) {
@@ -763,13 +765,13 @@ func (r *Runtime) readInputObservations(ctx context.Context, output chan<- input
 		if !ok {
 			continue
 		}
-		afterGeneration, afterActive := transition.snapshot()
+		generation, active := transition.snapshot()
 		observation := inputObservation{
 			event:                event,
 			observedAt:           r.clock.Now(),
-			transitionGeneration: afterGeneration,
+			transitionGeneration: generation,
 			transitionTagged:     transition != nil,
-			transitionSuppressed: beforeActive || afterActive || beforeGeneration != afterGeneration,
+			transitionSuppressed: active,
 		}
 		select {
 		case output <- observation:

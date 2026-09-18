@@ -21,7 +21,7 @@ func TestExecuteActionRoutesCompletedPressWithOriginatingIdentity(t *testing.T) 
 	current := testProfile("default", "Default", "Default")
 	current.Values[0].Action = &profile.Action{
 		Type:           profile.ExecuteActionType,
-		Gesture:        profile.PressGesture,
+		Gesture:        profile.ReleaseGesture,
 		Executable:     "/controlled/helper",
 		Arguments:      []string{"one", "two words"},
 		TimeoutSeconds: 17,
@@ -71,6 +71,138 @@ func TestExecuteActionRoutesCompletedPressWithOriginatingIdentity(t *testing.T) 
 	}
 }
 
+func TestExecuteActionPressRunsOnInitialDownOnceAndIgnoresRelease(t *testing.T) {
+	current := testProfile("default", "Default", "Default")
+	current.Values[0].Action = &profile.Action{
+		Type:           profile.ExecuteActionType,
+		Gesture:        profile.PressGesture,
+		Executable:     "/controlled/helper",
+		Arguments:      []string{"one"},
+		TimeoutSeconds: 3,
+	}
+	catalog, err := profile.NewCatalog("default", []profile.Profile{current})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewProfileService(ProfileServiceOptions{Catalog: catalog, Sender: &profilePageSender{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = service.Close() })
+	worker := newFakeExecutionWorker()
+	controller := newProfileActionController(service, service.CurrentEventPositions, worker)
+	press := actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)
+	release := actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased)
+	for _, event := range []d200x.InputEvent{press, press, release, release} {
+		if err := controller.observe(context.Background(), event); err != nil {
+			t.Fatalf("observe %#v: %v", event, err)
+		}
+	}
+	requests := worker.requestsSnapshot()
+	if len(requests) != 1 {
+		t.Fatalf("execution requests = %d, want one", len(requests))
+	}
+	if requests[0].PositionID != "Default-0_0" || !slices.Equal(requests[0].Arguments, []string{"one"}) {
+		t.Fatalf("execution request = %#v", requests[0])
+	}
+}
+
+func TestProfileActionPressSwitchReleaseDoesNotRunNewBinding(t *testing.T) {
+	current := testProfile("default", "Default", "Default")
+	alternate := testProfile("alternate", "Alternate", "Alternate")
+	current.Values[0].Action = &profile.Action{
+		Type:      profile.ActivateProfileType,
+		Gesture:   profile.PressGesture,
+		ProfileID: "alternate",
+	}
+	alternate.Values[0].Action = &profile.Action{
+		Type:      profile.ActivateProfileType,
+		Gesture:   profile.PressGesture,
+		ProfileID: "default",
+	}
+	catalog, err := profile.NewCatalog("default", []profile.Profile{current, alternate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender := &profilePageSender{}
+	service, err := NewProfileService(ProfileServiceOptions{Catalog: catalog, Sender: sender})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = service.Close() })
+	controller := newProfileActionController(service, service.CurrentEventPositions)
+	press := actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)
+	release := actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased)
+	if err := controller.observe(context.Background(), press); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := service.CurrentProfileID(); got != "alternate" || sender.callCount() != 1 {
+		t.Fatalf("initial press profile/write = %q/%d", got, sender.callCount())
+	}
+	if err := controller.observe(context.Background(), press); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.observe(context.Background(), release); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := service.CurrentProfileID(); got != "alternate" || sender.callCount() != 1 {
+		t.Fatalf("held-key release changed profile/write = %q/%d", got, sender.callCount())
+	}
+	if err := controller.observe(context.Background(), press); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := service.CurrentProfileID(); got != "default" || sender.callCount() != 2 {
+		t.Fatalf("post-release press profile/write = %q/%d", got, sender.callCount())
+	}
+}
+
+func TestProfileActionReleaseTracksMultipleKeysAndRejectsOrphans(t *testing.T) {
+	current := testProfile("default", "Default", "Default")
+	for index := range []int{0, 1} {
+		current.Values[index].Action = &profile.Action{
+			Type:           profile.ExecuteActionType,
+			Gesture:        profile.ReleaseGesture,
+			Executable:     "/controlled/helper",
+			Arguments:      []string{string(rune('a' + index))},
+			TimeoutSeconds: 3,
+		}
+	}
+	catalog, err := profile.NewCatalog("default", []profile.Profile{current})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewProfileService(ProfileServiceOptions{Catalog: catalog, Sender: &profilePageSender{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = service.Close() })
+	worker := newFakeExecutionWorker()
+	controller := newProfileActionController(service, service.CurrentEventPositions, worker)
+	button := func(wire byte, action d200x.InputAction) d200x.InputEvent {
+		return actionTestInput(wire, d200x.InputMarkerButton, action)
+	}
+	for _, event := range []d200x.InputEvent{
+		button(0, d200x.InputActionReleased),
+		button(0, d200x.InputActionPressed),
+		button(1, d200x.InputActionReleased),
+		button(1, d200x.InputActionPressed),
+		button(0, d200x.InputActionPressed),
+		button(1, d200x.InputActionReleased),
+		button(0, d200x.InputActionReleased),
+	} {
+		if err := controller.observe(context.Background(), event); err != nil {
+			t.Fatalf("observe %#v: %v", event, err)
+		}
+	}
+	requests := worker.requestsSnapshot()
+	if len(requests) != 2 {
+		t.Fatalf("execution requests = %d, want two", len(requests))
+	}
+	if requests[0].PositionID != "Default-1_0" || requests[1].PositionID != "Default-0_0" {
+		t.Fatalf("execution positions = %#v", requests)
+	}
+}
+
 func TestExecuteActionClonesArgumentsAndTreatsBusyAsHistory(t *testing.T) {
 	worker := newFakeExecutionWorker()
 	worker.recordState = execution.StateRejectedBusy
@@ -79,7 +211,7 @@ func TestExecuteActionClonesArgumentsAndTreatsBusyAsHistory(t *testing.T) {
 		snapshot:   profileActionSnapshot{profileID: "default"},
 		positionID: "Default-0_0",
 		binding: profile.Binding{Action: profile.Action{
-			Type: profile.ExecuteActionType, Gesture: profile.PressGesture,
+			Type: profile.ExecuteActionType, Gesture: profile.ReleaseGesture,
 			Executable: "/controlled/helper", Arguments: []string{"owned"}, TimeoutSeconds: 3,
 		}},
 	}
@@ -96,7 +228,7 @@ func TestExecuteActionClonesArgumentsAndTreatsBusyAsHistory(t *testing.T) {
 func TestExecuteActionAdmissionFailureDoesNotRetry(t *testing.T) {
 	current := testProfile("default", "Default", "Default")
 	current.Values[0].Action = &profile.Action{
-		Type: profile.ExecuteActionType, Gesture: profile.PressGesture,
+		Type: profile.ExecuteActionType, Gesture: profile.ReleaseGesture,
 		Executable: "/controlled/helper", Arguments: []string{}, TimeoutSeconds: 10,
 	}
 	catalog, err := profile.NewCatalog("default", []profile.Profile{current})
@@ -131,7 +263,7 @@ func TestExecuteActionAdmissionFailureDoesNotRetry(t *testing.T) {
 func TestRunningExecuteActionDoesNotBlockInputIdleOrProfileWork(t *testing.T) {
 	current := testProfile("default", "Default", "Default")
 	current.Values[0].Action = &profile.Action{
-		Type: profile.ExecuteActionType, Gesture: profile.PressGesture,
+		Type: profile.ExecuteActionType, Gesture: profile.ReleaseGesture,
 		Executable: "/controlled/helper", Arguments: []string{}, TimeoutSeconds: 10,
 	}
 	alternate := testProfile("alternate", "Alternate", "Alternate")

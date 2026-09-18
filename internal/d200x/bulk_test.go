@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -15,22 +14,38 @@ import (
 
 func TestLivePageArchiveContainsCanonicalContentAddressedPage(t *testing.T) {
 	page := configuredTestPage()
+	update, err := BuildLivePageUpdate(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effective := update.Page().Positions[0]; effective.LabelAlignment != DefaultLabelAlignment || effective.LabelSize != DefaultLabelSize {
+		t.Fatalf("effective full-page update style = %s/%d, want %s/%d", effective.LabelAlignment, effective.LabelSize, DefaultLabelAlignment, DefaultLabelSize)
+	}
 	archive, err := BuildLivePageArchive(page)
 	if err != nil {
 		t.Fatal(err)
 	}
 	files := readArchiveFiles(t, archive.Data)
-	wantMembers := DisplayPositionCount + 1
+	wantIconPaths := make(map[string]struct{})
+	for _, position := range page.Positions {
+		spec, ok := LookupPosition(position.Position)
+		if !ok {
+			t.Fatalf("test position %q is not supported", position.Position)
+		}
+		if spec.Wide {
+			wantIconPaths["wide"] = struct{}{}
+		} else {
+			wantIconPaths["square"] = struct{}{}
+		}
+	}
+	wantMembers := 1 + len(wantIconPaths)
 	if archive.PaddingLength > 0 {
 		wantMembers++
 	}
 	if len(files) != wantMembers {
 		t.Fatalf("archive members = %d, want %d", len(files), wantMembers)
 	}
-	var manifest map[string]json.RawMessage
-	if err := json.Unmarshal(readArchiveFile(t, files, livePositionManifestName), &manifest); err != nil {
-		t.Fatalf("manifest JSON: %v", err)
-	}
+	manifest := readManifest(t, readArchiveFile(t, files, livePositionManifestName))
 	if len(manifest) != DisplayPositionCount {
 		t.Fatalf("manifest coordinates = %d, want %d", len(manifest), DisplayPositionCount)
 	}
@@ -39,17 +54,15 @@ func TestLivePageArchiveContainsCanonicalContentAddressedPage(t *testing.T) {
 		if !ok {
 			t.Fatalf("manifest missing canonical coordinate %q", spec.Name)
 		}
-		var entry struct {
-			SmallViewMode *int `json:"SmallViewMode"`
-			ViewParam     []struct {
-				Icon string `json:"Icon"`
-			} `json:"ViewParam"`
-		}
-		if err := json.Unmarshal(entryData, &entry); err != nil {
-			t.Fatalf("manifest entry %q: %v", spec.Name, err)
-		}
+		entry := entryData
 		if len(entry.ViewParam) != 1 {
 			t.Fatalf("manifest entry %q view count = %d, want one", spec.Name, len(entry.ViewParam))
+		}
+		if entry.ViewParam[0].Text != page.Positions[spec.WireIndex].Label {
+			t.Fatalf("manifest entry %q text = %q, want %q", spec.Name, entry.ViewParam[0].Text, page.Positions[spec.WireIndex].Label)
+		}
+		if entry.ViewParam[0].Font.Align != DefaultLabelAlignment || entry.ViewParam[0].Font.Size != DefaultLabelSize {
+			t.Fatalf("manifest entry %q style = %+v, want %s/%d", spec.Name, entry.ViewParam[0].Font, DefaultLabelAlignment, DefaultLabelSize)
 		}
 		if spec.Wide {
 			if entry.SmallViewMode == nil || *entry.SmallViewMode != 2 {
@@ -105,6 +118,141 @@ func TestLivePageArchiveIsDeterministicAndContentSensitive(t *testing.T) {
 	}
 	if bytes.Equal(first.Data, third.Data) {
 		t.Fatal("changed page produced identical live archive bytes")
+	}
+	baseFiles := readArchiveFiles(t, first.Data)
+	thirdFiles := readArchiveFiles(t, third.Data)
+	baseManifest := readArchiveFile(t, baseFiles, livePositionManifestName)
+	if bytes.Equal(baseManifest, readArchiveFile(t, thirdFiles, livePositionManifestName)) {
+		t.Fatal("changed label did not change full-page manifest bytes")
+	}
+	baseManifestEntries := readManifest(t, baseManifest)
+	thirdManifestEntries := readManifest(t, readArchiveFile(t, thirdFiles, livePositionManifestName))
+	basePath := baseManifestEntries["0_0"].ViewParam[0].Icon
+	thirdPath := thirdManifestEntries["0_0"].ViewParam[0].Icon
+	if basePath != thirdPath || !bytes.Equal(readArchiveFile(t, baseFiles, basePath), readArchiveFile(t, thirdFiles, thirdPath)) {
+		t.Fatal("changed label changed full-page PNG content address")
+	}
+	styled := base
+	styled.Positions[0].LabelAlignment = LabelAlignmentCenter
+	styled.Positions[0].LabelSize = 24
+	styledArchive, err := BuildLivePageArchive(styled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	styledUpdate, err := BuildLivePageUpdate(styled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effective := styledUpdate.Page().Positions[0]; effective.LabelAlignment != LabelAlignmentCenter || effective.LabelSize != 24 {
+		t.Fatalf("explicit full-page update style = %s/%d, want %s/24", effective.LabelAlignment, effective.LabelSize, LabelAlignmentCenter)
+	}
+	styledFiles := readArchiveFiles(t, styledArchive.Data)
+	styledManifestData := readArchiveFile(t, styledFiles, livePositionManifestName)
+	if bytes.Equal(baseManifest, styledManifestData) {
+		t.Fatal("changed label style did not change full-page manifest bytes")
+	}
+	styledEntries := readManifest(t, styledManifestData)
+	styledEntry := styledEntries["0_0"]
+	if styledEntry.ViewParam[0].Font.Align != LabelAlignmentCenter || styledEntry.ViewParam[0].Font.Size != 24 {
+		t.Fatalf("full-page manifest style = %+v, want %s/24", styledEntry.ViewParam[0].Font, LabelAlignmentCenter)
+	}
+	styledPath := styledEntry.ViewParam[0].Icon
+	if basePath != styledPath || !bytes.Equal(readArchiveFile(t, baseFiles, basePath), readArchiveFile(t, styledFiles, styledPath)) {
+		t.Fatal("changed label style changed full-page PNG content address")
+	}
+	coloured := base
+	coloured.Positions[0].Background = "#A0B0C0"
+	colouredArchive, err := BuildLivePageArchive(coloured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	colouredFiles := readArchiveFiles(t, colouredArchive.Data)
+	colouredEntry := readManifest(t, readArchiveFile(t, colouredFiles, livePositionManifestName))["0_0"]
+	colouredPath := colouredEntry.ViewParam[0].Icon
+	if basePath == colouredPath || bytes.Equal(readArchiveFile(t, baseFiles, basePath), readArchiveFile(t, colouredFiles, colouredPath)) {
+		t.Fatal("changed background did not change full-page PNG content address")
+	}
+}
+
+func TestLivePageArchiveWideLabelFallbackIsContentAddressed(t *testing.T) {
+	base := configuredTestPage()
+	labelled := Page{Positions: append([]Position(nil), base.Positions...)}
+	labelled.Positions[13].Label = "Enter 0123456789.*+"
+	styled := Page{Positions: append([]Position(nil), labelled.Positions...)}
+	styled.Positions[13].LabelAlignment = LabelAlignmentCenter
+	styled.Positions[13].LabelSize = 24
+
+	baseArchive, err := BuildLivePageArchive(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	labelArchive, err := BuildLivePageArchive(labelled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	styleArchive, err := BuildLivePageArchive(styled)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	baseFiles := readArchiveFiles(t, baseArchive.Data)
+	labelFiles := readArchiveFiles(t, labelArchive.Data)
+	styleFiles := readArchiveFiles(t, styleArchive.Data)
+	baseEntries := readManifest(t, readArchiveFile(t, baseFiles, livePositionManifestName))
+	labelEntries := readManifest(t, readArchiveFile(t, labelFiles, livePositionManifestName))
+	styleEntries := readManifest(t, readArchiveFile(t, styleFiles, livePositionManifestName))
+	baseWidePath := baseEntries["3_2"].ViewParam[0].Icon
+	labelWidePath := labelEntries["3_2"].ViewParam[0].Icon
+	styleWidePath := styleEntries["3_2"].ViewParam[0].Icon
+	if baseWidePath == labelWidePath || baseWidePath == styleWidePath || labelWidePath == styleWidePath {
+		t.Fatalf("wide label/style did not change content path: base=%q label=%q style=%q", baseWidePath, labelWidePath, styleWidePath)
+	}
+	baseWide := readArchiveFile(t, baseFiles, baseWidePath)
+	if bytes.Equal(baseWide, readArchiveFile(t, labelFiles, labelWidePath)) || bytes.Equal(baseWide, readArchiveFile(t, styleFiles, styleWidePath)) {
+		t.Fatal("wide label/style did not change full-page PNG bytes")
+	}
+	baseSquarePath := baseEntries["0_0"].ViewParam[0].Icon
+	if baseSquarePath != labelEntries["0_0"].ViewParam[0].Icon || baseSquarePath != styleEntries["0_0"].ViewParam[0].Icon {
+		t.Fatal("wide label/style changed square content path")
+	}
+	if !bytes.Equal(readArchiveFile(t, baseFiles, baseSquarePath), readArchiveFile(t, labelFiles, baseSquarePath)) || !bytes.Equal(readArchiveFile(t, baseFiles, baseSquarePath), readArchiveFile(t, styleFiles, baseSquarePath)) {
+		t.Fatal("wide label/style changed square PNG bytes")
+	}
+
+	wideEntry := labelEntries["3_2"]
+	if wideEntry.SmallViewMode == nil || *wideEntry.SmallViewMode != 2 {
+		t.Fatalf("wide SmallViewMode = %v, want 2", wideEntry.SmallViewMode)
+	}
+	if wideEntry.ViewParam[0].Font.ShowTitle {
+		t.Fatal("wide manifest retained a firmware title after baking the label into the PNG")
+	}
+}
+
+func TestSessionSendLivePageRejectsInvalidLabelStyleBeforeWrite(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*Position)
+	}{
+		{name: "invalid label alignment", mutate: func(position *Position) { position.LabelAlignment = "top" }},
+		{name: "label size below minimum", mutate: func(position *Position) { position.LabelSize = MinimumLabelSize - 1 }},
+		{name: "label size above maximum", mutate: func(position *Position) { position.LabelSize = MaximumLabelSize + 1 }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			page := configuredTestPage()
+			test.mutate(&page.Positions[0])
+			transport := newFakeTransport()
+			session, _ := openTestSession(t, transport)
+			if err := session.SendLivePage(context.Background(), page); err == nil {
+				t.Fatal("invalid label style page was accepted")
+			}
+			if calls, _, _ := transport.stats(); calls != 0 {
+				t.Fatalf("invalid label style page write calls = %d, want 0", calls)
+			}
+			if _, active := session.Current(); !active {
+				t.Fatal("invalid label style page validation invalidated the session")
+			}
+			_ = session.Close()
+		})
 	}
 }
 
