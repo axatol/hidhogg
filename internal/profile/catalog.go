@@ -14,11 +14,12 @@ import (
 )
 
 const (
-	RequiredValueCount   = 14
-	MaximumProfileCount  = 31
-	MaximumStableIDRunes = 64
-	MaximumLabelRunes    = 64
-	MaximumLabelBytes    = 256
+	RequiredValueCount             = 14
+	MaximumProfileCount            = 31
+	MaximumStableIDRunes           = 64
+	MaximumNotificationSourceCount = 16
+	MaximumLabelRunes              = 64
+	MaximumLabelBytes              = 256
 )
 
 const (
@@ -58,13 +59,14 @@ type Action struct {
 // Position identifies the physical coordinate while Action, when non-nil,
 // binds an input gesture to another profile or executable.
 type Value struct {
-	ID             string
-	Position       string
-	Label          string
-	Background     string
-	LabelAlignment string
-	LabelSize      int
-	Action         *Action
+	ID                  string
+	Position            string
+	Label               string
+	Background          string
+	NotificationSources []string
+	LabelAlignment      string
+	LabelSize           int
+	Action              *Action
 }
 
 // Position is an alias retained for consumers that use the physical-layout
@@ -261,6 +263,9 @@ func validateValues(values []Value, profileByID map[string]int) error {
 		if !validBackground(value.Background) {
 			return fmt.Errorf("value %d has an invalid background", index)
 		}
+		if err := validateNotificationSources(value.NotificationSources); err != nil {
+			return fmt.Errorf("value %d: %w", index, err)
+		}
 		if value.Action != nil {
 			if err := validateAction(*value.Action, profileByID); err != nil {
 				return fmt.Errorf("value %d action: %w", index, err)
@@ -429,6 +434,26 @@ func validStableID(value string) bool {
 	return stableIDPattern.MatchString(value) && utf8.ValidString(value)
 }
 
+func validateNotificationSources(sources []string) error {
+	if sources == nil {
+		return nil
+	}
+	if len(sources) < 1 || len(sources) > MaximumNotificationSourceCount {
+		return fmt.Errorf("notification_sources must contain between 1 and %d sources", MaximumNotificationSourceCount)
+	}
+	seen := make(map[string]int, len(sources))
+	for index, source := range sources {
+		if !validStableID(source) {
+			return fmt.Errorf("notification_sources[%d] has an invalid source ID", index)
+		}
+		if previous, ok := seen[source]; ok {
+			return fmt.Errorf("notification_sources[%d] duplicates notification_sources[%d]", index, previous)
+		}
+		seen[source] = index
+	}
+	return nil
+}
+
 func validLabel(value string) bool {
 	if !utf8.ValidString(value) || utf8.RuneCountInString(value) < 1 || utf8.RuneCountInString(value) > MaximumLabelRunes || len([]byte(value)) > MaximumLabelBytes {
 		return false
@@ -494,7 +519,17 @@ func cloneValues(source []Value) []Value {
 
 func cloneValue(source Value) Value {
 	owned := source
+	owned.NotificationSources = cloneNotificationSources(source.NotificationSources)
 	owned.Action = cloneAction(source.Action)
+	return owned
+}
+
+func cloneNotificationSources(source []string) []string {
+	if source == nil {
+		return nil
+	}
+	owned := make([]string, len(source))
+	copy(owned, source)
 	return owned
 }
 

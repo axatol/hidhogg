@@ -146,6 +146,17 @@ func TestReloadCandidateClassifiesDisplayBrightnessIdleDefaultAndCatalogChanges(
 				}
 			},
 		},
+		{
+			name:       "notification sources",
+			changed:    bytes.Replace(base, []byte("background = \"#102030\"\n\n"), []byte("background = \"#102030\"\nnotification_sources = [\"clock\"]\n\n"), 1),
+			wantEffect: reloadEffectCatalog,
+			check: func(t *testing.T, diff reloadEffects) {
+				t.Helper()
+				if !diff.CatalogChanged() || diff.DisplayChanged() || diff.ActionChanged() || !diff.CurrentProfileChanged() {
+					t.Fatalf("notification source diff = %#v", diff)
+				}
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

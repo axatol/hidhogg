@@ -96,6 +96,19 @@
                   "description": "hexadecimal background colour",
                   "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
                 },
+                "notification_sources": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                  },
+                  "description": "optional exact notification source filters",
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true
+                },
                 "label_alignment": {
                   "type": "string",
                   "description": "firmware-rendered label alignment",

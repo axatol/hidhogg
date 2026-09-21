@@ -14,7 +14,7 @@ This protocol is an internal scaffold contract for the Go/Swift boundary and pro
 - The client must not reuse a connection. The server closes after its response.
 - A raw LF cannot occur inside a JSON string; embedded newlines use JSON escaping.
 - Invalid UTF-8 and missing LF are invalid. If LF is absent when the request-read deadline expires, the server closes without a response because no complete frame exists. The first LF terminates the request; the server does not wait for client EOF. It processes only the first record, discards later bytes, writes one response, and closes. JSON whitespace between the closing object delimiter and LF is permitted.
-- Connect, complete write, complete read, server request-read, and server response-write phases each have a one-second deadline.
+- Connect, complete write, server request-read, and server response-write phases each have a one-second deadline. Notification clients use a seven-second default read allowance; an explicitly configured read deadline or tighter caller context deadline still wins. Other client methods retain the one-second read allowance.
 - The server handles at most eight accepted connections concurrently. It accepts and immediately closes an excess connection without reading or writing protocol bytes.
 
 Production deadlines are fixed. Tests may inject a policy with longer deadlines without changing the contract.
@@ -31,8 +31,8 @@ All fields are required. No other fields are permitted.
 |---|---|
 | `protocol_version` | JSON integer exactly `1`; `1.0` is invalid |
 | `request_id` | canonical lowercase hyphenated UUID |
-| `method` | case-sensitive `health`, `status`, `profiles.list`, `profiles.activate`, `executions.list`, `executions.get`, `config.reload`, `config.status`, `input.status`, `input.request_permission`, or `doctor` |
-| `params` | object containing `instance_id`; `profiles.activate` additionally requires `profile_id`; `executions.list` optionally accepts integer `limit` (1 through 32, default 20); `executions.get` requires non-empty exact `execution_id` |
+| `method` | case-sensitive `health`, `status`, `profiles.list`, `profiles.activate`, `executions.list`, `executions.get`, `config.reload`, `config.status`, `input.status`, `input.request_permission`, `notifications.emit`, `notifications.clear`, or `doctor` |
+| `params` | object containing `instance_id`; `profiles.activate` additionally requires `profile_id`; `executions.list` optionally accepts integer `limit` (1 through 32, default 20); `executions.get` requires non-empty exact `execution_id`; `notifications.emit` additionally requires `source` and `text` and optionally accepts integer `ttl_seconds` (1 through 86400); `notifications.clear` additionally requires `notification_id` |
 | `params.instance_id` | canonical lowercase UUID matching the launched generation |
 | `params.profile_id` | non-empty case-sensitive profile identifier; no case normalization is performed |
 
@@ -68,6 +68,20 @@ Exactly one of `result` and `error` is non-null. A safely decoded and valid requ
 {"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"profile_id":"work","changed":true},"error":null}
 ```
 
+`notifications.emit` and `notifications.clear` preserve the nested `params` envelope. Emission source matching is case-sensitive and uses the configured source identifier without normalization. Text is nonblank, single-line UTF-8 of at most 64 runes and 256 bytes. An omitted `ttl_seconds` leaves the overlay until replacement, clearing, selection, or a profile/reload transition; a supplied value starts at successful commit and expires after the requested number of seconds.
+
+```json
+{"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","method":"notifications.emit","params":{"instance_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","source":"alerts.v2","text":"Hello","ttl_seconds":30}}
+```
+
+The emit result contains exactly `instance_id`, `notification_id`, and `matched_count`. The clear request contains exactly `instance_id` and `notification_id`, and its result contains exactly `instance_id` and `cleared_count`:
+
+```json
+{"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"instance_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","notification_id":"22222222-2222-4222-8222-222222222222","matched_count":0},"error":null}
+```
+
+Counts are explicit integers from 0 through 14, including zero. A source with no matching tile succeeds without storage or a device write. Notification text is never echoed in a result, error, execution record, or routine diagnostic. A client timeout or disconnect leaves the outcome unknown: clients must not retry automatically because a write may have committed without its reply.
+
 Configuration accepts at most 31 profiles. The encoder checks the complete LF-terminated response frame, including the newline; a 31-summary worst-case response is 15,880 bytes and fits the 16,384-byte bound. A corresponding 32-summary boundary fixture is exactly 16,387 bytes and is rejected before transmission.
 
 `executions.list` is read-only and returns a result containing exactly `instance_id` and `executions`. The array merges both workers, sorts by descending submission time and ascending ID on ties, and is bounded by the requested limit (maximum 32). Each summary contains only `action_type`, `execution_id`, `profile_id`, `position_id`, `state`, `submitted_at`, `started_at`, `finished_at`, `duration_ns`, `exit_code`, `signal`, and `supervision_error`. `action_type` is `execute`, `type_text`, or `key_press`; it never includes an action payload. Execution IDs are stable ASCII identifiers of at most 36 bytes. Encoded timestamps are UTC RFC3339Nano strings or `null`; decoders also accept RFC3339Nano offsets. `duration_ns` is non-negative. Exit code and signal are mutually exclusive integers or `null`. Native records have neither, no output, and no supervision error. No executable path, command, argument, environment, working directory, text, or configured key is present in a summary.
@@ -90,6 +104,7 @@ Stable error codes:
 |---|---|
 | `invalid_json` | invalid UTF-8 or JSON syntax |
 | `invalid_envelope` | fields, structural types, duplicates, or identifier syntax are invalid |
+| `invalid_notification` | notification parameters or service admission are invalid |
 | `unsupported_version` | `protocol_version` is not integer `1` |
 | `unknown_method` | method is not in the protocol method allowlist |
 | `instance_mismatch` | request instance does not match the runtime generation |

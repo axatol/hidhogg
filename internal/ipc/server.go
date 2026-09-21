@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"hidhogg/internal/execution"
+	"hidhogg/internal/notification"
 )
 
 type Deadlines struct {
@@ -72,17 +73,26 @@ type ConfigService interface {
 // ConfigurationService is an explicit descriptive alias.
 type ConfigurationService = ConfigService
 
+// NotificationService is the narrow runtime boundary used by notification
+// emission and clearing. The service owns validation, admission, storage, and
+// device lifecycle; IPC only projects the bounded wire result.
+type NotificationService interface {
+	EmitNotification(context.Context, notification.EmitRequest) (notification.EmitResult, error)
+	ClearNotification(context.Context, string) (notification.ClearResult, error)
+}
+
 type ServerConfig struct {
-	SocketPath       string
-	InstanceID       string
-	Deadlines        Deadlines
-	MaxConnections   int
-	Handler          Handler
-	ProfileService   ProfileService
-	ExecutionHistory ExecutionHistory
-	ConfigService    ConfigService
-	InputService     InputService
-	PeerVerifier     func(net.Conn) error
+	SocketPath          string
+	InstanceID          string
+	Deadlines           Deadlines
+	MaxConnections      int
+	Handler             Handler
+	ProfileService      ProfileService
+	ExecutionHistory    ExecutionHistory
+	ConfigService       ConfigService
+	InputService        InputService
+	NotificationService NotificationService
+	PeerVerifier        func(net.Conn) error
 }
 
 type Server struct {
@@ -294,6 +304,9 @@ func (s *Server) handleRequest(request Request) (response Response) {
 	if request.Method == MethodInputStatus || request.Method == MethodInputRequestPermission || request.Method == MethodDoctor {
 		return s.handleInputRequest(request)
 	}
+	if request.Method == MethodNotificationsEmit || request.Method == MethodNotificationsClear {
+		return s.handleNotificationRequest(request)
+	}
 	result, err := s.config.Handler.Handle(context.Background(), request)
 	if err != nil {
 		return internalResponse(request.RequestID)
@@ -306,6 +319,58 @@ func (s *Server) handleRequest(request Request) (response Response) {
 		return internalResponse(request.RequestID)
 	}
 	return response
+}
+
+func (s *Server) handleNotificationRequest(request Request) Response {
+	if s.config.NotificationService == nil {
+		return internalResponse(request.RequestID)
+	}
+	requestID := request.RequestID
+	switch request.Method {
+	case MethodNotificationsEmit:
+		result, err := s.config.NotificationService.EmitNotification(context.Background(), notification.EmitRequest{
+			Source:     request.Source,
+			Text:       request.Text,
+			TTLSeconds: cloneOptionalInt(request.TTLSeconds),
+		})
+		if err != nil {
+			return notificationErrorResponse(request.RequestID, err)
+		}
+		responseResult := Result{
+			InstanceID:         request.InstanceID,
+			NotificationID:     result.NotificationID,
+			MatchedCount:       result.MatchedCount,
+			notificationMethod: MethodNotificationsEmit,
+		}
+		if err := validateResultForMethod(responseResult, request.Method, request.InstanceID); err != nil {
+			return internalResponse(request.RequestID)
+		}
+		return Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &responseResult}
+	case MethodNotificationsClear:
+		result, err := s.config.NotificationService.ClearNotification(context.Background(), request.NotificationID)
+		if err != nil {
+			return notificationErrorResponse(request.RequestID, err)
+		}
+		responseResult := Result{
+			InstanceID:         request.InstanceID,
+			ClearedCount:       result.ClearedCount,
+			notificationMethod: MethodNotificationsClear,
+		}
+		if err := validateResultForMethod(responseResult, request.Method, request.InstanceID); err != nil {
+			return internalResponse(request.RequestID)
+		}
+		return Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &responseResult}
+	default:
+		return internalResponse(request.RequestID)
+	}
+}
+
+func cloneOptionalInt(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 func (s *Server) handleExecutionRequest(request Request) Response {
@@ -485,6 +550,33 @@ func classifyProfileError(err error) (string, string) {
 		return ErrorBusy, messageBusy
 	case err != nil:
 		return ErrorActivationFailed, messageActivationFailed
+	default:
+		return ErrorInternal, messageInternal
+	}
+}
+
+func notificationErrorResponse(requestID string, err error) Response {
+	code, message := classifyNotificationError(err)
+	id := requestID
+	return Response{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       &id,
+		Error:           &Error{Code: code, Message: message},
+	}
+}
+
+func classifyNotificationError(err error) (string, string) {
+	switch {
+	case errors.Is(err, notification.ErrInvalid):
+		return ErrorNotificationInvalid, messageNotificationInvalid
+	case errors.Is(err, notification.ErrBusy), errors.Is(err, context.DeadlineExceeded):
+		return ErrorBusy, messageBusy
+	case errors.Is(err, notification.ErrClosed), errors.Is(err, context.Canceled):
+		return ErrorShuttingDown, messageShuttingDown
+	case errors.Is(err, notification.ErrUncertain):
+		return ErrorDeviceWriteFailed, messageDeviceWriteFailed
+	case err != nil:
+		return ErrorInternal, messageInternal
 	default:
 		return ErrorInternal, messageInternal
 	}

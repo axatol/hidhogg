@@ -72,6 +72,34 @@ func TestCatalogDefensivelyCopiesNestedValues(t *testing.T) {
 	}
 }
 
+func TestCatalogValidatesAndCopiesNotificationSources(t *testing.T) {
+	sources := make([]string, MaximumNotificationSourceCount)
+	sources[0] = "Source"
+	sources[1] = "source"
+	sources[2] = strings.Repeat("a", MaximumStableIDRunes)
+	for index := 3; index < len(sources); index++ {
+		sources[index] = fmt.Sprintf("source-%02d", index)
+	}
+	profiles := validProfiles()
+	profiles[0].Values[0].NotificationSources = sources
+	catalog, err := NewCatalog("default", profiles)
+	if err != nil {
+		t.Fatalf("maximum and case-variant source list rejected: %v", err)
+	}
+	sources[0] = "changed-source"
+	profiles[0].Values[0].NotificationSources[1] = "changed-source"
+
+	defaultProfile, ok := catalog.Default()
+	if !ok || len(defaultProfile.Values[0].NotificationSources) != MaximumNotificationSourceCount || defaultProfile.Values[0].NotificationSources[0] != "Source" || defaultProfile.Values[0].NotificationSources[1] != "source" {
+		t.Fatalf("catalog sources = %#v, %t", defaultProfile.Values[0].NotificationSources, ok)
+	}
+	defaultProfile.Values[0].NotificationSources[0] = "changed-result"
+	unchanged, ok := catalog.Default()
+	if !ok || unchanged.Values[0].NotificationSources[0] != "Source" {
+		t.Fatalf("catalog sources changed through returned copy = %#v, %t", unchanged.Values[0].NotificationSources, ok)
+	}
+}
+
 func TestCatalogPreservesAndCopiesExecuteAction(t *testing.T) {
 	profiles := validProfiles()
 	profiles[0].Values[0].Action = &Action{
@@ -301,6 +329,72 @@ func TestNewCatalogRejectsInvalidDefinitions(t *testing.T) {
 				return "default", profiles
 			},
 			want: "target",
+		},
+		{
+			name: "empty notification sources",
+			edit: func(source []Profile) (string, []Profile) {
+				profiles := cloneProfiles(source)
+				profiles[0].Values[0].NotificationSources = []string{}
+				return "default", profiles
+			},
+			want: "between 1 and",
+		},
+		{
+			name: "too many notification sources",
+			edit: func(source []Profile) (string, []Profile) {
+				profiles := cloneProfiles(source)
+				profiles[0].Values[0].NotificationSources = make([]string, MaximumNotificationSourceCount+1)
+				for index := range profiles[0].Values[0].NotificationSources {
+					profiles[0].Values[0].NotificationSources[index] = fmt.Sprintf("source-%02d", index)
+				}
+				return "default", profiles
+			},
+			want: "between 1 and",
+		},
+		{
+			name: "invalid notification source ID",
+			edit: func(source []Profile) (string, []Profile) {
+				profiles := cloneProfiles(source)
+				profiles[0].Values[0].NotificationSources = []string{"not stable"}
+				return "default", profiles
+			},
+			want: "notification_sources[0]",
+		},
+		{
+			name: "oversized notification source ID",
+			edit: func(source []Profile) (string, []Profile) {
+				profiles := cloneProfiles(source)
+				profiles[0].Values[0].NotificationSources = []string{strings.Repeat("a", MaximumStableIDRunes+1)}
+				return "default", profiles
+			},
+			want: "notification_sources[0]",
+		},
+		{
+			name: "non-ASCII notification source ID",
+			edit: func(source []Profile) (string, []Profile) {
+				profiles := cloneProfiles(source)
+				profiles[0].Values[0].NotificationSources = []string{"sourcé"}
+				return "default", profiles
+			},
+			want: "notification_sources[0]",
+		},
+		{
+			name: "leading punctuation notification source ID",
+			edit: func(source []Profile) (string, []Profile) {
+				profiles := cloneProfiles(source)
+				profiles[0].Values[0].NotificationSources = []string{"-source"}
+				return "default", profiles
+			},
+			want: "notification_sources[0]",
+		},
+		{
+			name: "duplicate notification source ID",
+			edit: func(source []Profile) (string, []Profile) {
+				profiles := cloneProfiles(source)
+				profiles[0].Values[0].NotificationSources = []string{"source", "source"}
+				return "default", profiles
+			},
+			want: "notification_sources[1]",
 		},
 	}
 	for _, test := range tests {

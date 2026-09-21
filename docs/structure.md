@@ -34,6 +34,7 @@ hidhogg/
 │   ├── discovery/         locked runtime-directory lifecycle and generation discovery
 │   ├── ipc/               local transport and message handling
 │   ├── nativeinput/       CoreGraphics backend, bounded native FIFO, permission lifecycle
+│   ├── notification/      device-independent bounded emit/clear contract and validation
 │   └── runtime/           orchestration and lifecycle
 ├── macos/
 │   ├── Hidhogg/           SwiftUI menu-bar application
@@ -42,7 +43,9 @@ hidhogg/
 └── spikes/                retained feasibility and one-frame protocol evidence
 ```
 
-Config and device ports are declared only at exercised consumer boundaries. Production packages now cover strict TOML loading, D200X transport/rendering, profiles, press actions, bounded child execution/history, transactional reload, and parent-directory file watching. Notification behavior remains deferred.
+Config and device ports are declared only at exercised consumer boundaries. Production packages now cover strict TOML loading, D200X transport/rendering, profiles, press actions, bounded child execution/history, transactional reload, and parent-directory file watching. M-07 adds local source-filtered notification overlays; owner physical acceptance remains pending.
+
+`internal/notification` owns request validation and neutral result/error types. `internal/runtime/notifications.go` owns ephemeral overlays, expiry and selection in the existing profile/reload coordinator; configured snapshots remain the baseline. IPC and CLI adapt that service without owning a device writer. The owner sequence is in `docs/m07-notification-runbook.md`.
 
 The current strict configuration is schema v3. `internal/config` validates and defaults scalar press/release gestures; `internal/profile` owns immutable effective bindings; `internal/runtime/actions.go` owns held-input latches and matched-release candidates. `internal/runtime/idle.go` reconciles suppressed physical events without submitting actions. The generated linting schema is `schema/hidhogg-d200x-v3.json`.
 
@@ -55,11 +58,11 @@ The Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-run
 | HID spike | Transport feasibility and physical evidence | Production session architecture |
 | Config spike | Lossless mutation and conflict behavior | Published configuration compatibility |
 | Documentation | Verified facts, decisions, gates, and handoff | Unsupported hardware claims |
-| Go runtime | Lifecycle, strict configuration orchestration, one D200X session, profiles/actions, bounded execution history, runtime-owned keepalive/idle coordinator, transactional reload, and local IPC | Notifications, multi-device policy, and source editing |
+| Go runtime | Lifecycle, strict configuration orchestration, one D200X session, profiles/actions, bounded execution history, keepalive/idle policy, transactional reload, local notification overlays and IPC | Remote ingestion, multi-device policy, and source editing |
 | Configuration | Strict single-file decode, semantic validation, deterministic schema, immutable reload candidates, and semantic diffing | Mutation, lossless preservation, and root/device composition |
 | Configuration watcher | Parent-directory event filtering, trailing debounce, and automatic reload hints | Source mutation, retry of unchanged invalid content, and runtime restart |
 | D200X adapter | Exact device selection, framing, configured page rendering, serialized session, and input decoding | Runtime policy, actions, notifications, reconnect |
 | Native input | Plain text/Enter construction and posting, native FIFO, permission checks/explicit request, metadata-only history, native object lifetime | Application delivery guarantees, foreground-app inspection, subprocess fallback, and executable admission policy |
 | Runtime discovery | Persistent advisory lock, strict readiness metadata, guarded stale recovery, and client identity revalidation | HID policy, remote discovery, PID authority, and non-cooperating same-UID processes |
 | SwiftUI client | Menu-bar status, runtime supervision, and local health client | Direct HID ownership and settings editing |
-| Internal IPC | Versioned, bounded health, profiles, execution history, and reload/status messages | Remote access, executable submission, and configuration contents |
+| Internal IPC | Versioned, bounded health, profiles, execution history, reload/status, input diagnostics and notification emit/clear messages | Remote access, executable submission, and configuration contents |

@@ -8,6 +8,8 @@ import (
 	"net"
 	"path/filepath"
 	"time"
+
+	"hidhogg/internal/notification"
 )
 
 type ClientConfig struct {
@@ -17,9 +19,10 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	socketPath   string
-	deadlines    Deadlines
-	peerVerifier func(net.Conn) error
+	socketPath       string
+	deadlines        Deadlines
+	notificationRead time.Duration
+	peerVerifier     func(net.Conn) error
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -30,7 +33,18 @@ func NewClient(config ClientConfig) (*Client, error) {
 	if peerVerifier == nil {
 		peerVerifier = verifyPeerUID
 	}
-	return &Client{socketPath: config.SocketPath, deadlines: config.Deadlines.normalized(), peerVerifier: peerVerifier}, nil
+	explicitRead := config.Deadlines.Read > 0
+	deadlines := config.Deadlines.normalized()
+	notificationRead := deadlines.Read
+	if !explicitRead {
+		notificationRead = 7 * time.Second
+	}
+	return &Client{
+		socketPath:       config.SocketPath,
+		deadlines:        deadlines,
+		notificationRead: notificationRead,
+		peerVerifier:     peerVerifier,
+	}, nil
 }
 
 func (c *Client) Call(ctx context.Context, method Method, instanceID string) (Response, error) {
@@ -138,7 +152,48 @@ func (c *Client) StatusConfig(ctx context.Context, instanceID string) (Response,
 	return c.ConfigStatus(ctx, instanceID)
 }
 
+// EmitNotification requests one notification overlay. Notification reads use
+// the seven-second default allowance while connect and write remain one second.
+func (c *Client) EmitNotification(ctx context.Context, instanceID string, request notification.EmitRequest) (Response, error) {
+	requestID, err := NewUUID()
+	if err != nil {
+		return Response{}, err
+	}
+	return c.callRequest(ctx, Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       requestID,
+		Method:          MethodNotificationsEmit,
+		InstanceID:      instanceID,
+		Source:          request.Source,
+		Text:            request.Text,
+		TTLSeconds:      cloneOptionalInt(request.TTLSeconds),
+	}, c.notificationRead)
+}
+
+// ClearNotification removes all remaining overlay instances for one ID.
+func (c *Client) ClearNotification(ctx context.Context, instanceID, identifier string) (Response, error) {
+	requestID, err := NewUUID()
+	if err != nil {
+		return Response{}, err
+	}
+	return c.callRequest(ctx, Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       requestID,
+		Method:          MethodNotificationsClear,
+		InstanceID:      instanceID,
+		NotificationID:  identifier,
+	}, c.notificationRead)
+}
+
 func (c *Client) CallRequest(ctx context.Context, request Request) (Response, error) {
+	readDuration := c.deadlines.Read
+	if request.Method == MethodNotificationsEmit || request.Method == MethodNotificationsClear {
+		readDuration = c.notificationRead
+	}
+	return c.callRequest(ctx, request, readDuration)
+}
+
+func (c *Client) callRequest(ctx context.Context, request Request, readDuration time.Duration) (Response, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -182,7 +237,7 @@ func (c *Client) CallRequest(ctx context.Context, request Request) (Response, er
 	if err := writeFrame(connection, frame); err != nil {
 		return Response{}, fmt.Errorf("write IPC request: %w", err)
 	}
-	if err := connection.SetReadDeadline(earliestDeadline(ctx, c.deadlines.Read)); err != nil {
+	if err := connection.SetReadDeadline(earliestDeadline(ctx, readDuration)); err != nil {
 		return Response{}, fmt.Errorf("set IPC read deadline: %w", err)
 	}
 	responseFrame, err := readFrame(connection)

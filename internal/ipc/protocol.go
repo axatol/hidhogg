@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"hidhogg/internal/execution"
+	"hidhogg/internal/notification"
 )
 
 const (
@@ -40,6 +41,8 @@ const (
 	MethodInputStatus            Method = "input.status"
 	MethodInputRequestPermission Method = "input.request_permission"
 	MethodDoctor                 Method = "doctor"
+	MethodNotificationsEmit      Method = "notifications.emit"
+	MethodNotificationsClear     Method = "notifications.clear"
 )
 
 type Request struct {
@@ -50,6 +53,10 @@ type Request struct {
 	ProfileID       string `json:"profile_id,omitempty"`
 	Limit           int    `json:"limit,omitempty"`
 	ExecutionID     string `json:"execution_id,omitempty"`
+	Source          string `json:"source,omitempty"`
+	Text            string `json:"text,omitempty"`
+	TTLSeconds      *int   `json:"ttl_seconds,omitempty"`
+	NotificationID  string `json:"notification_id,omitempty"`
 }
 
 // ProfileSummary is the intentionally narrow profile discovery shape. Layout
@@ -143,6 +150,10 @@ type Result struct {
 	Diagnostic             *ConfigDiagnostic  `json:"-"`
 	Input                  *InputStatus       `json:"-"`
 	Doctor                 *DoctorResult      `json:"-"`
+	NotificationID         string             `json:"notification_id,omitempty"`
+	MatchedCount           int                `json:"matched_count,omitempty"`
+	ClearedCount           int                `json:"cleared_count,omitempty"`
+	notificationMethod     Method
 }
 
 type Error struct {
@@ -158,58 +169,61 @@ type Response struct {
 }
 
 const (
-	ErrorInvalidJSON        = "invalid_json"
-	ErrorInvalidEnvelope    = "invalid_envelope"
-	ErrorUnsupportedVers    = "unsupported_version"
-	ErrorUnsupportedVersion = ErrorUnsupportedVers
-	ErrorUnknownMethod      = "unknown_method"
-	ErrorInstanceMismatch   = "instance_mismatch"
-	ErrorMessageTooLarge    = "message_too_large"
-	ErrorInternal           = "internal"
-	ErrorProfileNotFound    = "profile_not_found"
-	ErrorActivationFailed   = "activation_failed"
-	ErrorDeviceWriteFailed  = "device_write_failed"
-	ErrorShuttingDown       = "shutting_down"
-	ErrorBusy               = "busy"
-	ErrorExecutionNotFound  = "execution_not_found"
-	ErrorHistoryUnavailable = "history_unavailable"
-	ErrorReloadRejected     = "reload_rejected"
+	ErrorInvalidJSON         = "invalid_json"
+	ErrorInvalidEnvelope     = "invalid_envelope"
+	ErrorUnsupportedVers     = "unsupported_version"
+	ErrorUnsupportedVersion  = ErrorUnsupportedVers
+	ErrorUnknownMethod       = "unknown_method"
+	ErrorInstanceMismatch    = "instance_mismatch"
+	ErrorMessageTooLarge     = "message_too_large"
+	ErrorInternal            = "internal"
+	ErrorProfileNotFound     = "profile_not_found"
+	ErrorActivationFailed    = "activation_failed"
+	ErrorDeviceWriteFailed   = "device_write_failed"
+	ErrorShuttingDown        = "shutting_down"
+	ErrorBusy                = "busy"
+	ErrorExecutionNotFound   = "execution_not_found"
+	ErrorHistoryUnavailable  = "history_unavailable"
+	ErrorReloadRejected      = "reload_rejected"
+	ErrorNotificationInvalid = "invalid_notification"
 )
 
 var stableErrorCodes = map[string]struct{}{
-	ErrorInvalidJSON:        {},
-	ErrorInvalidEnvelope:    {},
-	ErrorUnsupportedVers:    {},
-	ErrorUnknownMethod:      {},
-	ErrorInstanceMismatch:   {},
-	ErrorMessageTooLarge:    {},
-	ErrorInternal:           {},
-	ErrorProfileNotFound:    {},
-	ErrorActivationFailed:   {},
-	ErrorDeviceWriteFailed:  {},
-	ErrorShuttingDown:       {},
-	ErrorBusy:               {},
-	ErrorExecutionNotFound:  {},
-	ErrorHistoryUnavailable: {},
-	ErrorReloadRejected:     {},
+	ErrorInvalidJSON:         {},
+	ErrorInvalidEnvelope:     {},
+	ErrorUnsupportedVers:     {},
+	ErrorUnknownMethod:       {},
+	ErrorInstanceMismatch:    {},
+	ErrorMessageTooLarge:     {},
+	ErrorInternal:            {},
+	ErrorProfileNotFound:     {},
+	ErrorActivationFailed:    {},
+	ErrorDeviceWriteFailed:   {},
+	ErrorShuttingDown:        {},
+	ErrorBusy:                {},
+	ErrorExecutionNotFound:   {},
+	ErrorHistoryUnavailable:  {},
+	ErrorReloadRejected:      {},
+	ErrorNotificationInvalid: {},
 }
 
 const (
-	messageInvalidJSON        = "request is not valid JSON"
-	messageInvalidEnvelope    = "request envelope is invalid"
-	messageUnsupportedVers    = "protocol version is not supported"
-	messageUnknownMethod      = "request method is not supported"
-	messageInstanceMismatch   = "runtime instance does not match"
-	messageMessageTooLarge    = "request message is too large"
-	messageInternal           = "internal server error"
-	messageProfileNotFound    = "requested profile does not exist"
-	messageActivationFailed   = "profile activation failed"
-	messageDeviceWriteFailed  = "device write failed"
-	messageShuttingDown       = "runtime is shutting down"
-	messageBusy               = "runtime is busy"
-	messageExecutionNotFound  = "execution was not found"
-	messageHistoryUnavailable = "execution history is unavailable"
-	messageReloadRejected     = "configuration reload was rejected"
+	messageInvalidJSON         = "request is not valid JSON"
+	messageInvalidEnvelope     = "request envelope is invalid"
+	messageUnsupportedVers     = "protocol version is not supported"
+	messageUnknownMethod       = "request method is not supported"
+	messageInstanceMismatch    = "runtime instance does not match"
+	messageMessageTooLarge     = "request message is too large"
+	messageInternal            = "internal server error"
+	messageProfileNotFound     = "requested profile does not exist"
+	messageActivationFailed    = "profile activation failed"
+	messageDeviceWriteFailed   = "device write failed"
+	messageShuttingDown        = "runtime is shutting down"
+	messageBusy                = "runtime is busy"
+	messageExecutionNotFound   = "execution was not found"
+	messageHistoryUnavailable  = "execution history is unavailable"
+	messageReloadRejected      = "configuration reload was rejected"
+	messageNotificationInvalid = "notification request is invalid"
 )
 
 var (
@@ -413,10 +427,51 @@ func decodeRequestParams(request *Request, paramsValue jsonValue) error {
 			return errors.New("request execution ID is invalid")
 		}
 		request.ExecutionID = executionID.string
+	case MethodNotificationsEmit:
+		if len(paramsValue.object) < 3 || len(paramsValue.object) > 4 || paramsValue.object["source"].kind != jsonString || paramsValue.object["text"].kind != jsonString {
+			return errors.New("request notification emit params are invalid")
+		}
+		if !hasExactlyNotificationEmitParams(paramsValue.object) {
+			return errors.New("request notification emit fields are invalid")
+		}
+		request.Source = paramsValue.object["source"].string
+		request.Text = paramsValue.object["text"].string
+		if !notification.ValidSource(request.Source) || !validNotificationText(request.Text) {
+			return errors.New("request notification values are invalid")
+		}
+		if ttlValue, present := paramsValue.object["ttl_seconds"]; present {
+			ttl, err := decodeInteger(ttlValue)
+			if err != nil || ttl < notification.MinimumTTLSeconds || ttl > notification.MaximumTTLSeconds {
+				return errors.New("request notification TTL is invalid")
+			}
+			ttlSeconds := int(ttl)
+			request.TTLSeconds = &ttlSeconds
+		}
+	case MethodNotificationsClear:
+		if !hasExactly(paramsValue.object, "instance_id", "notification_id") {
+			return errors.New("request notification clear params are invalid")
+		}
+		identifier := paramsValue.object["notification_id"]
+		if identifier.kind != jsonString || !notification.ValidNotificationID(identifier.string) {
+			return errors.New("request notification ID is invalid")
+		}
+		request.NotificationID = identifier.string
 	default:
 		return errors.New("request method is invalid")
 	}
 	return nil
+}
+
+func hasExactlyNotificationEmitParams(values map[string]jsonValue) bool {
+	if len(values) == 3 {
+		return hasExactly(values, "instance_id", "source", "text")
+	}
+	return hasExactly(values, "instance_id", "source", "text", "ttl_seconds")
+}
+
+func validNotificationText(value string) bool {
+	request := notification.EmitRequest{Source: "source", Text: value}
+	return notification.ValidateEmit(request) == nil
 }
 
 func ValidateRequest(frame []byte, runtimeInstanceID string) (Request, Response, error) {
@@ -454,10 +509,14 @@ func EncodeRequest(request Request) ([]byte, error) {
 		RequestID       string `json:"request_id"`
 		Method          Method `json:"method"`
 		Params          struct {
-			InstanceID  string `json:"instance_id"`
-			ProfileID   string `json:"profile_id,omitempty"`
-			Limit       *int   `json:"limit,omitempty"`
-			ExecutionID string `json:"execution_id,omitempty"`
+			InstanceID     string `json:"instance_id"`
+			ProfileID      string `json:"profile_id,omitempty"`
+			Limit          *int   `json:"limit,omitempty"`
+			ExecutionID    string `json:"execution_id,omitempty"`
+			Source         string `json:"source,omitempty"`
+			Text           string `json:"text,omitempty"`
+			TTLSeconds     *int   `json:"ttl_seconds,omitempty"`
+			NotificationID string `json:"notification_id,omitempty"`
 		} `json:"params"`
 	}{
 		ProtocolVersion: request.ProtocolVersion,
@@ -471,35 +530,53 @@ func EncodeRequest(request Request) ([]byte, error) {
 		payload.Params.Limit = &limit
 	}
 	payload.Params.ExecutionID = request.ExecutionID
+	payload.Params.Source = request.Source
+	payload.Params.Text = request.Text
+	if request.TTLSeconds != nil {
+		ttl := *request.TTLSeconds
+		payload.Params.TTLSeconds = &ttl
+	}
+	payload.Params.NotificationID = request.NotificationID
 	return encodeJSONFrame(payload)
 }
 
 func validateRequestFields(request Request) error {
 	switch request.Method {
 	case MethodHealth, MethodStatus, MethodProfilesList, MethodConfigReload, MethodConfigStatus, MethodInputStatus, MethodInputRequestPermission, MethodDoctor:
-		if request.ProfileID != "" || request.Limit != 0 || request.ExecutionID != "" {
+		if request.ProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
 			return errors.New("request fields are not permitted for method")
 		}
 	case MethodProfilesActivate:
 		if request.ProfileID == "" {
 			return errors.New("profile ID is required")
 		}
-		if request.Limit != 0 || request.ExecutionID != "" {
+		if request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
 			return errors.New("request fields are not permitted for method")
 		}
 	case MethodExecutionsList:
-		if request.ProfileID != "" || request.ExecutionID != "" {
+		if request.ProfileID != "" || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
 			return errors.New("request fields are not permitted for method")
 		}
 		if request.Limit != 0 && (request.Limit < 1 || request.Limit > MaxExecutionHistoryLimit) {
 			return errors.New("execution history limit must be between one and thirty-two")
 		}
 	case MethodExecutionsGet:
-		if request.ProfileID != "" || request.Limit != 0 {
+		if request.ProfileID != "" || request.Limit != 0 || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
 			return errors.New("request fields are not permitted for method")
 		}
 		if !validExecutionID(request.ExecutionID) {
 			return errors.New("execution ID is required")
+		}
+	case MethodNotificationsEmit:
+		if request.ProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.NotificationID != "" || !notification.ValidSource(request.Source) || !validNotificationText(request.Text) {
+			return errors.New("notification emit fields are invalid")
+		}
+		if request.TTLSeconds != nil && (*request.TTLSeconds < notification.MinimumTTLSeconds || *request.TTLSeconds > notification.MaximumTTLSeconds) {
+			return errors.New("notification TTL is invalid")
+		}
+	case MethodNotificationsClear:
+		if request.ProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || !notification.ValidNotificationID(request.NotificationID) {
+			return errors.New("notification clear fields are invalid")
 		}
 	default:
 		return errors.New("request method is not supported")
@@ -602,6 +679,18 @@ func EncodeResponse(response Response) ([]byte, error) {
 			encodedResult.Reason = &reason
 			diagnostic := result.Diagnostic
 			encodedResult.Diagnostic = &diagnostic
+		case MethodNotificationsEmit:
+			instanceID := result.InstanceID
+			notificationID := result.NotificationID
+			matchedCount := result.MatchedCount
+			encodedResult.InstanceID = &instanceID
+			encodedResult.NotificationID = &notificationID
+			encodedResult.MatchedCount = &matchedCount
+		case MethodNotificationsClear:
+			instanceID := result.InstanceID
+			clearedCount := result.ClearedCount
+			encodedResult.InstanceID = &instanceID
+			encodedResult.ClearedCount = &clearedCount
 		}
 		payload.Result = encodedResult
 	}
@@ -634,6 +723,9 @@ type resultJSON struct {
 	Executions             *[]executionSummaryJSON `json:"executions,omitempty"`
 	Execution              *executionRecordJSON    `json:"execution,omitempty"`
 	Diagnostic             **ConfigDiagnostic      `json:"diagnostic,omitempty"`
+	NotificationID         *string                 `json:"notification_id,omitempty"`
+	MatchedCount           *int                    `json:"matched_count,omitempty"`
+	ClearedCount           *int                    `json:"cleared_count,omitempty"`
 }
 
 type executionSummaryJSON struct {
@@ -1430,12 +1522,56 @@ func decodeResult(value jsonValue, method, expectedInstanceID string) (Result, e
 			return Result{}, errors.New("response configuration diagnostic is incompatible with status")
 		}
 		return result, nil
+	case MethodNotificationsEmit:
+		if !hasExactly(value.object, "instance_id", "notification_id", "matched_count") {
+			return Result{}, errors.New("response notification emit fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		if instanceID == "" || (expectedInstanceID != "" && instanceID != expectedInstanceID) {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		identifier := value.object["notification_id"]
+		if identifier.kind != jsonString || !notification.ValidNotificationID(identifier.string) {
+			return Result{}, errors.New("response notification ID is invalid")
+		}
+		matchedCount, err := decodeNotificationCount(value.object["matched_count"])
+		if err != nil {
+			return Result{}, errors.New("response notification match count is invalid")
+		}
+		return Result{InstanceID: instanceID, NotificationID: identifier.string, MatchedCount: matchedCount, notificationMethod: MethodNotificationsEmit}, nil
+	case MethodNotificationsClear:
+		if !hasExactly(value.object, "instance_id", "cleared_count") {
+			return Result{}, errors.New("response notification clear fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		if instanceID == "" || (expectedInstanceID != "" && instanceID != expectedInstanceID) {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		clearedCount, err := decodeNotificationCount(value.object["cleared_count"])
+		if err != nil {
+			return Result{}, errors.New("response notification clear count is invalid")
+		}
+		return Result{InstanceID: instanceID, ClearedCount: clearedCount, notificationMethod: MethodNotificationsClear}, nil
 	default:
 		return Result{}, errors.New("response method is invalid")
 	}
 }
 
+func decodeNotificationCount(value jsonValue) (int, error) {
+	count, err := decodeInteger(value)
+	if err != nil || count < 0 || count > 14 {
+		return 0, errors.New("notification count is invalid")
+	}
+	return int(count), nil
+}
+
 func validateResultForMethod(result Result, method Method, expectedInstanceID string) error {
+	if method != MethodNotificationsEmit && method != MethodNotificationsClear && hasNotificationResultFields(result) {
+		return errors.New("response has unexpected notification fields")
+	}
+	if (method == MethodNotificationsEmit || method == MethodNotificationsClear) && result.notificationMethod != "" && result.notificationMethod != method {
+		return errors.New("response notification method is inconsistent")
+	}
 	if method == MethodInputStatus || method == MethodInputRequestPermission || method == MethodDoctor {
 		return validateInputResult(result, method, expectedInstanceID)
 	}
@@ -1499,10 +1635,22 @@ func validateResultForMethod(result Result, method Method, expectedInstanceID st
 		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State == "" || !validReloadState(result.State) || !validReloadOutcome(result.Outcome) || !validReloadReason(result.Reason) || !validConfigDiagnosticStatus(result.Outcome, result.Reason, result.Diagnostic) || result.ProtocolVersion != nil || result.Profiles != nil || result.ProfileID != "" || result.Executions != nil || result.Execution != nil || result.Changed || result.Effect != "" || result.CatalogChanged || result.DefaultChanged || result.CurrentProfileChanged || result.CurrentProfileFallback || result.ActionChanged || result.DisplayChanged || result.BrightnessChanged || result.IdleChanged || result.DisplayUpdated {
 			return errors.New("response configuration status is invalid")
 		}
+	case MethodNotificationsEmit:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.NotificationID == "" || !notification.ValidNotificationID(result.NotificationID) || result.MatchedCount < 0 || result.MatchedCount > 14 || result.ClearedCount != 0 || result.Changed || result.State != "" || result.ProtocolVersion != nil || result.Profiles != nil || result.ProfileID != "" || result.Executions != nil || result.Execution != nil || hasConfigResultFields(result) || result.Input != nil || result.Doctor != nil {
+			return errors.New("response notification emission is invalid")
+		}
+	case MethodNotificationsClear:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.ClearedCount < 0 || result.ClearedCount > 14 || result.NotificationID != "" || result.Changed || result.State != "" || result.ProtocolVersion != nil || result.Profiles != nil || result.ProfileID != "" || result.Executions != nil || result.Execution != nil || result.MatchedCount != 0 || hasConfigResultFields(result) || result.Input != nil || result.Doctor != nil {
+			return errors.New("response notification clearing is invalid")
+		}
 	default:
 		return errors.New("response method is invalid")
 	}
 	return nil
+}
+
+func hasNotificationResultFields(result Result) bool {
+	return result.NotificationID != "" || result.MatchedCount != 0 || result.ClearedCount != 0 || result.notificationMethod == MethodNotificationsEmit || result.notificationMethod == MethodNotificationsClear
 }
 
 func hasConfigResultFields(result Result) bool {
@@ -1512,6 +1660,9 @@ func hasConfigResultFields(result Result) bool {
 func resultMethod(result *Result) Method {
 	if result == nil {
 		return ""
+	}
+	if result.notificationMethod == MethodNotificationsEmit || result.notificationMethod == MethodNotificationsClear {
+		return result.notificationMethod
 	}
 	if result.Input != nil {
 		return MethodInputStatus
@@ -1534,6 +1685,9 @@ func resultMethod(result *Result) Method {
 	if result.ProfileID != "" {
 		return MethodProfilesActivate
 	}
+	if result.NotificationID != "" {
+		return MethodNotificationsEmit
+	}
 	if result.ProtocolVersion != nil {
 		return MethodStatus
 	}
@@ -1548,7 +1702,7 @@ func resultMethod(result *Result) Method {
 
 func isSupportedMethod(method Method) bool {
 	switch method {
-	case MethodHealth, MethodStatus, MethodProfilesList, MethodProfilesActivate, MethodExecutionsList, MethodExecutionsGet, MethodConfigReload, MethodConfigStatus, MethodInputStatus, MethodInputRequestPermission, MethodDoctor:
+	case MethodHealth, MethodStatus, MethodProfilesList, MethodProfilesActivate, MethodExecutionsList, MethodExecutionsGet, MethodConfigReload, MethodConfigStatus, MethodInputStatus, MethodInputRequestPermission, MethodDoctor, MethodNotificationsEmit, MethodNotificationsClear:
 		return true
 	default:
 		return false

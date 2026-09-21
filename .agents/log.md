@@ -1,5 +1,33 @@
 # Hidhogg decision log
 
+## 2026-09-19 — M-07 defaults approved and configuration slice started
+
+- M-07 owner physical acceptance passed. The owner confirmed all runbook checks. While dimmed, emitting `WAKE` did not wake or brighten the display; manual wake retained the overlay; the next selection restored only that tile to `status`. This is evidence for the owned D200X/current firmware, not a cross-firmware guarantee. M-07 is complete; no commit has been requested.
+
+- M-07 implementation P01/C01/R01/I01/A01 and automatic V01 gates are complete; owner physical V01 remains pending. Independent whole-tree uncached tests/race/vet/build and final architect review pass. Main fresh full tests/vet, Darwin arm64/amd64 command builds, deterministic schema regeneration and whitespace checks pass. Independent normal suite repeated the separately recorded lock-helper race once and passed its single rerun; full race suite passed. The ready owner runbook is `docs/m07-notification-runbook.md`. No hardware/apps/native input, M-07 commit or completion notification occurred; no verification command remains active.
+- Review fixes preserve four critical boundaries: redraw gating spans state publication; cancellation is caller-linked and idempotent before write; strict IPC/CLI validation tracks field/flag presence rather than nonzero values; selection rechecks TTL after prebuild under the gate. Successful authorized writes publish despite later cancellation/expiry, and subsequent reload does not retroactively cancel that static-action authorization. Cooperative budgets are not hard OS/HID bounds; dimmed firmware behaviour is explicitly unverified until owner acceptance.
+
+- I01 executor tests/race/vet/full uncached suite passed. Strict notification codec/client/server/discovery-aware CLI and protocol documentation are implemented; review found and executor fixed foreign-response DTO contamination, empty-first duplicate flags and explicit empty inappropriate profile flags. Independent I01 verification remains pending. A01 tile-local physical dismissal is now delegated with runtime-only ownership; no hardware interaction is authorized or underway.
+
+- R01 executor gates passed focused notification race tests, ten-repeat cancellation/shutdown stress and focused vet. A04 resolved the shutdown test contract: an admitted caller may receive success or `ErrClosed`, but a successful write must publish before `Close` returns, with queued mutations rejected and timers stopped. The first full suite repeated the separately recorded discovery helper race; the immediate rerun passed. Independent R01 review remains pending; I01 is delegated to the same executor with IPC/CLI/adapter-only ownership. No hardware test or M-07 commit has occurred.
+
+- Independent C01 review passed focused tests/race/vet, source-boundary/schema/catalog/reload regressions, formatting and whitespace checks with no blockers. This closes C01; it does not establish notification runtime behaviour or physical acceptance.
+
+- Sequential reuse of available executor/reviewer threads succeeded after the new-thread limit; no main-agent implementation takeover was necessary. C01 automatic gates passed and independent review is pending; R01 delegated to the same executor with a new bounded ownership capsule. The asynchronous workflow-choice question is superseded by successful reuse.
+
+- Architect codec cross-check corrected a main-agent planning error before any IPC changes: the flat Go Request DTO is explicitly encoded into the existing nested `params` wire envelope. M-07 preserves that envelope; the notification plan was corrected against EncodeRequest/DecodeRequest.
+
+- Owner approved the notification defaults. Final architect consultation froze exact source grammar, a 16-filter per-position bound, canonical generation-local notification IDs, bounded emit/clear replies, five-second cooperative runtime budgets, and notification-specific seven-second default client read allowances. Timeout/disconnect remains outcome-unknown; no automatic retry or new idempotency/list API.
+- M-07-C01 delegated to the configuration executor, including immutable profile propagation, schema validation, and a narrow reload catalog-equality integration check. Filters do not change rendered baseline pages or action bindings.
+- Runtime/IPC delegation was refused by the agent-thread limit; attempting reuse also failed. Main did not silently assume implementation ownership. Owner was asked whether to resume in a fresh session or approve direct implementation. Until resolved, runtime/IPC work remains planned.
+- Existing opt-in D200X diagnostics expose bounded report prefixes/digests rather than full packets. Notification documentation qualifies content-confidentiality claims instead of assuming those fragments are harmless.
+
+## 2026-09-18 — Completed Go commit and M-07 planning
+
+- Owner-approved completed label, gesture, native-input, permission/status/doctor work committed as `78732e5`. Protected untracked files and ignored deploy configuration were not included.
+- M-07 notification draft recorded in `docs/m07-notification-plan.md`; no notification implementation was performed. Architect consultation supports extending existing profile/reload coordination rather than introducing another device writer. Owner-visible defaults and remaining timeout/ID recovery contract details await approval.
+- Fresh full-suite rerun, ten isolated lock-test repetitions, vet and standalone native-spike tests passed. The initial lock-test failure is explained by a readiness-marker/immediate-helper-exit race and recorded as a test-hardening follow-up, not a demonstrated production defect.
+
 ## 2026-08-22 — Planning baseline
 
 - Status: provisional; owner decision pending `D-01`.

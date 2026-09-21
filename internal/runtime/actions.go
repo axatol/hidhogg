@@ -9,6 +9,7 @@ import (
 	"hidhogg/internal/d200x"
 	"hidhogg/internal/execution"
 	"hidhogg/internal/nativeinput"
+	"hidhogg/internal/notification"
 	"hidhogg/internal/profile"
 )
 
@@ -26,12 +27,32 @@ func (snapshot profileActionSnapshot) clone() profileActionSnapshot {
 	}
 }
 
+type notificationSelection struct {
+	notificationID string
+	wireIndex      byte
+	profileID      string
+	positionID     string
+	position       string
+	deadline       time.Time
+	snapshot       profileActionSnapshot
+	binding        profile.Binding
+	hasBinding     bool
+}
+
+func (selection notificationSelection) clone() notificationSelection {
+	selection.snapshot = selection.snapshot.clone()
+	selection.binding.Action.Arguments = slices.Clone(selection.binding.Action.Arguments)
+	return selection
+}
+
 type profileActionCandidate struct {
-	wireIndex byte
-	marker    d200x.InputMarker
-	snapshot  profileActionSnapshot
-	binding   profile.Binding
-	position  eventPosition
+	wireIndex    byte
+	marker       d200x.InputMarker
+	snapshot     profileActionSnapshot
+	binding      profile.Binding
+	hasBinding   bool
+	position     eventPosition
+	notification *notificationSelection
 }
 
 type profileActionKey struct {
@@ -59,6 +80,10 @@ type profileActionSnapshotProvider interface {
 
 type profileActionActivator interface {
 	activateProfileForAction(context.Context, profileActionSnapshot, string) (ActivationResult, error)
+}
+
+type profileNotificationDismissal interface {
+	dismissNotification(context.Context, notificationSelection) (bool, error)
 }
 
 func newProfileActionController(service ProfileService, positions func() map[byte]eventPosition, executors ...executionSubmitter) *profileActionController {
@@ -140,9 +165,11 @@ func (controller *profileActionController) observe(ctx context.Context, event d2
 }
 
 type profileActionActivation struct {
-	snapshot   profileActionSnapshot
-	binding    profile.Binding
-	positionID string
+	snapshot     profileActionSnapshot
+	binding      profile.Binding
+	hasBinding   bool
+	positionID   string
+	notification *notificationSelection
 }
 
 func (controller *profileActionController) observeState(event d200x.InputEvent) *profileActionActivation {
@@ -172,23 +199,31 @@ func (controller *profileActionController) observeState(event d200x.InputEvent) 
 			return nil
 		}
 		snapshot := controller.currentSnapshot()
-		binding, ok := actionBindingAt(snapshot, position.position)
-		if !ok {
+		binding, hasBinding := actionBindingAt(snapshot, position.position)
+		selection := controller.notificationSelectionAt(event.WireIndex, snapshot, position, binding, hasBinding)
+		if !hasBinding && selection == nil {
 			return nil
 		}
 		candidate := &profileActionCandidate{
-			wireIndex: event.WireIndex,
-			marker:    event.Marker,
-			snapshot:  snapshot.clone(),
-			binding:   binding,
-			position:  position,
+			wireIndex:    event.WireIndex,
+			marker:       event.Marker,
+			snapshot:     snapshot.clone(),
+			binding:      binding,
+			hasBinding:   hasBinding,
+			position:     position,
+			notification: selection,
 		}
 		switch effectiveActionGesture(binding.Action.Gesture) {
 		case profile.PressGesture:
+			if !hasBinding {
+				return nil
+			}
 			return &profileActionActivation{
-				snapshot:   candidate.snapshot,
-				binding:    candidate.binding,
-				positionID: candidate.position.id,
+				snapshot:     candidate.snapshot,
+				binding:      candidate.binding,
+				hasBinding:   candidate.hasBinding,
+				positionID:   candidate.position.id,
+				notification: cloneNotificationSelection(candidate.notification),
 			}
 		case profile.ReleaseGesture:
 			controller.pending[key] = candidate
@@ -211,9 +246,11 @@ func (controller *profileActionController) observeState(event d200x.InputEvent) 
 			return nil
 		}
 		return &profileActionActivation{
-			snapshot:   candidate.snapshot,
-			binding:    candidate.binding,
-			positionID: candidate.position.id,
+			snapshot:     candidate.snapshot,
+			binding:      candidate.binding,
+			hasBinding:   candidate.hasBinding,
+			positionID:   candidate.position.id,
+			notification: cloneNotificationSelection(candidate.notification),
 		}
 	default:
 		controller.reset()
@@ -243,8 +280,60 @@ func (controller *profileActionController) currentSnapshot() profileActionSnapsh
 	return profileActionSnapshot{profileID: profileID, bindings: controller.service.CurrentBindings()}
 }
 
+func (controller *profileActionController) notificationSelectionAt(wireIndex byte, snapshot profileActionSnapshot, position eventPosition, binding profile.Binding, hasBinding bool) *notificationSelection {
+	provider, ok := controller.service.(interface {
+		CurrentNotificationAt(byte) (NotificationInstance, bool)
+	})
+	if !ok {
+		return nil
+	}
+	instance, ok := provider.CurrentNotificationAt(wireIndex)
+	if !ok || instance.ProfileID != snapshot.profileID || instance.PositionID != position.id || instance.Position != position.position {
+		return nil
+	}
+	selection := &notificationSelection{
+		notificationID: instance.NotificationID,
+		wireIndex:      wireIndex,
+		profileID:      instance.ProfileID,
+		positionID:     instance.PositionID,
+		position:       instance.Position,
+		deadline:       instance.deadline,
+		snapshot:       snapshot.clone(),
+		binding:        binding,
+		hasBinding:     hasBinding,
+	}
+	return selection
+}
+
+func cloneNotificationSelection(selection *notificationSelection) *notificationSelection {
+	if selection == nil {
+		return nil
+	}
+	owned := selection.clone()
+	return &owned
+}
+
 func (controller *profileActionController) activate(ctx context.Context, activation *profileActionActivation) error {
 	if controller == nil || controller.service == nil || activation == nil {
+		return nil
+	}
+	if activation.notification != nil {
+		dismissal, ok := controller.service.(profileNotificationDismissal)
+		if !ok {
+			return nil
+		}
+		dismissed, err := dismissal.dismissNotification(ctx, *activation.notification)
+		if err != nil {
+			if errors.Is(err, notification.ErrBusy) || errors.Is(err, notification.ErrClosed) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil
+			}
+			return err
+		}
+		if !dismissed {
+			return nil
+		}
+	}
+	if !activation.hasActionBinding() {
 		return nil
 	}
 	if activation.binding.Action.Type == profile.TypeTextActionType || activation.binding.Action.Type == profile.KeyPressActionType {
@@ -291,11 +380,23 @@ func (controller *profileActionController) activate(ctx context.Context, activat
 }
 
 func (candidate profileActionCandidate) matches(snapshot profileActionSnapshot, position eventPosition) bool {
-	if snapshot.profileID != candidate.snapshot.profileID || position.position != candidate.binding.Position {
+	if snapshot.profileID != candidate.snapshot.profileID || position.id != candidate.position.id || position.position != candidate.position.position {
 		return false
+	}
+	if !candidate.hasActionBinding() {
+		_, ok := actionBindingAt(snapshot, position.position)
+		return !ok
 	}
 	binding, ok := actionBindingAt(snapshot, position.position)
 	return ok && equalProfileBinding(binding, candidate.binding)
+}
+
+func (candidate profileActionCandidate) hasActionBinding() bool {
+	return candidate.hasBinding || candidate.binding.Action.Type != ""
+}
+
+func (activation profileActionActivation) hasActionBinding() bool {
+	return activation.hasBinding || activation.binding.Action.Type != ""
 }
 
 func actionBindingAt(snapshot profileActionSnapshot, position string) (profile.Binding, bool) {

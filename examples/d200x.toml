@@ -16,6 +16,7 @@ id = "clock"
 position = "0_0"
 label = "Clock"
 background = "#102030"
+notification_sources = ["clock"]
 
 [profiles.positions.action]
 type = "activate_profile"

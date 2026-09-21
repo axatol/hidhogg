@@ -17,6 +17,7 @@ import (
 	"hidhogg/internal/execution"
 	"hidhogg/internal/ipc"
 	"hidhogg/internal/nativeinput"
+	"hidhogg/internal/notification"
 	"hidhogg/internal/profile"
 )
 
@@ -142,13 +143,14 @@ func New(config Config) (*Runtime, error) {
 	}
 	if normalized.RuntimeDir == "" {
 		runtime.server, err = ipc.NewServer(ipc.ServerConfig{
-			SocketPath:       normalized.SocketPath,
-			InstanceID:       normalized.InstanceID,
-			Deadlines:        normalized.Deadlines,
-			ProfileService:   runtimeIPCProfileService{runtime: runtime},
-			ExecutionHistory: runtimeExecutionHistory{runtime: runtime},
-			ConfigService:    runtimeIPCConfigService{runtime: runtime},
-			InputService:     runtimeIPCInputService{runtime: runtime},
+			SocketPath:          normalized.SocketPath,
+			InstanceID:          normalized.InstanceID,
+			Deadlines:           normalized.Deadlines,
+			ProfileService:      runtimeIPCProfileService{runtime: runtime},
+			ExecutionHistory:    runtimeExecutionHistory{runtime: runtime},
+			ConfigService:       runtimeIPCConfigService{runtime: runtime},
+			InputService:        runtimeIPCInputService{runtime: runtime},
+			NotificationService: runtimeIPCNotificationService{runtime: runtime},
 		})
 		if err != nil {
 			return nil, err
@@ -226,6 +228,32 @@ func (r *Runtime) ActivateProfile(ctx context.Context, profileID string) (Activa
 	return service.ActivateProfile(ctx, profileID)
 }
 
+// EmitNotification queues one bounded notification overlay operation.
+func (r *Runtime) EmitNotification(ctx context.Context, request notification.EmitRequest) (notification.EmitResult, error) {
+	if r == nil {
+		return notification.EmitResult{}, notification.ErrClosed
+	}
+	service := r.ProfileService()
+	concrete, ok := service.(*RuntimeProfileService)
+	if !ok || concrete == nil {
+		return notification.EmitResult{}, notification.ErrClosed
+	}
+	return concrete.EmitNotification(ctx, request)
+}
+
+// ClearNotification queues removal of all current overlays with the ID.
+func (r *Runtime) ClearNotification(ctx context.Context, identifier string) (notification.ClearResult, error) {
+	if r == nil {
+		return notification.ClearResult{}, notification.ErrClosed
+	}
+	service := r.ProfileService()
+	concrete, ok := service.(*RuntimeProfileService)
+	if !ok || concrete == nil {
+		return notification.ClearResult{}, notification.ErrClosed
+	}
+	return concrete.ClearNotification(ctx, identifier)
+}
+
 type runtimeIPCProfileService struct {
 	runtime *Runtime
 }
@@ -236,6 +264,24 @@ type runtimeExecutionHistory struct {
 
 type runtimeIPCConfigService struct {
 	runtime *Runtime
+}
+
+type runtimeIPCNotificationService struct {
+	runtime *Runtime
+}
+
+func (service runtimeIPCNotificationService) EmitNotification(ctx context.Context, request notification.EmitRequest) (notification.EmitResult, error) {
+	if service.runtime == nil {
+		return notification.EmitResult{}, notification.ErrClosed
+	}
+	return service.runtime.EmitNotification(ctx, request)
+}
+
+func (service runtimeIPCNotificationService) ClearNotification(ctx context.Context, identifier string) (notification.ClearResult, error) {
+	if service.runtime == nil {
+		return notification.ClearResult{}, notification.ErrClosed
+	}
+	return service.runtime.ClearNotification(ctx, identifier)
 }
 
 func (service runtimeIPCConfigService) Reload(ctx context.Context) (ipc.ConfigReloadResult, error) {
@@ -820,9 +866,11 @@ func (r *Runtime) start(ctx context.Context) error {
 		Catalog:          initialCandidate.Catalog(),
 		Sender:           session,
 		InitialProfileID: defaultProfile.ID,
+		Clock:            r.clock,
 		initialSnapshot:  &initialCandidate,
 		settingsApplier:  idleSettings,
 		Terminal:         r.signalTerminal,
+		Internal:         func(err error) { r.signalTerminalFailure(err, err) },
 		Verbose:          r.config.Verbose,
 		Logger:           r.stderr,
 	})
@@ -874,13 +922,14 @@ func (r *Runtime) prepareIPC() error {
 		config.InstanceID = generation.InstanceID()
 		if server == nil {
 			server, err = ipc.NewServer(ipc.ServerConfig{
-				SocketPath:       config.SocketPath,
-				InstanceID:       config.InstanceID,
-				Deadlines:        config.Deadlines,
-				ProfileService:   runtimeIPCProfileService{runtime: r},
-				ExecutionHistory: runtimeExecutionHistory{runtime: r},
-				ConfigService:    runtimeIPCConfigService{runtime: r},
-				InputService:     runtimeIPCInputService{runtime: r},
+				SocketPath:          config.SocketPath,
+				InstanceID:          config.InstanceID,
+				Deadlines:           config.Deadlines,
+				ProfileService:      runtimeIPCProfileService{runtime: r},
+				ExecutionHistory:    runtimeExecutionHistory{runtime: r},
+				ConfigService:       runtimeIPCConfigService{runtime: r},
+				InputService:        runtimeIPCInputService{runtime: r},
+				NotificationService: runtimeIPCNotificationService{runtime: r},
 			})
 			if err != nil {
 				return err

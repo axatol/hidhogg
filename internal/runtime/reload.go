@@ -74,26 +74,28 @@ type idleSettingsApplier interface {
 }
 
 type effectiveSnapshot struct {
-	catalog      profile.Catalog
-	current      profile.Profile
-	currentID    string
-	defaultID    string
-	bindings     []profile.Binding
-	settings     reloadSettings
-	renderedPage []byte
-	revision     uint64
+	catalog       profile.Catalog
+	current       profile.Profile
+	currentID     string
+	defaultID     string
+	bindings      []profile.Binding
+	settings      reloadSettings
+	renderedPage  []byte
+	notifications notificationSnapshot
+	revision      uint64
 }
 
 func effectiveSnapshotFromCandidate(candidate reloadCandidate, revision uint64) *effectiveSnapshot {
 	return &effectiveSnapshot{
-		catalog:      candidate.Catalog(),
-		current:      candidate.CurrentProfile(),
-		currentID:    candidate.CurrentProfileID(),
-		defaultID:    candidate.DefaultProfileID(),
-		bindings:     candidate.CurrentProfile().Bindings(),
-		settings:     candidate.Settings(),
-		renderedPage: candidate.RenderedPage(),
-		revision:     revision,
+		catalog:       candidate.Catalog(),
+		current:       candidate.CurrentProfile(),
+		currentID:     candidate.CurrentProfileID(),
+		defaultID:     candidate.DefaultProfileID(),
+		bindings:      candidate.CurrentProfile().Bindings(),
+		settings:      candidate.Settings(),
+		renderedPage:  candidate.RenderedPage(),
+		notifications: newNotificationSnapshot(candidate.CurrentProfileID(), candidate.RenderedPage()),
+		revision:      revision,
 	}
 }
 
@@ -114,15 +116,25 @@ func (snapshot *effectiveSnapshot) candidate() reloadCandidate {
 
 func (snapshot *effectiveSnapshot) withCurrent(current profile.Profile, renderedPage []byte) *effectiveSnapshot {
 	return &effectiveSnapshot{
-		catalog:      snapshot.catalog,
-		current:      cloneRuntimeProfile(current),
-		currentID:    current.ID,
-		defaultID:    snapshot.defaultID,
-		bindings:     current.Bindings(),
-		settings:     snapshot.settings,
-		renderedPage: append([]byte(nil), renderedPage...),
-		revision:     snapshot.revision,
+		catalog:       snapshot.catalog,
+		current:       cloneRuntimeProfile(current),
+		currentID:     current.ID,
+		defaultID:     snapshot.defaultID,
+		bindings:      current.Bindings(),
+		settings:      snapshot.settings,
+		renderedPage:  append([]byte(nil), renderedPage...),
+		notifications: newNotificationSnapshot(current.ID, renderedPage),
+		revision:      snapshot.revision,
 	}
+}
+
+func (snapshot *effectiveSnapshot) withNotifications(notifications notificationSnapshot) *effectiveSnapshot {
+	if snapshot == nil {
+		return nil
+	}
+	clone := *snapshot
+	clone.notifications = notifications.clone()
+	return &clone
 }
 
 type reloadAdmission struct {

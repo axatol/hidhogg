@@ -151,6 +151,58 @@ func TestDecodeIdleTimeoutAcceptsZeroAndMaximum(t *testing.T) {
 	}
 }
 
+func TestDecodeAndValidateNotificationSources(t *testing.T) {
+	configuration := decodeValidFixture(t)
+	if sources := configuration.Profiles[0].Positions[0].NotificationSources; sources != nil {
+		t.Fatalf("omitted notification sources = %#v, want nil", sources)
+	}
+
+	formatSources := func(sources []string) string {
+		encoded := make([]string, len(sources))
+		for index, source := range sources {
+			encoded[index] = fmt.Sprintf("%q", source)
+		}
+		return "[" + strings.Join(encoded, ", ") + "]"
+	}
+	validSources := make([]string, MaximumNotificationSourceCount)
+	validSources[0] = "Source"
+	validSources[1] = "source"
+	validSources[2] = strings.Repeat("a", MaximumStableIDRunes)
+	for index := 3; index < len(validSources); index++ {
+		validSources[index] = fmt.Sprintf("source-%02d", index)
+	}
+	validData := bytes.Replace(validFixture, []byte("background = \"#102030\""), []byte("background = \"#102030\"\nnotification_sources = "+formatSources(validSources)), 1)
+	decoded, err := Decode(validData)
+	if err != nil {
+		t.Fatalf("maximum and case-variant source list rejected: %v", err)
+	}
+	if got := decoded.Profiles[0].Positions[0].NotificationSources; !reflect.DeepEqual(got, validSources) {
+		t.Fatalf("decoded notification sources = %#v, want %#v", got, validSources)
+	}
+
+	for _, test := range []struct {
+		name    string
+		sources string
+		want    string
+	}{
+		{name: "empty", sources: "[]", want: "notification_sources must contain between"},
+		{name: "too many", sources: formatSources(append(validSources, "source-overflow")), want: "notification_sources must contain between"},
+		{name: "invalid ID", sources: `["not stable"]`, want: "notification_sources[0]"},
+		{name: "oversized ID", sources: fmt.Sprintf("[%q]", strings.Repeat("a", MaximumStableIDRunes+1)), want: "notification_sources[0]"},
+		{name: "non-ASCII ID", sources: `["sourcé"]`, want: "notification_sources[0]"},
+		{name: "leading punctuation ID", sources: `["-source"]`, want: "notification_sources[0]"},
+		{name: "duplicate", sources: `["source", "source"]`, want: "notification_sources[1]"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			data := bytes.Replace(validFixture, []byte("background = \"#102030\""), []byte("background = \"#102030\"\nnotification_sources = "+test.sources), 1)
+			_, err := Decode(data)
+			if err == nil || !IsValidationError(err) || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Decode error = %v, want validation containing %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestDecodeRejectsParserFailures(t *testing.T) {
 	for _, name := range []string{"duplicate-key.toml", "malformed.toml", "unknown-field.toml", "unknown-nested-field.toml", "wrong-type.toml"} {
 		t.Run(name, func(t *testing.T) {
@@ -697,6 +749,26 @@ func TestProfileCatalogProvidesOrderedImmutableLookup(t *testing.T) {
 	}
 	if _, ok := catalog.ResolveTarget("ALTERNATE"); ok {
 		t.Fatal("profile lookup was not case-sensitive")
+	}
+}
+
+func TestProfileCatalogPropagatesNotificationSourcesDefensively(t *testing.T) {
+	configuration := decodeValidFixture(t)
+	configuration.Profiles[0].Positions[0].NotificationSources = []string{"Source", "source"}
+	catalog, err := configuration.ProfileCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration.Profiles[0].Positions[0].NotificationSources[0] = "changed-config"
+
+	defaultProfile, ok := catalog.Default()
+	if !ok || !reflect.DeepEqual(defaultProfile.Values[0].NotificationSources, []string{"Source", "source"}) {
+		t.Fatalf("catalog sources = %#v, %t", defaultProfile.Values[0].NotificationSources, ok)
+	}
+	defaultProfile.Values[0].NotificationSources[0] = "changed-result"
+	unchanged, ok := catalog.Default()
+	if !ok || !reflect.DeepEqual(unchanged.Values[0].NotificationSources, []string{"Source", "source"}) {
+		t.Fatalf("catalog sources changed through returned copy = %#v, %t", unchanged.Values[0].NotificationSources, ok)
 	}
 }
 

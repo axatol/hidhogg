@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"hidhogg/internal/d200x"
+	"hidhogg/internal/execution"
+	"hidhogg/internal/notification"
 	"hidhogg/internal/profile"
 )
 
@@ -65,7 +67,7 @@ func TestProfileActionRequiresSuccessfulActiveEmission(t *testing.T) {
 		sender:  &policyRecordingSender{},
 		plan:    plan,
 		stdout:  &output,
-		actions: newProfileActionController(service, plan.eventPositions),
+		actions: newProfileActionController(service, service.CurrentEventPositions),
 	}
 
 	if err := controller.handleInput(context.Background(), inputObservation{event: actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)}); err != nil {
@@ -360,6 +362,539 @@ func TestProfileActionErrorsDoNotRetry(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNotificationSelectionDismissesTileBeforeReleaseAction(t *testing.T) {
+	sender := &profilePageSender{}
+	service := newNotificationActionService(t, sender, profile.ReleaseGesture, true, 0)
+	if _, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "notice"}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	controller := newProfileActionController(service, service.CurrentEventPositions)
+	if err := controller.observe(context.Background(), actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if err := controller.observe(context.Background(), actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased)); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if got := len(service.CurrentNotifications()); got != 0 {
+		t.Fatalf("notifications after release action = %d, want zero", got)
+	}
+	if got, ok := service.CurrentProfileID(); !ok || got != "alternate" {
+		t.Fatalf("profile after release action = %q/%t, want alternate", got, ok)
+	}
+	liveCalls := sender.liveCallsSnapshot()
+	if len(liveCalls) != 3 {
+		t.Fatalf("live writes = %d, want emit, dismissal, action", len(liveCalls))
+	}
+	if got := liveCalls[1].Page().Positions[0].Label; got != "Default 0_0" {
+		t.Fatalf("dismissal label = %q, want baseline", got)
+	}
+	if got := liveCalls[2].Page().Positions[0].Label; got != "Alternate 0_0" {
+		t.Fatalf("action label = %q, want alternate", got)
+	}
+}
+
+func TestNotificationSelectionHonorsPressGesture(t *testing.T) {
+	sender := &profilePageSender{}
+	service := newNotificationActionService(t, sender, profile.PressGesture, true, 0)
+	if _, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "notice"}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	controller := newProfileActionController(service, service.CurrentEventPositions)
+	if err := controller.observe(context.Background(), actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if got, ok := service.CurrentProfileID(); !ok || got != "alternate" {
+		t.Fatalf("profile after press action = %q/%t, want alternate", got, ok)
+	}
+	if got := len(service.CurrentNotifications()); got != 0 {
+		t.Fatalf("notifications after press action = %d, want zero", got)
+	}
+	if err := controller.observe(context.Background(), actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased)); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if got := len(sender.liveCallsSnapshot()); got != 3 {
+		t.Fatalf("live writes after press/release = %d, want three", got)
+	}
+}
+
+func TestNotificationSelectionActionlessReleaseRemovesOnlySelectedTile(t *testing.T) {
+	sender := &profilePageSender{}
+	service := newNotificationActionService(t, sender, "", false, 0, 13)
+	if _, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "notice"}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	controller := newProfileActionController(service, service.CurrentEventPositions)
+	for _, event := range []d200x.InputEvent{
+		actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed),
+		actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased),
+	} {
+		if err := controller.observe(context.Background(), event); err != nil {
+			t.Fatalf("observe %#v: %v", event, err)
+		}
+	}
+	if got, ok := service.CurrentProfileID(); !ok || got != "default" {
+		t.Fatalf("profile after actionless selection = %q/%t, want default", got, ok)
+	}
+	instances := service.CurrentNotifications()
+	if len(instances) != 1 || instances[0].WireIndex != 13 {
+		t.Fatalf("remaining notifications = %#v, want wire 13", instances)
+	}
+	if got := len(sender.liveCallsSnapshot()); got != 2 {
+		t.Fatalf("live writes = %d, want emit and dismissal", got)
+	}
+}
+
+func TestNotificationSelectionRejectsReplacedID(t *testing.T) {
+	sender := &profilePageSender{}
+	service := newNotificationActionService(t, sender, "", false, 0)
+	first, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "first"})
+	if err != nil {
+		t.Fatalf("first emit: %v", err)
+	}
+	controller := newProfileActionController(service, service.CurrentEventPositions)
+	if err := controller.observe(context.Background(), actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	second, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "second"})
+	if err != nil {
+		t.Fatalf("replacement emit: %v", err)
+	}
+	if first.NotificationID == second.NotificationID {
+		t.Fatal("replacement reused notification ID")
+	}
+	if err := controller.observe(context.Background(), actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased)); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	current, ok := service.CurrentNotificationAt(0)
+	if !ok || current.NotificationID != second.NotificationID || current.Text != "second" {
+		t.Fatalf("replacement after stale release = %+v/%t", current, ok)
+	}
+	if got := len(sender.liveCallsSnapshot()); got != 2 {
+		t.Fatalf("live writes after stale release = %d, want two", got)
+	}
+}
+
+func TestNotificationSelectionPublishesMetadataOnlyDismissal(t *testing.T) {
+	sender := &profilePageSender{}
+	service := newNotificationActionService(t, sender, "", false, 0)
+	if _, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "Default 0_0"}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	if got := len(sender.liveCallsSnapshot()); got != 0 {
+		t.Fatalf("identical emit writes = %d, want zero", got)
+	}
+	controller := newProfileActionController(service, service.CurrentEventPositions)
+	for _, event := range []d200x.InputEvent{
+		actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed),
+		actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased),
+	} {
+		if err := controller.observe(context.Background(), event); err != nil {
+			t.Fatalf("observe %#v: %v", event, err)
+		}
+	}
+	if got := len(service.CurrentNotifications()); got != 0 {
+		t.Fatalf("notifications after metadata-only dismissal = %d, want zero", got)
+	}
+	if got := len(sender.liveCallsSnapshot()); got != 0 {
+		t.Fatalf("metadata-only dismissal writes = %d, want zero", got)
+	}
+}
+
+func TestNotificationSelectionCancellationSkipsDismissalAndAction(t *testing.T) {
+	sender := &profilePageSender{}
+	service := newNotificationActionService(t, sender, profile.ReleaseGesture, true, 0)
+	if _, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "notice"}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	controller := newProfileActionController(service, service.CurrentEventPositions)
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := controller.observe(ctx, actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	cancel()
+	if err := controller.observe(ctx, actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased)); err != nil {
+		t.Fatalf("canceled release: %v", err)
+	}
+	if got := len(service.CurrentNotifications()); got != 1 {
+		t.Fatalf("notifications after canceled selection = %d, want one", got)
+	}
+	if got, ok := service.CurrentProfileID(); !ok || got != "default" {
+		t.Fatalf("profile after canceled selection = %q/%t, want default", got, ok)
+	}
+	if got := len(sender.liveCallsSnapshot()); got != 1 {
+		t.Fatalf("live writes after canceled selection = %d, want emit only", got)
+	}
+}
+
+func TestNotificationSelectionExpirySkipsAction(t *testing.T) {
+	clock := newPolicyFakeClock(time.Unix(4000, 0))
+	sender := &profilePageSender{}
+	service := newNotificationActionServiceWithClock(t, sender, clock, profile.ReleaseGesture, true, 0)
+	ttl := 1
+	if _, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "notice", TTLSeconds: &ttl}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	controller := newProfileActionController(service, service.CurrentEventPositions)
+	if err := controller.observe(context.Background(), actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	clock.advance(time.Second)
+	if err := controller.observe(context.Background(), actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased)); err != nil {
+		t.Fatalf("expired release: %v", err)
+	}
+	if got, ok := service.CurrentProfileID(); !ok || got != "default" {
+		t.Fatalf("profile after expired selection = %q/%t, want default", got, ok)
+	}
+}
+
+func TestNotificationSelectionShutdownSkipsAction(t *testing.T) {
+	sender := &profilePageSender{}
+	service := newNotificationActionService(t, sender, profile.ReleaseGesture, true, 0)
+	if _, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "notice"}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	controller := newProfileActionController(service, service.CurrentEventPositions)
+	if err := controller.observe(context.Background(), actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if err := service.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if err := controller.observe(context.Background(), actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased)); err != nil {
+		t.Fatalf("shutdown release: %v", err)
+	}
+	if got, ok := service.CurrentProfileID(); !ok || got != "default" {
+		t.Fatalf("profile after shutdown selection = %q/%t, want default", got, ok)
+	}
+	if got := len(sender.liveCallsSnapshot()); got != 1 {
+		t.Fatalf("live writes after shutdown selection = %d, want emit only", got)
+	}
+}
+
+func TestNotificationSelectionWakePairRemainsConsumed(t *testing.T) {
+	sender := &profilePageSender{}
+	service := newNotificationActionService(t, sender, profile.ReleaseGesture, true, 0)
+	if _, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "notice"}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	plan := devicePlan{brightness: 57, idleTimeout: time.Minute, positionsFn: service.CurrentEventPositions}
+	var output bytes.Buffer
+	controller := &idlePolicyController{
+		clock:   realClock{},
+		sender:  &policyRecordingSender{},
+		plan:    plan,
+		stdout:  &output,
+		actions: newProfileActionController(service, plan.eventPositions),
+	}
+	controller.state.dimmed = true
+	for _, event := range []d200x.InputEvent{
+		actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed),
+		actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased),
+	} {
+		if err := controller.handleInput(context.Background(), inputObservation{event: event}); err != nil {
+			t.Fatalf("wake event %#v: %v", event, err)
+		}
+	}
+	if got := len(service.CurrentNotifications()); got != 1 {
+		t.Fatalf("notifications after wake pair = %d, want one", got)
+	}
+	if got, ok := service.CurrentProfileID(); !ok || got != "default" {
+		t.Fatalf("profile after wake pair = %q/%t, want default", got, ok)
+	}
+	if got := len(sender.liveCallsSnapshot()); got != 1 {
+		t.Fatalf("live writes after wake pair = %d, want emit only", got)
+	}
+}
+
+func TestNotificationSelectionQueueSaturationSkipsDismissalAndAction(t *testing.T) {
+	sender := &profilePageSender{}
+	service := newNotificationActionService(t, sender, profile.ReleaseGesture, true, 0)
+	if _, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "initial"}); err != nil {
+		t.Fatalf("initial emit: %v", err)
+	}
+	controller := newProfileActionController(service, service.CurrentEventPositions)
+	service.transition.mu.RLock()
+	releasedGate := false
+	defer func() {
+		if !releasedGate {
+			service.transition.mu.RUnlock()
+		}
+	}()
+
+	results := make([]chan error, notificationAdmissionCapacity+1)
+	for index := 0; index < notificationAdmissionCapacity; index++ {
+		results[index] = make(chan error, 1)
+		result := results[index]
+		go func(index int) {
+			_, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: fmt.Sprintf("queued-%d", index)})
+			result <- err
+		}(index)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(service.notifications) != notificationAdmissionCapacity-1 {
+		time.Sleep(time.Millisecond)
+	}
+	if len(service.notifications) != notificationAdmissionCapacity-1 {
+		t.Fatal("notification coordinator did not claim a queued request")
+	}
+	results[notificationAdmissionCapacity] = make(chan error, 1)
+	go func() {
+		_, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "queued-final"})
+		results[notificationAdmissionCapacity] <- err
+	}()
+	waitForNotificationQueue(t, service, notificationAdmissionCapacity)
+
+	if err := controller.observe(context.Background(), actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if err := controller.observe(context.Background(), actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased)); err != nil {
+		t.Fatalf("saturated release: %v", err)
+	}
+	if len(service.notifications) != notificationAdmissionCapacity {
+		t.Fatalf("selection changed saturated queue length to %d", len(service.notifications))
+	}
+	if got, ok := service.CurrentProfileID(); !ok || got != "default" {
+		t.Fatalf("profile after saturated selection = %q/%t, want default", got, ok)
+	}
+	current, ok := service.CurrentNotificationAt(0)
+	if !ok || current.Text != "initial" {
+		t.Fatalf("notification after saturated selection = %+v/%t, want initial", current, ok)
+	}
+	service.transition.mu.RUnlock()
+	releasedGate = true
+
+	for index := range results {
+		select {
+		case <-results[index]:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("queued emit %d did not resolve", index)
+		}
+	}
+}
+
+func TestNotificationSelectionActionAdmissionRejectionKeepsDismissal(t *testing.T) {
+	sender := &profilePageSender{}
+	service := newNotificationExecuteService(t, sender)
+	if _, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "notification text"}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	worker := newFakeExecutionWorker()
+	worker.submitErr = execution.ErrClosed
+	controller := newProfileActionController(service, service.CurrentEventPositions, worker)
+	press := actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)
+	release := actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased)
+	if err := controller.observe(context.Background(), press); err != nil {
+		t.Fatalf("press: %v", err)
+	}
+	if err := controller.observe(context.Background(), release); !errors.Is(err, execution.ErrClosed) {
+		t.Fatalf("action admission error = %v, want ErrClosed", err)
+	}
+	if got := len(service.CurrentNotifications()); got != 0 {
+		t.Fatalf("notifications after rejected action = %d, want zero", got)
+	}
+	if got := len(sender.liveCallsSnapshot()); got != 2 {
+		t.Fatalf("writes after rejected action = %d, want emit and dismissal", got)
+	}
+	if got := worker.submitCount(); got != 1 {
+		t.Fatalf("action admission attempts = %d, want one", got)
+	}
+}
+
+func TestNotificationSelectionStaticActionUsesConfiguredPayload(t *testing.T) {
+	sender := &profilePageSender{}
+	service := newNotificationExecuteService(t, sender)
+	worker := newFakeExecutionWorker()
+	controller := newProfileActionController(service, service.CurrentEventPositions, worker)
+	if _, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "notification text"}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	for _, event := range []d200x.InputEvent{
+		actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed),
+		actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased),
+	} {
+		if err := controller.observe(context.Background(), event); err != nil {
+			t.Fatalf("observe %#v: %v", event, err)
+		}
+	}
+	requests := worker.requestsSnapshot()
+	if len(requests) != 1 {
+		t.Fatalf("execution requests = %d, want one", len(requests))
+	}
+	want := execution.Request{
+		ProfileID:  "default",
+		PositionID: "Default-0_0",
+		Executable: "/configured/action",
+		Arguments:  []string{"configured", "payload"},
+		Timeout:    17 * time.Second,
+	}
+	if !equalExecutionRequest(requests[0], want) {
+		t.Fatalf("execution request = %#v, want %#v", requests[0], want)
+	}
+	if got := len(service.CurrentNotifications()); got != 0 {
+		t.Fatalf("notifications after configured action = %d, want zero", got)
+	}
+}
+
+func TestNotificationSelectionExpiryDuringGateSkipsWriteAndAction(t *testing.T) {
+	baseClock := newPolicyFakeClock(time.Unix(5000, 0))
+	clock := newSelectionExpiryClock(baseClock)
+	sender := &profilePageSender{}
+	service := newNotificationActionServiceWithClock(t, sender, clock, profile.ReleaseGesture, true, 0)
+	ttl := 1
+	if _, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "notice", TTLSeconds: &ttl}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	controller := newProfileActionController(service, service.CurrentEventPositions)
+	press := actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)
+	release := actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased)
+	activation := controller.observeState(press)
+	if activation != nil {
+		t.Fatal("release action activated on press")
+	}
+	activation = controller.observeState(release)
+	if activation == nil {
+		t.Fatal("release action candidate missing")
+	}
+	service.transition.mu.RLock()
+	clock.arm()
+	done := make(chan error, 1)
+	go func() { done <- controller.activate(context.Background(), activation) }()
+	select {
+	case <-clock.reached:
+	case <-time.After(2 * time.Second):
+		service.transition.mu.RUnlock()
+		t.Fatal("selection did not reach pre-gate deadline check")
+	}
+	baseClock.advance(time.Second)
+	service.transition.mu.RUnlock()
+	if err := <-done; err != nil {
+		t.Fatalf("expired selection: %v", err)
+	}
+	if got := len(sender.liveCallsSnapshot()); got != 1 {
+		t.Fatalf("writes after gate-expired selection = %d, want emit only", got)
+	}
+	if got, ok := service.CurrentProfileID(); !ok || got != "default" {
+		t.Fatalf("profile after gate-expired selection = %q/%t, want default", got, ok)
+	}
+	if got := len(service.CurrentNotifications()); got != 1 {
+		t.Fatalf("notifications after gate-expired selection = %d, want one", got)
+	}
+}
+
+func TestNotificationSelectionDuplicateHeldPressDispatchesOnce(t *testing.T) {
+	sender := &profilePageSender{}
+	service := newNotificationExecuteService(t, sender)
+	worker := newFakeExecutionWorker()
+	controller := newProfileActionController(service, service.CurrentEventPositions, worker)
+	if _, err := service.EmitNotification(context.Background(), notification.EmitRequest{Source: "source", Text: "notification text"}); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	press := actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionPressed)
+	release := actionTestInput(0, d200x.InputMarkerButton, d200x.InputActionReleased)
+	for _, event := range []d200x.InputEvent{press, press, release, release} {
+		if err := controller.observe(context.Background(), event); err != nil {
+			t.Fatalf("observe %#v: %v", event, err)
+		}
+	}
+	if got := len(worker.requestsSnapshot()); got != 1 {
+		t.Fatalf("duplicate-held execution requests = %d, want one", got)
+	}
+	if got := len(service.CurrentNotifications()); got != 0 {
+		t.Fatalf("notifications after duplicate-held gesture = %d, want zero", got)
+	}
+}
+
+type selectionExpiryClock struct {
+	base      *policyFakeClock
+	mu        sync.Mutex
+	armed     bool
+	reached   chan struct{}
+	reachOnce sync.Once
+}
+
+func newSelectionExpiryClock(base *policyFakeClock) *selectionExpiryClock {
+	return &selectionExpiryClock{base: base, reached: make(chan struct{})}
+}
+
+func (clock *selectionExpiryClock) arm() {
+	clock.mu.Lock()
+	clock.armed = true
+	clock.mu.Unlock()
+}
+
+func (clock *selectionExpiryClock) Now() time.Time {
+	now := clock.base.Now()
+	clock.mu.Lock()
+	armed := clock.armed
+	clock.mu.Unlock()
+	if armed {
+		clock.reachOnce.Do(func() { close(clock.reached) })
+	}
+	return now
+}
+
+func (clock *selectionExpiryClock) NewTimer(time.Duration) Timer {
+	return selectionExpiryTimer{}
+}
+
+type selectionExpiryTimer struct{}
+
+func (selectionExpiryTimer) C() <-chan time.Time { return nil }
+
+func (selectionExpiryTimer) Stop() bool { return true }
+
+func newNotificationActionService(t *testing.T, sender *profilePageSender, gesture string, withAction bool, sourcePositions ...int) *RuntimeProfileService {
+	return newNotificationActionServiceWithClock(t, sender, nil, gesture, withAction, sourcePositions...)
+}
+
+func newNotificationExecuteService(t *testing.T, sender *profilePageSender) *RuntimeProfileService {
+	t.Helper()
+	current := testProfile("default", "Default", "Default")
+	current.Values[0].Action = &profile.Action{
+		Type:           profile.ExecuteActionType,
+		Gesture:        profile.ReleaseGesture,
+		Executable:     "/configured/action",
+		Arguments:      []string{"configured", "payload"},
+		TimeoutSeconds: 17,
+	}
+	current.Values[0].NotificationSources = []string{"source"}
+	alternate := testProfile("alternate", "Alternate", "Alternate")
+	catalog, err := profile.NewCatalog("default", []profile.Profile{current, alternate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewProfileService(ProfileServiceOptions{Catalog: catalog, Sender: sender})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = service.Close() })
+	return service
+}
+
+func newNotificationActionServiceWithClock(t *testing.T, sender *profilePageSender, clock Clock, gesture string, withAction bool, sourcePositions ...int) *RuntimeProfileService {
+	t.Helper()
+	current := testProfile("default", "Default", "Default")
+	if !withAction {
+		current.Values[0].Action = nil
+	} else {
+		current.Values[0].Action.Gesture = gesture
+	}
+	for _, index := range sourcePositions {
+		current.Values[index].NotificationSources = []string{"source"}
+	}
+	alternate := testProfile("alternate", "Alternate", "Alternate")
+	catalog, err := profile.NewCatalog("default", []profile.Profile{current, alternate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewProfileService(ProfileServiceOptions{Catalog: catalog, Sender: sender, Clock: clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = service.Close() })
+	return service
 }
 
 func TestRuntimeRunProfileActionFakeTransportFlow(t *testing.T) {

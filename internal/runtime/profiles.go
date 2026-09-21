@@ -8,8 +8,10 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"hidhogg/internal/d200x"
+	"hidhogg/internal/notification"
 	"hidhogg/internal/profile"
 )
 
@@ -75,9 +77,11 @@ type ProfileServiceOptions struct {
 	Catalog          profile.Catalog
 	Sender           LivePageSender
 	InitialProfileID string
+	Clock            Clock
 	initialSnapshot  *reloadCandidate
 	settingsApplier  idleSettingsApplier
 	Terminal         func(error)
+	Internal         func(error)
 	Cancel           context.CancelFunc
 	Verbose          bool
 	Logger           io.Writer
@@ -89,22 +93,27 @@ type ProfileServiceOptions struct {
 // physical atomicity is not proven. Failed writes are terminal, and callers
 // may invoke the service concurrently.
 type RuntimeProfileService struct {
-	sender     LivePageSender
-	terminal   func(error)
-	cancel     context.CancelFunc
-	verbose    bool
-	logger     io.Writer
-	logMu      sync.Mutex
-	requests   chan profileActivationRequest
-	reloads    chan profileReloadRequest
-	stop       chan struct{}
-	workerDone chan struct{}
-	transition *profileTransitionGate
-	effective  atomic.Pointer[effectiveSnapshot]
-	settings   idleSettingsApplier
+	sender        LivePageSender
+	terminal      func(error)
+	internal      func(error)
+	cancel        context.CancelFunc
+	verbose       bool
+	logger        io.Writer
+	logMu         sync.Mutex
+	requests      chan profileActivationRequest
+	reloads       chan profileReloadRequest
+	notifications chan notificationRequest
+	stop          chan struct{}
+	stopOnce      sync.Once
+	workerDone    chan struct{}
+	transition    *profileTransitionGate
+	effective     atomic.Pointer[effectiveSnapshot]
+	settings      idleSettingsApplier
+	clock         Clock
 
 	mu        sync.RWMutex
 	closed    bool
+	failed    bool
 	uncertain bool
 	closeOnce sync.Once
 }
@@ -168,18 +177,25 @@ func NewProfileService(options ProfileServiceOptions) (*RuntimeProfileService, e
 		initialCandidate.renderedPage = update.Archive().Data
 		initialCandidate.livePageUpdate = update
 	}
+	clock := options.Clock
+	if clock == nil {
+		clock = realClock{}
+	}
 	service := &RuntimeProfileService{
-		sender:     options.Sender,
-		terminal:   options.Terminal,
-		cancel:     options.Cancel,
-		verbose:    options.Verbose && options.Logger != nil,
-		logger:     options.Logger,
-		requests:   make(chan profileActivationRequest, profileActivationCapacity),
-		reloads:    make(chan profileReloadRequest),
-		stop:       make(chan struct{}),
-		workerDone: make(chan struct{}),
-		transition: &profileTransitionGate{},
-		settings:   options.settingsApplier,
+		sender:        options.Sender,
+		terminal:      options.Terminal,
+		internal:      options.Internal,
+		cancel:        options.Cancel,
+		verbose:       options.Verbose && options.Logger != nil,
+		logger:        options.Logger,
+		requests:      make(chan profileActivationRequest, profileActivationCapacity),
+		reloads:       make(chan profileReloadRequest),
+		notifications: make(chan notificationRequest, notificationAdmissionCapacity),
+		stop:          make(chan struct{}),
+		workerDone:    make(chan struct{}),
+		transition:    &profileTransitionGate{},
+		settings:      options.settingsApplier,
+		clock:         clock,
 	}
 	service.effective.Store(effectiveSnapshotFromCandidate(initialCandidate, 1))
 	go service.runCoordinator()
@@ -304,6 +320,9 @@ func (service *RuntimeProfileService) enqueueActivation(ctx context.Context, pro
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := service.profileAdmissionError(); err != nil {
+		return ActivationResult{}, err
+	}
 	request := profileActivationRequest{
 		ctx:       ctx,
 		profileID: profileID,
@@ -334,6 +353,9 @@ func (service *RuntimeProfileService) reload(ctx context.Context, build func(str
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := service.profileAdmissionError(); err != nil {
+		return ReloadResult{}, err
+	}
 	request := profileReloadRequest{ctx: ctx, build: build, result: make(chan profileReloadResponse, 1)}
 	select {
 	case <-ctx.Done():
@@ -361,7 +383,7 @@ func (service *RuntimeProfileService) Close() error {
 		service.mu.Lock()
 		service.closed = true
 		service.mu.Unlock()
-		close(service.stop)
+		service.stopAdmission()
 		service.drainQueuedRequests()
 		<-service.workerDone
 	})
@@ -370,27 +392,89 @@ func (service *RuntimeProfileService) Close() error {
 
 func (service *RuntimeProfileService) runCoordinator() {
 	defer close(service.workerDone)
+	var expiryTimer Timer
+	service.rearmNotificationTimer(&expiryTimer)
+	defer func() { stopTimer(expiryTimer) }()
 	for {
 		select {
-		case request := <-service.requests:
-			service.completeRequest(request)
-		case request := <-service.reloads:
-			service.completeReload(request)
 		case <-service.stop:
+			stopTimer(expiryTimer)
+			service.drainQueuedRequests()
+			return
+		default:
+		}
+		if service.notificationExpiryDue() {
+			stopTimer(expiryTimer)
+			expiryTimer = nil
+			if service.closedOrUncertain() {
+				return
+			}
+			service.expireNotifications()
+			service.rearmNotificationTimer(&expiryTimer)
+			continue
+		}
+		var expiry <-chan time.Time
+		if expiryTimer != nil {
+			expiry = expiryTimer.C()
+		}
+		select {
+		case request := <-service.requests:
+			if err := service.profileAdmissionError(); err != nil {
+				completeProfileRequest(request, profileActivationResponse{err: err})
+			} else {
+				service.completeRequest(request)
+			}
+		case request := <-service.reloads:
+			if err := service.profileAdmissionError(); err != nil {
+				completeReloadRequest(request, profileReloadResponse{err: err})
+			} else {
+				service.completeReload(request)
+			}
+		case request := <-service.notifications:
+			if err := service.notificationAdmissionError(); err != nil {
+				if request.state != nil {
+					request.state.cancel()
+				}
+				completeNotificationRequest(request, notificationResponse{err: err})
+			} else {
+				service.completeNotification(request)
+			}
+		case <-expiry:
+			stopTimer(expiryTimer)
+			expiryTimer = nil
+			if !service.closedOrUncertain() {
+				service.expireNotifications()
+			}
+		case <-service.stop:
+			stopTimer(expiryTimer)
 			service.drainQueuedRequests()
 			return
 		}
+		service.rearmNotificationTimer(&expiryTimer)
 	}
 }
 
 func (service *RuntimeProfileService) drainQueuedRequests() {
 	err := service.closedError()
+	notificationErr := notification.ErrClosed
+	if errors.Is(err, ErrProfileStateUncertain) {
+		notificationErr = notification.ErrUncertain
+	}
 	for {
 		select {
 		case request := <-service.requests:
 			completeProfileRequest(request, profileActivationResponse{err: err})
 		case request := <-service.reloads:
-			completeReloadRequest(request, profileReloadResponse{err: ErrReloadClosed})
+			reloadErr := ErrReloadClosed
+			if errors.Is(err, ErrProfileStateUncertain) {
+				reloadErr = ErrProfileStateUncertain
+			}
+			completeReloadRequest(request, profileReloadResponse{err: reloadErr})
+		case request := <-service.notifications:
+			if request.state != nil {
+				request.state.cancel()
+			}
+			completeNotificationRequest(request, notificationResponse{err: notificationErr})
 		default:
 			return
 		}
@@ -404,6 +488,21 @@ func (service *RuntimeProfileService) closedError() error {
 		return ErrProfileStateUncertain
 	}
 	return ErrProfileServiceClosed
+}
+
+func (service *RuntimeProfileService) profileAdmissionError() error {
+	if service == nil {
+		return ErrProfileServiceClosed
+	}
+	service.mu.RLock()
+	defer service.mu.RUnlock()
+	if service.uncertain {
+		return ErrProfileStateUncertain
+	}
+	if service.closed || service.failed {
+		return ErrProfileServiceClosed
+	}
+	return nil
 }
 
 func (service *RuntimeProfileService) completeRequest(request profileActivationRequest) {
@@ -463,9 +562,10 @@ func (service *RuntimeProfileService) applyReload(ctx context.Context, build fun
 	}
 	service.mu.RLock()
 	closed := service.closed
+	failed := service.failed
 	uncertain := service.uncertain
 	service.mu.RUnlock()
-	if closed {
+	if closed || failed {
 		return profileReloadResponse{result: result, err: ErrReloadClosed}
 	}
 	if uncertain {
@@ -477,7 +577,8 @@ func (service *RuntimeProfileService) applyReload(ctx context.Context, build fun
 		return profileReloadResponse{result: result, err: err}
 	}
 	displayApplied := false
-	if diff.DisplayChanged() {
+	overlaysActive := current.notifications.hasOverlays()
+	if diff.DisplayChanged() || overlaysActive {
 		if err := service.sender.SendLivePageUpdate(ctx, candidate.LivePageUpdate()); err != nil {
 			service.markUncertain(err)
 			return profileReloadResponse{result: result, err: uncertainReloadError(err)}
@@ -565,6 +666,10 @@ func (service *RuntimeProfileService) activate(ctx context.Context, requestedID 
 		service.mu.RUnlock()
 		return profileActivationResponse{err: errProfileActionBindingChanged}
 	}
+	if service.failed {
+		service.mu.RUnlock()
+		return profileActivationResponse{err: ErrProfileServiceClosed}
+	}
 	if service.uncertain {
 		service.mu.RUnlock()
 		return profileActivationResponse{err: ErrProfileStateUncertain}
@@ -591,9 +696,10 @@ func (service *RuntimeProfileService) activate(ctx context.Context, requestedID 
 	}
 	service.mu.RLock()
 	closed := service.closed
+	failed := service.failed
 	uncertain := service.uncertain
 	service.mu.RUnlock()
-	if closed {
+	if closed || failed {
 		return profileActivationResponse{err: ErrProfileServiceClosed}
 	}
 	if uncertain {
@@ -639,12 +745,40 @@ func (service *RuntimeProfileService) markUncertain(err error) {
 	terminal := service.terminal
 	cancel := service.cancel
 	service.mu.Unlock()
+	service.drainQueuedRequests()
 	if terminal != nil {
 		terminal(err)
 	}
 	if cancel != nil {
 		cancel()
 	}
+}
+func (service *RuntimeProfileService) markInternal(err error) {
+	if service == nil {
+		return
+	}
+	service.mu.Lock()
+	if service.closed || service.failed {
+		service.mu.Unlock()
+		return
+	}
+	service.failed = true
+	internal := service.internal
+	service.mu.Unlock()
+	service.stopAdmission()
+	service.drainQueuedRequests()
+	if internal != nil {
+		internal(err)
+	}
+}
+
+func (service *RuntimeProfileService) stopAdmission() {
+	if service == nil {
+		return
+	}
+	service.mu.Lock()
+	service.stopOnce.Do(func() { close(service.stop) })
+	service.mu.Unlock()
 }
 
 func pageForProfile(current profile.Profile) (d200x.Page, error) {

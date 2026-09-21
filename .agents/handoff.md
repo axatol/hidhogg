@@ -1,6 +1,6 @@
 # Hidhogg handoff
 
-Updated: 2026-09-18
+Updated: 2026-09-19
 
 ## Current canonical checkpoint
 
@@ -38,6 +38,29 @@ Updated: 2026-09-18
 - The worktree remains intentionally uncommitted. Preserve unrelated `.envrc`, `.codex`, Xcode workspace metadata, and other user-owned untracked files without reading or changing them.
 
 ### Current next action
+
+M-07 checklist as of 2026-09-19:
+
+- [x] P01: owner-approved defaults and final architect technical contract; preserve nested wire `params`.
+- [x] C01: source filters/config/schema/catalog/reload equality; automatic and independent focused test/race/vet/format gates passed.
+- [x] R01: runtime overlays/expiry/lifecycle; executor and independent focused tests/race/vet/source gates passed; preparation error classification corrected.
+- [x] I01: executor and independent notification IPC/CLI tests/race/vet/source gates passed, including strict shape and flag regressions.
+- [x] A01: physical tile-local dismissal before static action submission; focused test/race/stress and final independent whole-tree gates passed.
+- [x] V01: automatic gates, final architecture review, and owner-run physical acceptance passed.
+
+M-07 is complete. The owner confirmed all runbook checks. Specifically, dimmed `WAKE` did not wake or brighten the display; manual wake retained the overlay; the next selection restored only that tile to `status`. No M-07 commit has been requested. Completed earlier Go work is already in `78732e5`. No agent-owned device/app process or verification command remains running. Next product work is not selected; Swift foreground-app mapping remains deferred.
+
+Implemented surface: optional exact case-sensitive per-position `notification_sources` in schema 3; neutral `internal/notification` contract; coordinator-owned 14-slot overlay state with optional TTL; strict nested `notifications.emit/clear` IPC and discovery-aware CLI; actionless/default-release and configured press/release tile-local selection. Notification data never supplies action instructions. Changed profile/config clears overlays; unchanged/rejected reload preserves them. Deadline is rechecked after prebuild under the transition gate; successful authorized writes publish even after late cancellation. Timeout/disconnect/shutdown may leave an admitted operation committed without its ID reaching the caller; no automatic retry.
+
+Verification on 2026-09-19: executor focused tests/race/stress/full-suite/vet pass; independent whole-tree uncached tests/race/vet/build and final architecture review pass; main fresh full tests/vet, Darwin arm64/amd64 command builds, deterministic schema regeneration and whitespace checks pass. Independent normal suite hit the separately recorded `TestLockReleasedOnProcessExit` helper race once, then passed its single rerun; full race suite passed. This known test-hardening follow-up remains M-03-F01, outside M-07. No protected contents were read/changed, hardware/native input posted, application launched or Discord notification sent.
+
+Remaining limits: cooperative five-second runtime budgets are not hard OS/HID/shutdown bounds; client notification default read is seven seconds unless explicitly overridden; redraws cancel pending gestures while preserving held latches; physical expiry restoration can lag; packet diagnostics offer no content-confidentiality guarantee. The dimmed result is evidence for the owned D200X/current firmware, not a cross-firmware guarantee.
+
+Delegation: new-thread creation was exhausted; existing executor/reviewer/architect threads were reused sequentially. All are now idle/completed. No main implementation takeover occurred; the earlier asynchronous workflow-choice question is superseded. Preserve unrelated untracked `.envrc`, `.codex`, Xcode user workspace, diagnostic `__pycache__` and old compiled probe without reading their contents.
+
+### Historical checkpoints — superseded by the current checklist
+
+2026-09-18: completed Go work was committed with owner approval as `78732e5`. Protected untracked files remain untouched. Next is owner review of `docs/m07-notification-plan.md`; notification implementation is not authorized. Architect consensus supports coordinator-owned overlays, optional schema-v3 filters, full-page composition, tile-local physical dismissal, and clearing on changed profile/configuration transitions. Product defaults and timeout/ID recovery remain proposed pending P01. A lock-test helper timing race is recorded separately; no discovery code was changed. Older uncommitted/next-action statements below are historical and superseded by this checkpoint.
 
 M-05-F02 is complete on 2026-09-18: implementation, independent automatic/final architecture gates and owner functional acceptance. After native deploy migration the owner reported "all working as expected" and, when explicitly asked about input.request_permission/input.status/doctor, replied "yes, all seems ok". Specific cross-app, rapid-ordering, held-modifier, revocation/regrant and shutdown observations were not individually supplied; do not invent them. Production native text/key actions, native-only 16-waiting-slot FIFO, explicit runtime permission request, input status, and read-only doctor are implemented. Detailed decisions/limits: `docs/native-input-decisions.md`; owner commands: `docs/native-input-runbook.md`. Next: review/commit these changes only when the owner requests a commit; no next-milestone implementation is authorized by this acceptance message.
 

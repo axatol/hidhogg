@@ -687,6 +687,14 @@ Task IDs are immutable.
 - Blockers: none.
 - Parallel boundary: no production implementation before both evidence dependencies are reviewed.
 
+## M-07 — Local notifications
+
+- Status: complete on 2026-09-19; P01/C01/R01/I01/A01 and V01 automatic, architecture, and owner physical gates pass.
+- Goal: deliver a Go-only CLI-to-tile notification slice using exact source filters, bounded label overlays, replacement, optional TTL, clearing, and physical dismissal with static configured actions.
+- Contract, constraints, roles, ownership, dependencies, acceptance criteria, and verification gates: [M-07 notification plan](m07-notification-plan.md).
+- Stable tasks: M-07-P01 contract approval; M-07-C01 configuration/schema; M-07-R01 coordinated runtime overlays; M-07-I01 IPC/CLI; M-07-A01 physical selection; M-07-V01 independent and owner acceptance.
+- Acceptance: independent whole-tree test/race/vet/build and final architect review pass; main fresh full tests/vet, Darwin arm64/amd64 command builds and deterministic schema regeneration pass. The independent normal suite needed one rerun for the separately recorded discovery helper race; its full race suite passed. The owner completed [M-07 verification](m07-notification-runbook.md): active-display checks passed; dimmed `WAKE` did not wake or brighten the display; the first manual wake gesture restored visibility while retaining `WAKE`; the next selection restored only that tile to `status`; all other runbook checks were confirmed. Swift foreground-app mapping remains deferred.
+
 ## M-02-F02 — Ulanzi Studio static interoperability analysis
 
 - Status: complete on 2026-08-30 after bounded static analysis and independent command-path cross-check.

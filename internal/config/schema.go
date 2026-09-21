@@ -145,6 +145,19 @@ func configurePositionSchema(position *jsonschema.Schema) {
 	if field := position.Properties["background"]; field != nil {
 		field.Pattern = backgroundPattern.String()
 	}
+	if field := position.Properties["notification_sources"]; field != nil {
+		field.Type = "array"
+		field.Types = nil
+		field.MinItems = schemaInt(1)
+		field.MaxItems = schemaInt(MaximumNotificationSourceCount)
+		field.UniqueItems = true
+		field.Items = &jsonschema.Schema{
+			Type:      "string",
+			MinLength: schemaInt(1),
+			MaxLength: schemaInt(MaximumStableIDRunes),
+			Pattern:   stableIDPattern.String(),
+		}
+	}
 	if field := position.Properties["action"]; field != nil {
 		configureActionSchema(field)
 	}

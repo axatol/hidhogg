@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,6 +159,81 @@ func TestSchemaReflectsLabelStyleContract(t *testing.T) {
 			test.edit(candidatePosition)
 			if err := resolved.Validate(candidate); err == nil {
 				t.Fatal("schema accepted invalid label style")
+			}
+		})
+	}
+}
+
+func TestSchemaReflectsNotificationSourceContract(t *testing.T) {
+	document, err := JSONSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	positionSchema := document.Properties["profiles"].Items.Properties["positions"].Items
+	sourcesSchema := positionSchema.Properties["notification_sources"]
+	if sourcesSchema == nil || sourcesSchema.Type != "array" || sourcesSchema.Types != nil || sourcesSchema.MinItems == nil || *sourcesSchema.MinItems != 1 || sourcesSchema.MaxItems == nil || *sourcesSchema.MaxItems != MaximumNotificationSourceCount || !sourcesSchema.UniqueItems {
+		t.Fatalf("notification_sources schema = %#v", sourcesSchema)
+	}
+	itemSchema := sourcesSchema.Items
+	if itemSchema == nil || itemSchema.Type != "string" || itemSchema.MinLength == nil || *itemSchema.MinLength != 1 || itemSchema.MaxLength == nil || *itemSchema.MaxLength != MaximumStableIDRunes || itemSchema.Pattern != stableIDPattern.String() {
+		t.Fatalf("notification source item schema = %#v", itemSchema)
+	}
+
+	document.Schema = "https://json-schema.org/draft/2020-12/schema"
+	resolved, err := document.Resolve(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := decodeValidFixture(t)
+	encoded, err := configuration.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var valid map[string]any
+	if err := json.Unmarshal(encoded, &valid); err != nil {
+		t.Fatal(err)
+	}
+	position := valid["profiles"].([]any)[0].(map[string]any)["positions"].([]any)[0].(map[string]any)
+	validSources := make([]any, MaximumNotificationSourceCount)
+	validSources[0] = "Source"
+	validSources[1] = "source"
+	validSources[2] = strings.Repeat("a", MaximumStableIDRunes)
+	for index := 3; index < len(validSources); index++ {
+		validSources[index] = fmt.Sprintf("source-%02d", index)
+	}
+	position["notification_sources"] = validSources
+	if err := resolved.Validate(valid); err != nil {
+		t.Fatalf("schema rejected maximum case-variant sources: %v", err)
+	}
+
+	for _, test := range []struct {
+		name string
+		edit func(map[string]any)
+	}{
+		{name: "null", edit: func(value map[string]any) { value["notification_sources"] = nil }},
+		{name: "empty", edit: func(value map[string]any) { value["notification_sources"] = []any{} }},
+		{name: "too many", edit: func(value map[string]any) { value["notification_sources"] = append(validSources, "source-overflow") }},
+		{name: "invalid item", edit: func(value map[string]any) { value["notification_sources"] = []any{"not stable"} }},
+		{name: "oversized item", edit: func(value map[string]any) {
+			value["notification_sources"] = []any{strings.Repeat("a", MaximumStableIDRunes+1)}
+		}},
+		{name: "non-ASCII item", edit: func(value map[string]any) { value["notification_sources"] = []any{"sourcé"} }},
+		{name: "leading punctuation item", edit: func(value map[string]any) { value["notification_sources"] = []any{"-source"} }},
+		{name: "duplicate item", edit: func(value map[string]any) { value["notification_sources"] = []any{"source", "source"} }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidateBytes, err := json.Marshal(valid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var candidate map[string]any
+			if err := json.Unmarshal(candidateBytes, &candidate); err != nil {
+				t.Fatal(err)
+			}
+			candidatePosition := candidate["profiles"].([]any)[0].(map[string]any)["positions"].([]any)[0].(map[string]any)
+			test.edit(candidatePosition)
+			if err := resolved.Validate(candidate); err == nil {
+				t.Fatal("schema accepted invalid notification sources")
 			}
 		})
 	}

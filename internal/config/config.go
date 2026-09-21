@@ -30,32 +30,33 @@ const (
 	SchemaVersionV3 = 3
 	SchemaVersion   = SchemaVersionV3
 
-	AdapterUlanziD200X           = "ulanzi.d200x"
-	RequiredPositionCount        = 14
-	MaximumProfileCount          = 31
-	MinimumBrightness            = 0
-	MaximumBrightness            = 100
-	DefaultIdleTimeoutSeconds    = 300
-	MaximumIdleTimeoutSeconds    = 86400
-	MaximumStableIDRunes         = 64
-	MaximumLabelRunes            = 64
-	MaximumLabelBytes            = 256
-	LabelAlignmentBottom         = "bottom"
-	LabelAlignmentCenter         = "center"
-	DefaultLabelAlignment        = LabelAlignmentBottom
-	DefaultLabelSize             = 10
-	MinimumLabelSize             = 8
-	MaximumLabelSize             = 32
-	ExecuteActionType            = "execute"
-	TypeTextActionType           = profile.TypeTextActionType
-	KeyPressActionType           = profile.KeyPressActionType
-	MaximumTextUTF16Units        = profile.MaximumTextUTF16Units
-	DefaultExecuteTimeoutSeconds = 10
-	MinimumExecuteTimeoutSeconds = 1
-	MaximumExecuteTimeoutSeconds = 60
-	MaximumExecuteArgumentCount  = 32
-	MaximumExecuteArgumentBytes  = 1024
-	MaximumExecuteArgumentsBytes = 8192
+	AdapterUlanziD200X             = "ulanzi.d200x"
+	RequiredPositionCount          = 14
+	MaximumProfileCount            = 31
+	MinimumBrightness              = 0
+	MaximumBrightness              = 100
+	DefaultIdleTimeoutSeconds      = 300
+	MaximumIdleTimeoutSeconds      = 86400
+	MaximumStableIDRunes           = 64
+	MaximumNotificationSourceCount = profile.MaximumNotificationSourceCount
+	MaximumLabelRunes              = 64
+	MaximumLabelBytes              = 256
+	LabelAlignmentBottom           = "bottom"
+	LabelAlignmentCenter           = "center"
+	DefaultLabelAlignment          = LabelAlignmentBottom
+	DefaultLabelSize               = 10
+	MinimumLabelSize               = 8
+	MaximumLabelSize               = 32
+	ExecuteActionType              = "execute"
+	TypeTextActionType             = profile.TypeTextActionType
+	KeyPressActionType             = profile.KeyPressActionType
+	MaximumTextUTF16Units          = profile.MaximumTextUTF16Units
+	DefaultExecuteTimeoutSeconds   = 10
+	MinimumExecuteTimeoutSeconds   = 1
+	MaximumExecuteTimeoutSeconds   = 60
+	MaximumExecuteArgumentCount    = 32
+	MaximumExecuteArgumentBytes    = 1024
+	MaximumExecuteArgumentsBytes   = 8192
 )
 
 // Config is the strict schema-v3 D200X configuration.
@@ -81,13 +82,14 @@ type Profile struct {
 // Position describes one physical display position and its rendered content.
 // Action, when present, is bound to one input gesture at this position.
 type Position struct {
-	ID             string  `toml:"id" json:"id" jsonschema:"stable position identifier"`
-	Position       string  `toml:"position" json:"position" jsonschema:"supported D200X grid position"`
-	Label          string  `toml:"label" json:"label" jsonschema:"display label"`
-	Background     string  `toml:"background" json:"background" jsonschema:"hexadecimal background colour"`
-	LabelAlignment string  `toml:"label_alignment,omitempty" json:"label_alignment,omitempty" jsonschema:"firmware-rendered label alignment"`
-	LabelSize      int     `toml:"label_size,omitempty" json:"label_size,omitempty" jsonschema:"firmware-rendered label size"`
-	Action         *Action `toml:"action" json:"action,omitempty" jsonschema:"optional input-gesture action binding"`
+	ID                  string   `toml:"id" json:"id" jsonschema:"stable position identifier"`
+	Position            string   `toml:"position" json:"position" jsonschema:"supported D200X grid position"`
+	Label               string   `toml:"label" json:"label" jsonschema:"display label"`
+	Background          string   `toml:"background" json:"background" jsonschema:"hexadecimal background colour"`
+	NotificationSources []string `toml:"notification_sources,omitempty" json:"notification_sources,omitempty" jsonschema:"optional exact notification source filters"`
+	LabelAlignment      string   `toml:"label_alignment,omitempty" json:"label_alignment,omitempty" jsonschema:"firmware-rendered label alignment"`
+	LabelSize           int      `toml:"label_size,omitempty" json:"label_size,omitempty" jsonschema:"firmware-rendered label size"`
+	Action              *Action  `toml:"action" json:"action,omitempty" jsonschema:"optional input-gesture action binding"`
 }
 
 // Action is a schema-v3 input-gesture action. The Type field selects one of
@@ -396,12 +398,13 @@ func (c Config) ProfileCatalog() (profile.Catalog, error) {
 		values := make([]profile.Value, len(source.Positions))
 		for positionIndex, value := range source.Positions {
 			converted := profile.Value{
-				ID:             value.ID,
-				Position:       value.Position,
-				Label:          value.Label,
-				Background:     value.Background,
-				LabelAlignment: effectiveLabelAlignment(value.LabelAlignment),
-				LabelSize:      effectiveLabelSize(value.LabelSize),
+				ID:                  value.ID,
+				Position:            value.Position,
+				Label:               value.Label,
+				Background:          value.Background,
+				NotificationSources: cloneNotificationSources(value.NotificationSources),
+				LabelAlignment:      effectiveLabelAlignment(value.LabelAlignment),
+				LabelSize:           effectiveLabelSize(value.LabelSize),
 			}
 			if value.Action != nil {
 				converted.Action = &profile.Action{
@@ -630,6 +633,7 @@ func validatePosition(issues *[]ValidationIssue, path string, position Position,
 			Message: "must be a hexadecimal colour such as #102030 or #102030ff",
 		})
 	}
+	validateNotificationSources(issues, path+".notification_sources", position.NotificationSources)
 	if position.Action == nil {
 		return
 	}
@@ -792,6 +796,45 @@ func cloneArguments(source []string) []string {
 	owned := make([]string, len(source))
 	copy(owned, source)
 	return owned
+}
+
+func cloneNotificationSources(source []string) []string {
+	if source == nil {
+		return nil
+	}
+	owned := make([]string, len(source))
+	copy(owned, source)
+	return owned
+}
+
+func validateNotificationSources(issues *[]ValidationIssue, path string, sources []string) {
+	if sources == nil {
+		return
+	}
+	if len(sources) < 1 || len(sources) > MaximumNotificationSourceCount {
+		*issues = append(*issues, ValidationIssue{
+			Path:    path,
+			Message: fmt.Sprintf("must contain between 1 and %d notification sources", MaximumNotificationSourceCount),
+		})
+	}
+	seen := make(map[string]int, len(sources))
+	for index, source := range sources {
+		sourcePath := fmt.Sprintf("%s[%d]", path, index)
+		if !validStableID(source) {
+			*issues = append(*issues, ValidationIssue{
+				Path:    sourcePath,
+				Message: "must start with an ASCII letter or digit and contain only ASCII letters, digits, '.', '_' or '-' (maximum 64 characters)",
+			})
+		}
+		if previous, ok := seen[source]; ok {
+			*issues = append(*issues, ValidationIssue{
+				Path:    sourcePath,
+				Message: fmt.Sprintf("duplicates %s[%d]", path, previous),
+			})
+		} else {
+			seen[source] = index
+		}
+	}
 }
 
 func validStableID(value string) bool {
