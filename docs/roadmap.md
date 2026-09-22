@@ -1,7 +1,7 @@
 # Hidhogg roadmap
 
-Status: M-06 follow-ups and M-05-F02 complete
-Updated: 2026-09-18
+Status: M-07 and M-03-F01 complete
+Updated: 2026-09-21
 
 Task IDs are immutable.
 
@@ -328,6 +328,19 @@ Task IDs are immutable.
 - Residual automatic gaps: serving termination before readiness is integrated only at its fully covered helper boundary; metadata-before-cancellation ordering is directly covered through `Close` rather than a separate integrated probe; start-time cancellation combined with cleanup failure is not an explicit compound case. These are low severity and do not contradict observed behavior.
 - Architect correction: A03 found a direct `Generation.Close` deadlock when metadata remained published. R04 changed close to use the internal locked withdrawal path while continuing all cleanup after errors; independent V03 passed repeated, race, full, vet, and build gates, and A04 closed the blocker.
 - Direct functional result: a fresh discovery-mode runtime published owner-only `runtime.lock` and `runtime.json` regular files plus an owner-only Unix socket, all mode `0600`. Discovery-mode health and status succeeded without an instance argument; both reported ready and status reported protocol version 1. After the execution host ended the first process without clean shutdown, a second launch using the same directory recovered the valid stale metadata/socket and became healthy. While the owner watched, a same-directory contender failed promptly on the lock, emitted no D200X packets, and left the already-off display unchanged. Clean SIGINT exited zero, removed metadata/socket, and retained the owner-only lock.
+- Blockers: none.
+
+### M-03-F01 — Deterministic process-exit lock test
+
+- Status: complete on 2026-09-21; tracked as TaskView HIDhogg task 53.
+- Goal: remove the test-helper race in `TestLockReleasedOnProcessExit` without changing production discovery locking.
+- Scope: add a parent-controlled helper release handshake; prove contention while the helper deliberately holds the lock, then prove release after process exit.
+- Constraints: test files only; no sleeps as synchronization; retain real subprocess exit and advisory-lock semantics.
+- Acceptance: focused repeated and race runs, discovery package tests/race, whole-tree tests, vet, formatting, and diff checks pass.
+- Roles: `executor_light` implementation followed by independent `tester` verification.
+- Dependencies: completed M-03 discovery implementation.
+- Parallel boundary: discovery tests only; production discovery code is protected.
+- Result: the helper publishes exact readiness, remains alive with the generation rooted until an exact parent release token, and exits directly. The parent proves contention before release, waits for process exit, then proves lock acquisition. Executor and independent 100-repeat, race, discovery-package, whole-tree, vet, formatting, and diff gates pass.
 - Blockers: none.
 
 ## M-04 — Go-owned profiles and activation

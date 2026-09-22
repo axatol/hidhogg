@@ -70,7 +70,7 @@ Routine notification logs may contain IDs/counts/status, not source text. Existi
 
 ## Tasks and verification gates
 
-The owner approved the proposed defaults on 2026-09-19. P01/C01/R01/I01/A01 are complete. V01 independent whole-tree test/race/vet/build and final architect review pass; main fresh tests/vet, Darwin arm64/amd64 command builds and deterministic schema regeneration pass. The normal independent suite required one rerun for the known separate discovery helper race; its full race suite passed. Owner physical acceptance passed: dimmed emission remained dark, manual wake retained the notification, the next selection restored only the selected tile, and all remaining runbook checks were confirmed. No M-07 commit has been requested. Main owns decisions, integration, and `.agents` records.
+The owner approved the proposed defaults on 2026-09-19. P01/C01/R01/I01/A01 are complete. V01 independent whole-tree test/race/vet/build and final architect review pass; main fresh tests/vet, Darwin arm64/amd64 command builds and deterministic schema regeneration pass. The normal independent suite required one rerun for the known separate discovery helper race; its full race suite passed. Owner physical acceptance passed: dimmed emission remained dark, manual wake retained the notification, the next selection restored only the selected tile, and all remaining runbook checks were confirmed. M-07 is committed as `695fe37`. Main owns decisions, integration, and `.agents` records.
 
 | Stable ID | Goal and scope | Dependencies | Acceptance / gate | Roles and ownership |
 | --- | --- | --- | --- | --- |
@@ -89,4 +89,4 @@ Owner acceptance sequence: emit to square and wide subscribers; replace; clear s
 
 On 2026-09-18 a fresh full-suite run failed `TestLockReleasedOnProcessExit`; ten isolated repetitions and the full-suite rerun passed. The helper prints its readiness marker then exits immediately, allowing lock release before the parent's contention assertion. Plan a parent-controlled release handshake as a test-only follow-up; this observation does not establish a production discovery defect. See [discovery test](../internal/discovery/discovery_test.go). No test fix is included in this planning checkpoint.
 
-Status: planned, outside M-07 implementation. Scope/ownership: discovery tests only, executor light and independent reviewer. Acceptance: parent observes contention while the helper deliberately retains ownership, explicitly permits helper exit, then observes release; repeated race tests pass without sleeps. Dependency: a separately approved implementation step. Production locking remains untouched.
+Status: completed separately as M-03-F01 on 2026-09-21 and tracked as TaskView HIDhogg task 53. The parent-controlled release handshake and direct helper exit passed executor and independent repeated/race/whole-tree gates. Production locking remained untouched.

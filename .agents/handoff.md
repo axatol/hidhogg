@@ -1,6 +1,6 @@
 # Hidhogg handoff
 
-Updated: 2026-09-19
+Updated: 2026-09-21
 
 ## Current canonical checkpoint
 
@@ -35,7 +35,7 @@ Updated: 2026-09-19
 - `hidhoggctl --runtime-dir` discovers and revalidates generation identity without an instance argument. Legacy explicit socket/instance mode remains for Swift and tests.
 - Independent full, race, vet, build, repeated lifecycle, formatting, and diff gates pass. Architect A03 found a direct-close self-wait deadlock; R04 corrected it, independent V03 passed, and architect A04 closed the blocker.
 - Direct acceptance passed owner-only entry modes, discovery health/status, valid stale recovery, same-directory contention before any second D200X packet, unchanged display during rejection, clean zero-exit shutdown, metadata/socket removal, and persistent-lock retention.
-- The worktree remains intentionally uncommitted. Preserve unrelated `.envrc`, `.codex`, Xcode workspace metadata, and other user-owned untracked files without reading or changing them.
+- M-07 is committed as `695fe37`; the completed M-03-F01 test/documentation changes remain uncommitted. Preserve unrelated `.envrc`, `.codex`, Xcode workspace metadata, and other user-owned untracked files without reading or changing them.
 
 ### Current next action
 
@@ -48,11 +48,15 @@ M-07 checklist as of 2026-09-19:
 - [x] A01: physical tile-local dismissal before static action submission; focused test/race/stress and final independent whole-tree gates passed.
 - [x] V01: automatic gates, final architecture review, and owner-run physical acceptance passed.
 
-M-07 is complete. The owner confirmed all runbook checks. Specifically, dimmed `WAKE` did not wake or brighten the display; manual wake retained the overlay; the next selection restored only that tile to `status`. No M-07 commit has been requested. Completed earlier Go work is already in `78732e5`. No agent-owned device/app process or verification command remains running. Next product work is not selected; Swift foreground-app mapping remains deferred.
+M-07 is complete and committed as `695fe37`. The owner confirmed all runbook checks. Specifically, dimmed `WAKE` did not wake or brighten the display; manual wake retained the overlay; the next selection restored only that tile to `status`.
+
+M-03-F01 is complete on 2026-09-21 and tracked as completed TaskView HIDhogg task 53. The test helper now remains alive with its generation globally rooted until an exact parent release token, then exits directly. The parent proves contention before release and acquisition after process exit. Executor and independent 100-repeat, race, discovery-package, whole-tree, vet, formatting, and diff gates pass. Production discovery code was unchanged.
+
+No implementation task is active. M-07 is committed as `695fe37`; M-03-F01 documentation and test-only changes are uncommitted. Swift foreground-app mapping remains deferred.
 
 Implemented surface: optional exact case-sensitive per-position `notification_sources` in schema 3; neutral `internal/notification` contract; coordinator-owned 14-slot overlay state with optional TTL; strict nested `notifications.emit/clear` IPC and discovery-aware CLI; actionless/default-release and configured press/release tile-local selection. Notification data never supplies action instructions. Changed profile/config clears overlays; unchanged/rejected reload preserves them. Deadline is rechecked after prebuild under the transition gate; successful authorized writes publish even after late cancellation. Timeout/disconnect/shutdown may leave an admitted operation committed without its ID reaching the caller; no automatic retry.
 
-Verification on 2026-09-19: executor focused tests/race/stress/full-suite/vet pass; independent whole-tree uncached tests/race/vet/build and final architecture review pass; main fresh full tests/vet, Darwin arm64/amd64 command builds, deterministic schema regeneration and whitespace checks pass. Independent normal suite hit the separately recorded `TestLockReleasedOnProcessExit` helper race once, then passed its single rerun; full race suite passed. This known test-hardening follow-up remains M-03-F01, outside M-07. No protected contents were read/changed, hardware/native input posted, application launched or Discord notification sent.
+Verification on 2026-09-19: executor focused tests/race/stress/full-suite/vet pass; independent whole-tree uncached tests/race/vet/build and final architecture review pass; main fresh full tests/vet, Darwin arm64/amd64 command builds, deterministic schema regeneration and whitespace checks pass. Independent normal suite hit the separately recorded `TestLockReleasedOnProcessExit` helper race once, then passed its single rerun; full race suite passed. That test-hardening follow-up was completed as M-03-F01 on 2026-09-21. No protected contents were read/changed, hardware/native input posted, or application launched during automatic verification; the M-07 completion notification was sent after owner acceptance.
 
 Remaining limits: cooperative five-second runtime budgets are not hard OS/HID/shutdown bounds; client notification default read is seven seconds unless explicitly overridden; redraws cancel pending gestures while preserving held latches; physical expiry restoration can lag; packet diagnostics offer no content-confidentiality guarantee. The dimmed result is evidence for the owned D200X/current firmware, not a cross-firmware guarantee.
 

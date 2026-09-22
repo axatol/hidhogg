@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"os"
@@ -21,6 +20,10 @@ import (
 )
 
 const testInstanceID = "11111111-1111-4111-8111-111111111111"
+
+const discoveryLockHelperRelease = "release\n"
+
+var discoveryLockHelperGeneration *Generation
 
 func secureRuntimeDir(t *testing.T) string {
 	t.Helper()
@@ -181,6 +184,10 @@ func TestLockContention(t *testing.T) {
 func TestLockReleasedOnProcessExit(t *testing.T) {
 	runtimeDir := secureRuntimeDir(t)
 	command := exec.Command(os.Args[0], "-test.run=TestDiscoveryLockHelperProcess", "--", "--discovery-lock-helper", runtimeDir)
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		t.Fatalf("lock helper stdin pipe: %v", err)
+	}
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		t.Fatalf("helper stdout pipe: %v", err)
@@ -188,19 +195,42 @@ func TestLockReleasedOnProcessExit(t *testing.T) {
 	if err := command.Start(); err != nil {
 		t.Fatalf("start lock helper: %v", err)
 	}
+	commandFinished := false
+	t.Cleanup(func() {
+		if commandFinished {
+			return
+		}
+		_ = stdin.Close()
+		_ = command.Process.Kill()
+		_ = command.Wait()
+	})
 	line, err := bufio.NewReader(stdout).ReadString('\n')
 	if err != nil {
 		t.Fatalf("read lock helper readiness: %v", err)
 	}
-	if strings.TrimSpace(line) != "locked" {
+	if line != "locked\n" {
 		t.Fatalf("lock helper readiness = %q", line)
 	}
-	if _, err := Open(Options{RuntimeDir: runtimeDir, InstanceID: testInstanceID}); !errors.Is(err, ErrDirectoryBusy) {
+	contender, err := Open(Options{RuntimeDir: runtimeDir, InstanceID: testInstanceID})
+	if contender != nil {
+		_ = contender.Close()
+	}
+	if contender != nil || !errors.Is(err, ErrDirectoryBusy) {
 		t.Fatalf("open during helper lifetime error = %v, want ErrDirectoryBusy", err)
 	}
+	if written, err := io.WriteString(stdin, discoveryLockHelperRelease); err != nil {
+		t.Fatalf("release lock helper: %v", err)
+	} else if written != len(discoveryLockHelperRelease) {
+		t.Fatalf("release lock helper wrote %d bytes, want %d", written, len(discoveryLockHelperRelease))
+	}
+	if err := stdin.Close(); err != nil {
+		t.Fatalf("close lock helper stdin: %v", err)
+	}
 	if err := command.Wait(); err != nil {
+		commandFinished = true
 		t.Fatalf("wait lock helper: %v", err)
 	}
+	commandFinished = true
 	generation, err := Open(Options{RuntimeDir: runtimeDir, InstanceID: testInstanceID})
 	if err != nil {
 		t.Fatalf("open after helper exit: %v", err)
@@ -218,9 +248,18 @@ func TestDiscoveryLockHelperProcess(t *testing.T) {
 		if err != nil {
 			t.Fatalf("helper open generation: %v", err)
 		}
-		_ = generation
-		fmt.Fprintln(os.Stdout, "locked")
-		return
+		discoveryLockHelperGeneration = generation
+		if _, err := io.WriteString(os.Stdout, "locked\n"); err != nil {
+			t.Fatalf("helper write readiness: %v", err)
+		}
+		release, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil {
+			t.Fatalf("helper read release: %v", err)
+		}
+		if release != discoveryLockHelperRelease {
+			t.Fatalf("helper release = %q, want %q", release, discoveryLockHelperRelease)
+		}
+		os.Exit(0)
 	}
 }
 

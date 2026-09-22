@@ -1,5 +1,12 @@
 # Hidhogg decision log
 
+## 2026-09-21 — M-07 committed; TaskView tracking adopted
+
+- The owner confirmed the existing TaskView project is `HIDhogg`; project ID 5 was resolved rather than guessed. It initially contained no lists or tasks. Active test-hardening follow-up M-03-F01 is tracked as task 53; completed historical milestones were not migrated.
+- Completed M-07 was committed as `695fe37` (`feat: add local tile notifications`). Protected and unrelated untracked files were excluded.
+- M-03-F01 was authorized as a test-helper correction only: retain the subprocess after its `locked` readiness marker until the parent explicitly releases it, prove contention while held, then prove lock release after exit. Production discovery semantics remain unchanged.
+- M-03-F01 completed. Initial `runtime.KeepAlive` remediation passed tests but independent review rejected its strict process-exit proof because the test harness could run after the keep-alive boundary. R02 stores the generation in a test-only global and calls `os.Exit(0)` after the exact release token, proving descriptor release by process termination. Executor and independent 100-repeat, race, discovery, whole-tree, vet, formatting, and diff gates pass. Production discovery code was not changed.
+
 ## 2026-09-19 — M-07 defaults approved and configuration slice started
 
 - M-07 owner physical acceptance passed. The owner confirmed all runbook checks. While dimmed, emitting `WAKE` did not wake or brighten the display; manual wake retained the overlay; the next selection restored only that tile to `status`. This is evidence for the owned D200X/current firmware, not a cross-firmware guarantee. M-07 is complete; no commit has been requested.
