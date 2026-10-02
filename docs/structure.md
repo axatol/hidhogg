@@ -19,6 +19,8 @@ hidhogg/
     └── config-editing/   lossless TOML and JSONC comparison
 ```
 
+The repository also contains the isolated `macos/HidhoggCore` SwiftPM package for V2-C01. It has one library target and one test target, with no external SwiftPM dependencies. The package owns strict Swift schema-v4 decoding, normalized immutable configuration values, and its vendored TOML engine; it is not integrated with the app or CLI, and Go remains the production configuration owner.
+
 The completed `M-01` scaffold has the following production boundaries:
 
 ```text
@@ -68,6 +70,7 @@ The Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-run
 | Documentation | Verified facts, decisions, gates, and handoff | Unsupported hardware claims |
 | Go runtime | Lifecycle, strict configuration orchestration, one D200X session, profiles/actions, bounded execution history, keepalive/idle policy, transactional reload, typed profile-source edits, local notification overlays and IPC | Remote ingestion, multi-device policy, and arbitrary source editing |
 | Configuration | Strict single-file decode, semantic validation, deterministic schema, immutable reload candidates, and semantic diffing | Mutation, lossless preservation, and root/device composition |
+| Swift configuration foundation (V2-C01) | Standalone strict Swift v4 decode, normalized 14-position layout, TOML 1.1 parser extension, and safe diagnostics | Production app/CLI wiring, device/runtime ownership, source mutation, and transactional storage |
 | Config edit/store | Keyed profile label/clone/delete and coordinate tile-label mutations, lossless preservation, exact-digest conflict checks, atomic source replacement, and separate file/reload outcomes | Generic TOML editing, external-editor compare-and-swap guarantees, and Swift mapping ownership |
 | Configuration watcher | Parent-directory event filtering, trailing debounce, and automatic reload hints | Source mutation, retry of unchanged invalid content, and runtime restart |
 | D200X adapter | Exact device selection, framing, configured page rendering, serialized session, and input decoding | Runtime policy, actions, notifications, reconnect |
