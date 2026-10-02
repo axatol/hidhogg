@@ -33,6 +33,12 @@ public extension Toml.Annotated {
             src.unicodeScalars.removeFirst()
         }
         let lines = Toml.lexLines(src)
+        var lineByteOffsets: [Int] = []
+        var nextLineByteOffset = 0
+        for (text, term) in lines {
+            lineByteOffsets.append(nextLineByteOffset)
+            nextLineByteOffset += text.utf8.count + term.utf8.count
+        }
 
         var leading = ""                  // doc-level leading (before first content)
         var sawContent = false
@@ -82,6 +88,7 @@ public extension Toml.Annotated {
         while i < lines.count {
             let (text, term) = lines[i]
             let lineNo = i + 1
+            let lineByteOffset = bom.utf8.count + lineByteOffsets[lineNo - 1]
             i += 1
 
             try Toml.lexValidateComment(text, line: lineNo)
@@ -170,10 +177,28 @@ public extension Toml.Annotated {
                 i += 1
                 raw += ctext + cterm
             }
-            let valueText = Toml.lexValueText(valueSource())
-            appendEntry(Entry(leading: takeEntryLeading(), raw: raw, key: key,
+            var rawSourceByteOffsets = [lineByteOffset]
+            for scalar in raw.unicodeScalars {
+                rawSourceByteOffsets.append(rawSourceByteOffsets.last! + String(scalar).utf8.count)
+            }
+            let valueSource = valueSource()
+            let mappedValue = Toml.lexValueTextWithSourceOffsets(
+                valueSource,
+                sourceOffsets: Array(rawSourceByteOffsets.dropFirst(valueStart))
+            )
+            let valueText = mappedValue.text
+            let keyStart = lineByteOffset + keyColumn - 1
+            let keyEnd = keyStart + Toml.asciiSpaceTrim(keyText).utf8.count
+            let valueSourceRange = mappedValue.sourceByteOffsets.first.flatMap { start in
+                mappedValue.sourceByteOffsets.last.map { SourceByteRange(start: start, end: $0) }
+            }
+            var entry = Entry(leading: takeEntryLeading(), raw: raw, key: key,
                               valueText: valueText, line: lineNo, column: keyColumn,
-                              valueColumn: valueColumn))
+                              valueColumn: valueColumn)
+            entry.keySourceRange = SourceByteRange(start: keyStart, end: keyEnd)
+            entry.valueSourceRange = valueSourceRange
+            entry.valueSourceByteOffsets = mappedValue.sourceByteOffsets
+            appendEntry(entry)
         }
 
         // Trivia left at EOF: the document's leading (if there was no content

@@ -110,6 +110,9 @@ public extension Toml.Annotated {
         public var line: Int
         public var column: Int
         public var valueColumn: Int
+        var keySourceRange: SourceByteRange? = nil
+        var valueSourceRange: SourceByteRange? = nil
+        var valueSourceByteOffsets: [Int] = []
 
         public init(leading: String, raw: String, key: [String], valueText: String,
                     line: Int = 0, column: Int = 0, valueColumn: Int = 0) {

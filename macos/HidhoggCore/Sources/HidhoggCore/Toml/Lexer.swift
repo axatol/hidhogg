@@ -199,8 +199,16 @@ extension Toml {
     /// and string bodies preserved, then whitespace-trimmed. Newlines are kept
     /// so a multi-line array/string survives to the decode layer intact.
     static func lexValueText(_ a: [Unicode.Scalar]) -> String {
+        lexValueTextWithSourceOffsets(a, sourceOffsets: Array(0...a.count)).text
+    }
+
+    static func lexValueTextWithSourceOffsets(
+        _ a: [Unicode.Scalar],
+        sourceOffsets: [Int]
+    ) -> (text: String, sourceByteOffsets: [Int]) {
         var i = 0
         var out = String.UnicodeScalarView()
+        var offsets: [Int] = []
         while i < a.count {
             let c = a[i]
             if c == "#" {
@@ -210,10 +218,14 @@ extension Toml {
             if c == "\"" || c == "'" {
                 let (next, _, _) = lexScanQuoted(a, i)
                 let end = min(next, a.count)
-                out.append(contentsOf: a[i..<end])
-                i = next
+                while i < end {
+                    offsets.append(sourceOffsets[i])
+                    out.append(a[i])
+                    i += 1
+                }
                 continue
             }
+            offsets.append(sourceOffsets[i])
             out.append(c)
             i += 1
         }
@@ -221,7 +233,24 @@ extension Toml {
         // `.whitespacesAndNewlines` would also strip, masking a raw vertical-tab
         // / form-feed control char that TOML forbids (the strict decoder must
         // see e.g. `1\u{0B}` and reject it on the trailing-character check).
-        return Toml.asciiTrim(String(out))
+        let scalars = Array(out)
+        var first = 0
+        var last = scalars.count
+        while first < last, scalars[first] == " " || scalars[first] == "\t" || scalars[first] == "\n" || scalars[first] == "\r" {
+            first += 1
+        }
+        while last > first, scalars[last - 1] == " " || scalars[last - 1] == "\t" || scalars[last - 1] == "\n" || scalars[last - 1] == "\r" {
+            last -= 1
+        }
+        let trimmed = Array(scalars[first..<last])
+        let trimmedOffsets = Array(offsets[first..<last])
+        let byteOffsets = trimmedOffsets
+        if let lastScalar = trimmed.last, let lastOffset = trimmedOffsets.last {
+            return (String(String.UnicodeScalarView(trimmed)), byteOffsets + [lastOffset + String(lastScalar).utf8.count])
+        } else if let offset = sourceOffsets.first {
+            return (String(String.UnicodeScalarView(trimmed)), [offset])
+        }
+        return (String(String.UnicodeScalarView(trimmed)), [0])
     }
 
     /// Trim the whitespace / line-terminator edges of a (possibly multi-line)

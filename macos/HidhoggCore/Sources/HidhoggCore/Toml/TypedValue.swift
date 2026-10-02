@@ -61,6 +61,27 @@ struct ExactTomlPath: Hashable, Comparable {
     }
 }
 
+struct SourceByteRange: Hashable, Sendable {
+    let start: Int
+    let end: Int
+
+    var count: Int { end - start }
+}
+
+struct InlineTableEntrySource {
+    let path: ExactTomlPath
+    let range: SourceByteRange
+    let valueRange: SourceByteRange
+    let commaOffset: Int?
+}
+
+struct InlineTableSource {
+    let range: SourceByteRange
+    let openOffset: Int
+    let closeOffset: Int
+    let entries: [InlineTableEntrySource]
+}
+
 extension Toml {
     struct SourceLocation: Sendable {
         let line: Int
@@ -71,6 +92,9 @@ extension Toml {
         let value: TypedValue
         let keyLocations: [ExactTomlPath: SourceLocation]
         let valueLocations: [ExactTomlPath: SourceLocation]
+        let keySpans: [ExactTomlPath: SourceByteRange]
+        let valueSpans: [ExactTomlPath: SourceByteRange]
+        let inlineTables: [ExactTomlPath: InlineTableSource]
         let dottedPaths: Set<ExactTomlPath>
     }
 
@@ -78,6 +102,9 @@ extension Toml {
         let value: TypedValue
         let keyLocations: [ExactTomlPath: SourceLocation]
         let valueLocations: [ExactTomlPath: SourceLocation]
+        let keySpans: [ExactTomlPath: SourceByteRange]
+        let valueSpans: [ExactTomlPath: SourceByteRange]
+        let inlineTables: [ExactTomlPath: InlineTableSource]
         let headerPaths: Set<ExactTomlPath>
         let dottedPaths: Set<ExactTomlPath>
     }

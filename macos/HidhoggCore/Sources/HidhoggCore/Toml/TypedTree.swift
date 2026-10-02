@@ -32,10 +32,15 @@ public extension Toml.Annotated {
         let tree = Toml.TreeTable(kind: .implicit)
         var keyLocations: [ExactTomlPath: Toml.SourceLocation] = [:]
         var valueLocations: [ExactTomlPath: Toml.SourceLocation] = [:]
+        var keySpans: [ExactTomlPath: SourceByteRange] = [:]
+        var valueSpans: [ExactTomlPath: SourceByteRange] = [:]
+        var inlineTables: [ExactTomlPath: InlineTableSource] = [:]
         var headerPaths: Set<ExactTomlPath> = []
         var dottedPaths: Set<ExactTomlPath> = []
         try tree.addKeys(self.root.entries, under: [], keyLocations: &keyLocations,
-                         valueLocations: &valueLocations, dottedPaths: &dottedPaths)
+                         valueLocations: &valueLocations, keySpans: &keySpans,
+                         valueSpans: &valueSpans, inlineTables: &inlineTables,
+                         dottedPaths: &dottedPaths)
         for block in blocks {
             if block.line > 0, block.keyColumn > 0, !block.path.isEmpty {
                 let location = Toml.SourceLocation(line: block.line, column: block.keyColumn)
@@ -51,15 +56,21 @@ public extension Toml.Annotated {
             case .table:
                 let t = try tree.defineHeader(block.path, line: block.line, column: block.column)
                 try t.addKeys(block.body.entries, under: block.path, keyLocations: &keyLocations,
-                              valueLocations: &valueLocations, dottedPaths: &dottedPaths)
+                              valueLocations: &valueLocations, keySpans: &keySpans,
+                              valueSpans: &valueSpans, inlineTables: &inlineTables,
+                              dottedPaths: &dottedPaths)
             case .arrayElement:
                 let t = try tree.defineArrayElement(block.path, line: block.line, column: block.column)
                 try t.addKeys(block.body.entries, under: block.path, keyLocations: &keyLocations,
-                              valueLocations: &valueLocations, dottedPaths: &dottedPaths)
+                              valueLocations: &valueLocations, keySpans: &keySpans,
+                              valueSpans: &valueSpans, inlineTables: &inlineTables,
+                              dottedPaths: &dottedPaths)
             }
         }
         return Toml.LocatedTree(value: tree.toTyped(), keyLocations: keyLocations,
-                                valueLocations: valueLocations, headerPaths: headerPaths,
+                                valueLocations: valueLocations, keySpans: keySpans,
+                                valueSpans: valueSpans, inlineTables: inlineTables,
+                                headerPaths: headerPaths,
                                 dottedPaths: dottedPaths)
     }
 }
@@ -71,11 +82,17 @@ extension Toml.TreeTable {
         under prefix: [String],
         keyLocations: inout [ExactTomlPath: Toml.SourceLocation],
         valueLocations: inout [ExactTomlPath: Toml.SourceLocation],
+        keySpans: inout [ExactTomlPath: SourceByteRange],
+        valueSpans: inout [ExactTomlPath: SourceByteRange],
+        inlineTables: inout [ExactTomlPath: InlineTableSource],
         dottedPaths: inout Set<ExactTomlPath>
     ) throws {
         for e in entries {
             let entryPath = prefix + e.key
-            let decoded = try Toml.decodeStrictLocated(e.valueText, line: e.line, column: e.valueColumn, path: entryPath)
+            let decoded = try Toml.decodeStrictLocated(
+                e.valueText, line: e.line, column: e.valueColumn, path: entryPath,
+                sourceByteOffsets: e.valueSourceByteOffsets.isEmpty ? nil : e.valueSourceByteOffsets
+            )
             let keySource = Toml.SourceLocation(line: e.line, column: e.column)
             let valueSource = Toml.SourceLocation(line: e.line, column: e.valueColumn)
             if e.key.count > 1 {
@@ -87,10 +104,15 @@ extension Toml.TreeTable {
                 }
             }
             let exactPath = ExactTomlPath(entryPath)
+            if let keySpan = e.keySourceRange, keySpans[exactPath] == nil { keySpans[exactPath] = keySpan }
+            if let valueSpan = e.valueSourceRange, valueSpans[exactPath] == nil { valueSpans[exactPath] = valueSpan }
             if e.line > 0, e.column > 0, keyLocations[exactPath] == nil { keyLocations[exactPath] = keySource }
             if e.line > 0, e.valueColumn > 0, valueLocations[exactPath] == nil { valueLocations[exactPath] = valueSource }
             keyLocations.merge(decoded.keyLocations) { _, nested in nested }
             valueLocations.merge(decoded.valueLocations) { _, nested in nested }
+            keySpans.merge(decoded.keySpans) { _, nested in nested }
+            valueSpans.merge(decoded.valueSpans) { _, nested in nested }
+            inlineTables.merge(decoded.inlineTables) { _, nested in nested }
             dottedPaths.formUnion(decoded.dottedPaths)
             try setKey(e.key, decoded.value, line: e.line, column: e.column)
         }

@@ -24,9 +24,11 @@ public extension Toml {
         _ source: String,
         line: Int,
         column: Int,
-        path: [String]
+        path: [String],
+        sourceByteOffsets: [Int]? = nil
     ) throws -> LocatedValue {
-        var p = StrictParser(Array(source.unicodeScalars), line: line, column: column, path: path)
+        var p = StrictParser(Array(source.unicodeScalars), line: line, column: column,
+                             path: path, sourceByteOffsets: sourceByteOffsets)
         p.skipSpaces()
         let v = try p.parseValue()
         p.skipSpacesAndNewlines()
@@ -34,7 +36,9 @@ public extension Toml {
             throw p.err("trailing characters after value")
         }
         return LocatedValue(value: v, keyLocations: p.keyLocations,
-                            valueLocations: p.valueLocations, dottedPaths: p.dottedPaths)
+                            valueLocations: p.valueLocations, keySpans: p.keySpans,
+                            valueSpans: p.valueSpans, inlineTables: p.inlineTables,
+                            dottedPaths: p.dottedPaths)
     }
 }
 
@@ -45,15 +49,27 @@ struct StrictParser {
     let line: Int
     let column: Int
     var currentPath: [String]
+    let sourceByteOffsets: [Int]
     var keyLocations: [ExactTomlPath: Toml.SourceLocation] = [:]
     var valueLocations: [ExactTomlPath: Toml.SourceLocation] = [:]
+    var keySpans: [ExactTomlPath: SourceByteRange] = [:]
+    var valueSpans: [ExactTomlPath: SourceByteRange] = [:]
+    var inlineTables: [ExactTomlPath: InlineTableSource] = [:]
     var dottedPaths: Set<ExactTomlPath> = []
 
-    init(_ a: [Unicode.Scalar], line: Int, column: Int = 1, path: [String] = []) {
+    init(_ a: [Unicode.Scalar], line: Int, column: Int = 1, path: [String] = [],
+         sourceByteOffsets: [Int]? = nil) {
         self.a = a
         self.line = line
         self.column = column
         self.currentPath = path
+        if let sourceByteOffsets, sourceByteOffsets.count == a.count + 1 {
+            self.sourceByteOffsets = sourceByteOffsets
+        } else {
+            var offsets = [0]
+            for scalar in a { offsets.append(offsets.last! + String(scalar).utf8.count) }
+            self.sourceByteOffsets = offsets
+        }
     }
 
     // MARK: cursor
@@ -100,18 +116,23 @@ struct StrictParser {
 
     mutating func parseValue() throws -> Toml.TypedValue {
         guard let c = peek() else { throw err("empty value") }
+        let start = i
+        let path = ExactTomlPath(currentPath)
+        let value: Toml.TypedValue
         switch c {
-        case "\"", "'": return .string(try parseString())
-        case "[":       return try parseArray()
-        case "{":       return try parseInlineTable()
-        case "t", "f":  return try parseBool()
+        case "\"", "'": value = .string(try parseString())
+        case "[":       value = try parseArray()
+        case "{":       value = try parseInlineTable()
+        case "t", "f":  value = try parseBool()
         default:
             // Number or datetime. Datetimes are recognised by their leading
             // `dddd-dd-dd` (date) or `dd:dd` (time) shape; everything else is an
             // integer or float.
-            if looksLikeDate() || looksLikeTime() { return try parseDateTime() }
-            return try parseNumber()
+            if looksLikeDate() || looksLikeTime() { value = try parseDateTime() }
+            else { value = try parseNumber() }
         }
+        valueSpans[path] = SourceByteRange(start: sourceByteOffsets[start], end: sourceByteOffsets[i])
+        return value
     }
 
     // MARK: bool
@@ -276,17 +297,31 @@ struct StrictParser {
     // MARK: inline tables
 
     mutating func parseInlineTable() throws -> Toml.TypedValue {
-        i += 1   // '{'
+        let tablePath = ExactTomlPath(currentPath)
+        let tableStart = i
+        let openOffset = sourceByteOffsets[i + 1]
+        i += 1
         // Build through the redefinition machine so internal conflicts
         // (`{a.b=1, a.b.c=2}`, `{b=1, b.c=2}`, duplicate keys) are rejected.
         let t = Toml.TreeTable(kind: .inline)
+        var entries: [InlineTableEntrySource] = []
         skipSpacesAndNewlines()
-        if peek() == "}" { i += 1; return t.toTyped() }
+        if peek() == "}" {
+            let closeOffset = sourceByteOffsets[i]
+            i += 1
+            inlineTables[tablePath] = InlineTableSource(
+                range: SourceByteRange(start: sourceByteOffsets[tableStart], end: sourceByteOffsets[i]),
+                openOffset: openOffset, closeOffset: closeOffset, entries: []
+            )
+            return t.toTyped()
+        }
         while true {
             skipSpacesAndNewlines()
             guard !atEnd else { throw err("unterminated inline table") }
             let keyLocation = sourceLocation()
+            let keyStart = i
             let path = try parseKeyPath()
+            let keyEnd = i
             skipSpaces()
             guard peek() == "=" else { throw err("expected '=' in inline table") }
             i += 1
@@ -306,19 +341,49 @@ struct StrictParser {
             let exactPath = ExactTomlPath(entryPath)
             if keyLocations[exactPath] == nil { keyLocations[exactPath] = keySource }
             if valueLocations[exactPath] == nil { valueLocations[exactPath] = valueSource }
+            if keySpans[exactPath] == nil {
+                keySpans[exactPath] = SourceByteRange(start: sourceByteOffsets[keyStart], end: sourceByteOffsets[keyEnd])
+            }
             let parentPath = currentPath
             currentPath = entryPath
             let value = try parseValue()
             currentPath = parentPath
             try t.setKey(path, value, line: keyLocation.line, column: keyLocation.column)
+            let valueRange = valueSpans[ExactTomlPath(entryPath)]!
             skipSpacesAndNewlines()
             guard let c = peek() else { throw err("unterminated inline table") }
             if c == "," {
+                let commaOffset = sourceByteOffsets[i]
                 i += 1
+                entries.append(InlineTableEntrySource(
+                    path: ExactTomlPath(entryPath),
+                    range: SourceByteRange(start: sourceByteOffsets[keyStart], end: valueRange.end),
+                    valueRange: valueRange,
+                    commaOffset: commaOffset
+                ))
                 skipSpacesAndNewlines()
-                if peek() == "}" { i += 1; return t.toTyped() }
+                if peek() == "}" {
+                    let closeOffset = sourceByteOffsets[i]
+                    i += 1
+                    inlineTables[tablePath] = InlineTableSource(
+                        range: SourceByteRange(start: sourceByteOffsets[tableStart], end: sourceByteOffsets[i]),
+                        openOffset: openOffset, closeOffset: closeOffset, entries: entries
+                    )
+                    return t.toTyped()
+                }
             } else if c == "}" {
+                entries.append(InlineTableEntrySource(
+                    path: ExactTomlPath(entryPath),
+                    range: SourceByteRange(start: sourceByteOffsets[keyStart], end: valueRange.end),
+                    valueRange: valueRange,
+                    commaOffset: nil
+                ))
+                let closeOffset = sourceByteOffsets[i]
                 i += 1
+                inlineTables[tablePath] = InlineTableSource(
+                    range: SourceByteRange(start: sourceByteOffsets[tableStart], end: sourceByteOffsets[i]),
+                    openOffset: openOffset, closeOffset: closeOffset, entries: entries
+                )
                 return t.toTyped()
             } else {
                 throw err("expected ',' or '}' in inline table")
