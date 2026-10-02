@@ -1,6 +1,6 @@
 # Repository structure
 
-Status: the documented tree and ownership below describe implemented v1. Pure Swift v2 is approved but has no production runtime implementation yet.
+Status: v1 remains the implemented runtime. The standalone Swift core contains the C01/C02 configuration foundation and independently verified D01 D200X codec/archive/renderer, but v2 has no integrated production runtime yet.
 Updated: 2026-10-02
 
 This file distinguishes the current repository layout from the approved target. The current Go packages and SwiftUI supervisor remain in place until the v2 parity and simulated-device acceptance gate passes.
@@ -19,7 +19,11 @@ hidhogg/
     └── config-editing/   lossless TOML and JSONC comparison
 ```
 
-The repository also contains the isolated `macos/HidhoggCore` SwiftPM package for V2-C01. It has one library target and one test target, with no external SwiftPM dependencies. The package owns strict Swift schema-v4 decoding, normalized immutable configuration values, and its vendored TOML engine; it is not integrated with the app or CLI, and Go remains the production configuration owner.
+The repository also contains the isolated `macos/HidhoggCore` SwiftPM package for V2-C01, V2-C02, and V2-D01. It has one library target and one test target, with no external SwiftPM dependencies. The package owns strict Swift schema-v4 decoding, normalized immutable configuration values, its vendored TOML engine, typed lossless edits and a digest-guarded transactional source store, internal D200X framing and input decoding, deterministic ZIP archive construction, and page rendering from normalized profiles. It embeds the Go Regular font resource for wide labels. The package is not integrated with the app or CLI; Go remains the production runtime, configuration, and device owner.
+
+C02's independent package suite passed 59/59 tests and its refreshed TOML 1.1 corpus passed 681/681 cases on 2026-10-02. The verified C02 implementation is commit `57f93a14451a3cb18b73e0dcb8d0654323649f51`.
+
+The independent D01 gate passed on 2026-10-02 against that C02 commit plus the hash-matched 11-path D01 overlay: the full package suite passed 76/76 and the export-adapter suite passed 77/77. An external ZIP/PNG checker validated 18 deterministic archives and 56 members, PNG8 straight-RGBA color/alpha behavior, alpha-zero label normalization, centered and bottom-aligned L bounds, and 14,598 upload bytes reconstructed from 15 reports. It does not establish app/runtime integration, native transport, simulator behavior, or physical-device acceptance. Evidence is under `/Volumes/Data/tmp/hidhogg-v2-d01-verification/`.
 
 The completed `M-01` scaffold has the following production boundaries:
 
@@ -43,6 +47,7 @@ hidhogg/
 │   ├── notification/      device-independent bounded emit/clear contract and validation
 │   └── runtime/           orchestration and lifecycle
 ├── macos/
+│   ├── HidhoggCore/      isolated SwiftPM config, D200X codec/archive/renderer, and synthetic tests
 │   ├── Hidhogg/           SwiftUI menu-bar application
 │   └── HidhoggTests/      supervisor, security, fixture, and live IPC tests
 ├── scripts/diagnostics/   owner-run archival wrappers and synthetic validation
@@ -71,6 +76,9 @@ The Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-run
 | Go runtime | Lifecycle, strict configuration orchestration, one D200X session, profiles/actions, bounded execution history, keepalive/idle policy, transactional reload, typed profile-source edits, local notification overlays and IPC | Remote ingestion, multi-device policy, and arbitrary source editing |
 | Configuration | Strict single-file decode, semantic validation, deterministic schema, immutable reload candidates, and semantic diffing | Mutation, lossless preservation, and root/device composition |
 | Swift configuration foundation (V2-C01) | Standalone strict Swift v4 decode, normalized 14-position layout, TOML 1.1 parser extension, and safe diagnostics | Production app/CLI wiring, device/runtime ownership, source mutation, and transactional storage |
+| Swift configuration edits/store (V2-C02) | Typed keep/set/reset field patches, profile label/clone/delete operations, same-engine byte-preserving edits, exact-digest atomic file replacement, and distinct file outcomes | Editor UI, runtime reload policy, generic TOML mutation, and external-editor compare-and-swap guarantees |
+| Swift D200X core (V2-D01) | Internal typed frame/report codec, input decoding, deterministic classic-ZIP archive, and CoreText/Core Graphics/Image I/O page renderer | HID discovery/writes, serialized device session, simulator transport, and runtime policy |
+| Swift D200X transport (V2-D02, planned) | Native HID selection/session and protocol-faithful simulated transport behind testable boundaries | Profiles/actions/runtime policy, app lifecycle, and real-device acceptance during offline tests |
 | Config edit/store | Keyed profile label/clone/delete and coordinate tile-label mutations, lossless preservation, exact-digest conflict checks, atomic source replacement, and separate file/reload outcomes | Generic TOML editing, external-editor compare-and-swap guarantees, and Swift mapping ownership |
 | Configuration watcher | Parent-directory event filtering, trailing debounce, and automatic reload hints | Source mutation, retry of unchanged invalid content, and runtime restart |
 | D200X adapter | Exact device selection, framing, configured page rendering, serialized session, and input decoding | Runtime policy, actions, notifications, reconnect |
