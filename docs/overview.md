@@ -1,7 +1,7 @@
 # Hidhogg overview
 
-Status: M-09-B and M-10-A1 owner-visible editor verification passed; broader M-10-A remains open
-Updated: 2026-10-01
+Status: v1 remains the implemented Go-owned runtime; the owner approved a pure Swift v2 migration on 2026-10-02. No v2 production runtime implementation is claimed here.
+Updated: 2026-10-02
 
 ## Goal
 
@@ -37,6 +37,12 @@ Reconnect reliability is an accepted implementation assumption, while repeated-c
 For the `M-01` scaffold, the SwiftUI app launches and supervises the Go runtime. Packaging work may later replace this with a separately managed process, but `launchd`, login-item installation, signing, and distribution are outside `M-01`.
 
 The SwiftUI app uses strict, bounded IPC over an owner-only per-generation Unix socket. The supervisor attributes readiness to its launched runtime, drains bounded output tails, permits one restart, and applies deterministic TERM-to-KILL shutdown escalation. Go owns the production D200X runtime, strict TOML schema, discovery, profiles, executable press actions, execution history, transactional reload, local notification overlays, and typed source mutations. Swift owns foreground-app mappings and the profile editor UI. M-09-B lifecycle and M-10-A1 tile-label owner verification passed on 2026-10-01.
+
+## Approved v2 target
+
+The current implementation remains v1. The approved v2 target moves runtime, strict TOML v4 configuration, source editing, D200X handling, profiles, actions, notifications, IPC, and device lifecycle into Swift. The native macOS app will own the runtime and device; a Swift CLI will provide status and notification operations. The existing Go implementation remains the parity reference until independent v2 acceptance passes. Go removal follows that gate. The v2 plan and TaskView direct-ID map are in [v2-plan.md](v2-plan.md); the exact v1 roadmap is preserved in [v1-roadmap.md](v1-roadmap.md).
+
+The editor scope includes existing button appearance, actions, and notification sources. Custom assets, the proposed Go log tail, and split profile files are deferred. Offline acceptance runs the native macOS app with a simulated D200X; it does not use a real device, selected configuration, existing owner app, or native input injection. No v2 production runtime implementation is claimed until its TaskView tasks pass their gates.
 
 Every Xcode-built app embeds the required Go runtime as `Contents/MacOS/hidhogg-runtime`; it does not search `PATH` or depend on `/usr/local/bin`. The application delegate starts that runtime eagerly at application launch and coordinates asynchronous cleanup before normal termination.
 

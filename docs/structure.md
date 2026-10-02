@@ -1,7 +1,9 @@
 # Repository structure
 
-Status: M-09-B and M-10-A1 owner-visible editor verification passed; broader M-10-A remains open
-Updated: 2026-10-01
+Status: the documented tree and ownership below describe implemented v1. Pure Swift v2 is approved but has no production runtime implementation yet.
+Updated: 2026-10-02
+
+This file distinguishes the current repository layout from the approved target. The current Go packages and SwiftUI supervisor remain in place until the v2 parity and simulated-device acceptance gate passes.
 
 ```text
 hidhogg/
@@ -73,3 +75,23 @@ The Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-run
 | Runtime discovery | Persistent advisory lock, strict readiness metadata, guarded stale recovery, and client identity revalidation | HID policy, remote discovery, PID authority, and non-cooperating same-UID processes |
 | SwiftUI client | Menu-bar status, runtime supervision, foreground-app mappings, and typed profile settings editor | Direct HID ownership and TOML source mutation |
 | Internal IPC | Versioned, bounded health, profiles, execution history, reload/status, typed profile-editor mutations, input diagnostics and notification emit/clear messages | Remote access, executable submission, and full configuration contents |
+
+## Approved v2 ownership targets
+
+These are TaskView work boundaries, not directories or implemented modules. The repository layout remains the v1 tree above while the migration is in progress.
+
+| Target responsibility | TaskView task | Current v1 owner |
+|---|---|---|
+| Strict TOML v4 decoding and normalized layout | V2-C01 #122 | Go configuration |
+| Lossless typed edits and transactional source store | V2-C02 #123 | Go config edit/store |
+| D200X protocol and page rendering | V2-D01 #124 | Go D200X adapter |
+| Native HID and simulated D200X | V2-D02 #125 | Go D200X adapter / Swift tests |
+| Profiles, reload, idle and display lifecycle | V2-R01 #126 | Go runtime and Swift host-display observer |
+| Actions, native input, notifications and history | V2-R02 #128 | Go runtime, Go native-input package and notification service |
+| IPC, discovery and Swift CLI parity | V2-I01 #130 | Go IPC/CLI plus Swift client |
+| App ownership of runtime and device | V2-U01 #132 | SwiftUI supervises the Go child |
+| Complete existing button editor | V2-U02 #134 | SwiftUI profile editor (partial) |
+| Independent unit, edge and simulator acceptance | V2-V01 #136 | Go and Swift test suites |
+| Remove production Go dependencies after acceptance | V2-X01 #138 | Go remains in production |
+
+TaskView project 5, list 49 owns these task states and dependencies. The full requirements and direct-ID map are in [v2-plan.md](v2-plan.md). Historical v1 contracts remain in [v1-roadmap.md](v1-roadmap.md).
