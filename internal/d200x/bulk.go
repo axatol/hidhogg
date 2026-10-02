@@ -176,7 +176,7 @@ func livePageArchiveFiles(positions []Position) ([]displayArchiveFile, error) {
 		if spec.Wide {
 			pngData, err = configuredWidePNG(position, background)
 		} else {
-			pngData, err = configuredPNG(width, background)
+			pngData, err = configuredPositionPNG(position, width, background)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("encode D200X live page position %d: %w", index, err)

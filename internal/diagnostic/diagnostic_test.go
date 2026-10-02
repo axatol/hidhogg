@@ -1334,7 +1334,7 @@ func TestDiagnosticBuildPlanUsesConfiguredDefaultProfileWhenNotFirst(t *testing.
 	if len(plan.page.Positions) == 0 {
 		t.Fatal("configured default page has no positions")
 	}
-	if plan.page.Positions[0].ID != "default-tile-0_0" || plan.page.Positions[0].Label != "Default tile 0" {
+	if plan.page.Positions[0].ID != "0_0" || plan.page.Positions[0].Label != "Default tile 0" {
 		t.Fatalf("diagnostic default first position = %#v, want configured default profile", plan.page.Positions[0])
 	}
 }
@@ -1602,15 +1602,15 @@ func TestDiagnosticErrorsAreRedactedAndConfigValidationPrecedesEnumeration(t *te
 func writeDiagnosticConfiguration(t *testing.T, brightness int) string {
 	t.Helper()
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "schema_version = 3\nadapter = \"ulanzi.d200x\"\nbrightness = %d\ndefault_profile_id = \"default\"\n\n", brightness)
+	fmt.Fprintf(&builder, "schema_version = 4\nadapter = \"ulanzi.d200x\"\nbrightness = %d\ndefault_profile_id = \"default\"\n\n", brightness)
 	for _, profileID := range []string{"alternate", "default"} {
-		fmt.Fprintf(&builder, "[[profiles]]\nid = \"%s\"\nlabel = \"%s\"\n\n", profileID, profileID)
+		fmt.Fprintf(&builder, "[profiles.%q]\nlabel = \"%s\"\n\n", profileID, profileID)
 		profileLabel := "Default"
 		if profileID == "alternate" {
 			profileLabel = "Alternate"
 		}
 		for index, spec := range d200x.SupportedPositions() {
-			fmt.Fprintf(&builder, "[[profiles.positions]]\nid = \"%s-tile-%s\"\nposition = \"%s\"\nlabel = \"%s tile %d\"\nbackground = \"#102030\"\n\n", profileID, spec.Name, spec.Name, profileLabel, index)
+			fmt.Fprintf(&builder, "[profiles.%q.positions.%q]\nlabel = \"%s tile %d\"\nbackground = \"#102030\"\n\n", profileID, spec.Name, profileLabel, index)
 		}
 	}
 	path := filepath.Join(t.TempDir(), "diagnostic.toml")

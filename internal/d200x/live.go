@@ -88,7 +88,7 @@ func BuildLivePositionArchive(position Position) (DisplayArchive, error) {
 	if spec.Wide {
 		pngData, err = configuredWidePNG(position, background)
 	} else {
-		pngData, err = configuredPNG(width, background)
+		pngData, err = configuredPositionPNG(position, width, background)
 	}
 	if err != nil {
 		return DisplayArchive{}, fmt.Errorf("encode D200X live position %q: %w", spec.Name, err)
@@ -166,7 +166,7 @@ func positionManifestEntry(position Position, iconPath string, wide bool) livePo
 				Align:     position.LabelAlignment,
 				Color:     16_777_215,
 				FontName:  livePositionFontName,
-				ShowTitle: !wide,
+				ShowTitle: !wide && position.Label != "",
 				Size:      position.LabelSize,
 				Weight:    80,
 			},

@@ -1,7 +1,7 @@
 # Hidhogg roadmap
 
-Status: M-07 and M-03-F01 complete
-Updated: 2026-09-21
+Status: M-09-B and M-10-A1 owner acceptance passed; compact schema M-10-F01 verified offline, owner v4 acceptance pending; broader M-10 remains open
+Updated: 2026-10-01
 
 Task IDs are immutable.
 
@@ -700,6 +700,18 @@ Task IDs are immutable.
 - Blockers: none.
 - Parallel boundary: no production implementation before both evidence dependencies are reviewed.
 
+## M-02-F04 — Follow Mac display power state
+
+- Status: offline implementation and independent review passed on 2026-09-26; owner physical verification pending. TaskView HIDhogg #66 remains open. Mac Lock Screen was preferred, but no documented lock-specific notification was established; the owner accepted turning the D200X off when macOS displays sleep and restoring it when they wake.
+- Goal: keep the D200X visible while macOS displays are awake, dark while they sleep, and restore the active profile and input stream after display wake without preventing macOS sleep.
+- Scope: use documented macOS display sleep/wake notifications with a state query for startup/reconnect reconciliation; send one typed state request to the Go runtime, whose existing idle-policy owner serializes brightness, input suppression, keepalive, and restoration. Configuration may use `idle_timeout_seconds = 0` to disable the separate five-minute application dimmer. Direct Go-only launches retain their existing idle policy.
+- Constraints: no undocumented lock notification, direct Swift HID write, Mac sleep-prevention assertion, background polling loop, device test without owner approval, or within-process retry of an uncertain D200X write. Duplicate/out-of-order display events must not apply a stale state to a newer runtime generation. On 2026-09-26 the owner chose to retain the Swift supervisor's one post-ready restart; process-local no-retry does not prevent a replacement generation from sending startup packets after an uncertain write.
+- Acceptance: deterministic Go policy/IPC and Swift observer/client tests cover duplicate transitions, dark-state input suppression, wake restoration, endpoint replacement, and failures; independent review passes; the owner verifies a real display sleep/wake cycle on the owned D200X. Do not claim lock-specific behavior or physical completion from offline tests.
+- Automatic gates: full Go tests/race, vet, module verification, focused repeated admission/cancellation/race tests, and diff check pass; focused and broad offline Swift XCTest pass with `LiveIntegrationTests` excluded. Independent Go source/race and Swift source reviews found no production blocker; the independent Swift XCTest rerun was blocked by the restricted Xcode/CoreSimulator sandbox, not by a test assertion. [Owner verification checklist](m02-f04-host-display-runbook.md).
+- Roles and parallel boundary: main owns wire contract and integration; Go worker owns runtime/IPC; Swift worker owns observer/client; independent tester verifies after implementation. Swift and Go may edit disjoint files after the wire contract is fixed.
+- Dependencies: M-02-F01-P01 idle policy and M-08 bundled Swift supervision.
+- Blockers and limits: physical acceptance remains owner-operated; exact device behavior across display power transitions is unmeasured. Input/action suppression begins when Go applies display-off; an already-selected input or HID write may finish first. The retained one-restart supervisor policy is an accepted recovery-versus-no-retry tradeoff and must be disclosed in the physical runbook/result.
+
 ## M-07 — Local notifications
 
 - Status: complete on 2026-09-19; P01/C01/R01/I01/A01 and V01 automatic, architecture, and owner physical gates pass.
@@ -707,6 +719,53 @@ Task IDs are immutable.
 - Contract, constraints, roles, ownership, dependencies, acceptance criteria, and verification gates: [M-07 notification plan](m07-notification-plan.md).
 - Stable tasks: M-07-P01 contract approval; M-07-C01 configuration/schema; M-07-R01 coordinated runtime overlays; M-07-I01 IPC/CLI; M-07-A01 physical selection; M-07-V01 independent and owner acceptance.
 - Acceptance: independent whole-tree test/race/vet/build and final architect review pass; main fresh full tests/vet, Darwin arm64/amd64 command builds and deterministic schema regeneration pass. The independent normal suite needed one rerun for the separately recorded discovery helper race; its full race suite passed. The owner completed [M-07 verification](m07-notification-runbook.md): active-display checks passed; dimmed `WAKE` did not wake or brighten the display; the first manual wake gesture restored visibility while retaining `WAKE`; the next selection restored only that tile to `status`; all other runbook checks were confirmed. Swift foreground-app mapping remains deferred.
+
+## M-08 — Swift foreground profile switching
+
+- Status: M-08-C01, M-08-I01, and M-08-R01 complete on 2026-09-23; M-08-U01 owner-visible verification remains open. The owner verified `.app` selection, mapping save, and mapped-app activation. The optional-tag correction for the invalid empty Picker-selection warning awaits owner live retest. Known unmapped apps select the default profile; nil/empty bundle IDs clear remembered foreground identity without changing the displayed profile. The F05 correction passed focused XCTest 17/17 and independent V2 on 2026-09-24, but that policy change has not been owner-verified live.
+- Goal: restore bundled Swift/Go launch compatibility, then map foreground macOS bundle identifiers to Go-owned profiles through existing profile IPC.
+- Dependency correction: the Swift supervisor currently omits the now-required absolute `--config-path`; M-08-C01 must precede foreground switching.
+- Boundary: Swift owns application observation and mappings; Go owns profiles and receives only profile IDs.
+- Stable tasks: M-08-P01 contract; M-08-C01 launch compatibility; M-08-I01 profile IPC client; M-08-R01 observer/mapping coordinator; M-08-U01 minimal configuration surface; M-08-V01 independent and owner verification.
+- Contract, module boundaries, implementation order, acceptance gates, exclusions, and unresolved decisions: [M-08 Swift foreground profile switching plan](m08-swift-profile-switching-plan.md).
+
+### M-08-F01 — Manual runtime start after terminal failure
+
+- Latest owner result: on 2026-10-01 the Swift runtime reaches Ready. Recovery specifically through the exhausted-failure Start control was not separately identified; do not infer the earlier HID-open cause from successful startup.
+- Status: offline implementation, Swift XCTest, and independent source/build review passed on 2026-09-27. On 2026-09-29 the owner confirmed the button initiates Starting, but the runtime fails; a corrected invalid config value exposed a distinct sanitized HID-open failure. Ready-state owner verification remains open. TaskView HIDhogg #67.
+- Goal: expose `Start Runtime` in that terminal failed state while preserving automatic application-launch startup and the existing one automatic restart per supervisor run. Stop control is outside this slice.
+- Scope: retire the completed failed supervisor before creating a fresh generation from the selected configuration; prevent duplicate taps and stale endpoint publication; keep Quit and configuration changes serialized.
+- Verification: focused controller/supervisor tests passed 20/20 and broad offline XCTest passed 121/121 with `LiveIntegrationTests` excluded; independent source review found no production defect and independent build-for-testing passed. The independent XCTest rerun was sandbox-blocked before assertions. Owner-visible Xcode retest remains. No agent-run app/device launch. The cause of the existing runtime failure is unknown; manual start does not repair a persistent failure.
+
+### M-08-F02 — Traceable local HID startup errors
+
+- Latest owner result: on 2026-10-01 no errors have reproduced and the Swift runtime is Ready. Actual failed-start diagnostic display remains unexercised; do not induce a hardware failure merely to obtain its cause.
+- Status: implemented on 2026-09-29; Go full/race/vet and Swift focused/broad offline tests pass, and independent Go/Swift source review found no material defect. Owner-operated physical diagnostic remains. TaskView HIDhogg #68. The prior standalone startup reached eligible D200X selection but returned only `open D200X device failed`; the raw HID-open cause remains unknown until a new opt-in verbose attempt.
+- Goal: preserve a stable, safe HID failure code and stage through Go startup, retain the last safe failure after Swift restart exhaustion, and allow bounded raw upstream HID diagnostics only with local opt-in verbosity.
+- Scope and constraints: default CLI/menu output remains free of raw device path or serial; no raw diagnostic enters IPC status. Preserve the one-restart policy and cleanup-failure replacement guard. No agent-run physical device test in this slice.
+- Verification: deterministic Go propagation/redaction/verbose-boundary tests pass with `go test ./...`, touched-package race, and `go vet ./...`; Swift second-failure/fallback/drainer tests pass 7/7 focused and 127/127 broad offline with `LiveIntegrationTests` excluded. Independent Go gates and Go/Swift source review pass with no material defect. The independent Swift XCTest rerun was sandbox-blocked before assertions. The active-handler EOF/final-drain overlap is a residual untested interleaving. Owner-operated device retry remains; no agent-run device attempt occurred during implementation.
+
+## M-09 — Go-owned profile creation and source mutation
+
+- Latest acceptance: on 2026-10-01 the owner confirmed profile clone, rename, and delete work in the Swift app. Combined with the automatic and independent gates below, M-09-B is complete. Earlier statements that owner verification is pending are historical.
+- Status: complete. M-09-A foundation implementation and automatic/independent gates passed on 2026-09-23. M-09-B Go adapter, runtime bridge, IPC disconnect correction, and Swift profile editor passed their respective automatic/independent gates on 2026-09-24. The later-discovered profile-label postcommit-cancellation defect was corrected through the shared mutation path and covered by deterministic runtime and real-socket disconnect tests. Full Go tests, focused race, vet, module verification, diff checks, and independent source review pass. The then-current offline Swift suite passed 104/104 with hardware-touching `LiveIntegrationTests` excluded. Owner clone/rename/delete verification passed on 2026-10-01; TaskView HIDhogg #60 and #62 are complete.
+- Goal: productionize bounded lossless typed TOML mutations, then create complete profiles by cloning and conservatively delete unreferenced profiles.
+- Stable tasks: M-09-A mutation foundation; M-09-B profile lifecycle; independent source-preservation/reload verification.
+- Boundary: Swift presents typed intent; Go owns exact-byte digests, mutation, strict prospective validation, reference analysis, replacement and reload outcomes.
+- Contract and blockers: [M-09/M-10 configuration editor plan](m09-m10-config-editor-plan.md).
+- Dependencies: M-08.
+
+## M-10 — Visual profile editor
+
+- Requested follow-up on 2026-10-01: M-10-F02 separate profile files, after M-08-F03 in-app runtime log tail. Proposed contracts await owner confirmation; neither is in progress. Split-file loading must include whole-catalog validation, dependency watching, source-set conflict checks and correct editor write targets rather than only a decoder change. The owner also confirms the converted v4 configuration works; individual physical subcases were not separately reported.
+- M-10-F01 compact-schema revision: implemented and verified offline on 2026-10-01. Full uncached Go tests/race/vet/build/module/schema/diff and final Swift 129/129 pass with live integration excluded. Independent review/fix loops corrected canonical editor IPC IDs and a missed Swift client fixture; final reviews pass. Contract and gates: [compact schema plan](m10-f01-compact-schema-plan.md). The separately owner-approved selected-config conversion is complete with an exact v3 backup: strict v4 decoding, permitted semantic comparison and exact candidate-byte comparison pass; the independently reviewed/tested disposable converter was removed. No app/runtime restart, direct device command or commit was performed. Physical v4 acceptance remains pending after owner Xcode rebuild/Ready. TaskView #69 stays open for that gate; external updates disclose status only under owner approval.
+- Latest acceptance: on 2026-10-01 the owner confirmed tile-label editing works, closing the M-10-A1 owner-visible gate. Broader M-10-A remains open. The subsequently approved M-10-F01 revision adds compact keyed schema v4 before expanding appearance editing.
+- Status: approved in bounded stages on 2026-09-23. M-10-A1 Go stable-ID discovery/read/lossless label-set and Swift Settings selector/save passed full Go tests, focused race, vet/module/diff checks, focused Swift 24/24 and the then-current offline Swift 104/104 suite; independent Go and Swift source reviews found no blocking defect. Owner-visible verification passed on 2026-10-01. TaskView HIDhogg #61 tracks broader M-10-A; #63 is the separately contracted M-10-B asset plan; #69 tracks M-10-F01.
+- Goal: edit configured label, colour, style, notification-source and action fields through typed Swift controls and Go-owned mutations.
+- M-10-A excludes custom images; the source schema supports colour backgrounds only.
+- M-10-B custom assets requires a separate schema/storage contract and is not implementation-ready.
+- Contract and blockers: [M-09/M-10 configuration editor plan](m09-m10-config-editor-plan.md).
+- Dependencies: M-09.
 
 ## M-02-F02 — Ulanzi Studio static interoperability analysis
 

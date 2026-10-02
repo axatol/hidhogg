@@ -44,7 +44,7 @@ func TestReadInputObservationsAttributesTransitionAtReception(t *testing.T) {
 	if err := fixture.controller.handleInput(context.Background(), observation); err != nil {
 		t.Fatalf("handle post-transition press: %v", err)
 	}
-	if got := fixture.output.String(); got == "" || !containsAll(got, `"event":"input"`, `"id":"Alternate-0_0"`, `"action":"pressed"`) {
+	if got := fixture.output.String(); got == "" || !containsAll(got, `"event":"input"`, `"id":"0_0"`, `"action":"pressed"`) {
 		t.Fatalf("post-transition press output = %q", got)
 	}
 	if _, held := fixture.controller.actions.held[profileActionKey{marker: d200x.InputMarkerButton, wireIndex: 0}]; !held {
@@ -85,7 +85,7 @@ func TestReadInputObservationsSubmitsFirstPressAfterCompletedTransition(t *testi
 	if len(requests) != 1 {
 		t.Fatalf("first post-transition press submissions = %d, want one", len(requests))
 	}
-	if requests[0].ProfileID != "alternate" || requests[0].PositionID != "Alternate-0_0" || requests[0].Executable != "/controlled/helper" {
+	if requests[0].ProfileID != "alternate" || requests[0].PositionID != "0_0" || requests[0].Executable != "/controlled/helper" {
 		t.Fatalf("first post-transition request = %#v", requests[0])
 	}
 

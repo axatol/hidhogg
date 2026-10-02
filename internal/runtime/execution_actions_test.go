@@ -55,7 +55,7 @@ func TestExecuteActionRoutesCompletedPressWithOriginatingIdentity(t *testing.T) 
 	}
 	want := execution.Request{
 		ProfileID:  "default",
-		PositionID: "Default-0_0",
+		PositionID: "0_0",
 		Executable: "/controlled/helper",
 		Arguments:  []string{"one", "two words"},
 		Timeout:    17 * time.Second,
@@ -102,7 +102,7 @@ func TestExecuteActionPressRunsOnInitialDownOnceAndIgnoresRelease(t *testing.T) 
 	if len(requests) != 1 {
 		t.Fatalf("execution requests = %d, want one", len(requests))
 	}
-	if requests[0].PositionID != "Default-0_0" || !slices.Equal(requests[0].Arguments, []string{"one"}) {
+	if requests[0].PositionID != "0_0" || !slices.Equal(requests[0].Arguments, []string{"one"}) {
 		t.Fatalf("execution request = %#v", requests[0])
 	}
 }
@@ -198,7 +198,7 @@ func TestProfileActionReleaseTracksMultipleKeysAndRejectsOrphans(t *testing.T) {
 	if len(requests) != 2 {
 		t.Fatalf("execution requests = %d, want two", len(requests))
 	}
-	if requests[0].PositionID != "Default-1_0" || requests[1].PositionID != "Default-0_0" {
+	if requests[0].PositionID != "1_0" || requests[1].PositionID != "0_0" {
 		t.Fatalf("execution positions = %#v", requests)
 	}
 }
@@ -209,7 +209,7 @@ func TestExecuteActionClonesArgumentsAndTreatsBusyAsHistory(t *testing.T) {
 	controller := &profileActionController{service: &actionProfileServiceStub{current: testProfile("default", "Default", "Default")}, executor: worker}
 	activation := &profileActionActivation{
 		snapshot:   profileActionSnapshot{profileID: "default"},
-		positionID: "Default-0_0",
+		positionID: "0_0",
 		binding: profile.Binding{Action: profile.Action{
 			Type: profile.ExecuteActionType, Gesture: profile.ReleaseGesture,
 			Executable: "/controlled/helper", Arguments: []string{"owned"}, TimeoutSeconds: 3,
@@ -378,7 +378,7 @@ func TestRuntimeCloseClosesExecutionAdmissionOnce(t *testing.T) {
 
 func TestRuntimeExecutionHistoryAdapterTracksOwnedGeneration(t *testing.T) {
 	worker := newFakeExecutionWorker()
-	request := execution.Request{ProfileID: "default", PositionID: "tile-0_0"}
+	request := execution.Request{ProfileID: "default", PositionID: "0_0"}
 	if _, err := worker.Submit(request); err != nil {
 		t.Fatal(err)
 	}

@@ -30,6 +30,56 @@ type sanitizedError struct {
 	unwrap  error
 }
 
+const HIDOpenPathFailureCode = "D200X_HID_OPEN_PATH_FAILED"
+
+const maximumVerboseHIDCauseBytes = 1024
+
+type HIDOpenPathFailure struct {
+	cause          string
+	causeTruncated bool
+	unwrap         error
+}
+
+func NewHIDOpenPathFailure(cause error) *HIDOpenPathFailure {
+	if cause == nil {
+		return nil
+	}
+
+	upstreamCause := cause.Error()
+	causeTruncated := len(upstreamCause) > maximumVerboseHIDCauseBytes
+	if causeTruncated {
+		upstreamCause = upstreamCause[:maximumVerboseHIDCauseBytes]
+	}
+
+	var unwrap error
+	switch {
+	case errors.Is(cause, context.Canceled):
+		unwrap = context.Canceled
+	case errors.Is(cause, context.DeadlineExceeded):
+		unwrap = context.DeadlineExceeded
+	}
+
+	return &HIDOpenPathFailure{cause: upstreamCause, causeTruncated: causeTruncated, unwrap: unwrap}
+}
+
+func (e *HIDOpenPathFailure) Error() string {
+	if e == nil {
+		return ""
+	}
+	return HIDOpenPathFailureCode + ": open selected D200X HID path failed"
+}
+
+func (e *HIDOpenPathFailure) GoString() string {
+	return e.Error()
+}
+
+func (e *HIDOpenPathFailure) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.unwrap
+}
+
 func (e *sanitizedError) Error() string {
 	if e == nil {
 		return ""
@@ -203,7 +253,7 @@ func (HIDFactory) Open(ctx context.Context, candidate Candidate) (Transport, err
 	}
 	device, err := hid.OpenPath(candidate.path)
 	if err != nil {
-		return nil, sanitizeHIDError("open matching D200X HID", err)
+		return nil, NewHIDOpenPathFailure(err)
 	}
 	return &hidTransport{device: device}, nil
 }
@@ -268,6 +318,10 @@ func sanitizeHIDError(operation string, err error) error {
 	if err == nil {
 		return nil
 	}
+	var hidOpenFailure *HIDOpenPathFailure
+	if errors.As(err, &hidOpenFailure) {
+		return hidOpenFailure
+	}
 	if errors.Is(err, context.Canceled) {
 		return &sanitizedError{message: operation + ": context canceled", unwrap: context.Canceled}
 	}
@@ -280,6 +334,10 @@ func sanitizeHIDError(operation string, err error) error {
 func sanitizeAdapterError(operation string, err error) error {
 	if err == nil {
 		return nil
+	}
+	var hidOpenFailure *HIDOpenPathFailure
+	if errors.As(err, &hidOpenFailure) {
+		return hidOpenFailure
 	}
 	var protocolErr *ProtocolError
 	if errors.As(err, &protocolErr) {

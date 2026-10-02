@@ -90,6 +90,27 @@ func (c *Client) ProfilesActivate(ctx context.Context, instanceID, profileID str
 	return c.ActivateProfile(ctx, instanceID, profileID)
 }
 
+func (c *Client) SetDisplayHostState(ctx context.Context, instanceID string, displayAwake bool) (Response, error) {
+	requestID, err := NewUUID()
+	if err != nil {
+		return Response{}, err
+	}
+	response, err := c.CallRequest(ctx, Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       requestID,
+		Method:          MethodDisplayHostStateSet,
+		InstanceID:      instanceID,
+		DisplayAwake:    displayAwake,
+	})
+	if err != nil {
+		return Response{}, err
+	}
+	if response.Error == nil && (response.Result == nil || response.Result.InstanceID != instanceID || response.Result.DisplayAwake != displayAwake) {
+		return Response{}, errors.New("display host state response does not match request")
+	}
+	return response, nil
+}
+
 // ListExecutions requests newest-first, output-free execution summaries. A
 // zero limit selects the protocol default of twenty entries.
 func (c *Client) ListExecutions(ctx context.Context, instanceID string, limit int) (Response, error) {
@@ -150,6 +171,185 @@ func (c *Client) ConfigStatus(ctx context.Context, instanceID string) (Response,
 // StatusConfig is an explicit alias for ConfigStatus.
 func (c *Client) StatusConfig(ctx context.Context, instanceID string) (Response, error) {
 	return c.ConfigStatus(ctx, instanceID)
+}
+
+// GetConfigEditorSnapshot requests bounded profile identifiers and the exact
+// source digest used to guard subsequent editor reads and edits.
+func (c *Client) GetConfigEditorSnapshot(ctx context.Context, instanceID string) (Response, error) {
+	return c.Call(ctx, MethodConfigEditorSnapshot, instanceID)
+}
+
+func (c *Client) ListConfigEditorPositions(ctx context.Context, instanceID, sourceDigest, profileID string) (Response, error) {
+	requestID, err := NewUUID()
+	if err != nil {
+		return Response{}, err
+	}
+	response, err := c.CallRequest(ctx, Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       requestID,
+		Method:          MethodConfigEditorPositionsList,
+		InstanceID:      instanceID,
+		SourceDigest:    sourceDigest,
+		ProfileID:       profileID,
+	})
+	if err != nil {
+		return Response{}, err
+	}
+	if err := validateConfigEditorPositionsResponse(response, sourceDigest, profileID); err != nil {
+		return Response{}, err
+	}
+	return response, nil
+}
+
+func validateConfigEditorPositionsResponse(response Response, sourceDigest, profileID string) error {
+	if response.Error != nil {
+		return nil
+	}
+	if response.Result == nil || response.Result.EditorPositions == nil || response.Result.EditorPositions.SourceDigest != sourceDigest || response.Result.EditorPositions.ProfileID != profileID {
+		return errors.New("editor positions response does not match request")
+	}
+	return nil
+}
+
+// GetConfigEditorProfile requests one profile label from the named source
+// revision.
+func (c *Client) GetConfigEditorProfile(ctx context.Context, instanceID, sourceDigest, profileID string) (Response, error) {
+	requestID, err := NewUUID()
+	if err != nil {
+		return Response{}, err
+	}
+	response, err := c.CallRequest(ctx, Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       requestID,
+		Method:          MethodConfigEditorProfileGet,
+		InstanceID:      instanceID,
+		SourceDigest:    sourceDigest,
+		ProfileID:       profileID,
+	})
+	if err != nil {
+		return Response{}, err
+	}
+	if err := validateConfigEditorProfileResponse(response, sourceDigest, profileID); err != nil {
+		return Response{}, err
+	}
+	return response, nil
+}
+
+func validateConfigEditorProfileResponse(response Response, sourceDigest, profileID string) error {
+	if response.Error != nil {
+		return nil
+	}
+	if response.Result == nil || response.Result.EditorProfile == nil || response.Result.EditorProfile.SourceDigest != sourceDigest || response.Result.EditorProfile.ProfileID != profileID {
+		return errors.New("editor profile response does not match request")
+	}
+	return nil
+}
+
+func (c *Client) GetConfigEditorPositionLabel(ctx context.Context, instanceID, sourceDigest, profileID, positionID string) (Response, error) {
+	requestID, err := NewUUID()
+	if err != nil {
+		return Response{}, err
+	}
+	response, err := c.CallRequest(ctx, Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       requestID,
+		Method:          MethodConfigEditorPositionGet,
+		InstanceID:      instanceID,
+		SourceDigest:    sourceDigest,
+		ProfileID:       profileID,
+		PositionID:      positionID,
+	})
+	if err != nil {
+		return Response{}, err
+	}
+	if err := validateConfigEditorPositionLabelResponse(response, sourceDigest, profileID, positionID); err != nil {
+		return Response{}, err
+	}
+	return response, nil
+}
+
+func validateConfigEditorPositionLabelResponse(response Response, sourceDigest, profileID, positionID string) error {
+	if response.Error != nil {
+		return nil
+	}
+	positionLabel := (*ConfigEditorPositionLabel)(nil)
+	if response.Result != nil {
+		positionLabel = response.Result.EditorPositionLabel
+	}
+	if positionLabel == nil || positionLabel.SourceDigest != sourceDigest || positionLabel.ProfileID != profileID || positionLabel.PositionID != positionID {
+		return errors.New("editor position label response does not match request")
+	}
+	return nil
+}
+
+// SetConfigEditorProfileLabel requests one typed label mutation guarded by
+// the expected digest of the exact configuration source.
+func (c *Client) SetConfigEditorProfileLabel(ctx context.Context, instanceID, expectedDigest, profileID, label string) (Response, error) {
+	requestID, err := NewUUID()
+	if err != nil {
+		return Response{}, err
+	}
+	return c.CallRequest(ctx, Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       requestID,
+		Method:          MethodConfigEditorLabelSet,
+		InstanceID:      instanceID,
+		ExpectedDigest:  expectedDigest,
+		ProfileID:       profileID,
+		Label:           label,
+	})
+}
+
+func (c *Client) SetConfigEditorPositionLabel(ctx context.Context, instanceID, expectedDigest, profileID, positionID, label string) (Response, error) {
+	requestID, err := NewUUID()
+	if err != nil {
+		return Response{}, err
+	}
+	return c.CallRequest(ctx, Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       requestID,
+		Method:          MethodConfigEditorPositionLabelSet,
+		InstanceID:      instanceID,
+		ExpectedDigest:  expectedDigest,
+		ProfileID:       profileID,
+		PositionID:      positionID,
+		Label:           label,
+	})
+}
+
+// CreateConfigEditorProfile creates a profile from one source profile. An
+// empty sourceProfileID leaves source selection to the service at commit time.
+func (c *Client) CreateConfigEditorProfile(ctx context.Context, instanceID, expectedDigest, profileID, label, sourceProfileID string) (Response, error) {
+	requestID, err := NewUUID()
+	if err != nil {
+		return Response{}, err
+	}
+	return c.CallRequest(ctx, Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       requestID,
+		Method:          MethodConfigEditorProfileCreate,
+		InstanceID:      instanceID,
+		ExpectedDigest:  expectedDigest,
+		ProfileID:       profileID,
+		Label:           label,
+		SourceProfileID: sourceProfileID,
+	})
+}
+
+// DeleteConfigEditorProfile deletes one profile by its stable ID.
+func (c *Client) DeleteConfigEditorProfile(ctx context.Context, instanceID, expectedDigest, profileID string) (Response, error) {
+	requestID, err := NewUUID()
+	if err != nil {
+		return Response{}, err
+	}
+	return c.CallRequest(ctx, Request{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       requestID,
+		Method:          MethodConfigEditorProfileDelete,
+		InstanceID:      instanceID,
+		ExpectedDigest:  expectedDigest,
+		ProfileID:       profileID,
+	})
 }
 
 // EmitNotification requests one notification overlay. Notification reads use

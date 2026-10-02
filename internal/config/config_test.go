@@ -28,8 +28,8 @@ var invalidFixtures embed.FS
 
 func TestDecodeValidFixture(t *testing.T) {
 	decoded := decodeValidFixture(t)
-	if decoded.SchemaVersion != SchemaVersionV3 {
-		t.Fatalf("schema version = %d, want %d", decoded.SchemaVersion, SchemaVersionV3)
+	if decoded.SchemaVersion != SchemaVersionV4 {
+		t.Fatalf("schema version = %d, want %d", decoded.SchemaVersion, SchemaVersionV4)
 	}
 	if decoded.Adapter != AdapterUlanziD200X {
 		t.Fatalf("adapter = %q, want %q", decoded.Adapter, AdapterUlanziD200X)
@@ -70,6 +70,157 @@ func TestDecodeValidFixture(t *testing.T) {
 	}
 	if action := decoded.Profiles[0].Positions[0].Action; action == nil || action.Type != "activate_profile" || action.Gesture != profile.ReleaseGesture || action.ProfileID != "alternate" {
 		t.Fatalf("default action = %#v", action)
+	}
+}
+
+func TestDecodeSparseProfilesNormalizeInDeterministicOrder(t *testing.T) {
+	data := []byte(`schema_version = 4
+adapter = "ulanzi.d200x"
+brightness = 80
+default_profile_id = "default"
+
+[profiles."zeta"]
+label = "Zeta"
+
+[profiles."default"]
+label = "Default"
+
+[profiles."alpha"]
+label = "Alpha"
+`)
+	decoded, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := []string{decoded.Profiles[0].ID, decoded.Profiles[1].ID, decoded.Profiles[2].ID}; !reflect.DeepEqual(got, []string{"default", "alpha", "zeta"}) {
+		t.Fatalf("normalized profile order = %#v", got)
+	}
+	for _, current := range decoded.Profiles {
+		if len(current.Positions) != RequiredPositionCount {
+			t.Fatalf("profile %q position count = %d", current.ID, len(current.Positions))
+		}
+		for index, position := range current.Positions {
+			want := SupportedPositions()[index].Name
+			if position.ID != want || position.Position != want || position.Label != "" || position.Background != DefaultPositionBackground || position.Action != nil || position.NotificationSources != nil || position.LabelAlignment != DefaultLabelAlignment || position.LabelSize != DefaultLabelSize {
+				t.Fatalf("profile %q position %d = %#v, want blank coordinate %q", current.ID, index, position, want)
+			}
+		}
+	}
+	if _, err := decoded.ProfileCatalog(); err != nil {
+		t.Fatalf("blank normalized labels rejected by catalog: %v", err)
+	}
+}
+
+func TestDecodeEmptyTileDefaultsAndBlankLabelAction(t *testing.T) {
+	data := []byte(`schema_version = 4
+adapter = "ulanzi.d200x"
+brightness = 80
+default_profile_id = "default"
+
+[profiles.default]
+label = "Default"
+positions = { "2_0" = {}, "0_0" = { label = "", action = { type = "execute", executable = "/bin/echo" } } }
+`)
+	decoded, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blank := decoded.Profiles[0].Positions[0]
+	if blank.Label != "" || blank.Background != DefaultPositionBackground || blank.Action == nil || blank.Action.Gesture != profile.ReleaseGesture || blank.Action.Arguments == nil || blank.Action.TimeoutSeconds != DefaultExecuteTimeoutSeconds {
+		t.Fatalf("explicit blank action tile = %#v", blank)
+	}
+	empty := decoded.Profiles[0].Positions[2]
+	if empty.Label != "" || empty.Background != DefaultPositionBackground || empty.Action != nil || empty.NotificationSources != nil {
+		t.Fatalf("empty inline tile = %#v", empty)
+	}
+	if _, err := decoded.ProfileCatalog(); err != nil {
+		t.Fatalf("catalog rejected configured action with blank label: %v", err)
+	}
+}
+
+func TestDecodeRejectsWhitespaceOnlyTileLabelsAndExplicitInvalidDefaults(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		needle      string
+		replacement string
+		want        string
+	}{
+		{name: "whitespace label", needle: `label = "Clock"`, replacement: `label = " \t "`, want: "label"},
+		{name: "empty background", needle: `background = "#102030"`, replacement: `background = ""`, want: "background"},
+		{name: "explicit empty alignment", needle: `background = "#102030"`, replacement: "label_alignment = \"\"\nbackground = \"#102030\"", want: "label_alignment"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			data := bytes.Replace(validFixture, []byte(test.needle), []byte(test.replacement), 1)
+			_, err := Decode(data)
+			if err == nil || !IsValidationError(err) || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Decode error = %v, want explicit-field validation for %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestDecodeReportsQuotedProfileAndUnsupportedCoordinateKeys(t *testing.T) {
+	data := []byte(`schema_version = 4
+adapter = "ulanzi.d200x"
+brightness = 80
+default_profile_id = "work.day"
+
+[profiles."work.day"]
+label = "Work"
+
+[profiles."work.day".positions."4_2"]
+label = "Invalid"
+`)
+	_, err := Decode(data)
+	if err == nil || !IsValidationError(err) || !strings.Contains(err.Error(), `profiles["work.day"].positions["4_2"]`) {
+		t.Fatalf("Decode error = %v, want quoted keyed coordinate diagnostic", err)
+	}
+	diagnostic := newDiagnostic("config.toml", err)
+	if diagnostic.Key != `profiles["work.day"].positions["4_2"]` {
+		t.Fatalf("diagnostic key = %q", diagnostic.Key)
+	}
+}
+
+func TestDecodeRejectsV3ArrayDocumentWithVersionGuidance(t *testing.T) {
+	data := []byte(`schema_version = 3
+adapter = "ulanzi.d200x"
+brightness = 80
+default_profile_id = "default"
+
+[[profiles]]
+id = "default"
+label = "Default"
+`)
+	_, err := Decode(data)
+	var validationError *ValidationError
+	if !errors.As(err, &validationError) || len(validationError.Issues) != 1 || validationError.Issues[0].Path != "schema_version" {
+		t.Fatalf("v3 array error = %v, want schema-version validation", err)
+	}
+	diagnostic := newDiagnostic("config.toml", err)
+	if diagnostic.Category != DiagnosticSchemaVersion || diagnostic.Key != "schema_version" || diagnostic.Detail != "use schema_version = 4" {
+		t.Fatalf("v3 array diagnostic = %#v", diagnostic)
+	}
+}
+
+func TestDecodeReportsInvalidProfileKeyAtTablePath(t *testing.T) {
+	data := []byte(`schema_version = 4
+adapter = "ulanzi.d200x"
+brightness = 80
+default_profile_id = "default"
+
+[profiles.default]
+label = "Default"
+
+[profiles."bad id"]
+label = "Invalid"
+`)
+	_, err := Decode(data)
+	if err == nil || !IsValidationError(err) || !strings.Contains(err.Error(), `profiles["bad id"]`) {
+		t.Fatalf("invalid profile key error = %v", err)
+	}
+	diagnostic := newDiagnostic("config.toml", err)
+	if diagnostic.Key != `profiles["bad id"]` {
+		t.Fatalf("invalid profile key diagnostic = %q", diagnostic.Key)
 	}
 }
 
@@ -526,10 +677,11 @@ func TestDecodeRejectsV1AndMissingRequiredFields(t *testing.T) {
 		data []byte
 		want string
 	}{
-		{name: "v1", data: bytes.Replace(validFixture, []byte("schema_version = 3"), []byte("schema_version = 1"), 1), want: "schema_version"},
-		{name: "v2", data: bytes.Replace(validFixture, []byte("schema_version = 3"), []byte("schema_version = 2"), 1), want: "schema_version"},
+		{name: "v1", data: bytes.Replace(validFixture, []byte("schema_version = 4"), []byte("schema_version = 1"), 1), want: "schema_version"},
+		{name: "v2", data: bytes.Replace(validFixture, []byte("schema_version = 4"), []byte("schema_version = 2"), 1), want: "schema_version"},
+		{name: "v3", data: bytes.Replace(validFixture, []byte("schema_version = 4"), []byte("schema_version = 3"), 1), want: "schema_version"},
 		{name: "missing-default", data: bytes.Replace(validFixture, []byte("default_profile_id = \"default\"\n"), nil, 1), want: "default_profile_id is required"},
-		{name: "missing-profiles", data: []byte("schema_version = 3\nadapter = \"ulanzi.d200x\"\nbrightness = 80\ndefault_profile_id = \"default\"\n"), want: "profiles is required"},
+		{name: "missing-profiles", data: []byte("schema_version = 4\nadapter = \"ulanzi.d200x\"\nbrightness = 80\ndefault_profile_id = \"default\"\n"), want: "profiles is required"},
 		{name: "missing-brightness", data: bytes.Replace(validFixture, []byte("brightness = 80\n"), nil, 1), want: "brightness is required"},
 	}
 	for _, test := range tests {
@@ -630,7 +782,6 @@ func TestValidateAcceptsMaximumProfileAndLabelBoundaries(t *testing.T) {
 	configuration.DefaultProfileID = maximumID
 	configuration.Profiles[0].ID = maximumID
 	configuration.Profiles[0].Label = maximumLabel
-	configuration.Profiles[0].Positions[0].ID = maximumID
 	configuration.Profiles[0].Positions[0].Label = maximumLabel
 	if err := configuration.Validate(); err != nil {
 		t.Fatalf("maximum profile/label boundaries rejected: %v", err)
@@ -703,16 +854,25 @@ func TestJSONProjectionUsesCanonicalNames(t *testing.T) {
 			t.Fatalf("JSON projection omitted %q", name)
 		}
 	}
-	profiles := projected["profiles"].([]any)
-	positions := profiles[0].(map[string]any)["positions"].([]any)
-	if _, ok := positions[0].(map[string]any)["action"]; !ok {
+	profiles := projected["profiles"].(map[string]any)
+	positions := profiles["default"].(map[string]any)["positions"].(map[string]any)
+	if len(positions) != RequiredPositionCount {
+		t.Fatalf("JSON projection position count = %d, want %d", len(positions), RequiredPositionCount)
+	}
+	position := positions["0_0"].(map[string]any)
+	if _, ok := position["action"]; !ok {
 		t.Fatal("JSON projection omitted configured action")
 	}
-	position := positions[0].(map[string]any)
+	if _, exists := position["id"]; exists {
+		t.Fatal("JSON projection retained removed position ID field")
+	}
+	if _, exists := position["position"]; exists {
+		t.Fatal("JSON projection retained removed coordinate field")
+	}
 	if position["label_alignment"] != DefaultLabelAlignment || position["label_size"] != float64(DefaultLabelSize) {
 		t.Fatalf("JSON projection label style = %#v/%#v, want %s/%d", position["label_alignment"], position["label_size"], DefaultLabelAlignment, DefaultLabelSize)
 	}
-	if _, ok := positions[1].(map[string]any)["action"]; ok {
+	if _, ok := positions["1_0"].(map[string]any)["action"]; ok {
 		t.Fatal("JSON projection emitted absent action")
 	}
 
@@ -720,6 +880,33 @@ func TestJSONProjectionUsesCanonicalNames(t *testing.T) {
 	assertMatchingTags(t, reflect.TypeOf(Profile{}))
 	assertMatchingTags(t, reflect.TypeOf(Position{}))
 	assertMatchingTags(t, reflect.TypeOf(Action{}))
+}
+
+func TestJSONProjectionPreservesExplicitZeroIdleTimeout(t *testing.T) {
+	data := bytes.Replace(validFixture, []byte("brightness = 80\n"), []byte("brightness = 80\nidle_timeout_seconds = 0\n"), 1)
+	configuration, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := configuration.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projected map[string]any
+	if err := json.Unmarshal(encoded, &projected); err != nil {
+		t.Fatal(err)
+	}
+	if value, exists := projected["idle_timeout_seconds"]; !exists || value != float64(0) {
+		t.Fatalf("JSON idle timeout = %#v, exists=%t; want explicit zero", value, exists)
+	}
+}
+
+func TestJSONProjectionRejectsNonCanonicalNormalizedPositionIDs(t *testing.T) {
+	configuration := decodeValidFixture(t)
+	configuration.Profiles[0].Positions[0].ID = "other"
+	if _, err := configuration.JSON(); err == nil || !strings.Contains(err.Error(), "canonical coordinate") {
+		t.Fatalf("JSON accepted non-canonical normalized position ID: %v", err)
+	}
 }
 
 func TestProfileCatalogProvidesOrderedImmutableLookup(t *testing.T) {
@@ -810,7 +997,7 @@ func TestLoadReturnsTypedSafeDiagnostics(t *testing.T) {
 			name:         "type text key mismatch",
 			data:         nativeActionFixture(TypeTextActionType, "text = 123"),
 			category:     DiagnosticDecode,
-			key:          "profiles.positions.action.text",
+			key:          "profiles[\"default\"].positions[\"0_0\"].action.text",
 			wantLocation: true,
 			wantDetail:   "TOML syntax or value type is invalid",
 			wantDecode:   true,
@@ -819,7 +1006,7 @@ func TestLoadReturnsTypedSafeDiagnostics(t *testing.T) {
 			name:         "key press key mismatch",
 			data:         nativeActionFixture(KeyPressActionType, "key = 123"),
 			category:     DiagnosticDecode,
-			key:          "profiles.positions.action.key",
+			key:          "profiles[\"default\"].positions[\"0_0\"].action.key",
 			wantLocation: true,
 			wantDetail:   "TOML syntax or value type is invalid",
 			wantDecode:   true,
@@ -836,7 +1023,7 @@ func TestLoadReturnsTypedSafeDiagnostics(t *testing.T) {
 			name:         "nested unknown key",
 			data:         bytes.Replace(validFixture, []byte("profile_id = \"alternate\"\n"), []byte("profile_id = \"alternate\"\nunknown = \""+secret+"\"\n"), 1),
 			category:     DiagnosticUnknownKey,
-			key:          "profiles.positions.action.unknown",
+			key:          "profiles[\"default\"].positions[\"0_0\"].action.unknown",
 			wantLocation: true,
 			wantDetail:   "key is not supported",
 			wantDecode:   true,
@@ -852,10 +1039,10 @@ func TestLoadReturnsTypedSafeDiagnostics(t *testing.T) {
 		},
 		{
 			name:         "schema version",
-			data:         bytes.Replace(validFixture, []byte("schema_version = 3"), []byte("schema_version = 2 # "+secret), 1),
+			data:         bytes.Replace(validFixture, []byte("schema_version = 4"), []byte("schema_version = 2 # "+secret), 1),
 			category:     DiagnosticSchemaVersion,
 			key:          "schema_version",
-			wantDetail:   "use schema_version = 3",
+			wantDetail:   "use schema_version = 4",
 			wantValidate: true,
 		},
 		{
@@ -867,19 +1054,19 @@ func TestLoadReturnsTypedSafeDiagnostics(t *testing.T) {
 			wantValidate: true,
 		},
 		{
-			name:         "indexed validation",
+			name:         "keyed validation",
 			data:         bytes.Replace(validFixture, []byte("background = \"#102030\""), []byte("background = \""+secret+"\""), 1),
 			category:     DiagnosticValidation,
-			key:          "profiles[0].positions[0].background",
+			key:          "profiles[\"default\"].positions[\"0_0\"].background",
 			wantDetail:   "value violates configuration constraints",
 			wantValidate: true,
 		},
 		{
-			name:         "indexed missing field",
-			data:         bytes.Replace(validFixture, []byte("label = \"Clock\"\n"), []byte("# "+secret+"\n"), 1),
-			category:     DiagnosticValidation,
-			key:          "profiles[0].positions[0].label",
-			wantDetail:   "value violates configuration constraints",
+			name:         "keyed missing profile label",
+			data:         bytes.Replace(validFixture, []byte("label = \"Default\"\n"), []byte("# "+secret+"\n"), 1),
+			category:     DiagnosticMissingKey,
+			key:          "profiles[\"default\"].label",
+			wantDetail:   "required key is missing",
 			wantValidate: true,
 		},
 	}

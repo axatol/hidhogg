@@ -5,14 +5,28 @@ import XCTest
 
 final class LiveIntegrationTests: XCTestCase {
     private let runtimePath = "/private/tmp/hidhogg-m01-runtime"
+    private var configurationPath: String {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("deploy/hidhogg.toml")
+            .path
+    }
 
     func testLiveRuntimeReadinessAndCleanup() async throws {
         guard FileManager.default.isExecutableFile(atPath: runtimePath) else {
             throw XCTSkip("live runtime is not installed at the fixed integration path")
         }
+        guard FileManager.default.isReadableFile(atPath: configurationPath) else {
+            throw XCTSkip("live integration configuration is not available at the repository deploy path")
+        }
 
         let supervisor = ProcessSupervisor(
-            configuration: ProcessSupervisorConfiguration(executablePath: runtimePath)
+            configuration: ProcessSupervisorConfiguration(
+                executablePath: runtimePath,
+                configurationPath: configurationPath
+            )
         )
         let runTask = Task { await supervisor.run() }
 

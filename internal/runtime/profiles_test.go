@@ -460,7 +460,7 @@ func TestProfileServiceCurrentEventPositionsFollowCommittedProfile(t *testing.T)
 	if err := writeInputEvent(&output, plan, first); err != nil {
 		t.Fatal(err)
 	}
-	if got := output.String(); !containsAll(got, `"id":"Default-0_0"`, `"position":"0_0"`) {
+	if got := output.String(); !containsAll(got, `"id":"0_0"`, `"position":"0_0"`) {
 		t.Fatalf("default event = %q", got)
 	}
 	if _, err := service.ActivateProfile(context.Background(), "alternate"); err != nil {
@@ -469,7 +469,7 @@ func TestProfileServiceCurrentEventPositionsFollowCommittedProfile(t *testing.T)
 	if err := writeInputEvent(&output, plan, first); err != nil {
 		t.Fatal(err)
 	}
-	if got := output.String(); !containsAll(got, `"id":"Alternate-0_0"`, `"position":"0_0"`) {
+	if got := output.String(); !containsAll(got, `"id":"0_0"`, `"position":"0_0"`) {
 		t.Fatalf("alternate event = %q", got)
 	}
 }
@@ -543,7 +543,7 @@ func testProfile(id, label, prefix string) profile.Profile {
 	values := make([]profile.Value, 0, len(d200x.SupportedPositions()))
 	for _, spec := range d200x.SupportedPositions() {
 		values = append(values, profile.Value{
-			ID:         prefix + "-" + spec.Name,
+			ID:         spec.Name,
 			Position:   spec.Name,
 			Label:      prefix + " " + spec.Name,
 			Background: "#102030",

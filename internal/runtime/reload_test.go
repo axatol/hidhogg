@@ -30,7 +30,9 @@ func TestRuntimeReloadPublishesRevisionedSnapshot(t *testing.T) {
 		t.Fatalf("unchanged reload = %+v, %v", result, err)
 	}
 
-	actionOnly := bytes.Replace(base, []byte("background = \"#102030\"\n\n"), []byte("background = \"#102030\"\n\n[profiles.positions.action]\ntype = \"activate_profile\"\ngesture = \"release\"\nprofile_id = \"alternate\"\n\n"), 1)
+	defaultFirstPosition := []byte("[profiles.\"default\".positions.\"0_0\"]\nlabel = \"default 0\"\nbackground = \"#102030\"\n\n")
+	defaultFirstPositionWithAction := []byte("[profiles.\"default\".positions.\"0_0\"]\nlabel = \"default 0\"\nbackground = \"#102030\"\n\n[profiles.\"default\".positions.\"0_0\".action]\ntype = \"activate_profile\"\ngesture = \"release\"\nprofile_id = \"alternate\"\n\n")
+	actionOnly := bytes.Replace(base, defaultFirstPosition, defaultFirstPositionWithAction, 1)
 	writeReloadTestFile(t, path, actionOnly)
 	result, err = runtimeProcess.Reload(context.Background())
 	if err != nil || !result.Changed || result.Revision != 2 || result.Effect != reloadEffectActionOnly || result.DisplayUpdated {
@@ -162,7 +164,7 @@ func TestRuntimeReloadLeavesExistingExecutionRecordUntouched(t *testing.T) {
 	sender := &profilePageSender{}
 	runtimeProcess, path := newReloadTestRuntime(t, reloadTestConfiguration(), sender, nil)
 	runtimeProcess.executionWorker = worker
-	before, err := worker.Submit(execution.Request{ProfileID: "default", PositionID: "tile-0_0", Executable: "/bin/echo"})
+	before, err := worker.Submit(execution.Request{ProfileID: "default", PositionID: "0_0", Executable: "/bin/echo"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +174,7 @@ func TestRuntimeReloadLeavesExistingExecutionRecordUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, ok := worker.Get("record-1")
-	if !ok || before.State != after.State || after.ProfileID != "default" || after.PositionID != "tile-0_0" {
+	if !ok || before.State != after.State || after.ProfileID != "default" || after.PositionID != "0_0" {
 		t.Fatalf("execution record changed across reload: before=%+v after=%+v ok=%t", before, after, ok)
 	}
 	if worker.closeCount() != 0 {
@@ -182,7 +184,9 @@ func TestRuntimeReloadLeavesExistingExecutionRecordUntouched(t *testing.T) {
 
 func TestRuntimeReloadResetsPartialGesture(t *testing.T) {
 	base := reloadTestConfiguration()
-	withAction := bytes.Replace(base, []byte("background = \"#102030\"\n\n"), []byte("background = \"#102030\"\n\n[profiles.positions.action]\ntype = \"activate_profile\"\ngesture = \"release\"\nprofile_id = \"alternate\"\n\n"), 1)
+	defaultFirstPosition := []byte("[profiles.\"default\".positions.\"0_0\"]\nlabel = \"default 0\"\nbackground = \"#102030\"\n\n")
+	defaultFirstPositionWithAction := []byte("[profiles.\"default\".positions.\"0_0\"]\nlabel = \"default 0\"\nbackground = \"#102030\"\n\n[profiles.\"default\".positions.\"0_0\".action]\ntype = \"activate_profile\"\ngesture = \"release\"\nprofile_id = \"alternate\"\n\n")
+	withAction := bytes.Replace(base, defaultFirstPosition, defaultFirstPositionWithAction, 1)
 	sender := &profilePageSender{}
 	runtimeProcess, path := newReloadTestRuntime(t, withAction, sender, nil)
 	service := runtimeProcess.profileService

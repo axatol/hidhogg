@@ -3,6 +3,17 @@ import Foundation
 public enum RuntimeMethod: String, Sendable {
     case health
     case status
+    case profilesList = "profiles.list"
+    case profilesActivate = "profiles.activate"
+    case displayHostStateSet = "display.host_state.set"
+    case configEditorSnapshot = "config.editor.snapshot"
+    case configEditorProfileGet = "config.editor.profile.get"
+    case configEditorProfileLabelSet = "config.editor.profile_label.set"
+    case configEditorProfileCreate = "config.editor.profile.create"
+    case configEditorProfileDelete = "config.editor.profile.delete"
+    case configEditorPositionsList = "config.editor.positions.list"
+    case configEditorPositionGet = "config.editor.position.get"
+    case configEditorPositionLabelSet = "config.editor.position_label.set"
 }
 
 public struct RuntimeError: Error, Equatable, Sendable {
@@ -39,6 +50,223 @@ public struct RuntimeResponse: Equatable, Sendable {
     }
 }
 
+public struct ProfileSummary: Equatable, Sendable {
+    public let id: String
+    public let label: String
+    public let isDefault: Bool
+    public let isCurrent: Bool
+
+    public init(id: String, label: String, isDefault: Bool, isCurrent: Bool) {
+        self.id = id
+        self.label = label
+        self.isDefault = isDefault
+        self.isCurrent = isCurrent
+    }
+}
+
+public struct ProfileListResponse: Equatable, Sendable {
+    public let requestID: String
+    public let instanceID: String
+    public let profiles: [ProfileSummary]
+
+    public init(requestID: String, instanceID: String, profiles: [ProfileSummary]) {
+        self.requestID = requestID
+        self.instanceID = instanceID
+        self.profiles = profiles
+    }
+}
+
+public struct ProfileActivationResponse: Equatable, Sendable {
+    public let requestID: String
+    public let profileID: String
+    public let changed: Bool
+
+    public init(requestID: String, profileID: String, changed: Bool) {
+        self.requestID = requestID
+        self.profileID = profileID
+        self.changed = changed
+    }
+}
+
+public struct DisplayHostStateResponse: Equatable, Sendable {
+    public let requestID: String
+    public let instanceID: String
+    public let displayAwake: Bool
+    public let changed: Bool
+
+    public init(requestID: String, instanceID: String, displayAwake: Bool, changed: Bool) {
+        self.requestID = requestID
+        self.instanceID = instanceID
+        self.displayAwake = displayAwake
+        self.changed = changed
+    }
+}
+
+public struct ConfigEditorSnapshotResponse: Equatable, Sendable {
+    public let requestID: String
+    public let instanceID: String
+    public let sourceDigest: String
+    public let revision: UInt64
+    public let defaultProfileID: String
+    public let currentProfileID: String
+    public let profileIDs: [String]
+
+    public init(
+        requestID: String,
+        instanceID: String,
+        sourceDigest: String,
+        revision: UInt64,
+        defaultProfileID: String,
+        currentProfileID: String,
+        profileIDs: [String]
+    ) {
+        self.requestID = requestID
+        self.instanceID = instanceID
+        self.sourceDigest = sourceDigest
+        self.revision = revision
+        self.defaultProfileID = defaultProfileID
+        self.currentProfileID = currentProfileID
+        self.profileIDs = profileIDs
+    }
+}
+
+public struct ConfigEditorProfileResponse: Equatable, Sendable {
+    public let requestID: String
+    public let instanceID: String
+    public let sourceDigest: String
+    public let profileID: String
+    public let label: String
+
+    public init(requestID: String, instanceID: String, sourceDigest: String, profileID: String, label: String) {
+        self.requestID = requestID
+        self.instanceID = instanceID
+        self.sourceDigest = sourceDigest
+        self.profileID = profileID
+        self.label = label
+    }
+}
+
+public struct ConfigEditorPositionSummary: Equatable, Sendable {
+    public let positionID: String
+    public let position: String
+
+    public init(positionID: String, position: String) {
+        self.positionID = positionID
+        self.position = position
+    }
+}
+
+public struct ConfigEditorPositionsResponse: Equatable, Sendable {
+    public let requestID: String
+    public let instanceID: String
+    public let sourceDigest: String
+    public let profileID: String
+    public let positions: [ConfigEditorPositionSummary]
+
+    public init(
+        requestID: String,
+        instanceID: String,
+        sourceDigest: String,
+        profileID: String,
+        positions: [ConfigEditorPositionSummary]
+    ) {
+        self.requestID = requestID
+        self.instanceID = instanceID
+        self.sourceDigest = sourceDigest
+        self.profileID = profileID
+        self.positions = positions
+    }
+}
+
+public struct ConfigEditorPositionResponse: Equatable, Sendable {
+    public let requestID: String
+    public let instanceID: String
+    public let sourceDigest: String
+    public let profileID: String
+    public let positionID: String
+    public let label: String
+
+    public init(
+        requestID: String,
+        instanceID: String,
+        sourceDigest: String,
+        profileID: String,
+        positionID: String,
+        label: String
+    ) {
+        self.requestID = requestID
+        self.instanceID = instanceID
+        self.sourceDigest = sourceDigest
+        self.profileID = profileID
+        self.positionID = positionID
+        self.label = label
+    }
+}
+
+public enum ConfigEditorFileCommit: String, Equatable, Sendable {
+    case unchanged
+    case committed
+    case uncertain
+}
+
+public enum ConfigEditorReloadOutcome: String, Equatable, Sendable {
+    case unchanged
+    case changed
+    case rejected
+    case uncertain
+    case notAttempted = "not_attempted"
+}
+
+public enum ConfigEditorEffect: String, Equatable, Sendable {
+    case unchanged
+    case actionOnly = "action-only"
+    case display
+    case brightness
+    case idle
+    case `default`
+    case catalog
+}
+
+public enum ConfigEditorReason: String, Equatable, Sendable {
+    case none
+    case candidateRejected = "candidate-rejected"
+    case settingsPending = "settings-pending"
+    case canceled
+    case deviceWriteFailed = "device-write-failed"
+    case closed
+}
+
+public struct ConfigEditorMutationResponse: Equatable, Sendable {
+    public let requestID: String
+    public let instanceID: String
+    public let sourceDigest: String
+    public let fileCommit: ConfigEditorFileCommit
+    public let reloadOutcome: ConfigEditorReloadOutcome
+    public let revision: UInt64
+    public let effect: ConfigEditorEffect
+    public let reason: ConfigEditorReason
+
+    public init(
+        requestID: String,
+        instanceID: String,
+        sourceDigest: String,
+        fileCommit: ConfigEditorFileCommit,
+        reloadOutcome: ConfigEditorReloadOutcome,
+        revision: UInt64,
+        effect: ConfigEditorEffect,
+        reason: ConfigEditorReason
+    ) {
+        self.requestID = requestID
+        self.instanceID = instanceID
+        self.sourceDigest = sourceDigest
+        self.fileCommit = fileCommit
+        self.reloadOutcome = reloadOutcome
+        self.revision = revision
+        self.effect = effect
+        self.reason = reason
+    }
+}
+
 public enum ResponseValidationError: Error, Equatable, Sendable {
     case invalidJSON
     case invalidEnvelope
@@ -60,7 +288,7 @@ public enum UUIDValidation {
 public enum ProtocolV1 {
     public static let frameLimit = 16_384
     public static let protocolVersion = 1
-    public static let allowedErrorCodes: Set<String> = [
+    public static let healthStatusErrorCodes: Set<String> = [
         "invalid_json",
         "invalid_envelope",
         "unsupported_version",
@@ -70,13 +298,331 @@ public enum ProtocolV1 {
         "internal"
     ]
 
+    public static let profileErrorCodes: Set<String> = healthStatusErrorCodes.union([
+        "profile_not_found",
+        "activation_failed",
+        "device_write_failed",
+        "shutting_down",
+        "busy"
+    ])
+
+    static let configEditorErrorMessages: [String: String] = [
+        "invalid_json": "request is not valid JSON",
+        "invalid_envelope": "request envelope is invalid",
+        "unsupported_version": "protocol version is not supported",
+        "unknown_method": "request method is not supported",
+        "instance_mismatch": "runtime instance does not match",
+        "message_too_large": "request message is too large",
+        "internal": "internal server error",
+        "stale_source": "configuration source changed; refresh and retry",
+        "edit_invalid": "configuration edit is invalid",
+        "file_commit_failed": "configuration edit could not be committed",
+        "busy": "runtime is busy",
+        "shutting_down": "runtime is shutting down"
+    ]
+
+    public static let allowedErrorCodes = profileErrorCodes
+
     public static func request(
         method: RuntimeMethod,
         requestID: String,
-        instanceID: String
+        instanceID: String,
+        profileID: String? = nil
     ) -> Data {
-        let payload = "{\"protocol_version\":1,\"request_id\":\"\(requestID)\",\"method\":\"\(method.rawValue)\",\"params\":{\"instance_id\":\"\(instanceID)\"}}\n"
+        var params = "\"instance_id\":\"\(instanceID)\""
+        if method == .profilesActivate, let profileID {
+            params += ",\"profile_id\":\"\(profileID)\""
+        }
+        let payload = "{\"protocol_version\":1,\"request_id\":\"\(requestID)\",\"method\":\"\(method.rawValue)\",\"params\":{\(params)}}\n"
         return Data(payload.utf8)
+    }
+
+    public static func profileRequest(
+        method: RuntimeMethod,
+        requestID: String,
+        instanceID: String,
+        profileID: String? = nil
+    ) throws -> Data {
+        guard method == .profilesList || method == .profilesActivate else {
+            throw ProtocolRequestValidationError.invalidMethod
+        }
+        if method == .profilesActivate {
+            guard let profileID, ProfileValidation.isValidID(profileID) else {
+                throw ProtocolRequestValidationError.invalidProfileID
+            }
+        } else if profileID != nil {
+            throw ProtocolRequestValidationError.unexpectedProfileID
+        }
+        return request(method: method, requestID: requestID, instanceID: instanceID, profileID: profileID)
+    }
+
+    public static func displayHostStateRequest(
+        requestID: String,
+        instanceID: String,
+        displayAwake: Bool
+    ) throws -> Data {
+        guard UUIDValidation.isCanonical(requestID) else {
+            throw ProtocolRequestValidationError.invalidRequestID
+        }
+        guard UUIDValidation.isCanonical(instanceID) else {
+            throw ProtocolRequestValidationError.invalidInstanceID
+        }
+
+        let envelope: [String: Any] = [
+            "protocol_version": protocolVersion,
+            "request_id": requestID,
+            "method": RuntimeMethod.displayHostStateSet.rawValue,
+            "params": [
+                "instance_id": instanceID,
+                "display_awake": displayAwake
+            ]
+        ]
+        do {
+            var frame = try JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys])
+            frame.append(0x0a)
+            guard frame.count <= frameLimit else {
+                throw ProtocolRequestValidationError.frameTooLarge
+            }
+            return frame
+        } catch let error as ProtocolRequestValidationError {
+            throw error
+        } catch {
+            throw ProtocolRequestValidationError.encodingFailed
+        }
+    }
+
+    public static func configEditorRequest(
+        method: RuntimeMethod,
+        requestID: String,
+        instanceID: String,
+        profileID: String? = nil,
+        positionID: String? = nil,
+        sourceDigest: String? = nil,
+        expectedDigest: String? = nil,
+        label: String? = nil,
+        sourceProfileID: String? = nil
+    ) throws -> Data {
+        guard UUIDValidation.isCanonical(requestID) else {
+            throw ProtocolRequestValidationError.invalidRequestID
+        }
+        guard UUIDValidation.isCanonical(instanceID) else {
+            throw ProtocolRequestValidationError.invalidInstanceID
+        }
+
+        var params = ["instance_id": instanceID]
+        switch method {
+        case .configEditorSnapshot:
+            guard profileID == nil, positionID == nil, sourceDigest == nil, expectedDigest == nil, label == nil, sourceProfileID == nil else {
+                throw ProtocolRequestValidationError.invalidFields
+            }
+        case .configEditorProfileGet:
+            guard let profileID, ProfileValidation.isValidID(profileID) else {
+                throw ProtocolRequestValidationError.invalidProfileID
+            }
+            guard let sourceDigest, ProfileValidation.isValidSourceDigest(sourceDigest) else {
+                throw ProtocolRequestValidationError.invalidSourceDigest
+            }
+            guard positionID == nil, expectedDigest == nil, label == nil, sourceProfileID == nil else {
+                throw ProtocolRequestValidationError.invalidFields
+            }
+            params["source_digest"] = sourceDigest
+            params["profile_id"] = profileID
+        case .configEditorProfileLabelSet:
+            guard let expectedDigest, ProfileValidation.isValidSourceDigest(expectedDigest) else {
+                throw ProtocolRequestValidationError.invalidSourceDigest
+            }
+            guard let profileID, ProfileValidation.isValidID(profileID) else {
+                throw ProtocolRequestValidationError.invalidProfileID
+            }
+            guard let label, ProfileValidation.isValidLabel(label) else {
+                throw ProtocolRequestValidationError.invalidLabel
+            }
+            guard positionID == nil, sourceDigest == nil, sourceProfileID == nil else {
+                throw ProtocolRequestValidationError.invalidFields
+            }
+            params["expected_digest"] = expectedDigest
+            params["profile_id"] = profileID
+            params["label"] = label
+        case .configEditorProfileCreate:
+            guard let expectedDigest, ProfileValidation.isValidSourceDigest(expectedDigest) else {
+                throw ProtocolRequestValidationError.invalidSourceDigest
+            }
+            guard let profileID, ProfileValidation.isValidID(profileID) else {
+                throw ProtocolRequestValidationError.invalidProfileID
+            }
+            guard let label, ProfileValidation.isValidLabel(label) else {
+                throw ProtocolRequestValidationError.invalidLabel
+            }
+            guard positionID == nil, sourceDigest == nil else {
+                throw ProtocolRequestValidationError.invalidFields
+            }
+            if let sourceProfileID {
+                guard ProfileValidation.isValidID(sourceProfileID) else {
+                    throw ProtocolRequestValidationError.invalidProfileID
+                }
+                params["source_profile_id"] = sourceProfileID
+            }
+            params["expected_digest"] = expectedDigest
+            params["profile_id"] = profileID
+            params["label"] = label
+        case .configEditorProfileDelete:
+            guard let expectedDigest, ProfileValidation.isValidSourceDigest(expectedDigest) else {
+                throw ProtocolRequestValidationError.invalidSourceDigest
+            }
+            guard let profileID, ProfileValidation.isValidID(profileID) else {
+                throw ProtocolRequestValidationError.invalidProfileID
+            }
+            guard positionID == nil, sourceDigest == nil, label == nil, sourceProfileID == nil else {
+                throw ProtocolRequestValidationError.invalidFields
+            }
+            params["expected_digest"] = expectedDigest
+            params["profile_id"] = profileID
+        case .configEditorPositionsList:
+            guard let profileID, ProfileValidation.isValidID(profileID) else {
+                throw ProtocolRequestValidationError.invalidProfileID
+            }
+            guard let sourceDigest, ProfileValidation.isValidSourceDigest(sourceDigest) else {
+                throw ProtocolRequestValidationError.invalidSourceDigest
+            }
+            guard positionID == nil, expectedDigest == nil, label == nil, sourceProfileID == nil else {
+                throw ProtocolRequestValidationError.invalidFields
+            }
+            params["source_digest"] = sourceDigest
+            params["profile_id"] = profileID
+        case .configEditorPositionGet:
+            guard let profileID, ProfileValidation.isValidID(profileID) else {
+                throw ProtocolRequestValidationError.invalidProfileID
+            }
+            guard let positionID, ProfileValidation.isValidPositionCoordinate(positionID) else {
+                throw ProtocolRequestValidationError.invalidPositionID
+            }
+            guard let sourceDigest, ProfileValidation.isValidSourceDigest(sourceDigest) else {
+                throw ProtocolRequestValidationError.invalidSourceDigest
+            }
+            guard expectedDigest == nil, label == nil, sourceProfileID == nil else {
+                throw ProtocolRequestValidationError.invalidFields
+            }
+            params["source_digest"] = sourceDigest
+            params["profile_id"] = profileID
+            params["position_id"] = positionID
+        case .configEditorPositionLabelSet:
+            guard let expectedDigest, ProfileValidation.isValidSourceDigest(expectedDigest) else {
+                throw ProtocolRequestValidationError.invalidSourceDigest
+            }
+            guard let profileID, ProfileValidation.isValidID(profileID) else {
+                throw ProtocolRequestValidationError.invalidProfileID
+            }
+            guard let positionID, ProfileValidation.isValidPositionCoordinate(positionID) else {
+                throw ProtocolRequestValidationError.invalidPositionID
+            }
+            guard let label, ProfileValidation.isValidPositionLabel(label) else {
+                throw ProtocolRequestValidationError.invalidLabel
+            }
+            guard sourceDigest == nil, sourceProfileID == nil else {
+                throw ProtocolRequestValidationError.invalidFields
+            }
+            params["expected_digest"] = expectedDigest
+            params["profile_id"] = profileID
+            params["position_id"] = positionID
+            params["label"] = label
+        default:
+            throw ProtocolRequestValidationError.invalidMethod
+        }
+
+        let envelope: [String: Any] = [
+            "protocol_version": protocolVersion,
+            "request_id": requestID,
+            "method": method.rawValue,
+            "params": params
+        ]
+        do {
+            var frame = try JSONSerialization.data(withJSONObject: envelope, options: [.sortedKeys])
+            frame.append(0x0a)
+            guard frame.count <= frameLimit else {
+                throw ProtocolRequestValidationError.frameTooLarge
+            }
+            return frame
+        } catch let error as ProtocolRequestValidationError {
+            throw error
+        } catch {
+            throw ProtocolRequestValidationError.encodingFailed
+        }
+    }
+}
+
+public enum ProtocolRequestValidationError: Error, Equatable, Sendable {
+    case invalidMethod
+    case invalidRequestID
+    case invalidInstanceID
+    case invalidProfileID
+    case invalidPositionID
+    case invalidSourceDigest
+    case invalidLabel
+    case invalidFields
+    case frameTooLarge
+    case encodingFailed
+    case unexpectedProfileID
+}
+
+public enum ProfileValidation {
+    private static let supportedPositionCoordinates: Set<String> = [
+        "0_0", "1_0", "2_0", "3_0", "4_0",
+        "0_1", "1_1", "2_1", "3_1", "4_1",
+        "0_2", "1_2", "2_2", "3_2"
+    ]
+
+    public static func isValidID(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        guard (1...64).contains(bytes.count), let first = bytes.first else {
+            return false
+        }
+        guard isASCIIAlphaNumeric(first) else { return false }
+        return bytes.dropFirst().allSatisfy { byte in
+            isASCIIAlphaNumeric(byte) || byte == 0x2e || byte == 0x5f || byte == 0x2d
+        }
+    }
+
+    public static func isValidSourceDigest(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        return bytes.count == 64 && bytes.allSatisfy {
+            ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x61 && $0 <= 0x66)
+        }
+    }
+
+    public static func isValidPositionCoordinate(_ value: String) -> Bool {
+        supportedPositionCoordinates.contains(value)
+    }
+
+    public static func isValidPositionLabel(_ value: String) -> Bool {
+        value.isEmpty || isValidLabel(value)
+    }
+
+    public static func isValidLabel(_ value: String) -> Bool {
+        guard (1...64).contains(value.unicodeScalars.count), value.utf8.count <= 256 else {
+            return false
+        }
+        var visible = false
+        for scalar in value.unicodeScalars {
+            let category = scalar.properties.generalCategory
+            if category == .control || category == .format {
+                return false
+            }
+            switch category {
+            case .spaceSeparator, .lineSeparator, .paragraphSeparator,
+                 .nonspacingMark, .enclosingMark,
+                 .unassigned, .privateUse, .surrogate:
+                continue
+            default:
+                visible = true
+            }
+        }
+        return visible
+    }
+
+    private static func isASCIIAlphaNumeric(_ byte: UInt8) -> Bool {
+        (byte >= 0x41 && byte <= 0x5a) ||
+        (byte >= 0x61 && byte <= 0x7a) ||
+        (byte >= 0x30 && byte <= 0x39)
     }
 }
 
@@ -87,30 +633,492 @@ public enum ResponseValidator {
         method: RuntimeMethod,
         expectedInstanceID: String
     ) throws -> RuntimeResponse {
+        let root = try parseFrame(frame)
+        return try validateResponse(
+            root,
+            expectedRequestID: expectedRequestID,
+            method: method,
+            expectedInstanceID: expectedInstanceID
+        )
+    }
+
+    public static func validateProfilesList(
+        frame: Data,
+        expectedRequestID: String,
+        expectedInstanceID: String
+    ) throws -> ProfileListResponse {
+        let root = try parseFrame(frame)
+        let envelope = try validateProfileEnvelope(
+            root,
+            expectedRequestID: expectedRequestID
+        )
+        guard case .object(let fields) = envelope.result else {
+            throw ResponseValidationError.invalidResult
+        }
+        let resultMap = try exactMap(fields, keys: ["instance_id", "profiles"])
+        guard case .string(let instanceID) = resultMap["instance_id"],
+              UUIDValidation.isCanonical(instanceID),
+              instanceID == expectedInstanceID,
+              case .array(let profileValues) = resultMap["profiles"],
+              (1...31).contains(profileValues.count) else {
+            throw ResponseValidationError.invalidResult
+        }
+
+        var profiles: [ProfileSummary] = []
+        profiles.reserveCapacity(profileValues.count)
+        var profileIDs = Set<String>()
+        var defaultCount = 0
+        var currentCount = 0
+        for value in profileValues {
+            guard case .object(let summaryFields) = value else {
+                throw ResponseValidationError.invalidResult
+            }
+            let summaryMap = try exactMap(summaryFields, keys: ["id", "label", "is_default", "is_current"])
+            guard case .string(let id) = summaryMap["id"],
+                  ProfileValidation.isValidID(id),
+                  profileIDs.insert(id).inserted,
+                  case .string(let label) = summaryMap["label"],
+                  ProfileValidation.isValidLabel(label),
+                  case .boolean(let isDefault) = summaryMap["is_default"],
+                  case .boolean(let isCurrent) = summaryMap["is_current"] else {
+                throw ResponseValidationError.invalidResult
+            }
+            if isDefault { defaultCount += 1 }
+            if isCurrent { currentCount += 1 }
+            profiles.append(ProfileSummary(id: id, label: label, isDefault: isDefault, isCurrent: isCurrent))
+        }
+        guard defaultCount == 1, currentCount == 1 else {
+            throw ResponseValidationError.invalidResult
+        }
+        return ProfileListResponse(requestID: envelope.requestID, instanceID: instanceID, profiles: profiles)
+    }
+
+    public static func validateProfileActivation(
+        frame: Data,
+        expectedRequestID: String,
+        expectedProfileID: String
+    ) throws -> ProfileActivationResponse {
+        let root = try parseFrame(frame)
+        let envelope = try validateProfileEnvelope(
+            root,
+            expectedRequestID: expectedRequestID
+        )
+        guard case .object(let fields) = envelope.result else {
+            throw ResponseValidationError.invalidResult
+        }
+        let resultMap = try exactMap(fields, keys: ["profile_id", "changed"])
+        guard case .string(let profileID) = resultMap["profile_id"],
+              ProfileValidation.isValidID(profileID),
+              profileID == expectedProfileID,
+              case .boolean(let changed) = resultMap["changed"] else {
+            throw ResponseValidationError.invalidResult
+        }
+        return ProfileActivationResponse(requestID: envelope.requestID, profileID: profileID, changed: changed)
+    }
+
+    public static func validateDisplayHostState(
+        frame: Data,
+        expectedRequestID: String,
+        expectedInstanceID: String,
+        expectedDisplayAwake: Bool
+    ) throws -> DisplayHostStateResponse {
+        let root = try parseFrame(frame)
+        let envelope = try validateProfileEnvelope(root, expectedRequestID: expectedRequestID)
+        guard case .object(let fields) = envelope.result else {
+            throw ResponseValidationError.invalidResult
+        }
+        let resultMap = try exactMap(fields, keys: ["instance_id", "display_awake", "changed"])
+        guard case .string(let instanceID) = resultMap["instance_id"],
+              UUIDValidation.isCanonical(instanceID),
+              instanceID == expectedInstanceID,
+              case .boolean(let displayAwake) = resultMap["display_awake"],
+              displayAwake == expectedDisplayAwake,
+              case .boolean(let changed) = resultMap["changed"] else {
+            throw ResponseValidationError.invalidResult
+        }
+        return DisplayHostStateResponse(
+            requestID: envelope.requestID,
+            instanceID: instanceID,
+            displayAwake: displayAwake,
+            changed: changed
+        )
+    }
+
+    public static func validateConfigEditorSnapshot(
+        frame: Data,
+        expectedRequestID: String,
+        expectedInstanceID: String
+    ) throws -> ConfigEditorSnapshotResponse {
+        let root = try parseFrame(frame)
+        let envelope = try validateConfigEditorEnvelope(root, expectedRequestID: expectedRequestID)
+        guard case .object(let fields) = envelope.result else {
+            throw ResponseValidationError.invalidResult
+        }
+        let resultMap = try exactMap(
+            fields,
+            keys: ["instance_id", "source_digest", "revision", "default_profile_id", "current_profile_id", "profile_ids"]
+        )
+        guard case .string(let instanceID) = resultMap["instance_id"],
+              UUIDValidation.isCanonical(instanceID),
+              instanceID == expectedInstanceID,
+              case .string(let sourceDigest) = resultMap["source_digest"],
+              ProfileValidation.isValidSourceDigest(sourceDigest),
+              case .number(let revisionNumber) = resultMap["revision"],
+              let revision = UInt64(revisionNumber.rawValue), revision > 0,
+              case .string(let defaultProfileID) = resultMap["default_profile_id"],
+              ProfileValidation.isValidID(defaultProfileID),
+              case .string(let currentProfileID) = resultMap["current_profile_id"],
+              ProfileValidation.isValidID(currentProfileID),
+              case .array(let profileValues) = resultMap["profile_ids"],
+              (1...31).contains(profileValues.count) else {
+            throw ResponseValidationError.invalidResult
+        }
+
+        var profileIDs: [String] = []
+        var seenProfileIDs = Set<String>()
+        profileIDs.reserveCapacity(profileValues.count)
+        for value in profileValues {
+            guard case .string(let profileID) = value,
+                  ProfileValidation.isValidID(profileID),
+                  seenProfileIDs.insert(profileID).inserted else {
+                throw ResponseValidationError.invalidResult
+            }
+            profileIDs.append(profileID)
+        }
+        guard seenProfileIDs.contains(defaultProfileID), seenProfileIDs.contains(currentProfileID) else {
+            throw ResponseValidationError.invalidResult
+        }
+
+        return ConfigEditorSnapshotResponse(
+            requestID: envelope.requestID,
+            instanceID: instanceID,
+            sourceDigest: sourceDigest,
+            revision: revision,
+            defaultProfileID: defaultProfileID,
+            currentProfileID: currentProfileID,
+            profileIDs: profileIDs
+        )
+    }
+
+    public static func validateConfigEditorProfile(
+        frame: Data,
+        expectedRequestID: String,
+        expectedInstanceID: String,
+        expectedSourceDigest: String,
+        expectedProfileID: String
+    ) throws -> ConfigEditorProfileResponse {
+        let root = try parseFrame(frame)
+        let envelope = try validateConfigEditorEnvelope(root, expectedRequestID: expectedRequestID)
+        guard case .object(let fields) = envelope.result else {
+            throw ResponseValidationError.invalidResult
+        }
+        let resultMap = try exactMap(fields, keys: ["instance_id", "source_digest", "profile_id", "label"])
+        guard case .string(let instanceID) = resultMap["instance_id"],
+              UUIDValidation.isCanonical(instanceID),
+              instanceID == expectedInstanceID,
+              case .string(let sourceDigest) = resultMap["source_digest"],
+              ProfileValidation.isValidSourceDigest(sourceDigest),
+              sourceDigest == expectedSourceDigest,
+              case .string(let profileID) = resultMap["profile_id"],
+              ProfileValidation.isValidID(profileID),
+              profileID == expectedProfileID,
+              case .string(let label) = resultMap["label"],
+              ProfileValidation.isValidLabel(label) else {
+            throw ResponseValidationError.invalidResult
+        }
+        return ConfigEditorProfileResponse(
+            requestID: envelope.requestID,
+            instanceID: instanceID,
+            sourceDigest: sourceDigest,
+            profileID: profileID,
+            label: label
+        )
+    }
+
+    public static func validateConfigEditorPositions(
+        frame: Data,
+        expectedRequestID: String,
+        expectedInstanceID: String,
+        expectedSourceDigest: String,
+        expectedProfileID: String
+    ) throws -> ConfigEditorPositionsResponse {
+        let root = try parseFrame(frame)
+        let envelope = try validateConfigEditorEnvelope(root, expectedRequestID: expectedRequestID)
+        guard case .object(let fields) = envelope.result else {
+            throw ResponseValidationError.invalidResult
+        }
+        let resultMap = try exactMap(
+            fields,
+            keys: ["instance_id", "source_digest", "profile_id", "positions"]
+        )
+        guard case .string(let instanceID) = resultMap["instance_id"],
+              UUIDValidation.isCanonical(instanceID),
+              instanceID == expectedInstanceID,
+              case .string(let sourceDigest) = resultMap["source_digest"],
+              ProfileValidation.isValidSourceDigest(sourceDigest),
+              sourceDigest == expectedSourceDigest,
+              case .string(let profileID) = resultMap["profile_id"],
+              ProfileValidation.isValidID(profileID),
+              profileID == expectedProfileID,
+              case .array(let positionValues) = resultMap["positions"],
+              positionValues.count == 14 else {
+            throw ResponseValidationError.invalidResult
+        }
+
+        var positions: [ConfigEditorPositionSummary] = []
+        var seenPositionIDs = Set<String>()
+        var seenCoordinates = Set<String>()
+        positions.reserveCapacity(positionValues.count)
+        for value in positionValues {
+            guard case .object(let positionFields) = value else {
+                throw ResponseValidationError.invalidResult
+            }
+            let positionMap = try exactMap(positionFields, keys: ["position_id", "position"])
+            guard case .string(let positionID) = positionMap["position_id"],
+                  ProfileValidation.isValidPositionCoordinate(positionID),
+                  case .string(let position) = positionMap["position"],
+                  ProfileValidation.isValidPositionCoordinate(position),
+                  positionID == position,
+                  seenPositionIDs.insert(positionID).inserted,
+                  seenCoordinates.insert(position).inserted else {
+                throw ResponseValidationError.invalidResult
+            }
+            positions.append(ConfigEditorPositionSummary(positionID: positionID, position: position))
+        }
+        guard seenCoordinates.count == 14 else {
+            throw ResponseValidationError.invalidResult
+        }
+
+        return ConfigEditorPositionsResponse(
+            requestID: envelope.requestID,
+            instanceID: instanceID,
+            sourceDigest: sourceDigest,
+            profileID: profileID,
+            positions: positions
+        )
+    }
+
+    public static func validateConfigEditorPosition(
+        frame: Data,
+        expectedRequestID: String,
+        expectedInstanceID: String,
+        expectedSourceDigest: String,
+        expectedProfileID: String,
+        expectedPositionID: String
+    ) throws -> ConfigEditorPositionResponse {
+        let root = try parseFrame(frame)
+        let envelope = try validateConfigEditorEnvelope(root, expectedRequestID: expectedRequestID)
+        guard case .object(let fields) = envelope.result else {
+            throw ResponseValidationError.invalidResult
+        }
+        let resultMap = try exactMap(
+            fields,
+            keys: ["instance_id", "source_digest", "profile_id", "position_id", "label"]
+        )
+        guard case .string(let instanceID) = resultMap["instance_id"],
+              UUIDValidation.isCanonical(instanceID),
+              instanceID == expectedInstanceID,
+              case .string(let sourceDigest) = resultMap["source_digest"],
+              ProfileValidation.isValidSourceDigest(sourceDigest),
+              sourceDigest == expectedSourceDigest,
+              case .string(let profileID) = resultMap["profile_id"],
+              ProfileValidation.isValidID(profileID),
+              profileID == expectedProfileID,
+              case .string(let positionID) = resultMap["position_id"],
+              ProfileValidation.isValidPositionCoordinate(positionID),
+              positionID == expectedPositionID,
+              case .string(let label) = resultMap["label"],
+              ProfileValidation.isValidPositionLabel(label) else {
+            throw ResponseValidationError.invalidResult
+        }
+        return ConfigEditorPositionResponse(
+            requestID: envelope.requestID,
+            instanceID: instanceID,
+            sourceDigest: sourceDigest,
+            profileID: profileID,
+            positionID: positionID,
+            label: label
+        )
+    }
+
+    public static func validateConfigEditorMutation(
+        frame: Data,
+        expectedRequestID: String,
+        expectedInstanceID: String,
+        method: RuntimeMethod
+    ) throws -> ConfigEditorMutationResponse {
+        guard method == .configEditorProfileLabelSet ||
+                method == .configEditorProfileCreate ||
+                method == .configEditorProfileDelete ||
+                method == .configEditorPositionLabelSet else {
+            throw ResponseValidationError.invalidResult
+        }
+        let root = try parseFrame(frame)
+        let envelope = try validateConfigEditorEnvelope(root, expectedRequestID: expectedRequestID)
+        guard case .object(let fields) = envelope.result else {
+            throw ResponseValidationError.invalidResult
+        }
+        let resultMap = try exactMap(
+            fields,
+            keys: ["instance_id", "source_digest", "file_commit", "reload_outcome", "revision", "effect", "reason"]
+        )
+        guard case .string(let instanceID) = resultMap["instance_id"],
+              UUIDValidation.isCanonical(instanceID),
+              instanceID == expectedInstanceID,
+              case .string(let sourceDigest) = resultMap["source_digest"],
+              ProfileValidation.isValidSourceDigest(sourceDigest),
+              case .string(let fileCommitValue) = resultMap["file_commit"],
+              let fileCommit = ConfigEditorFileCommit(rawValue: fileCommitValue),
+              case .string(let reloadOutcomeValue) = resultMap["reload_outcome"],
+              let reloadOutcome = ConfigEditorReloadOutcome(rawValue: reloadOutcomeValue),
+              case .number(let revisionNumber) = resultMap["revision"],
+              let revision = UInt64(revisionNumber.rawValue), revision > 0,
+              case .string(let effectValue) = resultMap["effect"],
+              let effect = ConfigEditorEffect(rawValue: effectValue),
+              case .string(let reasonValue) = resultMap["reason"],
+              let reason = ConfigEditorReason(rawValue: reasonValue) else {
+            throw ResponseValidationError.invalidResult
+        }
+        return ConfigEditorMutationResponse(
+            requestID: envelope.requestID,
+            instanceID: instanceID,
+            sourceDigest: sourceDigest,
+            fileCommit: fileCommit,
+            reloadOutcome: reloadOutcome,
+            revision: revision,
+            effect: effect,
+            reason: reason
+        )
+    }
+
+    private struct ProfileEnvelope {
+        let requestID: String
+        let result: JSONValue
+    }
+
+    private static func validateConfigEditorEnvelope(
+        _ root: JSONValue,
+        expectedRequestID: String
+    ) throws -> ProfileEnvelope {
+        guard UUIDValidation.isCanonical(expectedRequestID) else {
+            throw ResponseValidationError.invalidRequestID
+        }
+        guard case .object(let fields) = root else {
+            throw ResponseValidationError.invalidEnvelope
+        }
+        let fieldMap = try exactMap(
+            fields,
+            keys: ["protocol_version", "request_id", "result", "error"],
+            failure: .invalidEnvelope
+        )
+        guard case .number(let version) = fieldMap["protocol_version"],
+              version.rawValue == "1" else {
+            throw ResponseValidationError.unsupportedVersion
+        }
+        guard case .string(let requestID) = fieldMap["request_id"],
+              UUIDValidation.isCanonical(requestID),
+              requestID == expectedRequestID else {
+            throw ResponseValidationError.requestIDMismatch
+        }
+        let result = fieldMap["result"]
+        let error = fieldMap["error"]
+        let resultIsNull = result?.isNull ?? true
+        let errorIsNull = error?.isNull ?? true
+        guard resultIsNull != errorIsNull else {
+            throw ResponseValidationError.invalidEnvelope
+        }
+        if errorIsNull {
+            guard let result else { throw ResponseValidationError.invalidResult }
+            return ProfileEnvelope(requestID: requestID, result: result)
+        }
+        guard case .object(let errorFields) = error else {
+            throw ResponseValidationError.invalidError
+        }
+        let errorMap = try exactMap(errorFields, keys: ["code", "message"], failure: .invalidError)
+        guard case .string(let code) = errorMap["code"],
+              let safeMessage = ProtocolV1.configEditorErrorMessages[code],
+              case .string(let message) = errorMap["message"],
+              message == safeMessage else {
+            throw ResponseValidationError.invalidError
+        }
+        throw ResponseValidationError.serverError(RuntimeError(code: code, message: safeMessage))
+    }
+
+    private static func parseFrame(_ frame: Data) throws -> JSONValue {
         let bytes = [UInt8](frame)
         guard bytes.count <= ProtocolV1.frameLimit,
               let lineEnd = bytes.firstIndex(of: 0x0a) else {
             throw ResponseValidationError.invalidJSON
         }
-
         let payload = Array(bytes[..<lineEnd])
         do {
             guard String(data: Data(payload), encoding: .utf8) != nil else {
                 throw JSONParseFailure.invalidUTF8
             }
             var parser = JSONParser(bytes: payload)
-            let root = try parser.parse()
-            return try validateResponse(
-                root,
-                expectedRequestID: expectedRequestID,
-                method: method,
-                expectedInstanceID: expectedInstanceID
-            )
+            return try parser.parse()
         } catch let error as ResponseValidationError {
             throw error
         } catch {
             throw ResponseValidationError.invalidJSON
         }
+    }
+
+    private static func validateProfileEnvelope(
+        _ root: JSONValue,
+        expectedRequestID: String
+    ) throws -> ProfileEnvelope {
+        guard case .object(let fields) = root else {
+            throw ResponseValidationError.invalidEnvelope
+        }
+        let fieldMap = try exactMap(
+            fields,
+            keys: ["protocol_version", "request_id", "result", "error"],
+            failure: .invalidEnvelope
+        )
+        guard case .number(let version) = fieldMap["protocol_version"],
+              version.rawValue == "1" else {
+            throw ResponseValidationError.unsupportedVersion
+        }
+        guard case .string(let requestID) = fieldMap["request_id"],
+              UUIDValidation.isCanonical(requestID),
+              requestID == expectedRequestID else {
+            throw ResponseValidationError.requestIDMismatch
+        }
+        let result = fieldMap["result"]
+        let error = fieldMap["error"]
+        let resultIsNull = result?.isNull ?? true
+        let errorIsNull = error?.isNull ?? true
+        guard resultIsNull != errorIsNull else {
+            throw ResponseValidationError.invalidEnvelope
+        }
+        if errorIsNull {
+            guard let result else { throw ResponseValidationError.invalidResult }
+            return ProfileEnvelope(requestID: requestID, result: result)
+        }
+        guard case .object(let errorFields) = error else {
+            throw ResponseValidationError.invalidError
+        }
+        let errorMap = try exactMap(errorFields, keys: ["code", "message"], failure: .invalidError)
+        guard case .string(let code) = errorMap["code"],
+              ProtocolV1.profileErrorCodes.contains(code),
+              case .string(let message) = errorMap["message"],
+              message.utf8.count <= 256 else {
+            throw ResponseValidationError.invalidError
+        }
+        throw ResponseValidationError.serverError(RuntimeError(code: code, message: message))
+    }
+
+    private static func exactMap(
+        _ fields: [(String, JSONValue)],
+        keys: [String],
+        failure: ResponseValidationError = .invalidResult
+    ) throws -> [String: JSONValue] {
+        let map = Dictionary(uniqueKeysWithValues: fields)
+        guard map.count == keys.count, Set(map.keys) == Set(keys) else {
+            throw failure
+        }
+        return map
     }
 
     private static func validateResponse(
@@ -119,6 +1127,9 @@ public enum ResponseValidator {
         method: RuntimeMethod,
         expectedInstanceID: String
     ) throws -> RuntimeResponse {
+        guard method == .health || method == .status else {
+            throw ResponseValidationError.invalidResult
+        }
         guard case .object(let fields) = root else {
             throw ResponseValidationError.invalidEnvelope
         }
@@ -197,7 +1208,7 @@ public enum ResponseValidator {
         let errorMap = Dictionary(uniqueKeysWithValues: errorFields)
         guard Set(errorMap.keys) == Set(["code", "message"]),
               case .string(let code) = errorMap["code"],
-              ProtocolV1.allowedErrorCodes.contains(code),
+              ProtocolV1.healthStatusErrorCodes.contains(code),
               case .string(let message) = errorMap["message"],
               message.utf8.count <= 256 else {
             throw ResponseValidationError.invalidError

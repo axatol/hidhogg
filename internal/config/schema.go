@@ -10,18 +10,18 @@ import (
 
 const jsonSchemaDraft4 = "http://json-schema.org/draft-04/schema#"
 
-//go:generate go run ./generate-schema -output ../../schema/hidhogg-d200x-v3.json
+//go:generate go run ./generate-schema -output ../../schema/hidhogg-d200x-v4.json
 
-// JSONSchema reflects the canonical Config DTO and adds constraints that are
+// JSONSchema reflects the compact source DTO and adds constraints that are
 // stable for this milestone. Reflection supplies property names and types;
 // semantic validation remains authoritative for cross-item invariants.
 func JSONSchema() (*jsonschema.Schema, error) {
-	document, err := jsonschema.For[Config](nil)
+	document, err := jsonschema.For[sourceConfig](nil)
 	if err != nil {
 		return nil, err
 	}
 	document.Schema = jsonSchemaDraft4
-	document.Title = "Hidhogg Ulanzi D200X configuration v3"
+	document.Title = "Hidhogg Ulanzi D200X configuration v4"
 	document.Description = "Strict named-profile configuration for one Ulanzi D200X adapter."
 
 	configureConfigSchema(document)
@@ -51,8 +51,9 @@ func configureConfigSchema(document *jsonschema.Schema) {
 	if document == nil || document.Properties == nil {
 		return
 	}
+	document.AdditionalProperties = closedSchema()
 	if field := document.Properties["schema_version"]; field != nil {
-		field.Enum = []any{SchemaVersionV3}
+		field.Enum = []any{SchemaVersionV4}
 	}
 	if field := document.Properties["adapter"]; field != nil {
 		field.Enum = []any{AdapterUlanziD200X}
@@ -70,14 +71,19 @@ func configureConfigSchema(document *jsonschema.Schema) {
 		configureStableIDSchema(field)
 	}
 	if field := document.Properties["profiles"]; field != nil {
-		field.Type = "array"
+		profileSchema := field.AdditionalProperties
+		field.Type = "object"
 		field.Types = nil
-		field.MinItems = schemaInt(1)
-		field.MaxItems = schemaInt(MaximumProfileCount)
-		field.UniqueItems = true
-		if field.Items != nil {
-			configureProfileSchema(field.Items)
+		field.Properties = nil
+		field.Required = nil
+		field.MinProperties = schemaInt(1)
+		field.MaxProperties = schemaInt(MaximumProfileCount)
+		field.AdditionalProperties = closedSchema()
+		field.PatternProperties = map[string]*jsonschema.Schema{
+			stableIDPattern.String(): profileSchema,
 		}
+		field.PropertyOrder = nil
+		configureProfileSchema(profileSchema)
 	}
 	// The decoder applies the default when this optional field is omitted.
 	document.Required = withoutRequired(document.Required, "idle_timeout_seconds")
@@ -97,21 +103,27 @@ func configureProfileSchema(profileSchema *jsonschema.Schema) {
 	if profileSchema == nil || profileSchema.Properties == nil {
 		return
 	}
-	if field := profileSchema.Properties["id"]; field != nil {
-		configureStableIDSchema(field)
-	}
+	profileSchema.AdditionalProperties = closedSchema()
 	if field := profileSchema.Properties["label"]; field != nil {
 		field.MinLength = schemaInt(1)
 		field.MaxLength = schemaInt(MaximumLabelRunes)
 	}
 	if field := profileSchema.Properties["positions"]; field != nil {
-		field.Type = "array"
+		positionSchema := field.AdditionalProperties
+		field.Type = "object"
 		field.Types = nil
-		field.MinItems = schemaInt(RequiredPositionCount)
-		field.MaxItems = schemaInt(RequiredPositionCount)
-		field.UniqueItems = true
-		if field.Items != nil {
-			configurePositionSchema(field.Items)
+		field.Items = nil
+		field.MinItems = nil
+		field.MaxItems = nil
+		field.UniqueItems = false
+		field.Properties = make(map[string]*jsonschema.Schema, RequiredPositionCount)
+		field.PatternProperties = nil
+		field.AdditionalProperties = closedSchema()
+		field.PropertyOrder = make([]string, 0, RequiredPositionCount)
+		configurePositionSchema(positionSchema)
+		for _, spec := range supportedPositionSpecs {
+			field.Properties[spec.Name] = positionSchema.CloneSchemas()
+			field.PropertyOrder = append(field.PropertyOrder, spec.Name)
 		}
 	}
 }
@@ -120,17 +132,9 @@ func configurePositionSchema(position *jsonschema.Schema) {
 	if position == nil || position.Properties == nil {
 		return
 	}
-	if field := position.Properties["id"]; field != nil {
-		configureStableIDSchema(field)
-	}
-	if field := position.Properties["position"]; field != nil {
-		field.Enum = make([]any, 0, len(supportedPositionSpecs))
-		for _, spec := range supportedPositionSpecs {
-			field.Enum = append(field.Enum, spec.Name)
-		}
-	}
+	position.AdditionalProperties = closedSchema()
 	if field := position.Properties["label"]; field != nil {
-		field.MinLength = schemaInt(1)
+		field.Default = json.RawMessage(`""`)
 		field.MaxLength = schemaInt(MaximumLabelRunes)
 	}
 	if field := position.Properties["label_alignment"]; field != nil {
@@ -144,6 +148,7 @@ func configurePositionSchema(position *jsonschema.Schema) {
 	}
 	if field := position.Properties["background"]; field != nil {
 		field.Pattern = backgroundPattern.String()
+		field.Default = json.RawMessage(`"#000000"`)
 	}
 	if field := position.Properties["notification_sources"]; field != nil {
 		field.Type = "array"
@@ -161,6 +166,10 @@ func configurePositionSchema(position *jsonschema.Schema) {
 	if field := position.Properties["action"]; field != nil {
 		configureActionSchema(field)
 	}
+}
+
+func closedSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{Not: &jsonschema.Schema{}}
 }
 
 func configureActionSchema(action *jsonschema.Schema) {

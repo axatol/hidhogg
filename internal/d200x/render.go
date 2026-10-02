@@ -31,7 +31,19 @@ func configuredPNG(width int, background color.RGBA) ([]byte, error) {
 	return encodeConfiguredPNG(configuredImage(width, background))
 }
 
+func configuredPositionPNG(position Position, width int, background color.RGBA) ([]byte, error) {
+	if position.Label != "" {
+		return configuredPNG(width, background)
+	}
+	imageData := image.NewRGBA(image.Rect(0, 0, width, displayTileHeight))
+	draw.Draw(imageData, imageData.Bounds(), image.NewUniform(background), image.Point{}, draw.Src)
+	return encodeConfiguredPNG(imageData)
+}
+
 func configuredWidePNG(position Position, background color.RGBA) ([]byte, error) {
+	if position.Label == "" {
+		return configuredPositionPNG(position, displayWideWidth, background)
+	}
 	imageData := configuredImage(displayWideWidth, background)
 	if err := drawWideLabel(imageData, position.Label, position.LabelAlignment, position.LabelSize, textColor(background)); err != nil {
 		return nil, err

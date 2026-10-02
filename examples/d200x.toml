@@ -1,195 +1,46 @@
 # Taplo reads the schema path relative to this TOML file.
-#:schema ../schema/hidhogg-d200x-v3.json
+#:schema ../schema/hidhogg-d200x-v4.json
 
-# Valid schema-v3 Ulanzi D200X configuration with two ordered profiles.
-schema_version = 3
+# Valid schema-v4 Ulanzi D200X configuration with keyed profiles and coordinates.
+schema_version = 4
 adapter = "ulanzi.d200x"
 brightness = 80
 default_profile_id = "default"
 
-[[profiles]]
-id = "default"
+[profiles.default]
 label = "Default"
 
-[[profiles.positions]]
-id = "clock"
-position = "0_0"
-label = "Clock"
-background = "#102030"
-notification_sources = ["clock"]
+[profiles.default.positions]
+0_0 = { label = "Clock", background = "#102030", notification_sources = ["clock"], action = { type = "activate_profile", gesture = "release", profile_id = "alternate" } }
+1_0 = { label = "Calendar", background = "#112233" }
+2_0 = { label = "Timer", background = "#122436" }
+3_0 = { label = "Focus", background = "#132639" }
+4_0 = { label = "Music", background = "#14283c" }
+0_1 = { label = "Weather", background = "#153048" }
+1_1 = { label = "Notes", background = "#16324b" }
+2_1 = { label = "Mail", background = "#17364e" }
+3_1 = { label = "Chat", background = "#183a51" }
+4_1 = { label = "Calls", background = "#193e54" }
+0_2 = { label = "CPU", background = "#1a4257" }
+1_2 = { label = "Memory", background = "#1b465a" }
+2_2 = { label = "Network", background = "#1c4a5d" }
+3_2 = { label = "Status", background = "#1d4e60" }
 
-[profiles.positions.action]
-type = "activate_profile"
-gesture = "release"
-profile_id = "alternate"
-
-[[profiles.positions]]
-id = "calendar"
-position = "1_0"
-label = "Calendar"
-background = "#112233"
-
-[[profiles.positions]]
-id = "timer"
-position = "2_0"
-label = "Timer"
-background = "#122436"
-
-[[profiles.positions]]
-id = "focus"
-position = "3_0"
-label = "Focus"
-background = "#132639"
-
-[[profiles.positions]]
-id = "music"
-position = "4_0"
-label = "Music"
-background = "#14283c"
-
-[[profiles.positions]]
-id = "weather"
-position = "0_1"
-label = "Weather"
-background = "#153048"
-
-[[profiles.positions]]
-id = "notes"
-position = "1_1"
-label = "Notes"
-background = "#16324b"
-
-[[profiles.positions]]
-id = "mail"
-position = "2_1"
-label = "Mail"
-background = "#17364e"
-
-[[profiles.positions]]
-id = "chat"
-position = "3_1"
-label = "Chat"
-background = "#183a51"
-
-[[profiles.positions]]
-id = "calls"
-position = "4_1"
-label = "Calls"
-background = "#193e54"
-
-[[profiles.positions]]
-id = "cpu"
-position = "0_2"
-label = "CPU"
-background = "#1a4257"
-
-[[profiles.positions]]
-id = "memory"
-position = "1_2"
-label = "Memory"
-background = "#1b465a"
-
-[[profiles.positions]]
-id = "network"
-position = "2_2"
-label = "Network"
-background = "#1c4a5d"
-
-[[profiles.positions]]
-id = "status"
-position = "3_2"
-label = "Status"
-background = "#1d4e60"
-
-[[profiles]]
-id = "alternate"
+[profiles.alternate]
 label = "Alternate"
 
-[[profiles.positions]]
-id = "clock"
-position = "0_0"
-label = "Alt Clock"
-background = "#202010"
-
-[[profiles.positions]]
-id = "calendar"
-position = "1_0"
-label = "Alt Calendar"
-background = "#232111"
-
-[profiles.positions.action]
-type = "activate_profile"
-gesture = "release"
-profile_id = "default"
-
-[[profiles.positions]]
-id = "timer"
-position = "2_0"
-label = "Alt Timer"
-background = "#262212"
-
-[[profiles.positions]]
-id = "focus"
-position = "3_0"
-label = "Alt Focus"
-background = "#292613"
-
-[[profiles.positions]]
-id = "music"
-position = "4_0"
-label = "Alt Music"
-background = "#2c2814"
-
-[[profiles.positions]]
-id = "weather"
-position = "0_1"
-label = "Alt Weather"
-background = "#302a15"
-
-[[profiles.positions]]
-id = "notes"
-position = "1_1"
-label = "Alt Notes"
-background = "#322e16"
-
-[[profiles.positions]]
-id = "mail"
-position = "2_1"
-label = "Alt Mail"
-background = "#363117"
-
-[[profiles.positions]]
-id = "chat"
-position = "3_1"
-label = "Alt Chat"
-background = "#3a3418"
-
-[[profiles.positions]]
-id = "calls"
-position = "4_1"
-label = "Alt Calls"
-background = "#3e3819"
-
-[[profiles.positions]]
-id = "cpu"
-position = "0_2"
-label = "Alt CPU"
-background = "#423c1a"
-
-[[profiles.positions]]
-id = "memory"
-position = "1_2"
-label = "Alt Memory"
-background = "#46401b"
-
-[[profiles.positions]]
-id = "network"
-position = "2_2"
-label = "Alt Network"
-background = "#4a441c"
-
-[[profiles.positions]]
-id = "status"
-position = "3_2"
-label = "Alt Status"
-background = "#4e481d"
+[profiles.alternate.positions]
+0_0 = { label = "Alt Clock", background = "#202010" }
+1_0 = { label = "Alt Calendar", background = "#232111", action = { type = "activate_profile", gesture = "release", profile_id = "default" } }
+2_0 = { label = "Alt Timer", background = "#262212" }
+3_0 = { label = "Alt Focus", background = "#292613" }
+4_0 = { label = "Alt Music", background = "#2c2814" }
+0_1 = { label = "Alt Weather", background = "#302a15" }
+1_1 = { label = "Alt Notes", background = "#322e16" }
+2_1 = { label = "Alt Mail", background = "#363117" }
+3_1 = { label = "Alt Chat", background = "#3a3418" }
+4_1 = { label = "Alt Calls", background = "#3e3819" }
+0_2 = { label = "Alt CPU", background = "#423c1a" }
+1_2 = { label = "Alt Memory", background = "#46401b" }
+2_2 = { label = "Alt Network", background = "#4a441c" }
+3_2 = { label = "Alt Status", background = "#4e481d" }

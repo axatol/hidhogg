@@ -28,6 +28,104 @@ public protocol RuntimeHealthClientCreating: Sendable {
     func make(socketPath: String, instanceID: String) throws -> any RuntimeHealthChecking
 }
 
+public protocol RuntimeProfileChecking: Sendable {
+    func listProfiles(requestID: String) throws -> ProfileListResponse
+    func activateProfile(profileID: String, requestID: String) throws -> ProfileActivationResponse
+}
+
+public protocol RuntimeProfileClientCreating: Sendable {
+    func make(socketPath: String, instanceID: String) throws -> any RuntimeProfileChecking
+}
+
+public protocol RuntimeDisplayHostStateChecking: Sendable {
+    func setDisplayHostState(
+        displayAwake: Bool,
+        requestID: String
+    ) throws -> DisplayHostStateResponse
+}
+
+public protocol RuntimeDisplayHostStateClientCreating: Sendable {
+    func make(socketPath: String, instanceID: String) throws -> any RuntimeDisplayHostStateChecking
+}
+
+public protocol RuntimeConfigEditorChecking: Sendable {
+    func configEditorSnapshot(requestID: String) throws -> ConfigEditorSnapshotResponse
+    func configEditorProfile(
+        profileID: String,
+        sourceDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorProfileResponse
+    func setConfigEditorProfileLabel(
+        profileID: String,
+        label: String,
+        expectedDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse
+    func createConfigEditorProfile(
+        profileID: String,
+        label: String,
+        expectedDigest: String,
+        sourceProfileID: String?,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse
+    func deleteConfigEditorProfile(
+        profileID: String,
+        expectedDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse
+    func configEditorPositions(
+        profileID: String,
+        sourceDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorPositionsResponse
+    func configEditorPosition(
+        profileID: String,
+        positionID: String,
+        sourceDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorPositionResponse
+    func setConfigEditorPositionLabel(
+        profileID: String,
+        positionID: String,
+        label: String,
+        expectedDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse
+}
+
+public extension RuntimeConfigEditorChecking {
+    func configEditorPositions(
+        profileID: String,
+        sourceDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorPositionsResponse {
+        throw UnixSocketClientError.invalidRequest
+    }
+
+    func configEditorPosition(
+        profileID: String,
+        positionID: String,
+        sourceDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorPositionResponse {
+        throw UnixSocketClientError.invalidRequest
+    }
+
+    func setConfigEditorPositionLabel(
+        profileID: String,
+        positionID: String,
+        label: String,
+        expectedDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse {
+        throw UnixSocketClientError.invalidRequest
+    }
+}
+
+public protocol RuntimeConfigEditorClientCreating: Sendable {
+    func make(socketPath: String, instanceID: String) throws -> any RuntimeConfigEditorChecking
+}
+
 public struct DarwinSocketTransport: SocketTransport, Sendable {
     public let phaseTimeoutNanoseconds: UInt64
 
@@ -217,7 +315,7 @@ public struct DarwinSocketTransport: SocketTransport, Sendable {
     }
 }
 
-public final class UnixSocketClient: @unchecked Sendable, RuntimeHealthChecking {
+public final class UnixSocketClient: @unchecked Sendable, RuntimeHealthChecking, RuntimeProfileChecking, RuntimeDisplayHostStateChecking, RuntimeConfigEditorChecking {
     public let socketPath: String
     public let instanceID: String
     public let phaseTimeoutNanoseconds: UInt64
@@ -243,22 +341,12 @@ public final class UnixSocketClient: @unchecked Sendable, RuntimeHealthChecking 
         method: RuntimeMethod,
         requestID: String
     ) throws -> RuntimeResponse {
-        guard UUIDValidation.isCanonical(requestID) else {
+        guard method == .health || method == .status,
+              UUIDValidation.isCanonical(requestID) else {
             throw UnixSocketClientError.invalidRequest
         }
-        let socketURL = URL(fileURLWithPath: socketPath)
-        do {
-            _ = try PathSecurity.validateGenerationDirectory(socketURL.deletingLastPathComponent())
-            _ = try PathSecurity.validateSocket(socketURL)
-        } catch let error as PathSecurityError {
-            throw UnixSocketClientError.endpoint(error)
-        }
         let request = ProtocolV1.request(method: method, requestID: requestID, instanceID: instanceID)
-        let responseFrame = try transport.exchange(
-            request: request,
-            socketPath: socketPath,
-            timeoutNanoseconds: phaseTimeoutNanoseconds
-        )
+        let responseFrame = try exchange(request: request)
         do {
             return try ResponseValidator.validate(
                 frame: responseFrame,
@@ -274,8 +362,380 @@ public final class UnixSocketClient: @unchecked Sendable, RuntimeHealthChecking 
         }
     }
 
+    public func listProfiles(requestID: String) throws -> ProfileListResponse {
+        let responseFrame = try profileExchange(
+            method: .profilesList,
+            requestID: requestID,
+            profileID: nil
+        )
+        do {
+            return try ResponseValidator.validateProfilesList(
+                frame: responseFrame,
+                expectedRequestID: requestID,
+                expectedInstanceID: instanceID
+            )
+        } catch let error as ResponseValidationError {
+            throw mapResponseError(error)
+        }
+    }
+
+    public func activateProfile(profileID: String, requestID: String) throws -> ProfileActivationResponse {
+        let responseFrame = try profileExchange(
+            method: .profilesActivate,
+            requestID: requestID,
+            profileID: profileID
+        )
+        do {
+            return try ResponseValidator.validateProfileActivation(
+                frame: responseFrame,
+                expectedRequestID: requestID,
+                expectedProfileID: profileID
+            )
+        } catch let error as ResponseValidationError {
+            throw mapResponseError(error)
+        }
+    }
+
+    public func setDisplayHostState(
+        displayAwake: Bool,
+        requestID: String
+    ) throws -> DisplayHostStateResponse {
+        let request: Data
+        do {
+            request = try ProtocolV1.displayHostStateRequest(
+                requestID: requestID,
+                instanceID: instanceID,
+                displayAwake: displayAwake
+            )
+        } catch {
+            throw UnixSocketClientError.invalidRequest
+        }
+        let responseFrame = try exchange(request: request)
+        do {
+            return try ResponseValidator.validateDisplayHostState(
+                frame: responseFrame,
+                expectedRequestID: requestID,
+                expectedInstanceID: instanceID,
+                expectedDisplayAwake: displayAwake
+            )
+        } catch let error as ResponseValidationError {
+            throw mapResponseError(error)
+        }
+    }
+
+    public func configEditorSnapshot(requestID: String) throws -> ConfigEditorSnapshotResponse {
+        let responseFrame = try configEditorExchange(
+            method: .configEditorSnapshot,
+            requestID: requestID
+        )
+        do {
+            return try ResponseValidator.validateConfigEditorSnapshot(
+                frame: responseFrame,
+                expectedRequestID: requestID,
+                expectedInstanceID: instanceID
+            )
+        } catch let error as ResponseValidationError {
+            throw mapResponseError(error)
+        }
+    }
+
+    public func configEditorProfile(
+        profileID: String,
+        sourceDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorProfileResponse {
+        let responseFrame = try configEditorExchange(
+            method: .configEditorProfileGet,
+            requestID: requestID,
+            profileID: profileID,
+            sourceDigest: sourceDigest
+        )
+        do {
+            return try ResponseValidator.validateConfigEditorProfile(
+                frame: responseFrame,
+                expectedRequestID: requestID,
+                expectedInstanceID: instanceID,
+                expectedSourceDigest: sourceDigest,
+                expectedProfileID: profileID
+            )
+        } catch let error as ResponseValidationError {
+            throw mapResponseError(error)
+        }
+    }
+
+    public func configEditorPositions(
+        profileID: String,
+        sourceDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorPositionsResponse {
+        let responseFrame = try configEditorExchange(
+            method: .configEditorPositionsList,
+            requestID: requestID,
+            profileID: profileID,
+            sourceDigest: sourceDigest
+        )
+        do {
+            return try ResponseValidator.validateConfigEditorPositions(
+                frame: responseFrame,
+                expectedRequestID: requestID,
+                expectedInstanceID: instanceID,
+                expectedSourceDigest: sourceDigest,
+                expectedProfileID: profileID
+            )
+        } catch let error as ResponseValidationError {
+            throw mapResponseError(error)
+        }
+    }
+
+    public func configEditorPosition(
+        profileID: String,
+        positionID: String,
+        sourceDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorPositionResponse {
+        let responseFrame = try configEditorExchange(
+            method: .configEditorPositionGet,
+            requestID: requestID,
+            profileID: profileID,
+            positionID: positionID,
+            sourceDigest: sourceDigest
+        )
+        do {
+            return try ResponseValidator.validateConfigEditorPosition(
+                frame: responseFrame,
+                expectedRequestID: requestID,
+                expectedInstanceID: instanceID,
+                expectedSourceDigest: sourceDigest,
+                expectedProfileID: profileID,
+                expectedPositionID: positionID
+            )
+        } catch let error as ResponseValidationError {
+            throw mapResponseError(error)
+        }
+    }
+
+    public func setConfigEditorProfileLabel(
+        profileID: String,
+        label: String,
+        expectedDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse {
+        let responseFrame = try configEditorExchange(
+            method: .configEditorProfileLabelSet,
+            requestID: requestID,
+            profileID: profileID,
+            expectedDigest: expectedDigest,
+            label: label
+        )
+        return try validateConfigEditorMutation(responseFrame, method: .configEditorProfileLabelSet, requestID: requestID)
+    }
+
+    public func createConfigEditorProfile(
+        profileID: String,
+        label: String,
+        expectedDigest: String,
+        sourceProfileID: String? = nil,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse {
+        let responseFrame = try configEditorExchange(
+            method: .configEditorProfileCreate,
+            requestID: requestID,
+            profileID: profileID,
+            expectedDigest: expectedDigest,
+            label: label,
+            sourceProfileID: sourceProfileID
+        )
+        return try validateConfigEditorMutation(responseFrame, method: .configEditorProfileCreate, requestID: requestID)
+    }
+
+    public func deleteConfigEditorProfile(
+        profileID: String,
+        expectedDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse {
+        let responseFrame = try configEditorExchange(
+            method: .configEditorProfileDelete,
+            requestID: requestID,
+            profileID: profileID,
+            expectedDigest: expectedDigest
+        )
+        return try validateConfigEditorMutation(responseFrame, method: .configEditorProfileDelete, requestID: requestID)
+    }
+
+    public func setConfigEditorPositionLabel(
+        profileID: String,
+        positionID: String,
+        label: String,
+        expectedDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse {
+        let responseFrame = try configEditorExchange(
+            method: .configEditorPositionLabelSet,
+            requestID: requestID,
+            profileID: profileID,
+            positionID: positionID,
+            expectedDigest: expectedDigest,
+            label: label
+        )
+        return try validateConfigEditorMutation(
+            responseFrame,
+            method: .configEditorPositionLabelSet,
+            requestID: requestID
+        )
+    }
+
+    private func validateConfigEditorMutation(
+        _ responseFrame: Data,
+        method: RuntimeMethod,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse {
+        do {
+            return try ResponseValidator.validateConfigEditorMutation(
+                frame: responseFrame,
+                expectedRequestID: requestID,
+                expectedInstanceID: instanceID,
+                method: method
+            )
+        } catch let error as ResponseValidationError {
+            throw mapResponseError(error)
+        }
+    }
+
+    private func configEditorExchange(
+        method: RuntimeMethod,
+        requestID: String,
+        profileID: String? = nil,
+        positionID: String? = nil,
+        sourceDigest: String? = nil,
+        expectedDigest: String? = nil,
+        label: String? = nil,
+        sourceProfileID: String? = nil
+    ) throws -> Data {
+        guard UUIDValidation.isCanonical(requestID) else {
+            throw UnixSocketClientError.invalidRequest
+        }
+        let request: Data
+        do {
+            request = try ProtocolV1.configEditorRequest(
+                method: method,
+                requestID: requestID,
+                instanceID: instanceID,
+                profileID: profileID,
+                positionID: positionID,
+                sourceDigest: sourceDigest,
+                expectedDigest: expectedDigest,
+                label: label,
+                sourceProfileID: sourceProfileID
+            )
+        } catch let error as ProtocolRequestValidationError {
+            if error == .frameTooLarge {
+                throw UnixSocketClientError.frameTooLarge
+            }
+            throw UnixSocketClientError.invalidRequest
+        } catch {
+            throw UnixSocketClientError.invalidRequest
+        }
+        return try exchange(request: request)
+    }
+
+    private func profileExchange(
+        method: RuntimeMethod,
+        requestID: String,
+        profileID: String?
+    ) throws -> Data {
+        guard method == .profilesList || method == .profilesActivate,
+              UUIDValidation.isCanonical(requestID) else {
+            throw UnixSocketClientError.invalidRequest
+        }
+        let request: Data
+        do {
+            request = try ProtocolV1.profileRequest(
+                method: method,
+                requestID: requestID,
+                instanceID: instanceID,
+                profileID: profileID
+            )
+        } catch {
+            throw UnixSocketClientError.invalidRequest
+        }
+        return try exchange(request: request)
+    }
+
+    private func exchange(request: Data) throws -> Data {
+        guard request.count <= ProtocolV1.frameLimit else {
+            throw UnixSocketClientError.frameTooLarge
+        }
+        let socketURL = URL(fileURLWithPath: socketPath)
+        do {
+            _ = try PathSecurity.validateGenerationDirectory(socketURL.deletingLastPathComponent())
+            _ = try PathSecurity.validateSocket(socketURL)
+        } catch let error as PathSecurityError {
+            throw UnixSocketClientError.endpoint(error)
+        }
+        return try transport.exchange(
+            request: request,
+            socketPath: socketPath,
+            timeoutNanoseconds: phaseTimeoutNanoseconds
+        )
+    }
+
+    private func mapResponseError(_ error: ResponseValidationError) -> UnixSocketClientError {
+        if case .serverError(let runtimeError) = error {
+            return .response(.serverError(runtimeError))
+        }
+        return .response(error)
+    }
+
     public func health(requestID: String) throws -> RuntimeResponse {
         try request(method: .health, requestID: requestID)
+    }
+}
+
+public struct UnixSocketProfileClientFactory: RuntimeProfileClientCreating, Sendable {
+    private let transportFactory: @Sendable () -> any SocketTransport
+
+    public init(transportFactory: @escaping @Sendable () -> any SocketTransport = { DarwinSocketTransport() }) {
+        self.transportFactory = transportFactory
+    }
+
+    public func make(socketPath: String, instanceID: String) throws -> any RuntimeProfileChecking {
+        try UnixSocketClient(
+            socketPath: socketPath,
+            instanceID: instanceID,
+            transport: transportFactory()
+        )
+    }
+}
+
+public struct UnixSocketDisplayHostStateClientFactory: RuntimeDisplayHostStateClientCreating, Sendable {
+    private let transportFactory: @Sendable () -> any SocketTransport
+
+    public init(transportFactory: @escaping @Sendable () -> any SocketTransport = { DarwinSocketTransport() }) {
+        self.transportFactory = transportFactory
+    }
+
+    public func make(socketPath: String, instanceID: String) throws -> any RuntimeDisplayHostStateChecking {
+        try UnixSocketClient(
+            socketPath: socketPath,
+            instanceID: instanceID,
+            transport: transportFactory()
+        )
+    }
+}
+
+public struct UnixSocketConfigEditorClientFactory: RuntimeConfigEditorClientCreating, Sendable {
+    private let transportFactory: @Sendable () -> any SocketTransport
+
+    public init(transportFactory: @escaping @Sendable () -> any SocketTransport = { DarwinSocketTransport() }) {
+        self.transportFactory = transportFactory
+    }
+
+    public func make(socketPath: String, instanceID: String) throws -> any RuntimeConfigEditorChecking {
+        try UnixSocketClient(
+            socketPath: socketPath,
+            instanceID: instanceID,
+            transport: transportFactory()
+        )
     }
 }
 

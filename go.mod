@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/google/jsonschema-go v0.4.3
-	github.com/pelletier/go-toml/v2 v2.4.3
+	github.com/pelletier/go-toml/v2 v2.4.4-0.20260718201843-686c980c4758
 )
 
 require (

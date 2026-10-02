@@ -257,7 +257,7 @@ func validateValues(values []Value, profileByID map[string]int) error {
 			return fmt.Errorf("position %q is duplicated at indexes %d and %d", value.Position, previous, index)
 		}
 		seenPositions[value.Position] = index
-		if !validLabel(value.Label) {
+		if value.Label != "" && !validLabel(value.Label) {
 			return fmt.Errorf("value %d has an invalid label", index)
 		}
 		if !validBackground(value.Background) {

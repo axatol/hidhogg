@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -186,6 +187,15 @@ func (admission *reloadAdmission) finish(outcome ReloadOutcome, reason ReloadRea
 	return dirty
 }
 
+func (admission *reloadAdmission) finishPreservingStatus() bool {
+	admission.mu.Lock()
+	admission.active = false
+	dirty := admission.dirty && !admission.closed
+	admission.dirty = false
+	admission.mu.Unlock()
+	return dirty
+}
+
 func (admission *reloadAdmission) close() {
 	admission.mu.Lock()
 	admission.closed = true
@@ -210,10 +220,40 @@ func (r *Runtime) reloadAutomatically(ctx context.Context) {
 }
 
 func (r *Runtime) reloadStarted(ctx context.Context) (ReloadResult, error) {
+	r.mu.Lock()
+	configPath := r.config.ConfigPath
+	build := r.reloadBuilder
+	r.mu.Unlock()
+	if build == nil {
+		build = buildReloadCandidate
+	}
+	return r.reloadStartedWithCandidateBuilder(ctx, func(currentID string) (reloadCandidate, error) {
+		return build(configPath, currentID)
+	})
+}
+
+func (r *Runtime) reloadStartedFromBytes(ctx context.Context, source []byte) (ReloadResult, error) {
+	ownedSource := bytes.Clone(source)
+	return r.reloadStartedWithCandidateBuilder(ctx, func(currentID string) (reloadCandidate, error) {
+		return buildReloadCandidateFromBytes(ownedSource, currentID)
+	})
+}
+
+func (r *Runtime) reloadStartedWithCandidateBuilder(ctx context.Context, buildCandidate func(string) (reloadCandidate, error)) (ReloadResult, error) {
+	return r.reloadStartedWithCandidateBuilderAndStatus(ctx, buildCandidate, nil)
+}
+
+func (r *Runtime) reloadStartedWithCandidateBuilderAndStatus(ctx context.Context, buildCandidate func(string) (reloadCandidate, error), preserveStatus func() bool) (ReloadResult, error) {
 	outcome := ReloadOutcomeRejected
 	reason := ReloadReasonCandidateRejected
 	var statusDiagnostic *appconfig.DiagnosticProjection
 	defer func() {
+		if preserveStatus != nil && preserveStatus() {
+			if r.reload.finishPreservingStatus() {
+				r.signalAutomaticReload()
+			}
+			return
+		}
 		if r.reload.finish(outcome, reason, statusDiagnostic) {
 			r.signalAutomaticReload()
 		}
@@ -229,16 +269,9 @@ func (r *Runtime) reloadStarted(ctx context.Context) (ReloadResult, error) {
 		reason = ReloadReasonClosed
 		return ReloadResult{}, ErrReloadClosed
 	}
-	r.mu.Lock()
-	configPath := r.config.ConfigPath
-	build := r.reloadBuilder
-	r.mu.Unlock()
-	if build == nil {
-		build = buildReloadCandidate
-	}
 	var candidateErr error
 	result, err := concrete.reload(ctx, func(currentID string) (reloadCandidate, error) {
-		candidate, buildErr := build(configPath, currentID)
+		candidate, buildErr := buildCandidate(currentID)
 		candidateErr = buildErr
 		return candidate, buildErr
 	})

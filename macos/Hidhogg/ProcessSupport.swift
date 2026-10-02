@@ -37,7 +37,11 @@ public final class OutputDrainer: @unchecked Sendable {
     private let standardOutput: FileHandle
     private let standardError: FileHandle
     private let lock = NSLock()
+    private let handlerLock = NSLock()
     private var stopped = false
+    private var standardOutputHandlerUnregistered = false
+    private var standardErrorHandlerUnregistered = false
+    private var finalDrainStarted = false
 
     public init(
         standardOutput: FileHandle,
@@ -53,33 +57,100 @@ public final class OutputDrainer: @unchecked Sendable {
 
     public func start() {
         standardOutput.readabilityHandler = { [weak self] handle in
-            self?.drain(handle: handle, into: self?.standardOutputTail)
+            self?.drain(handle: handle, into: self?.standardOutputTail, isStandardError: false)
         }
         standardError.readabilityHandler = { [weak self] handle in
-            self?.drain(handle: handle, into: self?.standardErrorTail)
+            self?.drain(handle: handle, into: self?.standardErrorTail, isStandardError: true)
         }
     }
 
     public func stop() {
         lock.lock()
+        stopped = true
+        lock.unlock()
+        unregisterHandlers()
+    }
+
+    public func finishAfterProcessExit() {
+        lock.lock()
+        stopped = true
+        let shouldDrain = !finalDrainStarted
+        finalDrainStarted = true
+        lock.unlock()
+
+        unregisterHandlers()
+        guard shouldDrain else { return }
+
+        lock.lock()
+        drainAvailable(standardOutput, into: standardOutputTail)
+        drainAvailable(standardError, into: standardErrorTail)
+        lock.unlock()
+    }
+
+    private func unregisterHandlers() {
+        unregisterHandler(isStandardError: false)
+        unregisterHandler(isStandardError: true)
+    }
+
+    private func unregisterHandler(isStandardError: Bool) {
+        handlerLock.lock()
+        defer { handlerLock.unlock() }
+        if isStandardError {
+            guard !standardErrorHandlerUnregistered else { return }
+            standardErrorHandlerUnregistered = true
+            standardError.readabilityHandler = nil
+            return
+        }
+        guard !standardOutputHandlerUnregistered else { return }
+        standardOutputHandlerUnregistered = true
+        standardOutput.readabilityHandler = nil
+    }
+
+    private func drain(handle: FileHandle, into tail: OutputTail?, isStandardError: Bool) {
+        guard let tail else { return }
+        lock.lock()
         guard !stopped else {
             lock.unlock()
             return
         }
-        stopped = true
-        lock.unlock()
-        standardOutput.readabilityHandler = nil
-        standardError.readabilityHandler = nil
-    }
-
-    private func drain(handle: FileHandle, into tail: OutputTail?) {
-        guard let tail else { return }
         let data = handle.availableData
         if data.isEmpty {
-            handle.readabilityHandler = nil
+            lock.unlock()
+            DispatchQueue.global().async { [weak self] in
+                self?.unregisterHandler(isStandardError: isStandardError)
+            }
             return
         }
         tail.append(data)
+        lock.unlock()
+    }
+
+    private func drainAvailable(_ handle: FileHandle, into tail: OutputTail) {
+        let maximumBytes = min(tail.capacity, 65_536)
+        guard maximumBytes > 0 else { return }
+        let descriptor = handle.fileDescriptor
+        let originalFlags = fcntl(descriptor, F_GETFL)
+        guard originalFlags >= 0,
+              fcntl(descriptor, F_SETFL, originalFlags | O_NONBLOCK) == 0 else {
+            return
+        }
+        defer { _ = fcntl(descriptor, F_SETFL, originalFlags) }
+
+        var remainingBytes = maximumBytes
+        var buffer = [UInt8](repeating: 0, count: min(4_096, maximumBytes))
+        while remainingBytes > 0 {
+            let bytesRead = buffer.withUnsafeMutableBytes { bufferBytes in
+                guard let baseAddress = bufferBytes.baseAddress else { return 0 }
+                return Darwin.read(descriptor, baseAddress, min(bufferBytes.count, remainingBytes))
+            }
+            guard bytesRead >= 0 else {
+                if errno == EINTR { continue }
+                return
+            }
+            guard bytesRead > 0 else { return }
+            tail.append(Data(buffer.prefix(bytesRead)))
+            remainingBytes -= bytesRead
+        }
     }
 }
 
@@ -131,7 +202,7 @@ public final class FoundationManagedProcess: @unchecked Sendable, ManagedProcess
     public var isRunning: Bool { process.isRunning }
     public var exit: ProcessExit? {
         guard !process.isRunning else { return nil }
-        drainer.stop()
+        drainer.finishAfterProcessExit()
         switch process.terminationReason {
         case .exit:
             return .exit(status: process.terminationStatus)

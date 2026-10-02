@@ -120,7 +120,7 @@ func diagnosticProjectionDetail(category DiagnosticCategory, key string) string 
 	case DiagnosticMissingKey:
 		return "required key is missing"
 	case DiagnosticSchemaVersion:
-		return "use schema_version = 3"
+		return "use schema_version = 4"
 	case DiagnosticValidation:
 		return "value violates configuration constraints"
 	default:
@@ -193,7 +193,7 @@ func newDiagnostic(sourcePath string, cause error) *Diagnostic {
 			switch {
 			case diagnostic.Key == "schema_version":
 				diagnostic.Category = DiagnosticSchemaVersion
-				diagnostic.Detail = "use schema_version = 3"
+				diagnostic.Detail = "use schema_version = 4"
 			case validationError.Issues[0].Kind == ValidationIssueRequired:
 				diagnostic.Category = DiagnosticMissingKey
 				diagnostic.Detail = "required key is missing"
@@ -219,9 +219,28 @@ func setDecodeLocation(diagnostic *Diagnostic, decodeError *toml.DecodeError) {
 	key := decodeError.Key()
 	parts := make([]string, 0, len(key))
 	for _, part := range key {
-		parts = append(parts, safeDiagnosticText(part, MaximumDiagnosticDetailBytes))
+		parts = append(parts, safeDiagnosticText(part, MaximumDiagnosticKeyBytes))
 	}
-	diagnostic.Key = safeDiagnosticText(strings.Join(parts, "."), MaximumDiagnosticDetailBytes)
+	diagnostic.Key = safeDiagnosticText(formatDiagnosticKeyPath(parts), MaximumDiagnosticKeyBytes)
+}
+
+func formatDiagnosticKeyPath(parts []string) string {
+	var output strings.Builder
+	for index, part := range parts {
+		if index == 0 {
+			output.WriteString(part)
+			continue
+		}
+		if parts[index-1] == "profiles" || parts[index-1] == "positions" {
+			output.WriteByte('[')
+			output.WriteString(strconv.Quote(part))
+			output.WriteByte(']')
+			continue
+		}
+		output.WriteByte('.')
+		output.WriteString(part)
+	}
+	return output.String()
 }
 
 func safeDiagnosticText(value string, maximumBytes int) string {

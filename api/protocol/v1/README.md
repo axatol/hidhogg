@@ -31,8 +31,8 @@ All fields are required. No other fields are permitted.
 |---|---|
 | `protocol_version` | JSON integer exactly `1`; `1.0` is invalid |
 | `request_id` | canonical lowercase hyphenated UUID |
-| `method` | case-sensitive `health`, `status`, `profiles.list`, `profiles.activate`, `executions.list`, `executions.get`, `config.reload`, `config.status`, `input.status`, `input.request_permission`, `notifications.emit`, `notifications.clear`, or `doctor` |
-| `params` | object containing `instance_id`; `profiles.activate` additionally requires `profile_id`; `executions.list` optionally accepts integer `limit` (1 through 32, default 20); `executions.get` requires non-empty exact `execution_id`; `notifications.emit` additionally requires `source` and `text` and optionally accepts integer `ttl_seconds` (1 through 86400); `notifications.clear` additionally requires `notification_id` |
+| `method` | case-sensitive `health`, `status`, `profiles.list`, `profiles.activate`, `executions.list`, `executions.get`, `config.reload`, `config.status`, `display.host_state.set`, `input.status`, `input.request_permission`, `notifications.emit`, `notifications.clear`, or `doctor` |
+| `params` | object containing `instance_id`; `profiles.activate` additionally requires `profile_id`; `display.host_state.set` additionally requires boolean `display_awake`; `executions.list` optionally accepts integer `limit` (1 through 32, default 20); `executions.get` requires non-empty exact `execution_id`; `notifications.emit` additionally requires `source` and `text` and optionally accepts integer `ttl_seconds` (1 through 86400); `notifications.clear` additionally requires `notification_id` |
 | `params.instance_id` | canonical lowercase UUID matching the launched generation |
 | `params.profile_id` | non-empty case-sensitive profile identifier; no case normalization is performed |
 
@@ -56,7 +56,7 @@ Exactly one of `result` and `error` is non-null. A safely decoded and valid requ
 
 `health` returns `instance_id` and `state`. `status` additionally returns `protocol_version`. These two result shapes are unchanged by the profile methods. The scaffold state is `ready`; process identifiers, device state, configuration, layouts, actions, and logs are not exposed.
 
-`profiles.list` returns a result containing the requested `instance_id` and `profiles`, an array in configuration order. Each summary contains exactly `id`, `label`, `is_default`, and `is_current`:
+`profiles.list` returns a result containing the requested `instance_id` and `profiles`, an array in normalized catalog order: the configured default first, then remaining profile IDs lexicographically. Each summary contains exactly `id`, `label`, `is_default`, and `is_current`:
 
 ```json
 {"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"instance_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","profiles":[{"id":"default","label":"Default","is_default":true,"is_current":true}]},"error":null}
@@ -66,6 +66,16 @@ Exactly one of `result` and `error` is non-null. A safely decoded and valid requ
 
 ```json
 {"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"profile_id":"work","changed":true},"error":null}
+```
+
+`display.host_state.set` carries the app-observed macOS display power state. Its result contains exactly `instance_id`, `display_awake`, and `changed`. Repeating the committed state is an idempotent success with `changed:false`. The generation-specific `instance_id` prevents a request for a replaced runtime from being accepted by the newer generation.
+
+```json
+{"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","method":"display.host_state.set","params":{"instance_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","display_awake":false}}
+```
+
+```json
+{"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"instance_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","display_awake":false,"changed":true},"error":null}
 ```
 
 `notifications.emit` and `notifications.clear` preserve the nested `params` envelope. Emission source matching is case-sensitive and uses the configured source identifier without normalization. Text is nonblank, single-line UTF-8 of at most 64 runes and 256 bytes. An omitted `ttl_seconds` leaves the overlay until replacement, clearing, selection, or a profile/reload transition; a supplied value starts at successful commit and expires after the requested number of seconds.
@@ -184,5 +194,9 @@ cmd/hidhoggctl ───────────────► internal/ipc cli
 Interfaces are declared at their consumer. No production package imports spike modules. The protocol package does not link HID, TOML editing, action, notification, or D200X production dependencies.
 
 ## Shared fixtures
+
+Schema-v4 source keys identify profiles and physical positions. Runtime editor/notification/history position IDs are canonical D200X coordinates such as `0_0`; the wire envelope remains protocol v1. `config.editor.position_label.set` and position-label reads allow an explicit empty `label` string. Missing `label`, wrong types, and invalid nonempty labels remain invalid; profile labels still require visible text. Encoders must include `"label":""` when clearing a tile rather than omitting the field.
+
+Editor position read/set requests and read responses require a supported coordinate as `position_id`. Position-list entries require `position_id == position`; arbitrary stable IDs, mismatched pairs and unsupported coordinates are rejected. Profile IDs remain case-sensitive stable keys rather than coordinates.
 
 [`cases.json`](cases.json) is the authoritative fixture manifest. Static cases reference shared request and response bytes. Generated cases define their base bytes or mutation, direction, and expected semantic behavior. Go and Swift tests consume the same manifest. Live response key order is not significant; fixture comparison is semantic except where a case explicitly tests framing bytes.

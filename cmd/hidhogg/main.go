@@ -23,7 +23,11 @@ func run() error {
 }
 
 func exitCode(args []string, stderr io.Writer) int {
-	if err := runArgs(args); err != nil {
+	return exitCodeWith(args, stderr, runArgs)
+}
+
+func exitCodeWith(args []string, stderr io.Writer, execute func([]string) error) int {
+	if err := execute(args); err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		return 1
 	}

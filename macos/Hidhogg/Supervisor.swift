@@ -112,6 +112,7 @@ public struct DefaultGenerationDirectoryFactory: GenerationDirectoryCreating, Se
 
 public enum LifecycleState: Equatable, Sendable, CustomStringConvertible {
     case idle
+    case configurationRequired
     case starting
     case ready
     case stopping
@@ -121,6 +122,7 @@ public enum LifecycleState: Equatable, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case .idle: return "Idle"
+        case .configurationRequired: return "Configuration required"
         case .starting: return "Starting"
         case .ready: return "Ready"
         case .stopping: return "Stopping"
@@ -172,17 +174,26 @@ public struct SupervisorSnapshot: Equatable, Sendable {
     public let restartCount: Int
     public let instanceID: String?
     public let socketPath: String?
+    public let lastFailureDetail: String?
 
-    public init(state: LifecycleState, restartCount: Int, instanceID: String?, socketPath: String?) {
+    public init(
+        state: LifecycleState,
+        restartCount: Int,
+        instanceID: String?,
+        socketPath: String?,
+        lastFailureDetail: String? = nil
+    ) {
         self.state = state
         self.restartCount = restartCount
         self.instanceID = instanceID
         self.socketPath = socketPath
+        self.lastFailureDetail = lastFailureDetail
     }
 }
 
 public struct ProcessSupervisorConfiguration: Sendable {
     public let executablePath: String
+    public let configurationPath: String
     public let readinessTimeoutNanoseconds: UInt64
     public let readinessPollNanoseconds: UInt64
     public let restartDelayNanoseconds: UInt64
@@ -191,6 +202,7 @@ public struct ProcessSupervisorConfiguration: Sendable {
 
     public init(
         executablePath: String,
+        configurationPath: String,
         readinessTimeoutNanoseconds: UInt64 = 5_000_000_000,
         readinessPollNanoseconds: UInt64 = 100_000_000,
         restartDelayNanoseconds: UInt64 = 500_000_000,
@@ -198,6 +210,7 @@ public struct ProcessSupervisorConfiguration: Sendable {
         killGraceNanoseconds: UInt64 = 1_000_000_000
     ) {
         self.executablePath = executablePath
+        self.configurationPath = configurationPath
         self.readinessTimeoutNanoseconds = readinessTimeoutNanoseconds
         self.readinessPollNanoseconds = readinessPollNanoseconds
         self.restartDelayNanoseconds = restartDelayNanoseconds
@@ -220,11 +233,17 @@ public actor ProcessSupervisor {
     private var restartCount = 0
     private var started = false
     private var quitRequested = false
+    private var terminalCleanupFailure: String?
     private var currentProcess: (any ManagedProcess)?
     private var currentGeneration: GenerationDirectory?
     private var currentSocketIdentity: FileIdentity?
     private var stdoutTail: OutputTail?
     private var stderrTail: OutputTail?
+    private var lastFailureDetail: String?
+
+    private static let failureDetailCharacterLimit = 240
+    private static let rawHIDCauseMarker = "D200X_HID_OPEN_PATH_CAUSE:"
+    private static let safeHIDFailureMarker = "D200X_HID_OPEN_PATH_FAILED:"
 
     public init(
         configuration: ProcessSupervisorConfiguration,
@@ -251,15 +270,19 @@ public actor ProcessSupervisor {
             state: state,
             restartCount: restartCount,
             instanceID: currentGeneration?.instanceID,
-            socketPath: currentGeneration?.socket.path
+            socketPath: currentGeneration?.socket.path,
+            lastFailureDetail: lastFailureDetail
         )
     }
 
     public func run() async {
         guard !started else { return }
         started = true
-        quitRequested = false
         restartCount = 0
+        guard !quitRequested else {
+            state = .stopped
+            return
+        }
         state = .starting
 
         while !quitRequested {
@@ -313,6 +336,7 @@ public actor ProcessSupervisor {
     }
 
     private func runGeneration() async -> GenerationOutcome {
+        lastFailureDetail = nil
         let instanceID = instanceIDProvider.makeUUID().uuidString.lowercased()
         let generation: GenerationDirectory
         do {
@@ -333,7 +357,8 @@ public actor ProcessSupervisor {
             executablePath: configuration.executablePath,
             arguments: [
                 "--socket-path", generation.socket.path,
-                "--instance-id", generation.instanceID
+                "--instance-id", generation.instanceID,
+                "--config-path", configuration.configurationPath
             ]
         )
         let process: any ManagedProcess
@@ -497,16 +522,21 @@ public actor ProcessSupervisor {
 
     private func stopCurrentProcess() async {
         guard let process = currentProcess else { return }
-        currentProcess = nil
         guard process.isRunning else {
+            _ = process.exit
+            currentProcess = nil
             return
         }
+        currentProcess = nil
         state = .stopping
         process.terminate()
         await waitForProcess(process, nanoseconds: configuration.terminateGraceNanoseconds)
         if process.isRunning {
             process.forceTerminate()
             await waitForProcess(process, nanoseconds: configuration.killGraceNanoseconds)
+        }
+        if !process.isRunning {
+            _ = process.exit
         }
     }
 
@@ -523,7 +553,11 @@ public actor ProcessSupervisor {
     }
 
     private func cleanupCurrentGeneration() -> String? {
-        guard let generation = currentGeneration else { return nil }
+        if let currentProcess, !currentProcess.isRunning {
+            _ = currentProcess.exit
+        }
+        captureLastFailureDetail()
+        guard let generation = currentGeneration else { return terminalCleanupFailure }
         let cleanupFailure: String?
         do {
             switch try PathSecurity.removeMatchingGeneration(
@@ -545,7 +579,32 @@ public actor ProcessSupervisor {
         currentSocketIdentity = nil
         stdoutTail = nil
         stderrTail = nil
-        guard let cleanupFailure else { return nil }
-        return "generation \(generation.directory.path): \(cleanupFailure)"
+        guard let cleanupFailure else { return terminalCleanupFailure }
+        let reportedFailure = "generation \(generation.directory.path): \(cleanupFailure)"
+        if terminalCleanupFailure == nil {
+            terminalCleanupFailure = reportedFailure
+        }
+        return terminalCleanupFailure
+    }
+
+    private func captureLastFailureDetail() {
+        guard let stderrTail else { return }
+        let output = stderrTail.text
+        var safeLines: [String] = []
+        for line in output.split(whereSeparator: { $0.isNewline }).reversed() {
+            let scalars = line.unicodeScalars.filter {
+                !CharacterSet.controlCharacters.contains($0)
+            }
+            let detail = String(String.UnicodeScalarView(scalars))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !detail.isEmpty,
+                  !detail.contains(Self.rawHIDCauseMarker) else {
+                continue
+            }
+            safeLines.append(detail)
+        }
+        guard let detail = safeLines.first(where: { $0.contains(Self.safeHIDFailureMarker) })
+                ?? safeLines.first else { return }
+        lastFailureDetail = String(detail.prefix(Self.failureDetailCharacterLimit))
     }
 }

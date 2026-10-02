@@ -175,6 +175,9 @@ func isASCIIAlphaNumeric(character rune) bool {
 }
 
 func validPositionLabel(label string) bool {
+	if label == "" {
+		return true
+	}
 	if !utf8.ValidString(label) || strings.TrimSpace(label) == "" || utf8.RuneCountInString(label) > MaximumLabelRunes || len([]byte(label)) > MaximumLabelBytes {
 		return false
 	}
@@ -360,7 +363,7 @@ func configuredArchiveFiles(positions []Position) ([]displayArchiveFile, error) 
 		if spec.Wide {
 			pngData, err = configuredWidePNG(position, background)
 		} else {
-			pngData, err = configuredPNG(width, background)
+			pngData, err = configuredPositionPNG(position, width, background)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("encode D200X display position %d: %w", index, err)

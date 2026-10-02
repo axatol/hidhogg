@@ -376,11 +376,9 @@ func TestRunEndpointCuePreflightRejectsAdditionalSurfacesBeforeCueOrDevice(t *te
 func writeCommandConfiguration(t *testing.T) string {
 	t.Helper()
 	var builder strings.Builder
-	builder.WriteString("schema_version = 3\nadapter = \"ulanzi.d200x\"\nbrightness = 73\ndefault_profile_id = \"default\"\n\n[[profiles]]\nid = \"default\"\nlabel = \"Default\"\n\n")
+	builder.WriteString("schema_version = 4\nadapter = \"ulanzi.d200x\"\nbrightness = 73\ndefault_profile_id = \"default\"\n\n[profiles.\"default\"]\nlabel = \"Default\"\n\n")
 	for index, spec := range d200x.SupportedPositions() {
-		builder.WriteString("[[profiles.positions]]\n")
-		builder.WriteString("id = \"tile-" + spec.Name + "\"\n")
-		builder.WriteString("position = \"" + spec.Name + "\"\n")
+		builder.WriteString("[profiles.\"default\".positions.\"" + spec.Name + "\"]\n")
 		builder.WriteString("label = \"Tile " + string(rune('0'+index)) + "\"\n")
 		builder.WriteString("background = \"#102030\"\n\n")
 	}

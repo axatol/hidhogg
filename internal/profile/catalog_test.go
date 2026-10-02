@@ -72,6 +72,19 @@ func TestCatalogDefensivelyCopiesNestedValues(t *testing.T) {
 	}
 }
 
+func TestCatalogAllowsBlankValueLabelsButRequiresProfileLabels(t *testing.T) {
+	profiles := validProfiles()
+	profiles[0].Values[0].Label = ""
+	if _, err := NewCatalog("default", profiles); err != nil {
+		t.Fatalf("blank tile label rejected: %v", err)
+	}
+
+	profiles[0].Label = ""
+	if _, err := NewCatalog("default", profiles); err == nil {
+		t.Fatal("blank profile display label accepted")
+	}
+}
+
 func TestCatalogValidatesAndCopiesNotificationSources(t *testing.T) {
 	sources := make([]string, MaximumNotificationSourceCount)
 	sources[0] = "Source"

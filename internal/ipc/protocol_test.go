@@ -21,6 +21,7 @@ func TestSharedFixtures(t *testing.T) {
 	}{
 		{name: "health", file: "valid/health"},
 		{name: "status", file: "valid/status"},
+		{name: "display host state", file: "valid/display-host-state"},
 		{name: "json syntax", file: "invalid/json-syntax"},
 		{name: "unknown field", file: "invalid/unknown-field"},
 		{name: "duplicate key", file: "invalid/duplicate-key"},
@@ -44,7 +45,9 @@ func TestSharedFixtures(t *testing.T) {
 				requestID := request.RequestID
 				response = Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID}
 				response.Result = &Result{InstanceID: request.InstanceID, State: ReadyState}
-				if request.Method == MethodStatus {
+				if request.Method == MethodDisplayHostStateSet {
+					response.Result = &Result{InstanceID: request.InstanceID, DisplayAwake: request.DisplayAwake, Changed: true, displayHostState: true}
+				} else if request.Method == MethodStatus {
 					version := ProtocolVersion
 					response.Result.ProtocolVersion = &version
 				}

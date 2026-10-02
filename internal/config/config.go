@@ -21,14 +21,12 @@ import (
 )
 
 const (
-	// SchemaVersionV1 is retained so callers and diagnostics can identify the
-	// rejected predecessor format. Decode and Validate accept only v3.
+	// SchemaVersionV1 through SchemaVersionV3 identify rejected predecessor formats.
 	SchemaVersionV1 = 1
-	// SchemaVersionV2 is retained so callers and diagnostics can identify the
-	// rejected predecessor format. Decode and Validate accept only v3.
 	SchemaVersionV2 = 2
 	SchemaVersionV3 = 3
-	SchemaVersion   = SchemaVersionV3
+	SchemaVersionV4 = 4
+	SchemaVersion   = SchemaVersionV4
 
 	AdapterUlanziD200X             = "ulanzi.d200x"
 	RequiredPositionCount          = 14
@@ -36,6 +34,7 @@ const (
 	MinimumBrightness              = 0
 	MaximumBrightness              = 100
 	DefaultIdleTimeoutSeconds      = 300
+	DefaultPositionBackground      = "#000000"
 	MaximumIdleTimeoutSeconds      = 86400
 	MaximumStableIDRunes           = 64
 	MaximumNotificationSourceCount = profile.MaximumNotificationSourceCount
@@ -59,10 +58,8 @@ const (
 	MaximumExecuteArgumentsBytes   = 8192
 )
 
-// Config is the strict schema-v3 D200X configuration.
-//
-// The TOML and JSON tags intentionally use the same names. JSON is used for
-// schema projection and fixture validation; TOML is the runtime source format.
+// Config is the normalized schema-v4 D200X configuration. Its field tags keep
+// stable normalized names; Decode and JSON use the separate keyed source DTO.
 type Config struct {
 	SchemaVersion      int       `toml:"schema_version" json:"schema_version" jsonschema:"configuration schema version"`
 	Adapter            string    `toml:"adapter" json:"adapter" jsonschema:"device adapter identifier"`
@@ -92,7 +89,7 @@ type Position struct {
 	Action              *Action  `toml:"action" json:"action,omitempty" jsonschema:"optional input-gesture action binding"`
 }
 
-// Action is a schema-v3 input-gesture action. The Type field selects one of
+// Action is a schema-v4 input-gesture action. The Type field selects one of
 // the activate_profile and execute variants; each variant has a strict field
 // set. Gesture defaults to release when omitted.
 type Action struct {
@@ -104,6 +101,29 @@ type Action struct {
 	TimeoutSeconds int      `toml:"timeout_seconds" json:"timeout_seconds,omitempty" jsonschema:"maximum synchronous execution time in seconds"`
 	Text           string   `toml:"text" json:"text,omitempty" jsonschema:"UTF-8 text payload"`
 	Key            string   `toml:"key" json:"key,omitempty" jsonschema:"supported physical key"`
+}
+
+type sourceConfig struct {
+	SchemaVersion      int                      `toml:"schema_version" json:"schema_version" jsonschema:"configuration schema version"`
+	Adapter            string                   `toml:"adapter" json:"adapter" jsonschema:"device adapter identifier"`
+	Brightness         int                      `toml:"brightness" json:"brightness" jsonschema:"display brightness percentage"`
+	IdleTimeoutSeconds int                      `toml:"idle_timeout_seconds" json:"idle_timeout_seconds" jsonschema:"application-owned idle timeout in seconds"`
+	DefaultProfileID   string                   `toml:"default_profile_id" json:"default_profile_id" jsonschema:"profile selected at startup"`
+	Profiles           map[string]sourceProfile `toml:"profiles" json:"profiles" jsonschema:"profiles keyed by immutable profile ID"`
+}
+
+type sourceProfile struct {
+	Label     string                    `toml:"label" json:"label" jsonschema:"display profile label"`
+	Positions map[string]sourcePosition `toml:"positions,omitempty" json:"positions,omitempty" jsonschema:"optional positions keyed by D200X coordinate"`
+}
+
+type sourcePosition struct {
+	Label               string   `toml:"label,omitempty" json:"label,omitempty" jsonschema:"display label; defaults to blank"`
+	Background          string   `toml:"background,omitempty" json:"background,omitempty" jsonschema:"hexadecimal background colour; defaults to black"`
+	NotificationSources []string `toml:"notification_sources,omitempty" json:"notification_sources,omitempty" jsonschema:"optional exact notification source filters"`
+	LabelAlignment      string   `toml:"label_alignment,omitempty" json:"label_alignment,omitempty" jsonschema:"firmware-rendered label alignment"`
+	LabelSize           int      `toml:"label_size,omitempty" json:"label_size,omitempty" jsonschema:"firmware-rendered label size"`
+	Action              *Action  `toml:"action,omitempty" json:"action,omitempty" jsonschema:"optional input-gesture action binding"`
 }
 
 // DisplayPosition and Tile are compatibility aliases for callers that use
@@ -197,77 +217,91 @@ func LoadFile(path string) (Config, error) {
 // Unknown fields, duplicate TOML keys, malformed syntax, and type mismatches
 // are rejected before the returned value can be used by a device adapter.
 func Decode(data []byte) (Config, error) {
-	var decoded Config
-	decoder := toml.NewDecoder(bytes.NewReader(data)).DisallowUnknownFields()
-	if err := decoder.Decode(&decoded); err != nil {
-		return Config{}, fmt.Errorf("decode configuration TOML: %w", err)
-	}
-
 	var raw map[string]any
 	if err := toml.Unmarshal(data, &raw); err != nil {
 		return Config{}, fmt.Errorf("inspect configuration TOML: %w", err)
 	}
+	if version, ok := raw["schema_version"].(int64); ok && version != SchemaVersionV4 {
+		return Config{}, newValidationError(ValidationIssue{
+			Path:    "schema_version",
+			Message: fmt.Sprintf("must equal %d", SchemaVersionV4),
+		})
+	}
+	var decoded sourceConfig
+	decoder := toml.NewDecoder(bytes.NewReader(data)).DisallowUnknownFields()
+	if err := decoder.Decode(&decoded); err != nil {
+		return Config{}, fmt.Errorf("decode configuration TOML: %w", err)
+	}
 	if issues := missingRequiredFields(raw); len(issues) > 0 {
 		return Config{}, newValidationError(issues...)
 	}
-	if _, ok := raw["idle_timeout_seconds"]; !ok {
-		decoded.IdleTimeoutSeconds = DefaultIdleTimeoutSeconds
-	}
-	applyActionDefaults(&decoded, raw)
-	applyLabelStyleDefaults(&decoded, raw)
+	applySourceDefaults(&decoded, raw)
 	if issues := validateRawLabelStyleFields(raw, decoded); len(issues) > 0 {
 		return Config{}, newValidationError(issues...)
 	}
 	if issues := validateRawActionFields(raw, decoded); len(issues) > 0 {
 		return Config{}, newValidationError(issues...)
 	}
-
-	if err := decoded.Validate(); err != nil {
+	if issues := validateSourcePositionKeys(decoded); len(issues) > 0 {
+		return Config{}, newValidationError(issues...)
+	}
+	configuration := normalizeSource(decoded)
+	if err := configuration.Validate(); err != nil {
 		return Config{}, err
 	}
-	return decoded, nil
+	return configuration, nil
 }
 
-func applyLabelStyleDefaults(decoded *Config, raw map[string]any) {
-	for profileIndex, profileValue := range rawSlice(raw["profiles"]) {
-		profileMap, ok := profileValue.(map[string]any)
-		if !ok || profileIndex >= len(decoded.Profiles) {
-			continue
-		}
-		for positionIndex, positionValue := range rawSlice(profileMap["positions"]) {
-			positionMap, ok := positionValue.(map[string]any)
-			if !ok || positionIndex >= len(decoded.Profiles[profileIndex].Positions) {
-				continue
+func applySourceDefaults(decoded *sourceConfig, raw map[string]any) {
+	if _, exists := raw["idle_timeout_seconds"]; !exists {
+		decoded.IdleTimeoutSeconds = DefaultIdleTimeoutSeconds
+	}
+	rawProfiles := rawMap(raw["profiles"])
+	for profileID, current := range decoded.Profiles {
+		rawProfile := rawMap(rawProfiles[profileID])
+		rawPositions := rawMap(rawProfile["positions"])
+		for coordinate, position := range current.Positions {
+			rawPosition := rawMap(rawPositions[coordinate])
+			if _, exists := rawPosition["background"]; !exists {
+				position.Background = DefaultPositionBackground
 			}
-			position := &decoded.Profiles[profileIndex].Positions[positionIndex]
-			if _, exists := positionMap["label_alignment"]; !exists {
+			if _, exists := rawPosition["label_alignment"]; !exists {
 				position.LabelAlignment = DefaultLabelAlignment
 			}
-			if _, exists := positionMap["label_size"]; !exists {
+			if _, exists := rawPosition["label_size"]; !exists {
 				position.LabelSize = DefaultLabelSize
 			}
+			if actionMap := rawMap(rawPosition["action"]); actionMap != nil && position.Action != nil {
+				if _, exists := actionMap["gesture"]; !exists {
+					position.Action.Gesture = profile.DefaultGesture
+				}
+				if position.Action.Type == ExecuteActionType {
+					if _, exists := actionMap["arguments"]; !exists {
+						position.Action.Arguments = []string{}
+					}
+					if _, exists := actionMap["timeout_seconds"]; !exists {
+						position.Action.TimeoutSeconds = DefaultExecuteTimeoutSeconds
+					}
+				}
+			}
+			current.Positions[coordinate] = position
 		}
+		decoded.Profiles[profileID] = current
 	}
 }
 
-func validateRawLabelStyleFields(raw map[string]any, decoded Config) []ValidationIssue {
+func validateRawLabelStyleFields(raw map[string]any, decoded sourceConfig) []ValidationIssue {
 	var issues []ValidationIssue
-	for profileIndex, profileValue := range rawSlice(raw["profiles"]) {
-		profileMap, ok := profileValue.(map[string]any)
-		if !ok || profileIndex >= len(decoded.Profiles) {
-			continue
-		}
-		for positionIndex, positionValue := range rawSlice(profileMap["positions"]) {
-			positionMap, ok := positionValue.(map[string]any)
-			if !ok || positionIndex >= len(decoded.Profiles[profileIndex].Positions) {
-				continue
-			}
-			position := decoded.Profiles[profileIndex].Positions[positionIndex]
-			positionPath := fmt.Sprintf("profiles[%d].positions[%d]", profileIndex, positionIndex)
-			if _, exists := positionMap["label_alignment"]; exists && position.LabelAlignment == "" {
+	for profileID, rawProfileValue := range rawMap(raw["profiles"]) {
+		rawProfile := rawMap(rawProfileValue)
+		for coordinate, rawPositionValue := range rawMap(rawProfile["positions"]) {
+			rawPosition := rawMap(rawPositionValue)
+			position := decoded.Profiles[profileID].Positions[coordinate]
+			positionPath := sourcePositionPath(profileID, coordinate)
+			if _, exists := rawPosition["label_alignment"]; exists && position.LabelAlignment == "" {
 				issues = append(issues, ValidationIssue{Path: positionPath + ".label_alignment", Message: fmt.Sprintf("must equal %q or %q", LabelAlignmentBottom, LabelAlignmentCenter)})
 			}
-			if _, exists := positionMap["label_size"]; exists && position.LabelSize == 0 {
+			if _, exists := rawPosition["label_size"]; exists && position.LabelSize == 0 {
 				issues = append(issues, ValidationIssue{Path: positionPath + ".label_size", Message: fmt.Sprintf("must be between %d and %d", MinimumLabelSize, MaximumLabelSize)})
 			}
 		}
@@ -275,56 +309,22 @@ func validateRawLabelStyleFields(raw map[string]any, decoded Config) []Validatio
 	return issues
 }
 
-func applyActionDefaults(decoded *Config, raw map[string]any) {
-	for profileIndex, profileValue := range rawSlice(raw["profiles"]) {
-		profileMap, ok := profileValue.(map[string]any)
-		if !ok || profileIndex >= len(decoded.Profiles) {
-			continue
-		}
-		for positionIndex, positionValue := range rawSlice(profileMap["positions"]) {
-			positionMap, ok := positionValue.(map[string]any)
-			if !ok || positionIndex >= len(decoded.Profiles[profileIndex].Positions) {
-				continue
-			}
-			actionMap, ok := positionMap["action"].(map[string]any)
-			if !ok || decoded.Profiles[profileIndex].Positions[positionIndex].Action == nil {
-				continue
-			}
-			action := decoded.Profiles[profileIndex].Positions[positionIndex].Action
-			if _, exists := actionMap["gesture"]; !exists {
-				action.Gesture = profile.DefaultGesture
-			}
-			if action.Type != ExecuteActionType {
-				continue
-			}
-			if _, exists := actionMap["arguments"]; !exists {
-				action.Arguments = []string{}
-			}
-			if _, exists := actionMap["timeout_seconds"]; !exists {
-				action.TimeoutSeconds = DefaultExecuteTimeoutSeconds
-			}
-		}
-	}
-}
-
-func validateRawActionFields(raw map[string]any, decoded Config) []ValidationIssue {
+func validateRawActionFields(raw map[string]any, decoded sourceConfig) []ValidationIssue {
 	var issues []ValidationIssue
-	for profileIndex, profileValue := range rawSlice(raw["profiles"]) {
-		profileMap, ok := profileValue.(map[string]any)
-		if !ok || profileIndex >= len(decoded.Profiles) {
-			continue
-		}
-		for positionIndex, positionValue := range rawSlice(profileMap["positions"]) {
-			positionMap, ok := positionValue.(map[string]any)
-			if !ok || positionIndex >= len(decoded.Profiles[profileIndex].Positions) {
+	for profileID, rawProfileValue := range rawMap(raw["profiles"]) {
+		rawProfile := rawMap(rawProfileValue)
+		for coordinate, rawPositionValue := range rawMap(rawProfile["positions"]) {
+			rawPosition := rawMap(rawPositionValue)
+			actionMap := rawMap(rawPosition["action"])
+			if actionMap == nil {
 				continue
 			}
-			actionMap, ok := positionMap["action"].(map[string]any)
-			if !ok || decoded.Profiles[profileIndex].Positions[positionIndex].Action == nil {
+			position, exists := decoded.Profiles[profileID].Positions[coordinate]
+			if !exists || position.Action == nil {
 				continue
 			}
-			actionPath := fmt.Sprintf("profiles[%d].positions[%d].action", profileIndex, positionIndex)
-			action := decoded.Profiles[profileIndex].Positions[positionIndex].Action
+			actionPath := sourcePositionPath(profileID, coordinate) + ".action"
+			action := position.Action
 			if _, exists := actionMap["gesture"]; exists && action.Gesture == "" {
 				issues = append(issues, ValidationIssue{Path: actionPath + ".gesture", Message: fmt.Sprintf("must equal %q or %q", profile.PressGesture, profile.ReleaseGesture)})
 			}
@@ -365,9 +365,9 @@ func validateRawActionFields(raw map[string]any, decoded Config) []ValidationIss
 	return issues
 }
 
-func rawSlice(value any) []any {
-	slice, _ := value.([]any)
-	return slice
+func rawMap(value any) map[string]any {
+	result, _ := value.(map[string]any)
+	return result
 }
 
 func missingRequiredFields(raw map[string]any) []ValidationIssue {
@@ -378,13 +378,114 @@ func missingRequiredFields(raw map[string]any) []ValidationIssue {
 			issues = append(issues, ValidationIssue{Path: field, Kind: ValidationIssueRequired, Message: "is required"})
 		}
 	}
+	for profileID, profileValue := range rawMap(raw["profiles"]) {
+		if _, exists := rawMap(profileValue)["label"]; !exists {
+			issues = append(issues, ValidationIssue{Path: sourceProfilePath(profileID) + ".label", Kind: ValidationIssueRequired, Message: "is required"})
+		}
+	}
 	return issues
 }
 
-// JSON returns the canonical JSON projection used by schema consumers and
-// tests. It carries the same property names as the TOML DTO.
+func validateSourcePositionKeys(source sourceConfig) []ValidationIssue {
+	var issues []ValidationIssue
+	for profileID, current := range source.Profiles {
+		for coordinate := range current.Positions {
+			if _, supported := LookupPosition(coordinate); !supported {
+				issues = append(issues, ValidationIssue{Path: sourcePositionPath(profileID, coordinate), Message: "is not a supported D200X position"})
+			}
+		}
+	}
+	return issues
+}
+
+func normalizeSource(source sourceConfig) Config {
+	profileIDs := make([]string, 0, len(source.Profiles))
+	for profileID := range source.Profiles {
+		profileIDs = append(profileIDs, profileID)
+	}
+	sort.Strings(profileIDs)
+	sort.SliceStable(profileIDs, func(left, right int) bool {
+		if profileIDs[left] == source.DefaultProfileID {
+			return profileIDs[right] != source.DefaultProfileID
+		}
+		if profileIDs[right] == source.DefaultProfileID {
+			return false
+		}
+		return profileIDs[left] < profileIDs[right]
+	})
+
+	configuration := Config{
+		SchemaVersion:      source.SchemaVersion,
+		Adapter:            source.Adapter,
+		Brightness:         source.Brightness,
+		IdleTimeoutSeconds: source.IdleTimeoutSeconds,
+		DefaultProfileID:   source.DefaultProfileID,
+		Profiles:           make([]Profile, 0, len(profileIDs)),
+	}
+	for _, profileID := range profileIDs {
+		current := source.Profiles[profileID]
+		normalized := Profile{ID: profileID, Label: current.Label, Positions: make([]Position, 0, RequiredPositionCount)}
+		for _, spec := range supportedPositionSpecs {
+			position, exists := current.Positions[spec.Name]
+			if !exists {
+				position = sourcePosition{
+					Background:     DefaultPositionBackground,
+					LabelAlignment: DefaultLabelAlignment,
+					LabelSize:      DefaultLabelSize,
+				}
+			}
+			normalized.Positions = append(normalized.Positions, Position{
+				ID:                  spec.Name,
+				Position:            spec.Name,
+				Label:               position.Label,
+				Background:          position.Background,
+				NotificationSources: cloneNotificationSources(position.NotificationSources),
+				LabelAlignment:      position.LabelAlignment,
+				LabelSize:           position.LabelSize,
+				Action:              cloneConfigAction(position.Action),
+			})
+		}
+		configuration.Profiles = append(configuration.Profiles, normalized)
+	}
+	return configuration
+}
+
+func sourceProfilePath(profileID string) string {
+	return fmt.Sprintf("profiles[%q]", profileID)
+}
+
+func sourcePositionPath(profileID, coordinate string) string {
+	return fmt.Sprintf("%s.positions[%q]", sourceProfilePath(profileID), coordinate)
+}
+
+// JSON returns the canonical keyed source projection used by schema consumers.
 func (c Config) JSON() ([]byte, error) {
-	return json.Marshal(c)
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	projection := sourceConfig{
+		SchemaVersion:      c.SchemaVersion,
+		Adapter:            c.Adapter,
+		Brightness:         c.Brightness,
+		IdleTimeoutSeconds: c.IdleTimeoutSeconds,
+		DefaultProfileID:   c.DefaultProfileID,
+		Profiles:           make(map[string]sourceProfile, len(c.Profiles)),
+	}
+	for _, current := range c.Profiles {
+		profileProjection := sourceProfile{Label: current.Label, Positions: make(map[string]sourcePosition, len(current.Positions))}
+		for _, position := range current.Positions {
+			profileProjection.Positions[position.Position] = sourcePosition{
+				Label:               position.Label,
+				Background:          position.Background,
+				NotificationSources: cloneNotificationSources(position.NotificationSources),
+				LabelAlignment:      effectiveLabelAlignment(position.LabelAlignment),
+				LabelSize:           effectiveLabelSize(position.LabelSize),
+				Action:              cloneConfigAction(position.Action),
+			}
+		}
+		projection.Profiles[current.ID] = profileProjection
+	}
+	return json.Marshal(projection)
 }
 
 // ProfileCatalog validates and converts this configuration into an immutable,
@@ -477,10 +578,10 @@ func (e *ValidationError) Error() string {
 // cannot express, including profile/action resolution and position domains.
 func (c Config) Validate() error {
 	var issues []ValidationIssue
-	if c.SchemaVersion != SchemaVersionV3 {
+	if c.SchemaVersion != SchemaVersionV4 {
 		issues = append(issues, ValidationIssue{
 			Path:    "schema_version",
-			Message: fmt.Sprintf("must equal %d", SchemaVersionV3),
+			Message: fmt.Sprintf("must equal %d", SchemaVersionV4),
 		})
 	}
 	if c.Adapter != AdapterUlanziD200X {
@@ -519,13 +620,13 @@ func (c Config) Validate() error {
 		profileOccurrences[current.ID] = append(profileOccurrences[current.ID], profileIndex)
 	}
 	for profileIndex, current := range c.Profiles {
-		profilePath := fmt.Sprintf("profiles[%d]", profileIndex)
+		profilePath := sourceProfilePath(current.ID)
 		validateProfile(&issues, profilePath, current, profileOccurrences)
 		if occurrences := profileOccurrences[current.ID]; len(occurrences) > 1 && occurrences[0] == profileIndex {
 			for _, duplicateIndex := range occurrences[1:] {
 				issues = append(issues, ValidationIssue{
-					Path:    fmt.Sprintf("profiles[%d].id", duplicateIndex),
-					Message: fmt.Sprintf("duplicates profiles[%d].id", profileIndex),
+					Path:    sourceProfilePath(c.Profiles[duplicateIndex].ID) + ".id",
+					Message: fmt.Sprintf("duplicates %s.id", sourceProfilePath(current.ID)),
 				})
 			}
 		}
@@ -546,7 +647,7 @@ func (c Config) Validate() error {
 func validateProfile(issues *[]ValidationIssue, currentPath string, current Profile, profileOccurrences map[string][]int) {
 	if !validStableID(current.ID) {
 		*issues = append(*issues, ValidationIssue{
-			Path:    currentPath + ".id",
+			Path:    currentPath,
 			Message: "must start with an ASCII letter or digit and contain only ASCII letters, digits, '.', '_' or '-' (maximum 64 characters)",
 		})
 	}
@@ -567,12 +668,12 @@ func validateProfile(issues *[]ValidationIssue, currentPath string, current Prof
 	seenIDs := make(map[string]int, len(current.Positions))
 	seenPositions := make(map[string]int, len(current.Positions))
 	for positionIndex, position := range current.Positions {
-		positionPath := fmt.Sprintf("%s[%d]", positionsPath, positionIndex)
+		positionPath := sourcePositionPath(current.ID, position.Position)
 		validatePosition(issues, positionPath, position, profileOccurrences)
 		if previous, ok := seenIDs[position.ID]; ok {
 			*issues = append(*issues, ValidationIssue{
 				Path:    positionPath + ".id",
-				Message: fmt.Sprintf("duplicates %s[%d].id", positionsPath, previous),
+				Message: fmt.Sprintf("duplicates %s.id", sourcePositionPath(current.ID, current.Positions[previous].Position)),
 			})
 		} else {
 			seenIDs[position.ID] = positionIndex
@@ -603,13 +704,16 @@ func validatePosition(issues *[]ValidationIssue, path string, position Position,
 			Message: "must start with an ASCII letter or digit and contain only ASCII letters, digits, '.', '_' or '-' (maximum 64 characters)",
 		})
 	}
+	if position.ID != position.Position {
+		*issues = append(*issues, ValidationIssue{Path: path + ".id", Message: "must equal the canonical coordinate"})
+	}
 	if _, ok := LookupPosition(position.Position); !ok {
 		*issues = append(*issues, ValidationIssue{
 			Path:    path + ".position",
 			Message: "is not a supported D200X position",
 		})
 	}
-	if !validLabel(position.Label) {
+	if position.Label != "" && !validLabel(position.Label) {
 		*issues = append(*issues, ValidationIssue{
 			Path:    path + ".label",
 			Message: "must contain visible text and be at most 64 characters",
@@ -796,6 +900,15 @@ func cloneArguments(source []string) []string {
 	owned := make([]string, len(source))
 	copy(owned, source)
 	return owned
+}
+
+func cloneConfigAction(source *Action) *Action {
+	if source == nil {
+		return nil
+	}
+	owned := *source
+	owned.Arguments = cloneArguments(source.Arguments)
+	return &owned
 }
 
 func cloneNotificationSources(source []string) []string {

@@ -25,7 +25,7 @@ func TestCheckedInSchemaIsCurrentAndDeterministic(t *testing.T) {
 		t.Fatal("schema generation is not deterministic")
 	}
 
-	artifactPath := filepath.Join("..", "..", "schema", "hidhogg-d200x-v3.json")
+	artifactPath := filepath.Join("..", "..", "schema", "hidhogg-d200x-v4.json")
 	artifact, err := os.ReadFile(artifactPath)
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +40,7 @@ func TestCheckedInSchemaIsCurrentAndDeterministic(t *testing.T) {
 	if artifactObject["$schema"] != jsonSchemaDraft4 {
 		t.Fatalf("schema dialect = %v, want %s", artifactObject["$schema"], jsonSchemaDraft4)
 	}
-	if artifactObject["title"] != "Hidhogg Ulanzi D200X configuration v3" {
+	if artifactObject["title"] != "Hidhogg Ulanzi D200X configuration v4" {
 		t.Fatalf("schema title = %v", artifactObject["title"])
 	}
 	if _, exists := artifactObject["properties"].(map[string]any)["pages"]; exists {
@@ -108,7 +108,7 @@ func TestSchemaReflectsLabelStyleContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	positionSchema := document.Properties["profiles"].Items.Properties["positions"].Items
+	positionSchema := sourcePositionSchema(document)
 	alignmentSchema := positionSchema.Properties["label_alignment"]
 	if alignmentSchema == nil || alignmentSchema.Type != "string" || len(alignmentSchema.Enum) != 2 || alignmentSchema.Enum[0] != LabelAlignmentBottom || alignmentSchema.Enum[1] != LabelAlignmentCenter || string(alignmentSchema.Default) != `"bottom"` {
 		t.Fatalf("label_alignment schema = %#v", alignmentSchema)
@@ -132,7 +132,7 @@ func TestSchemaReflectsLabelStyleContract(t *testing.T) {
 	if err := json.Unmarshal(encoded, &valid); err != nil {
 		t.Fatal(err)
 	}
-	position := valid["profiles"].([]any)[0].(map[string]any)["positions"].([]any)[0].(map[string]any)
+	position := projectedPosition(t, valid, "default", "0_0")
 	delete(position, "label_alignment")
 	delete(position, "label_size")
 	if err := resolved.Validate(valid); err != nil {
@@ -155,7 +155,7 @@ func TestSchemaReflectsLabelStyleContract(t *testing.T) {
 			if err := json.Unmarshal(candidateBytes, &candidate); err != nil {
 				t.Fatal(err)
 			}
-			candidatePosition := candidate["profiles"].([]any)[0].(map[string]any)["positions"].([]any)[0].(map[string]any)
+			candidatePosition := projectedPosition(t, candidate, "default", "0_0")
 			test.edit(candidatePosition)
 			if err := resolved.Validate(candidate); err == nil {
 				t.Fatal("schema accepted invalid label style")
@@ -169,7 +169,7 @@ func TestSchemaReflectsNotificationSourceContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	positionSchema := document.Properties["profiles"].Items.Properties["positions"].Items
+	positionSchema := sourcePositionSchema(document)
 	sourcesSchema := positionSchema.Properties["notification_sources"]
 	if sourcesSchema == nil || sourcesSchema.Type != "array" || sourcesSchema.Types != nil || sourcesSchema.MinItems == nil || *sourcesSchema.MinItems != 1 || sourcesSchema.MaxItems == nil || *sourcesSchema.MaxItems != MaximumNotificationSourceCount || !sourcesSchema.UniqueItems {
 		t.Fatalf("notification_sources schema = %#v", sourcesSchema)
@@ -193,7 +193,7 @@ func TestSchemaReflectsNotificationSourceContract(t *testing.T) {
 	if err := json.Unmarshal(encoded, &valid); err != nil {
 		t.Fatal(err)
 	}
-	position := valid["profiles"].([]any)[0].(map[string]any)["positions"].([]any)[0].(map[string]any)
+	position := projectedPosition(t, valid, "default", "0_0")
 	validSources := make([]any, MaximumNotificationSourceCount)
 	validSources[0] = "Source"
 	validSources[1] = "source"
@@ -230,7 +230,7 @@ func TestSchemaReflectsNotificationSourceContract(t *testing.T) {
 			if err := json.Unmarshal(candidateBytes, &candidate); err != nil {
 				t.Fatal(err)
 			}
-			candidatePosition := candidate["profiles"].([]any)[0].(map[string]any)["positions"].([]any)[0].(map[string]any)
+			candidatePosition := projectedPosition(t, candidate, "default", "0_0")
 			test.edit(candidatePosition)
 			if err := resolved.Validate(candidate); err == nil {
 				t.Fatal("schema accepted invalid notification sources")
@@ -258,18 +258,23 @@ func TestSchemaReflectsProfileAndActionBounds(t *testing.T) {
 	if err := json.Unmarshal(encoded, &instance); err != nil {
 		t.Fatal(err)
 	}
-	profiles := instance["profiles"].([]any)
-	profiles[0].(map[string]any)["id"] = stringsRepeat("a", MaximumStableIDRunes+1)
+	profiles := instance["profiles"].(map[string]any)
+	defaultProfile := profiles["default"].(map[string]any)
+	delete(profiles, "default")
+	oversizedProfileID := stringsRepeat("a", MaximumStableIDRunes+1)
+	profiles[oversizedProfileID] = defaultProfile
 	if err := resolved.Validate(instance); err == nil {
 		t.Fatal("schema accepted an oversized profile ID")
 	}
-	profiles[0].(map[string]any)["id"] = "default"
-	profiles[0].(map[string]any)["positions"].([]any)[0].(map[string]any)["action"].(map[string]any)["type"] = "run"
+	delete(profiles, oversizedProfileID)
+	profiles["default"] = defaultProfile
+	action := projectedPosition(t, instance, "default", "0_0")["action"].(map[string]any)
+	action["type"] = "run"
 	if err := resolved.Validate(instance); err == nil {
 		t.Fatal("schema accepted an unsupported action type")
 	}
-	profiles[0].(map[string]any)["positions"].([]any)[0].(map[string]any)["action"].(map[string]any)["type"] = "activate_profile"
-	delete(profiles[0].(map[string]any)["positions"].([]any)[0].(map[string]any)["action"].(map[string]any), "gesture")
+	action["type"] = "activate_profile"
+	delete(action, "gesture")
 	if err := resolved.Validate(instance); err != nil {
 		t.Fatalf("schema rejected optional action gesture: %v", err)
 	}
@@ -280,7 +285,7 @@ func TestSchemaReflectsExecuteActionUnionAndBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	positionSchema := document.Properties["profiles"].Items.Properties["positions"].Items
+	positionSchema := sourcePositionSchema(document)
 	actionSchema := positionSchema.Properties["action"]
 	if len(actionSchema.OneOf) != 5 || actionSchema.OneOf[0].Type != "null" {
 		t.Fatalf("action oneOf = %#v", actionSchema.OneOf)
@@ -418,7 +423,7 @@ func TestSchemaReflectsExecuteActionUnionAndBounds(t *testing.T) {
 			if err := json.Unmarshal(candidateBytes, &candidate); err != nil {
 				t.Fatal(err)
 			}
-			candidateAction := candidate["profiles"].([]any)[0].(map[string]any)["positions"].([]any)[0].(map[string]any)["action"].(map[string]any)
+			candidateAction := projectedPosition(t, candidate, "default", "0_0")["action"].(map[string]any)
 			test.edit(candidateAction)
 			if err := resolved.Validate(candidate); err == nil {
 				t.Fatal("schema accepted invalid execute action")
@@ -435,7 +440,7 @@ func TestSchemaReflectsExecuteActionUnionAndBounds(t *testing.T) {
 	if err := json.Unmarshal(activateEncoded, &activateInstance); err != nil {
 		t.Fatal(err)
 	}
-	activateAction := activateInstance["profiles"].([]any)[0].(map[string]any)["positions"].([]any)[0].(map[string]any)["action"].(map[string]any)
+	activateAction := projectedPosition(t, activateInstance, "default", "0_0")["action"].(map[string]any)
 	activateAction["executable"] = "/bin/echo"
 	if err := resolved.Validate(activateInstance); err == nil {
 		t.Fatal("schema accepted execute field on activate_profile action")
@@ -476,7 +481,7 @@ func TestSchemaReflectsExecuteActionUnionAndBounds(t *testing.T) {
 			if err := resolved.Validate(instance); err != nil {
 				t.Fatalf("valid native action rejected: %v", err)
 			}
-			action := instance["profiles"].([]any)[0].(map[string]any)["positions"].([]any)[0].(map[string]any)["action"].(map[string]any)
+			action := projectedPosition(t, instance, "default", "0_0")["action"].(map[string]any)
 			test.invalid(action)
 			if err := resolved.Validate(instance); err == nil {
 				t.Fatal("schema accepted invalid native action")
@@ -505,19 +510,86 @@ func TestSchemaRejectsIncompletePositionDomain(t *testing.T) {
 	if err := json.Unmarshal(encoded, &instance); err != nil {
 		t.Fatal(err)
 	}
-	profiles := instance["profiles"].([]any)
-	profile := profiles[0].(map[string]any)
-	positions := profile["positions"].([]any)
-	position := positions[0].(map[string]any)
-	position["position"] = "4_2"
+	profiles := instance["profiles"].(map[string]any)
+	profile := profiles["default"].(map[string]any)
+	positions := profile["positions"].(map[string]any)
+	positions["4_2"] = map[string]any{}
 	if err := resolved.Validate(instance); err == nil {
 		t.Fatal("schema accepted an unsupported coordinate")
 	}
-	position["position"] = "0_0"
+	delete(positions, "4_2")
+	delete(profile, "positions")
+	if err := resolved.Validate(instance); err != nil {
+		t.Fatalf("schema rejected omitted positions: %v", err)
+	}
 	profile["positions"] = nil
 	if err := resolved.Validate(instance); err == nil {
 		t.Fatal("schema accepted null positions")
 	}
+}
+
+func TestSchemaUsesClosedKeyedProfileAndPositionMaps(t *testing.T) {
+	document, err := JSONSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profilesSchema := document.Properties["profiles"]
+	if profilesSchema == nil || profilesSchema.Type != "object" || profilesSchema.AdditionalProperties == nil {
+		t.Fatalf("profiles schema does not describe stable-ID keyed objects: %#v", profilesSchema)
+	}
+	profileSchema := profilesSchema.PatternProperties[stableIDPattern.String()]
+	if profileSchema == nil {
+		t.Fatalf("profiles schema omitted stable-ID pattern %q", stableIDPattern.String())
+	}
+	positionsSchema := profileSchema.Properties["positions"]
+	if positionsSchema == nil || positionsSchema.Type != "object" || len(positionsSchema.Properties) != RequiredPositionCount || positionsSchema.AdditionalProperties == nil {
+		t.Fatalf("positions schema does not describe a closed coordinate map: %#v", positionsSchema)
+	}
+	for _, spec := range supportedPositionSpecs {
+		if positionsSchema.Properties[spec.Name] == nil {
+			t.Fatalf("positions schema omitted coordinate %q", spec.Name)
+		}
+	}
+	tileSchema := positionsSchema.Properties["3_2"]
+	if tileSchema == nil || tileSchema.Properties["id"] != nil || tileSchema.Properties["position"] != nil || tileSchema.AdditionalProperties == nil {
+		t.Fatalf("tile schema retained removed identity fields or allows unknown fields: %#v", tileSchema)
+	}
+	if tileSchema.Properties["label"] == nil || tileSchema.Properties["background"] == nil {
+		t.Fatalf("tile schema omitted defaulted fields: %#v", tileSchema.Properties)
+	}
+	if got := string(tileSchema.Properties["label"].Default); got != `""` {
+		t.Fatalf("tile label default = %s, want empty string", got)
+	}
+	if got := string(tileSchema.Properties["background"].Default); got != `"#000000"` {
+		t.Fatalf("tile background default = %s, want black", got)
+	}
+}
+
+func sourcePositionSchema(document *jsonschema.Schema) *jsonschema.Schema {
+	profile := document.Properties["profiles"].PatternProperties[stableIDPattern.String()]
+	positions := profile.Properties["positions"]
+	return positions.Properties["0_0"]
+}
+
+func projectedPosition(t *testing.T, instance map[string]any, profileID, coordinate string) map[string]any {
+	t.Helper()
+	profiles, ok := instance["profiles"].(map[string]any)
+	if !ok {
+		t.Fatalf("profiles projection = %T, want object", instance["profiles"])
+	}
+	profile, ok := profiles[profileID].(map[string]any)
+	if !ok {
+		t.Fatalf("profile %q projection = %T, want object", profileID, profiles[profileID])
+	}
+	positions, ok := profile["positions"].(map[string]any)
+	if !ok {
+		t.Fatalf("positions projection = %T, want object", profile["positions"])
+	}
+	position, ok := positions[coordinate].(map[string]any)
+	if !ok {
+		t.Fatalf("position %q projection = %T, want object", coordinate, positions[coordinate])
+	}
+	return position
 }
 
 func stringsRepeat(value string, count int) string {

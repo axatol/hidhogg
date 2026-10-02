@@ -1,0 +1,1 @@
+{"protocol_version":1,"request_id":"11111111-1111-4111-8111-111111111111","method":"display.host_state.set","params":{"instance_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","display_awake":false}}

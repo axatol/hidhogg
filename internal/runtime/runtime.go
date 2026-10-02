@@ -81,6 +81,7 @@ type Runtime struct {
 	session          *d200x.Session
 	profileService   *RuntimeProfileService
 	idleSettings     *idleSettingsBridge
+	hostDisplay      *hostDisplayStateBridge
 	executionWorker  executionWorker
 	nativeWorker     nativeWorker
 	plan             devicePlan
@@ -149,6 +150,8 @@ func New(config Config) (*Runtime, error) {
 			ProfileService:      runtimeIPCProfileService{runtime: runtime},
 			ExecutionHistory:    runtimeExecutionHistory{runtime: runtime},
 			ConfigService:       runtimeIPCConfigService{runtime: runtime},
+			ConfigEditorService: runtimeIPCConfigEditorService{runtime: runtime},
+			DisplayHostState:    runtimeIPCHostDisplayState{runtime: runtime},
 			InputService:        runtimeIPCInputService{runtime: runtime},
 			NotificationService: runtimeIPCNotificationService{runtime: runtime},
 		})
@@ -268,6 +271,25 @@ type runtimeIPCConfigService struct {
 
 type runtimeIPCNotificationService struct {
 	runtime *Runtime
+}
+
+type runtimeIPCHostDisplayState struct {
+	runtime *Runtime
+}
+
+func (service runtimeIPCHostDisplayState) SetDisplayHostState(ctx context.Context, displayAwake bool) (ipc.DisplayHostStateResult, error) {
+	if service.runtime == nil {
+		return ipc.DisplayHostStateResult{}, ipc.ErrShuttingDown
+	}
+	service.runtime.mu.Lock()
+	bridge := service.runtime.hostDisplay
+	instanceID := service.runtime.config.InstanceID
+	service.runtime.mu.Unlock()
+	result, err := bridge.set(ctx, displayAwake)
+	if err != nil {
+		return ipc.DisplayHostStateResult{}, err
+	}
+	return ipc.DisplayHostStateResult{InstanceID: instanceID, DisplayAwake: result.displayAwake, Changed: result.changed}, nil
 }
 
 func (service runtimeIPCNotificationService) EmitNotification(ctx context.Context, request notification.EmitRequest) (notification.EmitResult, error) {
@@ -504,6 +526,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 	r.mu.Lock()
 	server := r.server
 	generation := r.generation
+	hostDisplay := r.hostDisplay
 	terminalErr := r.terminalErr
 	if terminalErr == nil {
 		r.terminalCancel = cancelServe
@@ -515,6 +538,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 	if server == nil {
 		return errors.Join(errors.New("runtime IPC server is unavailable"), r.Close())
 	}
+	hostDisplay.activate()
 	serveDone := make(chan error, 1)
 	go func() {
 		serveDone <- server.Serve(serveContext)
@@ -562,13 +586,15 @@ func (r *Runtime) Run(ctx context.Context) error {
 	startupCompleted := r.startupCompleted
 	policyActionService := r.profileService
 	policySettings := r.idleSettings
+	policyHostDisplay := r.hostDisplay
 	policyExecutionWorker := r.executionWorker
 	policyNativeWorker := r.nativeWorker
 	r.mu.Unlock()
 	policySettings.activate()
 	go func() {
 		defer policySettings.deactivate()
-		policyDone <- runIdlePolicyWithExecutor(serveContext, r.clock, policySession, policyPlan, startupCompleted, inputObservations, r.stdout, policyActionService, runtimeActionSubmitter{executionSubmitter: policyExecutionWorker, native: policyNativeWorker}, policySettings.requests)
+		defer policyHostDisplay.deactivate()
+		policyDone <- runIdlePolicyWithHostDisplay(serveContext, r.clock, policySession, policyPlan, startupCompleted, inputObservations, r.stdout, policyActionService, runtimeActionSubmitter{executionSubmitter: policyExecutionWorker, native: policyNativeWorker}, policySettings.requests, policyHostDisplay.requests, policySession, policyActionService, policyHostDisplay.hostOffPending, policyHostDisplay.hostWriteBoundary)
 	}()
 	configWatcherDone := r.startConfigWatcher(serveContext)
 	automaticReloadDone := make(chan struct{})
@@ -726,6 +752,8 @@ func (r *Runtime) closeLocked() error {
 	r.profileService = nil
 	idleSettings := r.idleSettings
 	r.idleSettings = nil
+	hostDisplay := r.hostDisplay
+	r.hostDisplay = nil
 	executionWorker := r.executionWorker
 	r.executionWorker = nil
 	nativeWorker := r.nativeWorker
@@ -758,6 +786,9 @@ func (r *Runtime) closeLocked() error {
 	}
 	if idleSettings != nil {
 		idleSettings.close()
+	}
+	if hostDisplay != nil {
+		hostDisplay.close()
 	}
 	if profileService != nil {
 		if err := profileService.Close(); err != nil {
@@ -862,6 +893,7 @@ func (r *Runtime) start(ctx context.Context) error {
 		return r.startFailure(sanitizeFailure("initialize D200X device", err))
 	}
 	idleSettings := newIdleSettingsBridge()
+	hostDisplay := newHostDisplayStateBridge()
 	profileService, err := NewProfileService(ProfileServiceOptions{
 		Catalog:          initialCandidate.Catalog(),
 		Sender:           session,
@@ -880,6 +912,7 @@ func (r *Runtime) start(ctx context.Context) error {
 	r.mu.Lock()
 	r.profileService = profileService
 	r.idleSettings = idleSettings
+	r.hostDisplay = hostDisplay
 	r.mu.Unlock()
 	plan.positionsFn = profileService.CurrentEventPositions
 	startupCompleted := r.clock.Now()
@@ -928,6 +961,7 @@ func (r *Runtime) prepareIPC() error {
 				ProfileService:      runtimeIPCProfileService{runtime: r},
 				ExecutionHistory:    runtimeExecutionHistory{runtime: r},
 				ConfigService:       runtimeIPCConfigService{runtime: r},
+				DisplayHostState:    runtimeIPCHostDisplayState{runtime: r},
 				InputService:        runtimeIPCInputService{runtime: r},
 				NotificationService: runtimeIPCNotificationService{runtime: r},
 			})
@@ -1158,6 +1192,10 @@ func writeAll(writer io.Writer, data []byte) error {
 func sanitizeFailure(operation string, err error) error {
 	if err == nil {
 		return nil
+	}
+	var hidOpenFailure *d200x.HIDOpenPathFailure
+	if errors.As(err, &hidOpenFailure) {
+		return hidOpenFailure
 	}
 	if errors.Is(err, context.Canceled) {
 		return fmt.Errorf("%s: %w", operation, context.Canceled)

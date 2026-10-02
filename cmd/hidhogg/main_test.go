@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	appconfig "hidhogg/internal/config"
+	"hidhogg/internal/d200x"
 )
 
 const cliTestInstanceID = "11111111-1111-4111-8111-111111111111"
@@ -32,6 +33,28 @@ func TestParseArgsSupportsDiscoveryModeAndGeneratesIDLater(t *testing.T) {
 	}
 	if config.RuntimeDir != "/tmp/hidhogg-runtime" || config.SocketPath != "" || config.InstanceID != "" {
 		t.Fatalf("discovery config = %+v", config)
+	}
+}
+
+func TestParseArgsEnablesVerboseDiagnosticsOnlyWhenRequested(t *testing.T) {
+	base := []string{"--runtime-dir", "/tmp/hidhogg-runtime", "--config-path", "/tmp/config.toml"}
+	for _, test := range []struct {
+		name    string
+		args    []string
+		verbose bool
+	}{
+		{name: "default", args: base},
+		{name: "explicit", args: append(append([]string(nil), base...), "--verbose"), verbose: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config, err := parseArgs(test.args)
+			if err != nil {
+				t.Fatalf("parse args: %v", err)
+			}
+			if config.Verbose != test.verbose {
+				t.Fatalf("verbose = %t, want %t", config.Verbose, test.verbose)
+			}
+		})
 	}
 }
 
@@ -145,5 +168,28 @@ func TestStartupPrintsOneSafeConfigurationDiagnostic(t *testing.T) {
 	var diagnostic *appconfig.Diagnostic
 	if !errors.As(err, &diagnostic) || diagnostic.Category != appconfig.DiagnosticReadNotFound {
 		t.Fatalf("startup error = %#v, %v", diagnostic, err)
+	}
+}
+
+func TestExitCodePrintsSafeHIDOpenFailureWithoutRawCause(t *testing.T) {
+	rawCause := errors.New("hidraw=/private/hidraw/device serial=private-serial")
+	failure := d200x.NewHIDOpenPathFailure(rawCause)
+	var stderr bytes.Buffer
+	args := []string{"--runtime-dir", "/tmp/hidhogg-runtime", "--verbose"}
+	exit := exitCodeWith(args, &stderr, func(got []string) error {
+		if strings.Join(got, " ") != strings.Join(args, " ") {
+			t.Fatalf("CLI arguments = %v, want %v", got, args)
+		}
+		return failure
+	})
+	if exit != 1 {
+		t.Fatalf("exit code = %d, want 1", exit)
+	}
+	output := stderr.String()
+	if output != failure.Error()+"\n" {
+		t.Fatalf("CLI HID-open diagnostic = %q, want safe error line %q", output, failure.Error()+"\n")
+	}
+	if !strings.HasPrefix(output, d200x.HIDOpenPathFailureCode+": ") || strings.Contains(output, "private/hidraw") || strings.Contains(output, "private-serial") {
+		t.Fatalf("CLI leaked or omitted the safe HID-open failure: %q", output)
 	}
 }

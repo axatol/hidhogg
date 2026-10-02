@@ -126,12 +126,12 @@ func TestRuntimeBindsBeforeHIDAndPublishesReadinessAfterServing(t *testing.T) {
 		t.Fatalf("health response = %#v, error = %v", response, err)
 	}
 	transport.queueFrame(d200x.NewFrame(d200x.CommandInputEvent, []byte{1, 6, byte(d200x.InputMarkerButton), byte(d200x.InputActionPressed)}))
-	waitForRuntime(t, func() bool { return strings.Contains(stdout.String(), "tile-1_1") })
+	waitForRuntime(t, func() bool { return strings.Contains(stdout.String(), `"id":"1_1"`) })
 	var event map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), &event); err != nil {
 		t.Fatalf("input event JSON: %v", err)
 	}
-	if event["event"] != "input" || event["id"] != "tile-1_1" || event["position"] != "1_1" || event["action"] != "pressed" {
+	if event["event"] != "input" || event["id"] != "1_1" || event["position"] != "1_1" || event["action"] != "pressed" {
 		t.Fatalf("input event = %#v", event)
 	}
 	if !strings.Contains(stderr.String(), "d200x outbound command=complete-display-upload") {
@@ -814,6 +814,80 @@ func TestRuntimeSanitizesDeviceFailures(t *testing.T) {
 	}
 }
 
+func TestRuntimeHIDOpenFailurePreservesSafeCodeAndLimitsRawCauseToVerboseStderr(t *testing.T) {
+	configurationPath := filepath.Join(t.TempDir(), "valid.toml")
+	if err := os.WriteFile(configurationPath, runtimeTestConfiguration(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const rawCause = "IOHIDDeviceOpen failed: IOReturn=0xe00002c5 path=/private/hidraw/DEVICE serial=SERIAL-UNIQUE\nINJECTED "
+	upstream := errors.New(rawCause + strings.Repeat("x", 4096))
+	openFailure := d200x.NewHIDOpenPathFailure(upstream)
+
+	for _, test := range []struct {
+		name    string
+		verbose bool
+	}{
+		{name: "default"},
+		{name: "verbose", verbose: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			runtimeProcess, err := New(Config{
+				SocketPath:       filepath.Join(runtimeSocketTestDirectory(t), "runtime.sock"),
+				InstanceID:       runtimeTestInstanceID,
+				ConfigPath:       configurationPath,
+				Verbose:          test.verbose,
+				TransportFactory: &recordingFactory{openErr: openFailure},
+				Stdout:           &stdout,
+				Stderr:           &stderr,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = runtimeProcess.Start()
+			if err == nil {
+				t.Fatal("runtime accepted the injected HID-open failure")
+			}
+			if strings.Contains(err.Error(), "start IPC server failed") {
+				t.Skipf("Unix socket creation unavailable in this environment: %v", err)
+			}
+			if !strings.HasPrefix(err.Error(), d200x.HIDOpenPathFailureCode+": ") {
+				t.Fatalf("runtime startup error = %v, want preserved safe HID-open code", err)
+			}
+			var preservedFailure *d200x.HIDOpenPathFailure
+			if !errors.As(err, &preservedFailure) {
+				t.Fatalf("runtime startup error lost its HID-open failure classification: %v", err)
+			}
+			if strings.Contains(err.Error(), "/private/hidraw/DEVICE") || strings.Contains(err.Error(), "SERIAL-UNIQUE") || errors.Is(err, upstream) {
+				t.Fatalf("runtime startup error exposed upstream cause: %v", err)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("startup failure emitted stdout: %q", stdout.String())
+			}
+
+			output := stderr.String()
+			if !test.verbose {
+				if output != "" {
+					t.Fatalf("default stderr exposed HID-open cause: %q", output)
+				}
+				return
+			}
+			if strings.Count(output, "\n") != 1 || len(output) > 512 {
+				t.Fatalf("verbose stderr is not one bounded line (%d bytes): %q", len(output), output)
+			}
+			if !strings.HasPrefix(output, "D200X_HID_OPEN_PATH_CAUSE: ") ||
+				!strings.Contains(output, "IOReturn=0xe00002c5") ||
+				!strings.Contains(output, "/private/hidraw/DEVICE") ||
+				!strings.Contains(output, "SERIAL-UNIQUE") ||
+				!strings.Contains(output, `\x0aINJECTED`) ||
+				!strings.HasSuffix(output, "...\n") {
+				t.Fatalf("verbose stderr omitted bounded escaped upstream cause: %q", output)
+			}
+		})
+	}
+}
+
 func TestRuntimeDiscoveryPreflightFailuresDoNotTouchHID(t *testing.T) {
 	configurationPath := filepath.Join(t.TempDir(), "valid.toml")
 	if err := os.WriteFile(configurationPath, runtimeTestConfiguration(), 0o600); err != nil {
@@ -1284,20 +1358,20 @@ func TestRuntimeStdoutFailureClosesSession(t *testing.T) {
 
 func runtimeTestConfiguration() []byte {
 	var builder strings.Builder
-	builder.WriteString("schema_version = 3\nadapter = \"ulanzi.d200x\"\nbrightness = 73\ndefault_profile_id = \"default\"\n\n[[profiles]]\nid = \"default\"\nlabel = \"Default\"\n\n")
+	builder.WriteString("schema_version = 4\nadapter = \"ulanzi.d200x\"\nbrightness = 73\ndefault_profile_id = \"default\"\n\n[profiles.\"default\"]\nlabel = \"Default\"\n\n")
 	for index, spec := range d200x.SupportedPositions() {
-		fmt.Fprintf(&builder, "[[profiles.positions]]\nid = \"tile-%s\"\nposition = \"%s\"\nlabel = \"Tile %d\"\nbackground = \"#102030\"\n\n", spec.Name, spec.Name, index)
+		fmt.Fprintf(&builder, "[profiles.\"default\".positions.%q]\nlabel = \"Tile %d\"\nbackground = \"#102030\"\n\n", spec.Name, index)
 	}
 	return []byte(builder.String())
 }
 
 func runtimeMultiProfileConfiguration() []byte {
 	var builder strings.Builder
-	builder.WriteString("schema_version = 3\nadapter = \"ulanzi.d200x\"\nbrightness = 73\ndefault_profile_id = \"default\"\n\n")
-	for _, profileID := range []string{"default", "alternate"} {
-		fmt.Fprintf(&builder, "[[profiles]]\nid = \"%s\"\nlabel = \"%s\"\n\n", profileID, profileID)
+	builder.WriteString("schema_version = 4\nadapter = \"ulanzi.d200x\"\nbrightness = 73\ndefault_profile_id = \"default\"\n\n")
+	for _, profileID := range []string{"alternate", "default"} {
+		fmt.Fprintf(&builder, "[profiles.%q]\nlabel = \"%s\"\n\n", profileID, profileID)
 		for index, spec := range d200x.SupportedPositions() {
-			fmt.Fprintf(&builder, "[[profiles.positions]]\nid = \"%s-%s\"\nposition = \"%s\"\nlabel = \"%s %d\"\nbackground = \"#102030\"\n\n", profileID, spec.Name, spec.Name, profileID, index)
+			fmt.Fprintf(&builder, "[profiles.%q.positions.%q]\nlabel = \"%s %d\"\nbackground = \"#102030\"\n\n", profileID, spec.Name, profileID, index)
 		}
 	}
 	return []byte(builder.String())

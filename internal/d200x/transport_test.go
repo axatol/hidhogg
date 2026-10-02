@@ -113,3 +113,58 @@ func TestSanitizedErrorsDoNotExposeOrUnwrapUpstreamCause(t *testing.T) {
 		t.Fatalf("context cancellation was not retained safely: %v", contextErr)
 	}
 }
+
+func TestHIDOpenPathFailureKeepsSafeCodeAcrossSanitizers(t *testing.T) {
+	raw := errors.New("hidraw=/private/hidraw/device serial=private-serial")
+	failure := NewHIDOpenPathFailure(raw)
+	if failure == nil {
+		t.Fatal("non-nil cause produced a nil failure")
+	}
+	want := HIDOpenPathFailureCode + ": open selected D200X HID path failed"
+	if failure.Error() != want {
+		t.Fatalf("HID open path failure = %q, want %q", failure, want)
+	}
+	if errors.Unwrap(failure) != nil || errors.Is(failure, raw) {
+		t.Fatalf("HID open path failure exposed its cause through Unwrap: %v", failure)
+	}
+	for _, rendered := range []string{
+		fmt.Sprintf("%v", failure),
+		fmt.Sprintf("%+v", failure),
+		fmt.Sprintf("%#v", failure),
+	} {
+		if strings.Contains(rendered, "/private/hidraw/device") || strings.Contains(rendered, "private-serial") {
+			t.Fatalf("formatted HID open path failure leaked its cause: %q", rendered)
+		}
+	}
+
+	for name, sanitize := range map[string]func(string, error) error{
+		"hid":     sanitizeHIDError,
+		"adapter": sanitizeAdapterError,
+	} {
+		t.Run(name, func(t *testing.T) {
+			sanitized := sanitize("open D200X HID", failure)
+			var preserved *HIDOpenPathFailure
+			if !errors.As(sanitized, &preserved) || sanitized.Error() != want {
+				t.Fatalf("sanitized failure = %v, want preserved code %q", sanitized, want)
+			}
+		})
+	}
+	if NewHIDOpenPathFailure(nil) != nil {
+		t.Fatal("nil cause produced a HID open path failure")
+	}
+}
+
+func TestHIDOpenPathFailurePreservesContextClassification(t *testing.T) {
+	for _, test := range []struct {
+		cause error
+		want  error
+	}{
+		{cause: context.Canceled, want: context.Canceled},
+		{cause: context.DeadlineExceeded, want: context.DeadlineExceeded},
+	} {
+		failure := NewHIDOpenPathFailure(test.cause)
+		if !errors.Is(failure, test.want) || !strings.HasPrefix(failure.Error(), HIDOpenPathFailureCode+": ") {
+			t.Fatalf("HID open path failure = %v, want safe code and %v classification", failure, test.want)
+		}
+	}
+}

@@ -72,6 +72,7 @@ type suppressionKey struct {
 
 type idlePolicyState struct {
 	dimmed        bool
+	displayAwake  bool
 	suppressedKey *suppressionKey
 	lastActivity  time.Time
 	idleDeadline  time.Time
@@ -79,16 +80,24 @@ type idlePolicyState struct {
 }
 
 type idlePolicyController struct {
-	clock      Clock
-	sender     frameSender
-	plan       devicePlan
-	startupAt  time.Time
-	input      <-chan inputObservation
-	stdout     io.Writer
-	actions    *profileActionController
-	transition *profileTransitionGate
-	settings   <-chan idleSettingsRequest
-	state      idlePolicyState
+	clock             Clock
+	sender            frameSender
+	plan              devicePlan
+	startupAt         time.Time
+	input             <-chan inputObservation
+	stdout            io.Writer
+	actions           *profileActionController
+	transition        *profileTransitionGate
+	settings          <-chan idleSettingsRequest
+	hostState         <-chan hostDisplayStateRequest
+	wakeSender        hostDisplayWakeSender
+	wakeSource        hostDisplayWakeSource
+	hostManaged       bool
+	hostPending       bool
+	pendingAwake      bool
+	hostOffPending    func() bool
+	hostWriteBoundary func() (bool, func())
+	state             idlePolicyState
 }
 
 type idleSettingsRequest struct {
@@ -250,6 +259,30 @@ func runIdlePolicyWithExecutor(
 	executor executionSubmitter,
 	settingsChannels ...<-chan idleSettingsRequest,
 ) error {
+	var settings <-chan idleSettingsRequest
+	if len(settingsChannels) > 0 {
+		settings = settingsChannels[0]
+	}
+	return runIdlePolicyWithHostDisplay(ctx, clock, sender, plan, startupAt, input, stdout, actionService, executor, settings, nil, nil, nil, nil, nil)
+}
+
+func runIdlePolicyWithHostDisplay(
+	ctx context.Context,
+	clock Clock,
+	sender frameSender,
+	plan devicePlan,
+	startupAt time.Time,
+	input <-chan inputObservation,
+	stdout io.Writer,
+	actionService ProfileService,
+	executor executionSubmitter,
+	settings <-chan idleSettingsRequest,
+	hostState <-chan hostDisplayStateRequest,
+	wakeSender hostDisplayWakeSender,
+	wakeSource hostDisplayWakeSource,
+	hostOffPending func() bool,
+	hostWriteBoundary func() (bool, func()),
+) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -265,20 +298,23 @@ func runIdlePolicyWithExecutor(
 	if startupAt.IsZero() {
 		startupAt = clock.Now()
 	}
-	var settings <-chan idleSettingsRequest
-	if len(settingsChannels) > 0 {
-		settings = settingsChannels[0]
-	}
 	controller := &idlePolicyController{
-		clock:     clock,
-		sender:    sender,
-		plan:      plan,
-		startupAt: startupAt,
-		input:     input,
-		stdout:    stdout,
-		actions:   newProfileActionController(actionService, plan.eventPositions, executor),
-		settings:  settings,
+		clock:             clock,
+		sender:            sender,
+		plan:              plan,
+		startupAt:         startupAt,
+		input:             input,
+		stdout:            stdout,
+		actions:           newProfileActionController(actionService, plan.eventPositions, executor),
+		settings:          settings,
+		hostState:         hostState,
+		wakeSender:        wakeSender,
+		wakeSource:        wakeSource,
+		hostOffPending:    hostOffPending,
+		hostWriteBoundary: hostWriteBoundary,
+		hostManaged:       hostState != nil,
 		state: idlePolicyState{
+			displayAwake: true,
 			lastActivity: startupAt,
 			idleDeadline: idleDeadline(startupAt, plan.idleTimeout),
 			keepaliveAt:  startupAt.Add(keepaliveInterval),
@@ -304,16 +340,42 @@ func (controller *idlePolicyController) run(ctx context.Context) error {
 	if !controller.state.idleDeadline.IsZero() {
 		idleTimer = controller.armTimer(controller.state.idleDeadline)
 	}
+	var pendingHostState *hostDisplayStateRequest
 	defer func() {
 		stopTimer(keepaliveTimer)
 		stopTimer(idleTimer)
+		if pendingHostState != nil {
+			pendingHostState.result <- hostDisplayStateResponse{err: errHostDisplayStatePending}
+		}
 	}()
 
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
+		if pendingHostState != nil {
+			var deferred bool
+			var err error
+			idleTimer, deferred, err = controller.handleHostStateRequest(ctx, *pendingHostState, idleTimer)
+			if !deferred {
+				pendingHostState = nil
+				controller.hostPending = false
+			}
+			if err != nil {
+				return err
+			}
+			if !deferred {
+				continue
+			}
+		}
+		hostState := controller.hostState
+		if pendingHostState != nil {
+			hostState = nil
+		}
 		select {
+		case request := <-hostState:
+			pendingHostState = controller.acceptHostStateRequest(request)
+			continue
 		case request := <-controller.settings:
 			var err error
 			idleTimer, err = controller.handleSettingsRequest(ctx, request, idleTimer)
@@ -334,6 +396,8 @@ func (controller *idlePolicyController) run(ctx context.Context) error {
 				if err != nil {
 					return err
 				}
+			case request := <-hostState:
+				pendingHostState = controller.acceptHostStateRequest(request)
 			case observation, ok := <-controller.input:
 				if !ok {
 					return nil
@@ -423,6 +487,8 @@ func (controller *idlePolicyController) run(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+		case request := <-hostState:
+			pendingHostState = controller.acceptHostStateRequest(request)
 		case <-keepaliveTimer.C():
 			stopTimer(keepaliveTimer)
 			keepaliveTimer = controller.armTimer(controller.state.keepaliveAt)
@@ -440,6 +506,20 @@ func (controller *idlePolicyController) transitionState() (<-chan struct{}, bool
 	controller.transition.mu.RLock()
 	defer controller.transition.mu.RUnlock()
 	return controller.transition.activeDone, controller.transition.active
+}
+
+func (controller *idlePolicyController) displayIsAwake() bool {
+	return controller != nil && (!controller.hostManaged || controller.state.displayAwake)
+}
+
+func (controller *idlePolicyController) acceptHostStateRequest(request hostDisplayStateRequest) *hostDisplayStateRequest {
+	if request.state != nil && !request.state.claim() {
+		request.result <- hostDisplayStateResponse{err: errHostDisplayStatePending}
+		return nil
+	}
+	controller.hostPending = true
+	controller.pendingAwake = request.displayAwake
+	return &request
 }
 
 func (controller *idlePolicyController) handleSettingsRequest(_ context.Context, request idleSettingsRequest, timer Timer) (Timer, error) {
@@ -462,12 +542,103 @@ func (controller *idlePolicyController) handleSettingsRequest(_ context.Context,
 	return controller.armTimer(controller.state.idleDeadline), nil
 }
 
+func (controller *idlePolicyController) handleHostStateRequest(_ context.Context, request hostDisplayStateRequest, timer Timer) (Timer, bool, error) {
+	if controller.transition != nil {
+		controller.transition.mu.RLock()
+		if controller.transition.active {
+			controller.transition.mu.RUnlock()
+			return timer, true, nil
+		}
+		defer controller.transition.mu.RUnlock()
+	}
+	if request.state != nil && !request.state.claim() {
+		request.result <- hostDisplayStateResponse{err: errHostDisplayStatePending}
+		return timer, false, nil
+	}
+	result, writeAttempted, err := controller.applyHostDisplayState(request.ctx, request.displayAwake)
+	request.result <- hostDisplayStateResponse{result: result, err: err}
+	if err != nil {
+		if writeAttempted {
+			return timer, false, err
+		}
+		return timer, false, nil
+	}
+	stopTimer(timer)
+	if !controller.displayIsAwake() || controller.state.dimmed || controller.state.idleDeadline.IsZero() {
+		return nil, false, nil
+	}
+	return controller.armTimer(controller.state.idleDeadline), false, nil
+}
+
+func (controller *idlePolicyController) applyHostDisplayState(ctx context.Context, displayAwake bool) (hostDisplayStateResult, bool, error) {
+	result := hostDisplayStateResult{displayAwake: displayAwake}
+	if !controller.hostManaged {
+		controller.hostManaged = true
+		controller.state.displayAwake = true
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return result, false, err
+	}
+	if controller.state.displayAwake == displayAwake {
+		return result, false, nil
+	}
+	if !displayAwake {
+		if err := controller.sender.SendFrame(ctx, d200x.BrightnessFrame(0)); err != nil {
+			return result, true, sanitizeFailure("write D200X host display sleep brightness", err)
+		}
+		controller.state.displayAwake = false
+		controller.state.dimmed = true
+		controller.state.idleDeadline = time.Time{}
+		controller.state.suppressedKey = nil
+		controller.actions.reset()
+		result.changed = true
+		return result, true, nil
+	}
+	if controller.wakeSender == nil || controller.wakeSource == nil {
+		return result, false, errors.New("runtime host display wake path is unavailable")
+	}
+	update, brightness, err := controller.wakeSource.hostDisplayWakeState()
+	if err != nil {
+		return result, false, sanitizeFailure("prepare D200X host display wake", err)
+	}
+	if err := controller.wakeSender.SendStartupPageUpdate(ctx, update, brightness); err != nil {
+		return result, true, sanitizeFailure("write D200X host display wake", err)
+	}
+	completedAt := controller.clock.Now()
+	controller.plan.brightness = brightness
+	controller.state.displayAwake = true
+	controller.state.dimmed = false
+	controller.state.lastActivity = completedAt
+	controller.state.idleDeadline = idleDeadline(completedAt, controller.plan.idleTimeout)
+	controller.state.suppressedKey = nil
+	controller.actions.reset()
+	result.changed = true
+	return result, true, nil
+}
+
 func (controller *idlePolicyController) applySettings(ctx context.Context, settings reloadSettings) (idleSettingsApplyResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
 		return idleSettingsApplyResult{}, err
+	}
+	bridgeOffPending := false
+	if controller.hostWriteBoundary != nil {
+		var unlock func()
+		bridgeOffPending, unlock = controller.hostWriteBoundary()
+		defer unlock()
+	} else if controller.hostOffPending != nil {
+		bridgeOffPending = controller.hostOffPending()
+	}
+	if !controller.displayIsAwake() || controller.hostSleepPending(bridgeOffPending) {
+		controller.plan.brightness = settings.brightness
+		controller.plan.idleTimeout = settings.idleTimeout
+		controller.state.idleDeadline = time.Time{}
+		return idleSettingsApplyResult{}, nil
 	}
 	now := controller.clock.Now()
 	deadline := idleDeadline(controller.state.lastActivity, settings.idleTimeout)
@@ -501,6 +672,16 @@ func (controller *idlePolicyController) applySettings(ctx context.Context, setti
 		controller.actions.reset()
 	}
 	return result, nil
+}
+
+func (controller *idlePolicyController) hostSleepPending(bridgeOffPending bool) bool {
+	if controller == nil {
+		return false
+	}
+	if controller.hostPending && !controller.pendingAwake {
+		return true
+	}
+	return bridgeOffPending
 }
 
 func (controller *idlePolicyController) armTimer(deadline time.Time) Timer {
@@ -539,7 +720,7 @@ func (controller *idlePolicyController) dim(ctx context.Context) error {
 }
 
 func (controller *idlePolicyController) tryDim(ctx context.Context) (bool, error) {
-	if controller.state.dimmed {
+	if controller.state.dimmed || !controller.displayIsAwake() {
 		return true, nil
 	}
 	if controller.transition != nil {
@@ -601,6 +782,17 @@ func (controller *idlePolicyController) handleInputState(ctx context.Context, ob
 		return nil, nil
 	}
 	event := observation.event
+	if !controller.displayIsAwake() {
+		controller.actions.consumePhysical(event)
+		controller.actions.reset()
+		controller.state.suppressedKey = nil
+		if event.Marker == d200x.InputMarkerEncoder && (event.Action == d200x.InputActionRotatedLeft || event.Action == d200x.InputActionRotatedRight) {
+			if err := controller.sender.SendFrame(ctx, d200x.BrightnessFrame(0)); err != nil {
+				return nil, sanitizeFailure("reassert D200X host display sleep brightness", err)
+			}
+		}
+		return nil, nil
+	}
 	known := isKnownGesture(event)
 	if controller.state.dimmed {
 		controller.actions.consumePhysical(event)

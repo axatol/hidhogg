@@ -116,7 +116,7 @@ func TestNativeActionDispatchUsesExistingGestureLatch(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			want := nativeinput.Request{ProfileID: "default", PositionID: "Default-0_0", Text: action.Text, Key: action.Key}
+			want := nativeinput.Request{ProfileID: "default", PositionID: "0_0", Text: action.Text, Key: action.Key}
 			if len(native.requests) != 1 || native.requests[0] != want || command.submitCount() != 0 {
 				t.Fatalf("native=%#v command=%d", native.requests, command.submitCount())
 			}

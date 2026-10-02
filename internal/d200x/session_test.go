@@ -406,6 +406,58 @@ func TestVerboseDiagnosticsAreBoundedAndOptIn(t *testing.T) {
 	_ = quietSession.Close()
 }
 
+func TestHIDOpenPathCauseIsBoundedEscapedAndVerboseOnly(t *testing.T) {
+	const rawCause = "IOHIDDeviceOpen failed: IOReturn=0xe00002c5 path=/private/hidraw/DEVICE serial=SERIAL-UNIQUE\nINJECTED "
+	upstream := errors.New(rawCause + strings.Repeat("x", 4096))
+	failure := NewHIDOpenPathFailure(upstream)
+	candidate := NewCandidate("/private/device-path", VendorID, ProductID, InterfaceNumber)
+
+	for _, test := range []struct {
+		name    string
+		verbose bool
+	}{
+		{name: "default"},
+		{name: "verbose", verbose: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var diagnostics bytes.Buffer
+			session := NewSession(&fakeFactory{openErr: failure}, SessionOptions{
+				Verbose:                test.verbose,
+				Writer:                 &diagnostics,
+				MaxDiagnosticLineBytes: 192,
+			})
+			err := session.Open(context.Background(), candidate)
+			if err == nil || !strings.HasPrefix(err.Error(), HIDOpenPathFailureCode+": ") {
+				t.Fatalf("Session.Open error = %v, want stable safe code", err)
+			}
+			if strings.Contains(err.Error(), "/private/hidraw/DEVICE") || strings.Contains(err.Error(), "SERIAL-UNIQUE") || errors.Is(err, upstream) {
+				t.Fatalf("Session.Open error exposed upstream cause: %v", err)
+			}
+
+			output := diagnostics.String()
+			if !test.verbose {
+				if output != "" {
+					t.Fatalf("default diagnostic output = %q, want empty", output)
+				}
+				return
+			}
+			if strings.Count(output, "\n") != 1 || len(output) > 192 {
+				t.Fatalf("verbose diagnostic is not one bounded line (%d bytes): %q", len(output), output)
+			}
+			if !strings.HasPrefix(output, "D200X_HID_OPEN_PATH_CAUSE: ") ||
+				!strings.Contains(output, "IOReturn=0xe00002c5") ||
+				!strings.Contains(output, "/private/hidraw/DEVICE") ||
+				!strings.Contains(output, "SERIAL-UNIQUE") ||
+				!strings.Contains(output, `\x0aINJECTED`) {
+				t.Fatalf("verbose cause record omitted escaped upstream detail: %q", output)
+			}
+			if !strings.HasSuffix(output, "...\n") {
+				t.Fatalf("long upstream cause was not marked as truncated: %q", output)
+			}
+		})
+	}
+}
+
 func commandsFromReports(reports [][]byte) ([]Command, error) {
 	commands := make([]Command, 0)
 	for offset := 0; offset < len(reports); {

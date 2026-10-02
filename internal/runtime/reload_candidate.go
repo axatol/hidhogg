@@ -6,6 +6,7 @@ import (
 	"slices"
 	"time"
 
+	appconfig "hidhogg/internal/config"
 	"hidhogg/internal/d200x"
 	"hidhogg/internal/profile"
 )
@@ -56,6 +57,18 @@ func buildReloadCandidate(configPath, currentProfileID string) (reloadCandidate,
 	if err != nil {
 		return reloadCandidate{}, err
 	}
+	return buildReloadCandidateFromConfig(configuration, currentProfileID)
+}
+
+func buildReloadCandidateFromBytes(data []byte, currentProfileID string) (reloadCandidate, error) {
+	configuration, err := appconfig.Decode(data)
+	if err != nil {
+		return reloadCandidate{}, err
+	}
+	return buildReloadCandidateFromConfig(configuration, currentProfileID)
+}
+
+func buildReloadCandidateFromConfig(configuration appconfig.Config, currentProfileID string) (reloadCandidate, error) {
 	catalog, err := configuration.ProfileCatalog()
 	if err != nil {
 		return reloadCandidate{}, errors.New("invalid configuration")

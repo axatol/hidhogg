@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	appconfig "hidhogg/internal/config"
@@ -53,9 +54,69 @@ func TestReloadCandidateAndEffectsIdenticalConfiguration(t *testing.T) {
 	}
 }
 
+func TestBuildReloadCandidateFromBytesMatchesPathCandidate(t *testing.T) {
+	data := reloadTestConfiguration()
+	pathCandidate := buildReloadCandidateForTest(t, data, "default")
+	byteCandidate, err := buildReloadCandidateFromBytes(data, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertReloadCandidatesEqual(t, pathCandidate, byteCandidate)
+}
+
+func TestBuildReloadCandidateFromBytesMatchesPathFallback(t *testing.T) {
+	data := runtimeTestConfiguration()
+	pathCandidate := buildReloadCandidateForTest(t, data, "removed")
+	byteCandidate, err := buildReloadCandidateFromBytes(data, "removed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertReloadCandidatesEqual(t, pathCandidate, byteCandidate)
+	if !byteCandidate.CurrentProfileFallback() {
+		t.Fatal("byte candidate did not report current-profile fallback")
+	}
+}
+
+func TestBuildReloadCandidateFromBytesRejectsInvalidConfiguration(t *testing.T) {
+	data := bytes.Replace(reloadTestConfiguration(), []byte("brightness = 73"), []byte("brightness = 101"), 1)
+	if _, err := buildReloadCandidateFromBytes(data, "default"); err == nil {
+		t.Fatal("buildReloadCandidateFromBytes accepted invalid configuration")
+	}
+}
+
+func assertReloadCandidatesEqual(t *testing.T, want, got reloadCandidate) {
+	t.Helper()
+	if !reflect.DeepEqual(want.Catalog(), got.Catalog()) {
+		t.Fatal("profile catalogs differ")
+	}
+	if !reflect.DeepEqual(want.CurrentProfile(), got.CurrentProfile()) {
+		t.Fatal("current profiles differ")
+	}
+	if want.CurrentProfileID() != got.CurrentProfileID() || want.DefaultProfileID() != got.DefaultProfileID() {
+		t.Fatalf("profile IDs = %q/%q, want %q/%q", got.CurrentProfileID(), got.DefaultProfileID(), want.CurrentProfileID(), want.DefaultProfileID())
+	}
+	if want.Settings() != got.Settings() {
+		t.Fatalf("settings = %#v, want %#v", got.Settings(), want.Settings())
+	}
+	if want.CurrentProfileFallback() != got.CurrentProfileFallback() {
+		t.Fatalf("fallback = %t, want %t", got.CurrentProfileFallback(), want.CurrentProfileFallback())
+	}
+	if !reflect.DeepEqual(want.Page(), got.Page()) {
+		t.Fatalf("page = %#v, want %#v", got.Page(), want.Page())
+	}
+	if !bytes.Equal(want.RenderedPage(), got.RenderedPage()) {
+		t.Fatal("rendered page differs")
+	}
+	if !reflect.DeepEqual(want.LivePageUpdate(), got.LivePageUpdate()) {
+		t.Fatal("live page update differs")
+	}
+}
+
 func TestReloadCandidateClassifiesActionOnlyChange(t *testing.T) {
 	base := reloadTestConfiguration()
-	changed := bytes.Replace(base, []byte("background = \"#102030\"\n\n"), []byte("background = \"#102030\"\n\n[profiles.positions.action]\ntype = \"activate_profile\"\ngesture = \"press\"\nprofile_id = \"alternate\"\n\n"), 1)
+	defaultFirstPosition := []byte("[profiles.\"default\".positions.\"0_0\"]\nlabel = \"default 0\"\nbackground = \"#102030\"\n\n")
+	defaultFirstPositionWithAction := []byte("[profiles.\"default\".positions.\"0_0\"]\nlabel = \"default 0\"\nbackground = \"#102030\"\n\n[profiles.\"default\".positions.\"0_0\".action]\ntype = \"activate_profile\"\ngesture = \"press\"\nprofile_id = \"alternate\"\n\n")
+	changed := bytes.Replace(base, defaultFirstPosition, defaultFirstPositionWithAction, 1)
 	current := buildReloadCandidateForTest(t, base, "default")
 	candidate := buildReloadCandidateForTest(t, changed, "default")
 
@@ -92,8 +153,13 @@ func TestReloadCandidateClassifiesDisplayBrightnessIdleDefaultAndCatalogChanges(
 			},
 		},
 		{
-			name:       "label style",
-			changed:    bytes.Replace(base, []byte("background = \"#102030\"\n\n"), []byte("background = \"#102030\"\nlabel_alignment = \"center\"\nlabel_size = 24\n\n"), 1),
+			name: "label style",
+			changed: bytes.Replace(
+				base,
+				[]byte("[profiles.\"default\".positions.\"0_0\"]\nlabel = \"default 0\"\nbackground = \"#102030\"\n\n"),
+				[]byte("[profiles.\"default\".positions.\"0_0\"]\nlabel = \"default 0\"\nbackground = \"#102030\"\nlabel_alignment = \"center\"\nlabel_size = 24\n\n"),
+				1,
+			),
 			wantEffect: reloadEffectDisplay,
 			check: func(t *testing.T, diff reloadEffects) {
 				t.Helper()
@@ -147,8 +213,13 @@ func TestReloadCandidateClassifiesDisplayBrightnessIdleDefaultAndCatalogChanges(
 			},
 		},
 		{
-			name:       "notification sources",
-			changed:    bytes.Replace(base, []byte("background = \"#102030\"\n\n"), []byte("background = \"#102030\"\nnotification_sources = [\"clock\"]\n\n"), 1),
+			name: "notification sources",
+			changed: bytes.Replace(
+				base,
+				[]byte("[profiles.\"default\".positions.\"0_0\"]\nlabel = \"default 0\"\nbackground = \"#102030\"\n\n"),
+				[]byte("[profiles.\"default\".positions.\"0_0\"]\nlabel = \"default 0\"\nbackground = \"#102030\"\nnotification_sources = [\"clock\"]\n\n"),
+				1,
+			),
 			wantEffect: reloadEffectCatalog,
 			check: func(t *testing.T, diff reloadEffects) {
 				t.Helper()
@@ -172,7 +243,12 @@ func TestReloadCandidateClassifiesDisplayBrightnessIdleDefaultAndCatalogChanges(
 
 func TestReloadCandidateCarriesLabelStyleToCurrentPage(t *testing.T) {
 	base := reloadTestConfiguration()
-	styled := bytes.Replace(base, []byte("background = \"#102030\"\n\n"), []byte("background = \"#102030\"\nlabel_alignment = \"center\"\nlabel_size = 24\n\n"), 1)
+	styled := bytes.Replace(
+		base,
+		[]byte("[profiles.\"default\".positions.\"0_0\"]\nlabel = \"default 0\"\nbackground = \"#102030\"\n\n"),
+		[]byte("[profiles.\"default\".positions.\"0_0\"]\nlabel = \"default 0\"\nbackground = \"#102030\"\nlabel_alignment = \"center\"\nlabel_size = 24\n\n"),
+		1,
+	)
 	candidate := buildReloadCandidateForTest(t, styled, "default")
 	position := candidate.Page().Positions[0]
 	if position.LabelAlignment != appconfig.LabelAlignmentCenter || position.LabelSize != 24 {
@@ -228,7 +304,7 @@ func TestReloadCandidateComparesRenderedPages(t *testing.T) {
 	if diff.DisplayChanged() {
 		t.Fatal("equivalent rendered page was classified as changed")
 	}
-	if !diff.CatalogChanged() || diff.Effect() != reloadEffectCatalog {
+	if diff.CatalogChanged() || diff.Effect() != reloadEffectUnchanged {
 		t.Fatalf("reordered catalog diff = %#v", diff)
 	}
 }
@@ -292,24 +368,19 @@ func writeReloadConfiguration(t *testing.T, data []byte) string {
 }
 
 func reorderReloadPositions(data []byte) []byte {
-	marker := []byte("[[profiles.positions]]")
-	starts := make([]int, 0, 3)
-	for offset := 0; ; {
-		index := bytes.Index(data[offset:], marker)
-		if index < 0 {
-			break
-		}
-		index += offset
-		starts = append(starts, index)
-		offset = index + len(marker)
-	}
-	if len(starts) < 3 {
+	firstMarker := []byte("[profiles.\"default\".positions.\"0_0\"]")
+	secondMarker := []byte("[profiles.\"default\".positions.\"1_0\"]")
+	thirdMarker := []byte("[profiles.\"default\".positions.\"2_0\"]")
+	firstStart := bytes.Index(data, firstMarker)
+	secondStart := bytes.Index(data, secondMarker)
+	thirdStart := bytes.Index(data, thirdMarker)
+	if firstStart < 0 || secondStart < 0 || thirdStart < 0 || firstStart >= secondStart || secondStart >= thirdStart {
 		return append([]byte(nil), data...)
 	}
-	prefix := data[:starts[0]]
-	first := data[starts[0]:starts[1]]
-	second := data[starts[1]:starts[2]]
-	suffix := data[starts[2]:]
+	prefix := data[:firstStart]
+	first := data[firstStart:secondStart]
+	second := data[secondStart:thirdStart]
+	suffix := data[thirdStart:]
 	result := make([]byte, 0, len(data))
 	result = append(result, prefix...)
 	result = append(result, second...)

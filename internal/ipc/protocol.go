@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	appconfig "hidhogg/internal/config"
 	"hidhogg/internal/execution"
 	"hidhogg/internal/notification"
 )
@@ -30,19 +31,28 @@ const (
 type Method string
 
 const (
-	MethodHealth                 Method = "health"
-	MethodStatus                 Method = "status"
-	MethodProfilesList           Method = "profiles.list"
-	MethodProfilesActivate       Method = "profiles.activate"
-	MethodExecutionsList         Method = "executions.list"
-	MethodExecutionsGet          Method = "executions.get"
-	MethodConfigReload           Method = "config.reload"
-	MethodConfigStatus           Method = "config.status"
-	MethodInputStatus            Method = "input.status"
-	MethodInputRequestPermission Method = "input.request_permission"
-	MethodDoctor                 Method = "doctor"
-	MethodNotificationsEmit      Method = "notifications.emit"
-	MethodNotificationsClear     Method = "notifications.clear"
+	MethodHealth                       Method = "health"
+	MethodStatus                       Method = "status"
+	MethodProfilesList                 Method = "profiles.list"
+	MethodProfilesActivate             Method = "profiles.activate"
+	MethodExecutionsList               Method = "executions.list"
+	MethodExecutionsGet                Method = "executions.get"
+	MethodConfigReload                 Method = "config.reload"
+	MethodConfigStatus                 Method = "config.status"
+	MethodConfigEditorSnapshot         Method = "config.editor.snapshot"
+	MethodConfigEditorPositionsList    Method = "config.editor.positions.list"
+	MethodConfigEditorProfileGet       Method = "config.editor.profile.get"
+	MethodConfigEditorPositionGet      Method = "config.editor.position.get"
+	MethodConfigEditorProfileCreate    Method = "config.editor.profile.create"
+	MethodConfigEditorProfileDelete    Method = "config.editor.profile.delete"
+	MethodConfigEditorLabelSet         Method = "config.editor.profile_label.set"
+	MethodConfigEditorPositionLabelSet Method = "config.editor.position_label.set"
+	MethodDisplayHostStateSet          Method = "display.host_state.set"
+	MethodInputStatus                  Method = "input.status"
+	MethodInputRequestPermission       Method = "input.request_permission"
+	MethodDoctor                       Method = "doctor"
+	MethodNotificationsEmit            Method = "notifications.emit"
+	MethodNotificationsClear           Method = "notifications.clear"
 )
 
 type Request struct {
@@ -51,12 +61,18 @@ type Request struct {
 	Method          Method `json:"method"`
 	InstanceID      string `json:"instance_id"`
 	ProfileID       string `json:"profile_id,omitempty"`
+	PositionID      string `json:"position_id,omitempty"`
+	SourceProfileID string `json:"source_profile_id,omitempty"`
+	SourceDigest    string `json:"source_digest,omitempty"`
+	ExpectedDigest  string `json:"expected_digest,omitempty"`
+	Label           string `json:"label,omitempty"`
 	Limit           int    `json:"limit,omitempty"`
 	ExecutionID     string `json:"execution_id,omitempty"`
 	Source          string `json:"source,omitempty"`
 	Text            string `json:"text,omitempty"`
 	TTLSeconds      *int   `json:"ttl_seconds,omitempty"`
 	NotificationID  string `json:"notification_id,omitempty"`
+	DisplayAwake    bool   `json:"display_awake,omitempty"`
 }
 
 // ProfileSummary is the intentionally narrow profile discovery shape. Layout
@@ -72,6 +88,12 @@ type ProfileSummary struct {
 type ActivationResult struct {
 	ProfileID string `json:"profile_id"`
 	Changed   bool   `json:"changed"`
+}
+
+type DisplayHostStateResult struct {
+	InstanceID   string `json:"instance_id"`
+	DisplayAwake bool   `json:"display_awake"`
+	Changed      bool   `json:"changed"`
 }
 
 // ConfigReloadResult is the bounded result of one manual configuration
@@ -105,6 +127,55 @@ type ConfigStatus struct {
 	Diagnostic *ConfigDiagnostic
 }
 
+// ConfigEditorSnapshot contains only identifiers and source concurrency state.
+type ConfigEditorSnapshot struct {
+	SourceDigest     string
+	Revision         uint64
+	DefaultProfileID string
+	CurrentProfileID string
+	ProfileIDs       []string
+}
+
+// ConfigEditorProfile is the bounded label view for one profile.
+type ConfigEditorProfile struct {
+	SourceDigest string
+	ProfileID    string
+	Label        string
+}
+
+type ConfigEditorPosition struct {
+	ID       string `json:"position_id"`
+	Position string `json:"position"`
+}
+
+type ConfigEditorPositions struct {
+	SourceDigest string
+	ProfileID    string
+	Positions    []ConfigEditorPosition
+}
+
+type ConfigEditorPositionLabel struct {
+	SourceDigest string
+	ProfileID    string
+	PositionID   string
+	Label        string
+}
+
+// ConfigEditorMutationResult separates the source commit from runtime reload.
+type ConfigEditorMutationResult struct {
+	SourceDigest  string
+	FileCommit    string
+	ReloadOutcome string
+	Revision      uint64
+	Effect        string
+	Reason        string
+}
+
+// ConfigEditorLabelResult remains the descriptive name for label mutations.
+type ConfigEditorLabelResult = ConfigEditorMutationResult
+
+type ConfigEditorPositionLabelResult = ConfigEditorMutationResult
+
 // ConfigDiagnostic is the bounded, path-free cause of the latest rejected
 // configuration candidate. Nil key and location fields mean unavailable.
 type ConfigDiagnostic struct {
@@ -125,35 +196,45 @@ type ExecutionSummary = execution.Summary
 type ExecutionRecord = execution.Record
 
 type Result struct {
-	InstanceID             string             `json:"instance_id"`
-	State                  string             `json:"state"`
-	ProtocolVersion        *int               `json:"protocol_version,omitempty"`
-	Profiles               []ProfileSummary   `json:"profiles,omitempty"`
-	ProfileID              string             `json:"profile_id,omitempty"`
-	Changed                bool               `json:"changed,omitempty"`
-	Revision               uint64             `json:"revision,omitempty"`
-	Active                 bool               `json:"active,omitempty"`
-	Outcome                string             `json:"outcome,omitempty"`
-	Reason                 string             `json:"reason,omitempty"`
-	Effect                 string             `json:"effect,omitempty"`
-	CatalogChanged         bool               `json:"catalog_changed,omitempty"`
-	DefaultChanged         bool               `json:"default_changed,omitempty"`
-	CurrentProfileChanged  bool               `json:"current_profile_changed,omitempty"`
-	CurrentProfileFallback bool               `json:"current_profile_fallback,omitempty"`
-	ActionChanged          bool               `json:"action_changed,omitempty"`
-	DisplayChanged         bool               `json:"display_changed,omitempty"`
-	BrightnessChanged      bool               `json:"brightness_changed,omitempty"`
-	IdleChanged            bool               `json:"idle_changed,omitempty"`
-	DisplayUpdated         bool               `json:"display_updated,omitempty"`
-	Executions             []ExecutionSummary `json:"-"`
-	Execution              *ExecutionRecord   `json:"-"`
-	Diagnostic             *ConfigDiagnostic  `json:"-"`
-	Input                  *InputStatus       `json:"-"`
-	Doctor                 *DoctorResult      `json:"-"`
-	NotificationID         string             `json:"notification_id,omitempty"`
-	MatchedCount           int                `json:"matched_count,omitempty"`
-	ClearedCount           int                `json:"cleared_count,omitempty"`
-	notificationMethod     Method
+	InstanceID                string                           `json:"instance_id"`
+	State                     string                           `json:"state"`
+	ProtocolVersion           *int                             `json:"protocol_version,omitempty"`
+	Profiles                  []ProfileSummary                 `json:"profiles,omitempty"`
+	ProfileID                 string                           `json:"profile_id,omitempty"`
+	Changed                   bool                             `json:"changed,omitempty"`
+	Revision                  uint64                           `json:"revision,omitempty"`
+	Active                    bool                             `json:"active,omitempty"`
+	Outcome                   string                           `json:"outcome,omitempty"`
+	Reason                    string                           `json:"reason,omitempty"`
+	Effect                    string                           `json:"effect,omitempty"`
+	CatalogChanged            bool                             `json:"catalog_changed,omitempty"`
+	DefaultChanged            bool                             `json:"default_changed,omitempty"`
+	CurrentProfileChanged     bool                             `json:"current_profile_changed,omitempty"`
+	CurrentProfileFallback    bool                             `json:"current_profile_fallback,omitempty"`
+	ActionChanged             bool                             `json:"action_changed,omitempty"`
+	DisplayChanged            bool                             `json:"display_changed,omitempty"`
+	BrightnessChanged         bool                             `json:"brightness_changed,omitempty"`
+	IdleChanged               bool                             `json:"idle_changed,omitempty"`
+	DisplayUpdated            bool                             `json:"display_updated,omitempty"`
+	Executions                []ExecutionSummary               `json:"-"`
+	Execution                 *ExecutionRecord                 `json:"-"`
+	Diagnostic                *ConfigDiagnostic                `json:"-"`
+	EditorSnapshot            *ConfigEditorSnapshot            `json:"-"`
+	EditorProfile             *ConfigEditorProfile             `json:"-"`
+	EditorPositions           *ConfigEditorPositions           `json:"-"`
+	EditorPositionLabel       *ConfigEditorPositionLabel       `json:"-"`
+	EditorLabelResult         *ConfigEditorLabelResult         `json:"-"`
+	EditorPositionLabelResult *ConfigEditorPositionLabelResult `json:"-"`
+	EditorProfileCreateResult *ConfigEditorMutationResult      `json:"-"`
+	EditorProfileDeleteResult *ConfigEditorMutationResult      `json:"-"`
+	Input                     *InputStatus                     `json:"-"`
+	Doctor                    *DoctorResult                    `json:"-"`
+	NotificationID            string                           `json:"notification_id,omitempty"`
+	MatchedCount              int                              `json:"matched_count,omitempty"`
+	ClearedCount              int                              `json:"cleared_count,omitempty"`
+	DisplayAwake              bool                             `json:"display_awake,omitempty"`
+	displayHostState          bool
+	notificationMethod        Method
 }
 
 type Error struct {
@@ -186,6 +267,9 @@ const (
 	ErrorHistoryUnavailable  = "history_unavailable"
 	ErrorReloadRejected      = "reload_rejected"
 	ErrorNotificationInvalid = "invalid_notification"
+	ErrorStaleSource         = "stale_source"
+	ErrorEditInvalid         = "edit_invalid"
+	ErrorFileCommitFailed    = "file_commit_failed"
 )
 
 var stableErrorCodes = map[string]struct{}{
@@ -205,6 +289,9 @@ var stableErrorCodes = map[string]struct{}{
 	ErrorHistoryUnavailable:  {},
 	ErrorReloadRejected:      {},
 	ErrorNotificationInvalid: {},
+	ErrorStaleSource:         {},
+	ErrorEditInvalid:         {},
+	ErrorFileCommitFailed:    {},
 }
 
 const (
@@ -224,6 +311,21 @@ const (
 	messageHistoryUnavailable  = "execution history is unavailable"
 	messageReloadRejected      = "configuration reload was rejected"
 	messageNotificationInvalid = "notification request is invalid"
+	messageStaleSource         = "configuration source changed; refresh and retry"
+	messageEditInvalid         = "configuration edit is invalid"
+	messageFileCommitFailed    = "configuration edit could not be committed"
+)
+
+const (
+	EditorFileCommitUnchanged = "unchanged"
+	EditorFileCommitCommitted = "committed"
+	EditorFileCommitUncertain = "uncertain"
+
+	EditorReloadUnchanged    = "unchanged"
+	EditorReloadChanged      = "changed"
+	EditorReloadRejected     = "rejected"
+	EditorReloadUncertain    = "uncertain"
+	EditorReloadNotAttempted = "not_attempted"
 )
 
 var (
@@ -235,9 +337,13 @@ var (
 	ErrExecutionNotFound  = errors.New("execution not found")
 	ErrHistoryUnavailable = errors.New("execution history unavailable")
 	ErrReloadRejected     = errors.New("configuration reload was rejected")
+	ErrStaleSource        = errors.New("configuration source is stale")
+	ErrEditInvalid        = errors.New("configuration edit is invalid")
+	ErrFileCommitFailed   = errors.New("configuration edit could not be committed")
 )
 
 var profileIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+var sourceDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func decodeProfileSummary(value jsonValue) (ProfileSummary, error) {
 	if value.kind != jsonObject || !hasExactly(value.object, "id", "label", "is_default", "is_current") {
@@ -284,6 +390,10 @@ func validProfileLabel(value string) bool {
 		visible = true
 	}
 	return visible
+}
+
+func validPositionLabel(value string) bool {
+	return value == "" || validProfileLabel(value)
 }
 
 type protocolError struct {
@@ -390,6 +500,118 @@ func decodeRequestParams(request *Request, paramsValue jsonValue) error {
 		if !hasExactly(paramsValue.object, "instance_id") {
 			return errors.New("request params fields are invalid")
 		}
+	case MethodDisplayHostStateSet:
+		if !hasExactly(paramsValue.object, "instance_id", "display_awake") {
+			return errors.New("request display host state params are invalid")
+		}
+		displayAwake := paramsValue.object["display_awake"]
+		if displayAwake.kind != jsonBool {
+			return errors.New("request display host state is invalid")
+		}
+		request.DisplayAwake = displayAwake.bool
+	case MethodConfigEditorSnapshot:
+		if !hasExactly(paramsValue.object, "instance_id") {
+			return errors.New("request editor snapshot params are invalid")
+		}
+	case MethodConfigEditorPositionsList:
+		if !hasExactly(paramsValue.object, "instance_id", "source_digest", "profile_id") {
+			return errors.New("request editor position list params are invalid")
+		}
+		sourceDigest := paramsValue.object["source_digest"]
+		profileID := paramsValue.object["profile_id"]
+		if sourceDigest.kind != jsonString || !validSourceDigest(sourceDigest.string) || profileID.kind != jsonString || !validProfileID(profileID.string) {
+			return errors.New("request editor position list values are invalid")
+		}
+		request.SourceDigest = sourceDigest.string
+		request.ProfileID = profileID.string
+	case MethodConfigEditorProfileGet:
+		if !hasExactly(paramsValue.object, "instance_id", "source_digest", "profile_id") {
+			return errors.New("request editor profile params are invalid")
+		}
+		sourceDigest := paramsValue.object["source_digest"]
+		profileID := paramsValue.object["profile_id"]
+		if sourceDigest.kind != jsonString || !validSourceDigest(sourceDigest.string) || profileID.kind != jsonString || !validProfileID(profileID.string) {
+			return errors.New("request editor profile values are invalid")
+		}
+		request.SourceDigest = sourceDigest.string
+		request.ProfileID = profileID.string
+	case MethodConfigEditorPositionGet:
+		if !hasExactly(paramsValue.object, "instance_id", "source_digest", "profile_id", "position_id") {
+			return errors.New("request editor position params are invalid")
+		}
+		sourceDigest := paramsValue.object["source_digest"]
+		profileID := paramsValue.object["profile_id"]
+		positionID := paramsValue.object["position_id"]
+		if sourceDigest.kind != jsonString || !validSourceDigest(sourceDigest.string) || profileID.kind != jsonString || !validProfileID(profileID.string) || positionID.kind != jsonString || !validPositionCoordinate(positionID.string) {
+			return errors.New("request editor position values are invalid")
+		}
+		request.SourceDigest = sourceDigest.string
+		request.ProfileID = profileID.string
+		request.PositionID = positionID.string
+	case MethodConfigEditorLabelSet:
+		if !hasExactly(paramsValue.object, "instance_id", "expected_digest", "profile_id", "label") {
+			return errors.New("request editor label params are invalid")
+		}
+		expectedDigest := paramsValue.object["expected_digest"]
+		profileID := paramsValue.object["profile_id"]
+		label := paramsValue.object["label"]
+		if expectedDigest.kind != jsonString || !validSourceDigest(expectedDigest.string) || profileID.kind != jsonString || !validProfileID(profileID.string) || label.kind != jsonString || !validProfileLabel(label.string) {
+			return errors.New("request editor label values are invalid")
+		}
+		request.ExpectedDigest = expectedDigest.string
+		request.ProfileID = profileID.string
+		request.Label = label.string
+	case MethodConfigEditorPositionLabelSet:
+		if !hasExactly(paramsValue.object, "instance_id", "expected_digest", "profile_id", "position_id", "label") {
+			return errors.New("request editor position label params are invalid")
+		}
+		expectedDigest := paramsValue.object["expected_digest"]
+		profileID := paramsValue.object["profile_id"]
+		positionID := paramsValue.object["position_id"]
+		label := paramsValue.object["label"]
+		if expectedDigest.kind != jsonString || !validSourceDigest(expectedDigest.string) || profileID.kind != jsonString || !validProfileID(profileID.string) || positionID.kind != jsonString || !validPositionCoordinate(positionID.string) || label.kind != jsonString || !validPositionLabel(label.string) {
+			return errors.New("request editor position label values are invalid")
+		}
+		request.ExpectedDigest = expectedDigest.string
+		request.ProfileID = profileID.string
+		request.PositionID = positionID.string
+		request.Label = label.string
+	case MethodConfigEditorProfileCreate:
+		_, hasSourceProfileID := paramsValue.object["source_profile_id"]
+		if hasSourceProfileID {
+			if !hasExactly(paramsValue.object, "instance_id", "expected_digest", "profile_id", "label", "source_profile_id") {
+				return errors.New("request editor profile create params are invalid")
+			}
+		} else if !hasExactly(paramsValue.object, "instance_id", "expected_digest", "profile_id", "label") {
+			return errors.New("request editor profile create params are invalid")
+		}
+		expectedDigest := paramsValue.object["expected_digest"]
+		profileID := paramsValue.object["profile_id"]
+		label := paramsValue.object["label"]
+		if expectedDigest.kind != jsonString || !validSourceDigest(expectedDigest.string) || profileID.kind != jsonString || !validProfileID(profileID.string) || label.kind != jsonString || !validProfileLabel(label.string) {
+			return errors.New("request editor profile create values are invalid")
+		}
+		request.ExpectedDigest = expectedDigest.string
+		request.ProfileID = profileID.string
+		request.Label = label.string
+		if hasSourceProfileID {
+			sourceProfileID := paramsValue.object["source_profile_id"]
+			if sourceProfileID.kind != jsonString || !validProfileID(sourceProfileID.string) {
+				return errors.New("request editor source profile ID is invalid")
+			}
+			request.SourceProfileID = sourceProfileID.string
+		}
+	case MethodConfigEditorProfileDelete:
+		if !hasExactly(paramsValue.object, "instance_id", "expected_digest", "profile_id") {
+			return errors.New("request editor profile delete params are invalid")
+		}
+		expectedDigest := paramsValue.object["expected_digest"]
+		profileID := paramsValue.object["profile_id"]
+		if expectedDigest.kind != jsonString || !validSourceDigest(expectedDigest.string) || profileID.kind != jsonString || !validProfileID(profileID.string) {
+			return errors.New("request editor profile delete values are invalid")
+		}
+		request.ExpectedDigest = expectedDigest.string
+		request.ProfileID = profileID.string
 	case MethodProfilesActivate:
 		if !hasExactly(paramsValue.object, "instance_id", "profile_id") {
 			return errors.New("request activation params are invalid")
@@ -509,14 +731,20 @@ func EncodeRequest(request Request) ([]byte, error) {
 		RequestID       string `json:"request_id"`
 		Method          Method `json:"method"`
 		Params          struct {
-			InstanceID     string `json:"instance_id"`
-			ProfileID      string `json:"profile_id,omitempty"`
-			Limit          *int   `json:"limit,omitempty"`
-			ExecutionID    string `json:"execution_id,omitempty"`
-			Source         string `json:"source,omitempty"`
-			Text           string `json:"text,omitempty"`
-			TTLSeconds     *int   `json:"ttl_seconds,omitempty"`
-			NotificationID string `json:"notification_id,omitempty"`
+			InstanceID      string  `json:"instance_id"`
+			SourceDigest    string  `json:"source_digest,omitempty"`
+			ExpectedDigest  string  `json:"expected_digest,omitempty"`
+			ProfileID       string  `json:"profile_id,omitempty"`
+			PositionID      string  `json:"position_id,omitempty"`
+			Label           *string `json:"label,omitempty"`
+			SourceProfileID string  `json:"source_profile_id,omitempty"`
+			Limit           *int    `json:"limit,omitempty"`
+			ExecutionID     string  `json:"execution_id,omitempty"`
+			Source          string  `json:"source,omitempty"`
+			Text            string  `json:"text,omitempty"`
+			TTLSeconds      *int    `json:"ttl_seconds,omitempty"`
+			NotificationID  string  `json:"notification_id,omitempty"`
+			DisplayAwake    *bool   `json:"display_awake,omitempty"`
 		} `json:"params"`
 	}{
 		ProtocolVersion: request.ProtocolVersion,
@@ -524,7 +752,15 @@ func EncodeRequest(request Request) ([]byte, error) {
 		Method:          request.Method,
 	}
 	payload.Params.InstanceID = request.InstanceID
+	payload.Params.SourceDigest = request.SourceDigest
+	payload.Params.ExpectedDigest = request.ExpectedDigest
 	payload.Params.ProfileID = request.ProfileID
+	payload.Params.PositionID = request.PositionID
+	if request.Method == MethodConfigEditorLabelSet || request.Method == MethodConfigEditorProfileCreate || request.Method == MethodConfigEditorPositionLabelSet {
+		label := request.Label
+		payload.Params.Label = &label
+	}
+	payload.Params.SourceProfileID = request.SourceProfileID
 	if request.Method == MethodExecutionsList && request.Limit != 0 {
 		limit := request.Limit
 		payload.Params.Limit = &limit
@@ -537,45 +773,107 @@ func EncodeRequest(request Request) ([]byte, error) {
 		payload.Params.TTLSeconds = &ttl
 	}
 	payload.Params.NotificationID = request.NotificationID
+	if request.Method == MethodDisplayHostStateSet {
+		displayAwake := request.DisplayAwake
+		payload.Params.DisplayAwake = &displayAwake
+	}
 	return encodeJSONFrame(payload)
 }
 
 func validateRequestFields(request Request) error {
+	if request.Method != MethodDisplayHostStateSet && request.DisplayAwake {
+		return errors.New("display awake is not permitted for method")
+	}
 	switch request.Method {
-	case MethodHealth, MethodStatus, MethodProfilesList, MethodConfigReload, MethodConfigStatus, MethodInputStatus, MethodInputRequestPermission, MethodDoctor:
-		if request.ProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
+	case MethodConfigEditorPositionGet, MethodConfigEditorPositionLabelSet:
+		if !validPositionCoordinate(request.PositionID) {
+			return errors.New("editor position ID is invalid")
+		}
+	default:
+		if request.PositionID != "" {
+			return errors.New("position ID is not permitted for method")
+		}
+	}
+
+	switch request.Method {
+	case MethodHealth, MethodStatus, MethodProfilesList, MethodConfigReload, MethodConfigStatus, MethodConfigEditorSnapshot, MethodInputStatus, MethodInputRequestPermission, MethodDoctor:
+		if request.ProfileID != "" || request.SourceProfileID != "" || request.SourceDigest != "" || request.ExpectedDigest != "" || request.Label != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
+			return errors.New("request fields are not permitted for method")
+		}
+	case MethodDisplayHostStateSet:
+		if request.ProfileID != "" || request.SourceProfileID != "" || request.SourceDigest != "" || request.ExpectedDigest != "" || request.Label != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
+			return errors.New("request fields are not permitted for method")
+		}
+	case MethodConfigEditorPositionsList:
+		if !validSourceDigest(request.SourceDigest) || !validProfileID(request.ProfileID) || request.ExpectedDigest != "" || request.Label != "" || request.SourceProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
+			return errors.New("editor position list request fields are invalid")
+		}
+	case MethodConfigEditorProfileGet:
+		if request.SourceDigest == "" || !validSourceDigest(request.SourceDigest) || !validProfileID(request.ProfileID) {
+			return errors.New("editor profile request fields are invalid")
+		}
+		if request.ExpectedDigest != "" || request.Label != "" || request.SourceProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
+			return errors.New("request fields are not permitted for method")
+		}
+	case MethodConfigEditorPositionGet:
+		if !validSourceDigest(request.SourceDigest) || !validProfileID(request.ProfileID) || request.ExpectedDigest != "" || request.Label != "" || request.SourceProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
+			return errors.New("editor position get request fields are invalid")
+		}
+	case MethodConfigEditorLabelSet:
+		if !validSourceDigest(request.ExpectedDigest) || !validProfileID(request.ProfileID) || !validProfileLabel(request.Label) {
+			return errors.New("editor label request fields are invalid")
+		}
+		if request.SourceDigest != "" || request.SourceProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
+			return errors.New("request fields are not permitted for method")
+		}
+	case MethodConfigEditorPositionLabelSet:
+		if !validSourceDigest(request.ExpectedDigest) || !validProfileID(request.ProfileID) || !validPositionLabel(request.Label) || request.SourceDigest != "" || request.SourceProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
+			return errors.New("editor position label request fields are invalid")
+		}
+	case MethodConfigEditorProfileCreate:
+		if !validSourceDigest(request.ExpectedDigest) || !validProfileID(request.ProfileID) || !validProfileLabel(request.Label) || (request.SourceProfileID != "" && !validProfileID(request.SourceProfileID)) {
+			return errors.New("editor profile create request fields are invalid")
+		}
+		if request.SourceDigest != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
+			return errors.New("request fields are not permitted for method")
+		}
+	case MethodConfigEditorProfileDelete:
+		if !validSourceDigest(request.ExpectedDigest) || !validProfileID(request.ProfileID) {
+			return errors.New("editor profile delete request fields are invalid")
+		}
+		if request.SourceDigest != "" || request.Label != "" || request.SourceProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
 			return errors.New("request fields are not permitted for method")
 		}
 	case MethodProfilesActivate:
 		if request.ProfileID == "" {
 			return errors.New("profile ID is required")
 		}
-		if request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
+		if request.SourceProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
 			return errors.New("request fields are not permitted for method")
 		}
 	case MethodExecutionsList:
-		if request.ProfileID != "" || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
+		if request.ProfileID != "" || request.SourceProfileID != "" || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
 			return errors.New("request fields are not permitted for method")
 		}
 		if request.Limit != 0 && (request.Limit < 1 || request.Limit > MaxExecutionHistoryLimit) {
 			return errors.New("execution history limit must be between one and thirty-two")
 		}
 	case MethodExecutionsGet:
-		if request.ProfileID != "" || request.Limit != 0 || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
+		if request.ProfileID != "" || request.SourceProfileID != "" || request.Limit != 0 || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || request.NotificationID != "" {
 			return errors.New("request fields are not permitted for method")
 		}
 		if !validExecutionID(request.ExecutionID) {
 			return errors.New("execution ID is required")
 		}
 	case MethodNotificationsEmit:
-		if request.ProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.NotificationID != "" || !notification.ValidSource(request.Source) || !validNotificationText(request.Text) {
+		if request.ProfileID != "" || request.SourceProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.NotificationID != "" || !notification.ValidSource(request.Source) || !validNotificationText(request.Text) {
 			return errors.New("notification emit fields are invalid")
 		}
 		if request.TTLSeconds != nil && (*request.TTLSeconds < notification.MinimumTTLSeconds || *request.TTLSeconds > notification.MaximumTTLSeconds) {
 			return errors.New("notification TTL is invalid")
 		}
 	case MethodNotificationsClear:
-		if request.ProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || !notification.ValidNotificationID(request.NotificationID) {
+		if request.ProfileID != "" || request.SourceProfileID != "" || request.Limit != 0 || request.ExecutionID != "" || request.Source != "" || request.Text != "" || request.TTLSeconds != nil || !notification.ValidNotificationID(request.NotificationID) {
 			return errors.New("notification clear fields are invalid")
 		}
 	default:
@@ -623,6 +921,11 @@ func EncodeResponse(response Response) ([]byte, error) {
 		case MethodProfilesActivate:
 			profileID, changed := result.ProfileID, result.Changed
 			encodedResult.ProfileID = &profileID
+			encodedResult.Changed = &changed
+		case MethodDisplayHostStateSet:
+			instanceID, displayAwake, changed := result.InstanceID, result.DisplayAwake, result.Changed
+			encodedResult.InstanceID = &instanceID
+			encodedResult.DisplayAwake = &displayAwake
 			encodedResult.Changed = &changed
 		case MethodExecutionsList:
 			instanceID := result.InstanceID
@@ -679,6 +982,59 @@ func EncodeResponse(response Response) ([]byte, error) {
 			encodedResult.Reason = &reason
 			diagnostic := result.Diagnostic
 			encodedResult.Diagnostic = &diagnostic
+		case MethodConfigEditorSnapshot:
+			instanceID := result.InstanceID
+			snapshot := result.EditorSnapshot
+			profileIDs := append([]string(nil), snapshot.ProfileIDs...)
+			encodedResult.InstanceID = &instanceID
+			encodedResult.SourceDigest = &snapshot.SourceDigest
+			encodedResult.Revision = &snapshot.Revision
+			encodedResult.DefaultProfileID = &snapshot.DefaultProfileID
+			encodedResult.CurrentProfileID = &snapshot.CurrentProfileID
+			encodedResult.ProfileIDs = &profileIDs
+		case MethodConfigEditorPositionsList:
+			instanceID := result.InstanceID
+			positions := result.EditorPositions
+			positionValues := append([]ConfigEditorPosition(nil), positions.Positions...)
+			encodedResult.InstanceID = &instanceID
+			encodedResult.SourceDigest = &positions.SourceDigest
+			encodedResult.ProfileID = &positions.ProfileID
+			encodedResult.Positions = &positionValues
+		case MethodConfigEditorProfileGet:
+			instanceID := result.InstanceID
+			profile := result.EditorProfile
+			encodedResult.InstanceID = &instanceID
+			encodedResult.SourceDigest = &profile.SourceDigest
+			encodedResult.ProfileID = &profile.ProfileID
+			encodedResult.Label = &profile.Label
+		case MethodConfigEditorPositionGet:
+			instanceID := result.InstanceID
+			positionLabel := result.EditorPositionLabel
+			encodedResult.InstanceID = &instanceID
+			encodedResult.SourceDigest = &positionLabel.SourceDigest
+			encodedResult.ProfileID = &positionLabel.ProfileID
+			encodedResult.PositionID = &positionLabel.PositionID
+			encodedResult.Label = &positionLabel.Label
+		case MethodConfigEditorLabelSet, MethodConfigEditorProfileCreate, MethodConfigEditorProfileDelete, MethodConfigEditorPositionLabelSet:
+			instanceID := result.InstanceID
+			var mutationResult *ConfigEditorMutationResult
+			switch resultMethod(result) {
+			case MethodConfigEditorLabelSet:
+				mutationResult = result.EditorLabelResult
+			case MethodConfigEditorPositionLabelSet:
+				mutationResult = result.EditorPositionLabelResult
+			case MethodConfigEditorProfileCreate:
+				mutationResult = result.EditorProfileCreateResult
+			case MethodConfigEditorProfileDelete:
+				mutationResult = result.EditorProfileDeleteResult
+			}
+			encodedResult.InstanceID = &instanceID
+			encodedResult.SourceDigest = &mutationResult.SourceDigest
+			encodedResult.FileCommit = &mutationResult.FileCommit
+			encodedResult.ReloadOutcome = &mutationResult.ReloadOutcome
+			encodedResult.Revision = &mutationResult.Revision
+			encodedResult.Effect = &mutationResult.Effect
+			encodedResult.Reason = &mutationResult.Reason
 		case MethodNotificationsEmit:
 			instanceID := result.InstanceID
 			notificationID := result.NotificationID
@@ -705,6 +1061,15 @@ type resultJSON struct {
 	ProtocolVersion        *int                    `json:"protocol_version,omitempty"`
 	Profiles               *[]ProfileSummary       `json:"profiles,omitempty"`
 	ProfileID              *string                 `json:"profile_id,omitempty"`
+	PositionID             *string                 `json:"position_id,omitempty"`
+	SourceDigest           *string                 `json:"source_digest,omitempty"`
+	Label                  *string                 `json:"label,omitempty"`
+	DefaultProfileID       *string                 `json:"default_profile_id,omitempty"`
+	CurrentProfileID       *string                 `json:"current_profile_id,omitempty"`
+	ProfileIDs             *[]string               `json:"profile_ids,omitempty"`
+	Positions              *[]ConfigEditorPosition `json:"positions,omitempty"`
+	FileCommit             *string                 `json:"file_commit,omitempty"`
+	ReloadOutcome          *string                 `json:"reload_outcome,omitempty"`
 	Changed                *bool                   `json:"changed,omitempty"`
 	Revision               *uint64                 `json:"revision,omitempty"`
 	Active                 *bool                   `json:"active,omitempty"`
@@ -726,6 +1091,7 @@ type resultJSON struct {
 	NotificationID         *string                 `json:"notification_id,omitempty"`
 	MatchedCount           *int                    `json:"matched_count,omitempty"`
 	ClearedCount           *int                    `json:"cleared_count,omitempty"`
+	DisplayAwake           *bool                   `json:"display_awake,omitempty"`
 }
 
 type executionSummaryJSON struct {
@@ -1056,6 +1422,28 @@ func validReloadEffect(value string) bool {
 	}
 }
 
+func validSourceDigest(value string) bool {
+	return sourceDigestPattern.MatchString(value)
+}
+
+func validEditorFileCommit(value string) bool {
+	switch value {
+	case EditorFileCommitUnchanged, EditorFileCommitCommitted, EditorFileCommitUncertain:
+		return true
+	default:
+		return false
+	}
+}
+
+func validEditorReloadOutcome(value string) bool {
+	switch value {
+	case EditorReloadUnchanged, EditorReloadChanged, EditorReloadRejected, EditorReloadUncertain, EditorReloadNotAttempted:
+		return true
+	default:
+		return false
+	}
+}
+
 func validReloadState(value string) bool {
 	switch value {
 	case "idle", "reloading", "closed":
@@ -1380,6 +1768,20 @@ func decodeResult(value jsonValue, method, expectedInstanceID string) (Result, e
 			return Result{}, errors.New("response result values are invalid")
 		}
 		return Result{ProfileID: profileID.string, Changed: changed.bool}, nil
+	case MethodDisplayHostStateSet:
+		if !hasExactly(value.object, "instance_id", "display_awake", "changed") {
+			return Result{}, errors.New("response display host state fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		if instanceID == "" || (expectedInstanceID != "" && instanceID != expectedInstanceID) {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		displayAwake := value.object["display_awake"]
+		changed := value.object["changed"]
+		if displayAwake.kind != jsonBool || changed.kind != jsonBool {
+			return Result{}, errors.New("response display host state values are invalid")
+		}
+		return Result{InstanceID: instanceID, DisplayAwake: displayAwake.bool, Changed: changed.bool, displayHostState: true}, nil
 	case MethodExecutionsList:
 		if !hasExactly(value.object, "instance_id", "executions") {
 			return Result{}, errors.New("response execution list fields are invalid")
@@ -1522,6 +1924,170 @@ func decodeResult(value jsonValue, method, expectedInstanceID string) (Result, e
 			return Result{}, errors.New("response configuration diagnostic is incompatible with status")
 		}
 		return result, nil
+	case MethodConfigEditorSnapshot:
+		if !hasExactly(value.object, "instance_id", "source_digest", "revision", "default_profile_id", "current_profile_id", "profile_ids") {
+			return Result{}, errors.New("response editor snapshot fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		if instanceID == "" || (expectedInstanceID != "" && instanceID != expectedInstanceID) {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		sourceDigest := value.object["source_digest"]
+		if sourceDigest.kind != jsonString || !validSourceDigest(sourceDigest.string) {
+			return Result{}, errors.New("response editor source digest is invalid")
+		}
+		revision, err := decodeUnsignedInteger(value.object["revision"])
+		if err != nil || revision == 0 {
+			return Result{}, errors.New("response editor revision is invalid")
+		}
+		defaultProfileID := value.object["default_profile_id"]
+		currentProfileID := value.object["current_profile_id"]
+		if defaultProfileID.kind != jsonString || !validProfileID(defaultProfileID.string) || currentProfileID.kind != jsonString || !validProfileID(currentProfileID.string) {
+			return Result{}, errors.New("response editor profile IDs are invalid")
+		}
+		profileIDsValue := value.object["profile_ids"]
+		if profileIDsValue.kind != jsonArray || len(profileIDsValue.array) == 0 || len(profileIDsValue.array) > maxProfileSummaries {
+			return Result{}, errors.New("response editor profile IDs are invalid")
+		}
+		profileIDs := make([]string, len(profileIDsValue.array))
+		seenIDs := make(map[string]struct{}, len(profileIDs))
+		for index, profileIDValue := range profileIDsValue.array {
+			if profileIDValue.kind != jsonString || !validProfileID(profileIDValue.string) {
+				return Result{}, errors.New("response editor profile ID is invalid")
+			}
+			if _, exists := seenIDs[profileIDValue.string]; exists {
+				return Result{}, errors.New("response editor profile IDs are duplicated")
+			}
+			seenIDs[profileIDValue.string] = struct{}{}
+			profileIDs[index] = profileIDValue.string
+		}
+		if _, exists := seenIDs[defaultProfileID.string]; !exists {
+			return Result{}, errors.New("response editor default profile ID is missing")
+		}
+		if _, exists := seenIDs[currentProfileID.string]; !exists {
+			return Result{}, errors.New("response editor current profile ID is missing")
+		}
+		return Result{
+			InstanceID: instanceID,
+			EditorSnapshot: &ConfigEditorSnapshot{
+				SourceDigest: sourceDigest.string, Revision: revision,
+				DefaultProfileID: defaultProfileID.string, CurrentProfileID: currentProfileID.string,
+				ProfileIDs: profileIDs,
+			},
+		}, nil
+	case MethodConfigEditorPositionsList:
+		if !hasExactly(value.object, "instance_id", "source_digest", "profile_id", "positions") {
+			return Result{}, errors.New("response editor position list fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		if instanceID == "" || (expectedInstanceID != "" && instanceID != expectedInstanceID) {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		sourceDigest := value.object["source_digest"]
+		profileID := value.object["profile_id"]
+		positionsValue := value.object["positions"]
+		if sourceDigest.kind != jsonString || !validSourceDigest(sourceDigest.string) || profileID.kind != jsonString || !validProfileID(profileID.string) || positionsValue.kind != jsonArray || len(positionsValue.array) != appconfig.RequiredPositionCount {
+			return Result{}, errors.New("response editor position list values are invalid")
+		}
+		positions := make([]ConfigEditorPosition, len(positionsValue.array))
+		for index, positionValue := range positionsValue.array {
+			if positionValue.kind != jsonObject || !hasExactly(positionValue.object, "position_id", "position") {
+				return Result{}, errors.New("response editor position fields are invalid")
+			}
+			positionID := positionValue.object["position_id"]
+			position := positionValue.object["position"]
+			if positionID.kind != jsonString || !validPositionCoordinate(positionID.string) || position.kind != jsonString {
+				return Result{}, errors.New("response editor position values are invalid")
+			}
+			positions[index] = ConfigEditorPosition{ID: positionID.string, Position: position.string}
+		}
+		if !validEditorPositions(positions) {
+			return Result{}, errors.New("response editor position list is invalid")
+		}
+		return Result{
+			InstanceID: instanceID,
+			EditorPositions: &ConfigEditorPositions{
+				SourceDigest: sourceDigest.string, ProfileID: profileID.string, Positions: positions,
+			},
+		}, nil
+	case MethodConfigEditorProfileGet:
+		if !hasExactly(value.object, "instance_id", "source_digest", "profile_id", "label") {
+			return Result{}, errors.New("response editor profile fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		if instanceID == "" || (expectedInstanceID != "" && instanceID != expectedInstanceID) {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		sourceDigest := value.object["source_digest"]
+		profileID := value.object["profile_id"]
+		label := value.object["label"]
+		if sourceDigest.kind != jsonString || !validSourceDigest(sourceDigest.string) || profileID.kind != jsonString || !validProfileID(profileID.string) || label.kind != jsonString || !validProfileLabel(label.string) {
+			return Result{}, errors.New("response editor profile values are invalid")
+		}
+		return Result{
+			InstanceID: instanceID,
+			EditorProfile: &ConfigEditorProfile{
+				SourceDigest: sourceDigest.string, ProfileID: profileID.string, Label: label.string,
+			},
+		}, nil
+	case MethodConfigEditorPositionGet:
+		if !hasExactly(value.object, "instance_id", "source_digest", "profile_id", "position_id", "label") {
+			return Result{}, errors.New("response editor position label fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		if instanceID == "" || (expectedInstanceID != "" && instanceID != expectedInstanceID) {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		sourceDigest := value.object["source_digest"]
+		profileID := value.object["profile_id"]
+		positionID := value.object["position_id"]
+		label := value.object["label"]
+		if sourceDigest.kind != jsonString || !validSourceDigest(sourceDigest.string) || profileID.kind != jsonString || !validProfileID(profileID.string) || positionID.kind != jsonString || !validPositionCoordinate(positionID.string) || label.kind != jsonString || !validPositionLabel(label.string) {
+			return Result{}, errors.New("response editor position label values are invalid")
+		}
+		return Result{
+			InstanceID: instanceID,
+			EditorPositionLabel: &ConfigEditorPositionLabel{
+				SourceDigest: sourceDigest.string, ProfileID: profileID.string,
+				PositionID: positionID.string, Label: label.string,
+			},
+		}, nil
+	case MethodConfigEditorLabelSet, MethodConfigEditorProfileCreate, MethodConfigEditorProfileDelete, MethodConfigEditorPositionLabelSet:
+		if !hasExactly(value.object, "instance_id", "source_digest", "file_commit", "reload_outcome", "revision", "effect", "reason") {
+			return Result{}, errors.New("response editor mutation fields are invalid")
+		}
+		instanceID := canonicalString(value.object["instance_id"])
+		if instanceID == "" || (expectedInstanceID != "" && instanceID != expectedInstanceID) {
+			return Result{}, errors.New("response instance ID does not match")
+		}
+		sourceDigest := value.object["source_digest"]
+		fileCommit := value.object["file_commit"]
+		reloadOutcome := value.object["reload_outcome"]
+		effect := value.object["effect"]
+		reason := value.object["reason"]
+		if sourceDigest.kind != jsonString || !validSourceDigest(sourceDigest.string) || fileCommit.kind != jsonString || !validEditorFileCommit(fileCommit.string) || reloadOutcome.kind != jsonString || !validEditorReloadOutcome(reloadOutcome.string) || effect.kind != jsonString || !validReloadEffect(effect.string) || reason.kind != jsonString || !validReloadReason(reason.string) {
+			return Result{}, errors.New("response editor mutation values are invalid")
+		}
+		revision, err := decodeUnsignedInteger(value.object["revision"])
+		if err != nil || revision == 0 {
+			return Result{}, errors.New("response editor mutation revision is invalid")
+		}
+		mutationResult := &ConfigEditorMutationResult{
+			SourceDigest: sourceDigest.string, FileCommit: fileCommit.string, ReloadOutcome: reloadOutcome.string,
+			Revision: revision, Effect: effect.string, Reason: reason.string,
+		}
+		result := Result{InstanceID: instanceID}
+		switch Method(method) {
+		case MethodConfigEditorLabelSet:
+			result.EditorLabelResult = mutationResult
+		case MethodConfigEditorPositionLabelSet:
+			result.EditorPositionLabelResult = mutationResult
+		case MethodConfigEditorProfileCreate:
+			result.EditorProfileCreateResult = mutationResult
+		case MethodConfigEditorProfileDelete:
+			result.EditorProfileDeleteResult = mutationResult
+		}
+		return result, nil
 	case MethodNotificationsEmit:
 		if !hasExactly(value.object, "instance_id", "notification_id", "matched_count") {
 			return Result{}, errors.New("response notification emit fields are invalid")
@@ -1566,6 +2132,9 @@ func decodeNotificationCount(value jsonValue) (int, error) {
 }
 
 func validateResultForMethod(result Result, method Method, expectedInstanceID string) error {
+	if method != MethodDisplayHostStateSet && (result.displayHostState || result.DisplayAwake) {
+		return errors.New("response has unexpected display host state fields")
+	}
 	if method != MethodNotificationsEmit && method != MethodNotificationsClear && hasNotificationResultFields(result) {
 		return errors.New("response has unexpected notification fields")
 	}
@@ -1606,6 +2175,10 @@ func validateResultForMethod(result Result, method Method, expectedInstanceID st
 		if result.InstanceID != "" || result.State != "" || result.ProtocolVersion != nil || result.Profiles != nil || result.Executions != nil || result.Execution != nil || hasConfigResultFields(result) || !validProfileID(result.ProfileID) {
 			return errors.New("response activation is invalid")
 		}
+	case MethodDisplayHostStateSet:
+		if !result.displayHostState || !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != "" || result.ProtocolVersion != nil || result.Profiles != nil || result.ProfileID != "" || result.Executions != nil || result.Execution != nil || hasConfigResultFields(result) || hasNotificationResultFields(result) {
+			return errors.New("response display host state is invalid")
+		}
 	case MethodExecutionsList:
 		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State != "" || result.ProtocolVersion != nil || result.ProfileID != "" || result.Profiles != nil || result.Executions == nil || result.Execution != nil || len(result.Executions) > MaxExecutionHistoryLimit || hasConfigResultFields(result) {
 			return errors.New("response execution list is invalid")
@@ -1635,6 +2208,66 @@ func validateResultForMethod(result Result, method Method, expectedInstanceID st
 		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.State == "" || !validReloadState(result.State) || !validReloadOutcome(result.Outcome) || !validReloadReason(result.Reason) || !validConfigDiagnosticStatus(result.Outcome, result.Reason, result.Diagnostic) || result.ProtocolVersion != nil || result.Profiles != nil || result.ProfileID != "" || result.Executions != nil || result.Execution != nil || result.Changed || result.Effect != "" || result.CatalogChanged || result.DefaultChanged || result.CurrentProfileChanged || result.CurrentProfileFallback || result.ActionChanged || result.DisplayChanged || result.BrightnessChanged || result.IdleChanged || result.DisplayUpdated {
 			return errors.New("response configuration status is invalid")
 		}
+	case MethodConfigEditorSnapshot:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.EditorSnapshot == nil || result.EditorProfile != nil || result.EditorPositions != nil || result.EditorPositionLabel != nil || result.EditorLabelResult != nil || result.EditorPositionLabelResult != nil || result.EditorProfileCreateResult != nil || result.EditorProfileDeleteResult != nil || hasUnexpectedEditorFields(result) {
+			return errors.New("response editor snapshot is invalid")
+		}
+		snapshot := result.EditorSnapshot
+		if !validSourceDigest(snapshot.SourceDigest) || snapshot.Revision == 0 || !validProfileID(snapshot.DefaultProfileID) || !validProfileID(snapshot.CurrentProfileID) || !validEditorProfileIDs(snapshot.ProfileIDs, snapshot.DefaultProfileID, snapshot.CurrentProfileID) {
+			return errors.New("response editor snapshot values are invalid")
+		}
+	case MethodConfigEditorPositionsList:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.EditorPositions == nil || result.EditorSnapshot != nil || result.EditorProfile != nil || result.EditorPositionLabel != nil || result.EditorLabelResult != nil || result.EditorPositionLabelResult != nil || result.EditorProfileCreateResult != nil || result.EditorProfileDeleteResult != nil || hasUnexpectedEditorFields(result) {
+			return errors.New("response editor position list is invalid")
+		}
+		positions := result.EditorPositions
+		if !validSourceDigest(positions.SourceDigest) || !validProfileID(positions.ProfileID) || !validEditorPositions(positions.Positions) {
+			return errors.New("response editor position list values are invalid")
+		}
+	case MethodConfigEditorProfileGet:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.EditorProfile == nil || result.EditorSnapshot != nil || result.EditorPositions != nil || result.EditorPositionLabel != nil || result.EditorLabelResult != nil || result.EditorPositionLabelResult != nil || result.EditorProfileCreateResult != nil || result.EditorProfileDeleteResult != nil || hasUnexpectedEditorFields(result) {
+			return errors.New("response editor profile is invalid")
+		}
+		profile := result.EditorProfile
+		if !validSourceDigest(profile.SourceDigest) || !validProfileID(profile.ProfileID) || !validProfileLabel(profile.Label) {
+			return errors.New("response editor profile values are invalid")
+		}
+	case MethodConfigEditorPositionGet:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.EditorPositionLabel == nil || result.EditorSnapshot != nil || result.EditorProfile != nil || result.EditorPositions != nil || result.EditorLabelResult != nil || result.EditorPositionLabelResult != nil || result.EditorProfileCreateResult != nil || result.EditorProfileDeleteResult != nil || hasUnexpectedEditorFields(result) {
+			return errors.New("response editor position label is invalid")
+		}
+		positionLabel := result.EditorPositionLabel
+		if !validSourceDigest(positionLabel.SourceDigest) || !validProfileID(positionLabel.ProfileID) || !validPositionCoordinate(positionLabel.PositionID) || !validPositionLabel(positionLabel.Label) {
+			return errors.New("response editor position label values are invalid")
+		}
+	case MethodConfigEditorLabelSet:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.EditorLabelResult == nil || result.EditorSnapshot != nil || result.EditorProfile != nil || result.EditorPositions != nil || result.EditorPositionLabel != nil || result.EditorPositionLabelResult != nil || result.EditorProfileCreateResult != nil || result.EditorProfileDeleteResult != nil || hasUnexpectedEditorFields(result) {
+			return errors.New("response editor label result is invalid")
+		}
+		if !validEditorMutationResult(result.EditorLabelResult) {
+			return errors.New("response editor label values are invalid")
+		}
+	case MethodConfigEditorPositionLabelSet:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.EditorPositionLabelResult == nil || result.EditorSnapshot != nil || result.EditorProfile != nil || result.EditorPositions != nil || result.EditorPositionLabel != nil || result.EditorLabelResult != nil || result.EditorProfileCreateResult != nil || result.EditorProfileDeleteResult != nil || hasUnexpectedEditorFields(result) {
+			return errors.New("response editor position label result is invalid")
+		}
+		if !validEditorMutationResult(result.EditorPositionLabelResult) {
+			return errors.New("response editor position label result values are invalid")
+		}
+	case MethodConfigEditorProfileCreate:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.EditorProfileCreateResult == nil || result.EditorSnapshot != nil || result.EditorProfile != nil || result.EditorPositions != nil || result.EditorPositionLabel != nil || result.EditorLabelResult != nil || result.EditorPositionLabelResult != nil || result.EditorProfileDeleteResult != nil || hasUnexpectedEditorFields(result) {
+			return errors.New("response editor profile create result is invalid")
+		}
+		if !validEditorMutationResult(result.EditorProfileCreateResult) {
+			return errors.New("response editor profile create values are invalid")
+		}
+	case MethodConfigEditorProfileDelete:
+		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.EditorProfileDeleteResult == nil || result.EditorSnapshot != nil || result.EditorProfile != nil || result.EditorPositions != nil || result.EditorPositionLabel != nil || result.EditorLabelResult != nil || result.EditorPositionLabelResult != nil || result.EditorProfileCreateResult != nil || hasUnexpectedEditorFields(result) {
+			return errors.New("response editor profile delete result is invalid")
+		}
+		if !validEditorMutationResult(result.EditorProfileDeleteResult) {
+			return errors.New("response editor profile delete values are invalid")
+		}
 	case MethodNotificationsEmit:
 		if !isCanonicalUUID(result.InstanceID) || (expectedInstanceID != "" && result.InstanceID != expectedInstanceID) || result.NotificationID == "" || !notification.ValidNotificationID(result.NotificationID) || result.MatchedCount < 0 || result.MatchedCount > 14 || result.ClearedCount != 0 || result.Changed || result.State != "" || result.ProtocolVersion != nil || result.Profiles != nil || result.ProfileID != "" || result.Executions != nil || result.Execution != nil || hasConfigResultFields(result) || result.Input != nil || result.Doctor != nil {
 			return errors.New("response notification emission is invalid")
@@ -1654,7 +2287,73 @@ func hasNotificationResultFields(result Result) bool {
 }
 
 func hasConfigResultFields(result Result) bool {
+	return hasLegacyConfigResultFields(result) || result.EditorSnapshot != nil || result.EditorProfile != nil || result.EditorPositions != nil || result.EditorPositionLabel != nil || result.EditorLabelResult != nil || result.EditorPositionLabelResult != nil || result.EditorProfileCreateResult != nil || result.EditorProfileDeleteResult != nil
+}
+
+func hasLegacyConfigResultFields(result Result) bool {
 	return result.Revision != 0 || result.Active || result.Outcome != "" || result.Reason != "" || result.Effect != "" || result.CatalogChanged || result.DefaultChanged || result.CurrentProfileChanged || result.CurrentProfileFallback || result.ActionChanged || result.DisplayChanged || result.BrightnessChanged || result.IdleChanged || result.DisplayUpdated || result.Diagnostic != nil
+}
+
+func hasUnexpectedEditorFields(result Result) bool {
+	return result.State != "" || result.ProtocolVersion != nil || result.Profiles != nil || result.ProfileID != "" || result.Changed || result.Executions != nil || result.Execution != nil || hasLegacyConfigResultFields(result) || hasNotificationResultFields(result)
+}
+
+func validEditorProfileIDs(profileIDs []string, defaultProfileID, currentProfileID string) bool {
+	if len(profileIDs) == 0 || len(profileIDs) > maxProfileSummaries {
+		return false
+	}
+	seenIDs := make(map[string]struct{}, len(profileIDs))
+	for _, profileID := range profileIDs {
+		if !validProfileID(profileID) {
+			return false
+		}
+		if _, exists := seenIDs[profileID]; exists {
+			return false
+		}
+		seenIDs[profileID] = struct{}{}
+	}
+	_, hasDefault := seenIDs[defaultProfileID]
+	_, hasCurrent := seenIDs[currentProfileID]
+	return hasDefault && hasCurrent
+}
+
+func validEditorPositions(positions []ConfigEditorPosition) bool {
+	if len(positions) != appconfig.RequiredPositionCount {
+		return false
+	}
+	seenIDs := make(map[string]struct{}, len(positions))
+	seenCoordinates := make(map[string]struct{}, len(positions))
+	for _, position := range positions {
+		if !validPositionCoordinate(position.ID) || position.ID != position.Position {
+			return false
+		}
+		if _, exists := seenIDs[position.ID]; exists {
+			return false
+		}
+		seenIDs[position.ID] = struct{}{}
+		if !validPositionCoordinate(position.Position) {
+			return false
+		}
+		if _, exists := seenCoordinates[position.Position]; exists {
+			return false
+		}
+		seenCoordinates[position.Position] = struct{}{}
+	}
+	for _, supported := range appconfig.SupportedPositions() {
+		if _, exists := seenCoordinates[supported.Name]; !exists {
+			return false
+		}
+	}
+	return true
+}
+
+func validPositionCoordinate(value string) bool {
+	_, ok := appconfig.LookupPosition(value)
+	return ok
+}
+
+func validEditorMutationResult(result *ConfigEditorMutationResult) bool {
+	return result != nil && validSourceDigest(result.SourceDigest) && validEditorFileCommit(result.FileCommit) && validEditorReloadOutcome(result.ReloadOutcome) && result.Revision != 0 && validReloadEffect(result.Effect) && validReloadReason(result.Reason)
 }
 
 func resultMethod(result *Result) Method {
@@ -1664,6 +2363,9 @@ func resultMethod(result *Result) Method {
 	if result.notificationMethod == MethodNotificationsEmit || result.notificationMethod == MethodNotificationsClear {
 		return result.notificationMethod
 	}
+	if result.displayHostState {
+		return MethodDisplayHostStateSet
+	}
 	if result.Input != nil {
 		return MethodInputStatus
 	}
@@ -1672,6 +2374,30 @@ func resultMethod(result *Result) Method {
 	}
 	if result.Execution != nil {
 		return MethodExecutionsGet
+	}
+	if result.EditorSnapshot != nil {
+		return MethodConfigEditorSnapshot
+	}
+	if result.EditorPositions != nil {
+		return MethodConfigEditorPositionsList
+	}
+	if result.EditorProfile != nil {
+		return MethodConfigEditorProfileGet
+	}
+	if result.EditorPositionLabel != nil {
+		return MethodConfigEditorPositionGet
+	}
+	if result.EditorLabelResult != nil {
+		return MethodConfigEditorLabelSet
+	}
+	if result.EditorPositionLabelResult != nil {
+		return MethodConfigEditorPositionLabelSet
+	}
+	if result.EditorProfileCreateResult != nil {
+		return MethodConfigEditorProfileCreate
+	}
+	if result.EditorProfileDeleteResult != nil {
+		return MethodConfigEditorProfileDelete
 	}
 	if result.Effect != "" {
 		return MethodConfigReload
@@ -1702,7 +2428,7 @@ func resultMethod(result *Result) Method {
 
 func isSupportedMethod(method Method) bool {
 	switch method {
-	case MethodHealth, MethodStatus, MethodProfilesList, MethodProfilesActivate, MethodExecutionsList, MethodExecutionsGet, MethodConfigReload, MethodConfigStatus, MethodInputStatus, MethodInputRequestPermission, MethodDoctor, MethodNotificationsEmit, MethodNotificationsClear:
+	case MethodHealth, MethodStatus, MethodProfilesList, MethodProfilesActivate, MethodExecutionsList, MethodExecutionsGet, MethodConfigReload, MethodConfigStatus, MethodConfigEditorSnapshot, MethodConfigEditorPositionsList, MethodConfigEditorProfileGet, MethodConfigEditorPositionGet, MethodConfigEditorProfileCreate, MethodConfigEditorProfileDelete, MethodConfigEditorLabelSet, MethodConfigEditorPositionLabelSet, MethodDisplayHostStateSet, MethodInputStatus, MethodInputRequestPermission, MethodDoctor, MethodNotificationsEmit, MethodNotificationsClear:
 		return true
 	default:
 		return false

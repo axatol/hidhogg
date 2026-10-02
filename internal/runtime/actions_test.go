@@ -724,7 +724,7 @@ func TestNotificationSelectionStaticActionUsesConfiguredPayload(t *testing.T) {
 	}
 	want := execution.Request{
 		ProfileID:  "default",
-		PositionID: "Default-0_0",
+		PositionID: "0_0",
 		Executable: "/configured/action",
 		Arguments:  []string{"configured", "payload"},
 		Timeout:    17 * time.Second,
@@ -961,7 +961,7 @@ func TestRuntimeRunProfileActionFakeTransportFlow(t *testing.T) {
 	if got := stringsCount(output.String(), `"event":"input"`); got != 2 {
 		t.Fatalf("first active gesture output count = %d, want two: %q", got, output.String())
 	}
-	if got := stringsCount(output.String(), `"id":"default-0_0"`); got != 2 {
+	if got := stringsCount(output.String(), `"id":"0_0"`); got != 2 {
 		t.Fatalf("first active gesture binding output count = %d, want two: %q", got, output.String())
 	}
 
@@ -1009,8 +1009,8 @@ func TestRuntimeRunProfileActionFakeTransportFlow(t *testing.T) {
 	if got := stringsCount(output.String(), `"event":"input"`); got != 4 {
 		t.Fatalf("active gesture output count after wake = %d, want four: %q", got, output.String())
 	}
-	if got := stringsCount(output.String(), `"id":"alternate-0_0"`); got != 2 {
-		t.Fatalf("post-transition binding output count = %d, want two: %q", got, output.String())
+	if got := stringsCount(output.String(), `"id":"0_0"`); got != 4 {
+		t.Fatalf("normalized coordinate event count = %d, want four: %q", got, output.String())
 	}
 	bindings := runtimeProcess.CurrentBindings()
 	if len(bindings) != 1 || bindings[0].Position != "0_0" || bindings[0].Action.ProfileID != "alternate" {
@@ -1036,17 +1036,17 @@ func TestRuntimeRunProfileActionFakeTransportFlow(t *testing.T) {
 
 func runtimeActionConfiguration() []byte {
 	var builder strings.Builder
-	builder.WriteString("schema_version = 3\nadapter = \"ulanzi.d200x\"\nbrightness = 73\nidle_timeout_seconds = 5\ndefault_profile_id = \"default\"\n\n")
-	for _, profileID := range []string{"default", "alternate"} {
+	builder.WriteString("schema_version = 4\nadapter = \"ulanzi.d200x\"\nbrightness = 73\nidle_timeout_seconds = 5\ndefault_profile_id = \"default\"\n\n")
+	for _, profileID := range []string{"alternate", "default"} {
 		target := "alternate"
 		if profileID == "alternate" {
 			target = "default"
 		}
-		fmt.Fprintf(&builder, "[[profiles]]\nid = \"%s\"\nlabel = \"%s\"\n\n", profileID, profileID)
+		fmt.Fprintf(&builder, "[profiles.%q]\nlabel = \"%s\"\n\n", profileID, profileID)
 		for index, spec := range d200x.SupportedPositions() {
-			fmt.Fprintf(&builder, "[[profiles.positions]]\nid = \"%s-%s\"\nposition = \"%s\"\nlabel = \"%s %d\"\nbackground = \"#102030\"\n", profileID, spec.Name, spec.Name, profileID, index)
+			fmt.Fprintf(&builder, "[profiles.%q.positions.%q]\nlabel = \"%s %d\"\nbackground = \"#102030\"\n", profileID, spec.Name, profileID, index)
 			if index == 0 {
-				fmt.Fprintf(&builder, "\n[profiles.positions.action]\ntype = \"activate_profile\"\ngesture = \"release\"\nprofile_id = \"%s\"\n", target)
+				fmt.Fprintf(&builder, "\n[profiles.%q.positions.%q.action]\ntype = \"activate_profile\"\ngesture = \"release\"\nprofile_id = \"%s\"\n", profileID, spec.Name, target)
 			}
 			builder.WriteString("\n")
 		}

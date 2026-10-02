@@ -86,6 +86,10 @@ func (s *Session) Open(ctx context.Context, candidate Candidate) error {
 
 	next, err := s.factory.Open(ctx, candidate)
 	if err != nil {
+		var hidOpenFailure *HIDOpenPathFailure
+		if errors.As(err, &hidOpenFailure) {
+			s.logHIDOpenPathCause(hidOpenFailure)
+		}
 		failure := sanitizeAdapterError("open D200X HID", err)
 		s.setTransportFailure(failure)
 		return failure
@@ -110,6 +114,63 @@ func (s *Session) Open(ctx context.Context, candidate Candidate) error {
 	s.transportErr = nil
 	s.mu.Unlock()
 	return nil
+}
+
+func (s *Session) logHIDOpenPathCause(failure *HIDOpenPathFailure) {
+	if s == nil || failure == nil || !s.diagnostics.verbose {
+		return
+	}
+
+	writer := s.diagnostics.options.Writer
+	const prefix = "D200X_HID_OPEN_PATH_CAUSE: "
+	lineLimit := s.diagnostics.options.lineLimit()
+	if writer == nil || lineLimit <= len(prefix)+1 {
+		return
+	}
+
+	causeLimit := lineLimit - len(prefix) - 1
+	line := make([]byte, 0, lineLimit)
+	line = append(line, prefix...)
+	line = append(line, escapeVerboseHIDCause(failure.cause, failure.causeTruncated, causeLimit)...)
+	line = append(line, '\n')
+	writeBoundedDiagnostic(writer, line, lineLimit)
+}
+
+func escapeVerboseHIDCause(cause string, truncated bool, limit int) []byte {
+	if limit <= 0 {
+		return nil
+	}
+
+	inputLimit := min(len(cause), maximumVerboseHIDCauseBytes)
+	truncated = truncated || inputLimit < len(cause)
+	output := make([]byte, 0, limit)
+	ellipsisReserve := min(3, limit)
+	const digits = "0123456789abcdef"
+	for index := 0; index < inputLimit; index++ {
+		value := cause[index]
+		encoded := [4]byte{}
+		encodedLength := 1
+		switch {
+		case value >= 0x20 && value <= 0x7e && value != '\\':
+			encoded[0] = value
+		case value == '\\':
+			encoded[0], encoded[1] = '\\', '\\'
+			encodedLength = 2
+		default:
+			encoded[0], encoded[1] = '\\', 'x'
+			encoded[2], encoded[3] = digits[value>>4], digits[value&0x0f]
+			encodedLength = 4
+		}
+		if len(output)+encodedLength > limit-ellipsisReserve {
+			truncated = true
+			break
+		}
+		output = append(output, encoded[:encodedLength]...)
+	}
+	if truncated && limit >= 3 {
+		output = append(output, '.', '.', '.')
+	}
+	return output
 }
 
 func nilTransport(transport Transport) bool {

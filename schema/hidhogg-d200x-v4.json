@@ -1,0 +1,2937 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "description": "configuration schema version",
+      "enum": [
+        4
+      ]
+    },
+    "adapter": {
+      "type": "string",
+      "description": "device adapter identifier",
+      "enum": [
+        "ulanzi.d200x"
+      ]
+    },
+    "brightness": {
+      "type": "integer",
+      "description": "display brightness percentage",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "idle_timeout_seconds": {
+      "type": "integer",
+      "description": "application-owned idle timeout in seconds",
+      "default": 300,
+      "minimum": 0,
+      "maximum": 86400
+    },
+    "default_profile_id": {
+      "type": "string",
+      "description": "profile selected at startup",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "profiles": {
+      "type": "object",
+      "description": "profiles keyed by immutable profile ID",
+      "minProperties": 1,
+      "maxProperties": 31,
+      "patternProperties": {
+        "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string",
+              "description": "display profile label",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "positions": {
+              "type": "object",
+              "properties": {
+                "0_0": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "1_0": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "2_0": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "3_0": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "4_0": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "0_1": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "1_1": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "2_1": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "3_1": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "4_1": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "0_2": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "1_2": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "2_2": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "3_2": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "display label; defaults to blank",
+                      "default": "",
+                      "maxLength": 64
+                    },
+                    "background": {
+                      "type": "string",
+                      "description": "hexadecimal background colour; defaults to black",
+                      "default": "#000000",
+                      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+                    },
+                    "notification_sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                      },
+                      "description": "optional exact notification source filters",
+                      "minItems": 1,
+                      "maxItems": 16,
+                      "uniqueItems": true
+                    },
+                    "label_alignment": {
+                      "type": "string",
+                      "description": "firmware-rendered label alignment",
+                      "default": "bottom",
+                      "enum": [
+                        "bottom",
+                        "center"
+                      ]
+                    },
+                    "label_size": {
+                      "type": "integer",
+                      "description": "firmware-rendered label size",
+                      "default": 10,
+                      "minimum": 8,
+                      "maximum": 32
+                    },
+                    "action": {
+                      "description": "optional input-gesture action binding",
+                      "oneOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "activate_profile"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "profile_id": {
+                              "type": "string",
+                              "description": "case-sensitive target profile identifier",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "profile_id"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "execute"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "executable": {
+                              "type": "string",
+                              "description": "absolute executable path without NUL",
+                              "minLength": 1,
+                              "pattern": "^/[^\\x00]*$"
+                            },
+                            "arguments": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 1024,
+                                "pattern": "^[^\\x00]*$"
+                              },
+                              "description": "executable arguments; Go semantic validation authoritatively enforces UTF-8 byte and aggregate argument bounds because JSON Schema maxLength is character-based and cannot express aggregate encoded bytes",
+                              "default": [],
+                              "maxItems": 32
+                            },
+                            "timeout_seconds": {
+                              "type": "integer",
+                              "description": "maximum synchronous execution time in seconds",
+                              "default": 10,
+                              "minimum": 1,
+                              "maximum": 60
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "executable"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "type_text"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "text": {
+                              "type": "string",
+                              "description": "non-empty UTF-8 text without NUL; Go semantic validation authoritatively enforces the maximum of 64 UTF-16 code units",
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "pattern": "^[^\\x00]*$"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "description": "action type",
+                              "enum": [
+                                "key_press"
+                              ]
+                            },
+                            "gesture": {
+                              "type": "string",
+                              "description": "input gesture; defaults to release when omitted",
+                              "default": "release",
+                              "enum": [
+                                "press",
+                                "release"
+                              ]
+                            },
+                            "key": {
+                              "type": "string",
+                              "description": "physical key; only enter is supported",
+                              "enum": [
+                                "enter"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "key"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "description": "optional positions keyed by D200X coordinate",
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "label"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "Hidhogg Ulanzi D200X configuration v4",
+  "description": "Strict named-profile configuration for one Ulanzi D200X adapter.",
+  "required": [
+    "schema_version",
+    "adapter",
+    "brightness",
+    "default_profile_id",
+    "profiles"
+  ],
+  "additionalProperties": false
+}

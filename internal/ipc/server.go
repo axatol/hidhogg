@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -70,6 +71,24 @@ type ConfigService interface {
 	Status() ConfigStatus
 }
 
+type DisplayHostStateService interface {
+	SetDisplayHostState(context.Context, bool) (DisplayHostStateResult, error)
+}
+
+// ConfigEditorService exposes only bounded editor views and typed profile edits.
+// Implementations own source access, concurrency checks, validation, commit,
+// and reload coordination.
+type ConfigEditorService interface {
+	Snapshot(context.Context) (ConfigEditorSnapshot, error)
+	ListPositions(context.Context, string, string) (ConfigEditorPositions, error)
+	GetProfile(context.Context, string, string) (ConfigEditorProfile, error)
+	GetPositionLabel(context.Context, string, string, string) (ConfigEditorPositionLabel, error)
+	SetProfileLabel(context.Context, string, string, string) (ConfigEditorLabelResult, error)
+	SetPositionLabel(context.Context, string, string, string, string) (ConfigEditorPositionLabelResult, error)
+	CreateProfile(ctx context.Context, expectedDigest, sourceID, newID, label string) (ConfigEditorMutationResult, error)
+	DeleteProfile(ctx context.Context, expectedDigest, targetID string) (ConfigEditorMutationResult, error)
+}
+
 // ConfigurationService is an explicit descriptive alias.
 type ConfigurationService = ConfigService
 
@@ -90,6 +109,8 @@ type ServerConfig struct {
 	ProfileService      ProfileService
 	ExecutionHistory    ExecutionHistory
 	ConfigService       ConfigService
+	ConfigEditorService ConfigEditorService
+	DisplayHostState    DisplayHostStateService
 	InputService        InputService
 	NotificationService NotificationService
 	PeerVerifier        func(net.Conn) error
@@ -257,9 +278,13 @@ func (s *Server) acceptLoop(listener *net.UnixListener) error {
 
 func (s *Server) serveConnection(connection *net.UnixConn) {
 	defer s.connections.Done()
+	var disconnectWatcherDone chan struct{}
 	defer func() {
-		<-s.slots
 		_ = connection.Close()
+		if disconnectWatcherDone != nil {
+			<-disconnectWatcherDone
+		}
+		<-s.slots
 	}()
 	if err := s.peerVerifier(connection); err != nil {
 		return
@@ -282,11 +307,30 @@ func (s *Server) serveConnection(connection *net.UnixConn) {
 		return
 	}
 
-	response := s.handleRequest(request)
+	requestContext := context.Background()
+	if isConfigEditorMutationMethod(request.Method) {
+		if err := connection.SetReadDeadline(time.Time{}); err != nil {
+			return
+		}
+		mutationContext, cancel := context.WithCancel(requestContext)
+		requestContext = mutationContext
+		defer cancel()
+		disconnectWatcherDone = make(chan struct{})
+		go func() {
+			defer close(disconnectWatcherDone)
+			watchConfigEditorMutationDisconnect(connection, cancel)
+		}()
+	}
+
+	response := s.handleRequestWithContext(requestContext, request)
 	s.writeResponse(connection, response)
 }
 
 func (s *Server) handleRequest(request Request) (response Response) {
+	return s.handleRequestWithContext(context.Background(), request)
+}
+
+func (s *Server) handleRequestWithContext(ctx context.Context, request Request) (response Response) {
 	defer func() {
 		if recover() != nil {
 			response = internalResponse(request.RequestID)
@@ -300,6 +344,16 @@ func (s *Server) handleRequest(request Request) (response Response) {
 	}
 	if isConfigMethod(request.Method) {
 		return s.handleConfigRequest(request)
+	}
+	if isConfigEditorMethod(request.Method) {
+		editorContext := context.Background()
+		if isConfigEditorMutationMethod(request.Method) {
+			editorContext = ctx
+		}
+		return s.handleConfigEditorRequest(editorContext, request)
+	}
+	if request.Method == MethodDisplayHostStateSet {
+		return s.handleDisplayHostStateRequest(ctx, request)
 	}
 	if request.Method == MethodInputStatus || request.Method == MethodInputRequestPermission || request.Method == MethodDoctor {
 		return s.handleInputRequest(request)
@@ -319,6 +373,30 @@ func (s *Server) handleRequest(request Request) (response Response) {
 		return internalResponse(request.RequestID)
 	}
 	return response
+}
+
+func (s *Server) handleDisplayHostStateRequest(ctx context.Context, request Request) Response {
+	if s.config.DisplayHostState == nil {
+		return internalResponse(request.RequestID)
+	}
+	result, err := s.config.DisplayHostState.SetDisplayHostState(ctx, request.DisplayAwake)
+	if err != nil {
+		return internalResponse(request.RequestID)
+	}
+	if result.InstanceID != request.InstanceID || result.DisplayAwake != request.DisplayAwake {
+		return internalResponse(request.RequestID)
+	}
+	responseResult := Result{
+		InstanceID:       result.InstanceID,
+		DisplayAwake:     result.DisplayAwake,
+		Changed:          result.Changed,
+		displayHostState: true,
+	}
+	if err := validateResultForMethod(responseResult, request.Method, request.InstanceID); err != nil {
+		return internalResponse(request.RequestID)
+	}
+	requestID := request.RequestID
+	return Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &responseResult}
 }
 
 func (s *Server) handleNotificationRequest(request Request) Response {
@@ -501,6 +579,107 @@ func (s *Server) handleConfigRequest(request Request) Response {
 	}
 }
 
+func (s *Server) handleConfigEditorRequest(ctx context.Context, request Request) Response {
+	if s.config.ConfigEditorService == nil {
+		return internalResponse(request.RequestID)
+	}
+	requestID := request.RequestID
+	service := s.config.ConfigEditorService
+	var result Result
+	switch request.Method {
+	case MethodConfigEditorSnapshot:
+		snapshot, err := service.Snapshot(ctx)
+		if err != nil {
+			return configEditorErrorResponse(requestID, err)
+		}
+		result = Result{InstanceID: request.InstanceID, EditorSnapshot: &snapshot}
+	case MethodConfigEditorPositionsList:
+		positions, err := service.ListPositions(ctx, request.SourceDigest, request.ProfileID)
+		if err != nil {
+			return configEditorErrorResponse(requestID, err)
+		}
+		if positions.SourceDigest != request.SourceDigest || positions.ProfileID != request.ProfileID {
+			return internalResponse(requestID)
+		}
+		result = Result{InstanceID: request.InstanceID, EditorPositions: &positions}
+	case MethodConfigEditorProfileGet:
+		profile, err := service.GetProfile(ctx, request.SourceDigest, request.ProfileID)
+		if err != nil {
+			return configEditorErrorResponse(requestID, err)
+		}
+		if profile.SourceDigest != request.SourceDigest || profile.ProfileID != request.ProfileID {
+			return internalResponse(requestID)
+		}
+		result = Result{InstanceID: request.InstanceID, EditorProfile: &profile}
+	case MethodConfigEditorPositionGet:
+		positionLabel, err := service.GetPositionLabel(ctx, request.SourceDigest, request.ProfileID, request.PositionID)
+		if err != nil {
+			return configEditorErrorResponse(requestID, err)
+		}
+		if positionLabel.SourceDigest != request.SourceDigest || positionLabel.ProfileID != request.ProfileID || positionLabel.PositionID != request.PositionID {
+			return internalResponse(requestID)
+		}
+		result = Result{InstanceID: request.InstanceID, EditorPositionLabel: &positionLabel}
+	case MethodConfigEditorLabelSet:
+		labelResult, err := service.SetProfileLabel(ctx, request.ExpectedDigest, request.ProfileID, request.Label)
+		if err != nil {
+			return configEditorErrorResponse(requestID, err)
+		}
+		result = Result{InstanceID: request.InstanceID, EditorLabelResult: &labelResult}
+	case MethodConfigEditorPositionLabelSet:
+		positionLabelResult, err := service.SetPositionLabel(ctx, request.ExpectedDigest, request.ProfileID, request.PositionID, request.Label)
+		if err != nil {
+			return configEditorErrorResponse(requestID, err)
+		}
+		result = Result{InstanceID: request.InstanceID, EditorPositionLabelResult: &positionLabelResult}
+	case MethodConfigEditorProfileCreate:
+		createResult, err := service.CreateProfile(ctx, request.ExpectedDigest, request.SourceProfileID, request.ProfileID, request.Label)
+		if err != nil {
+			return configEditorErrorResponse(requestID, err)
+		}
+		result = Result{InstanceID: request.InstanceID, EditorProfileCreateResult: &createResult}
+	case MethodConfigEditorProfileDelete:
+		deleteResult, err := service.DeleteProfile(ctx, request.ExpectedDigest, request.ProfileID)
+		if err != nil {
+			return configEditorErrorResponse(requestID, err)
+		}
+		result = Result{InstanceID: request.InstanceID, EditorProfileDeleteResult: &deleteResult}
+	default:
+		return internalResponse(requestID)
+	}
+	if err := validateResultForMethod(result, request.Method, request.InstanceID); err != nil {
+		return internalResponse(requestID)
+	}
+	return Response{ProtocolVersion: ProtocolVersion, RequestID: &requestID, Result: &result}
+}
+
+func configEditorErrorResponse(requestID string, err error) Response {
+	code, message := classifyConfigEditorError(err)
+	id := requestID
+	return Response{
+		ProtocolVersion: ProtocolVersion,
+		RequestID:       &id,
+		Error:           &Error{Code: code, Message: message},
+	}
+}
+
+func classifyConfigEditorError(err error) (string, string) {
+	switch {
+	case errors.Is(err, ErrStaleSource):
+		return ErrorStaleSource, messageStaleSource
+	case errors.Is(err, ErrEditInvalid):
+		return ErrorEditInvalid, messageEditInvalid
+	case errors.Is(err, ErrFileCommitFailed):
+		return ErrorFileCommitFailed, messageFileCommitFailed
+	case errors.Is(err, ErrBusy), errors.Is(err, context.DeadlineExceeded):
+		return ErrorBusy, messageBusy
+	case errors.Is(err, ErrShuttingDown), errors.Is(err, context.Canceled):
+		return ErrorShuttingDown, messageShuttingDown
+	default:
+		return ErrorInternal, messageInternal
+	}
+}
+
 func configErrorResponse(requestID string, err error) Response {
 	code, message := classifyConfigError(err)
 	id := requestID
@@ -592,6 +771,30 @@ func isExecutionMethod(method Method) bool {
 
 func isConfigMethod(method Method) bool {
 	return method == MethodConfigReload || method == MethodConfigStatus
+}
+
+func isConfigEditorMethod(method Method) bool {
+	switch method {
+	case MethodConfigEditorSnapshot, MethodConfigEditorPositionsList, MethodConfigEditorProfileGet, MethodConfigEditorPositionGet, MethodConfigEditorProfileCreate, MethodConfigEditorProfileDelete, MethodConfigEditorLabelSet, MethodConfigEditorPositionLabelSet:
+		return true
+	default:
+		return false
+	}
+}
+
+func isConfigEditorMutationMethod(method Method) bool {
+	switch method {
+	case MethodConfigEditorLabelSet, MethodConfigEditorPositionLabelSet, MethodConfigEditorProfileCreate, MethodConfigEditorProfileDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func watchConfigEditorMutationDisconnect(connection *net.UnixConn, cancel context.CancelFunc) {
+	// Mutation clients must keep their write side open through the reply; EOF includes CloseWrite.
+	_, _ = io.Copy(io.Discard, connection)
+	cancel()
 }
 
 func internalResponse(requestID string) Response {

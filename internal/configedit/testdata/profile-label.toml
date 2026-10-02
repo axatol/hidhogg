@@ -1,0 +1,32 @@
+# Schema-v4 preservation fixture. Whitespace, comments, ordering, and newlines
+# around selected values must remain unchanged.
+schema_version = 4
+adapter = "ulanzi.d200x"
+brightness = 80
+idle_timeout_seconds = 300
+default_profile_id = "primary"
+
+# One-line inline profile and tile tables exercise compact source forms.
+[profiles]
+primary = { label = "Primary", positions = { "0_0" = { label = "Clock", background = "#102030", action = { type = "activate_profile", gesture = "release", profile_id = "room.alternate" } }, "1_0" = { label = "Calendar", background = "#112233" } } }
+
+# Profile keys are immutable IDs, not display labels.
+[profiles."room.alternate"]
+label  =  "Alternate"  # Keep this trailing comment and spacing.
+
+[profiles."room.alternate".positions."0_0"]
+label = "Alt Clock"
+background = "#202010"
+action = { type = "activate_profile", gesture = "release", profile_id = "primary" }
+
+[profiles."room.alternate".positions."1_0"]
+label = "Alt Calendar"
+background = "#232111"
+
+[profiles."room.alternate".positions."2_0"]
+label = "Alt Timer"
+background = "#262212"
+
+[profiles."room.alternate".positions."3_2"]
+label = "Alt Status"
+background = "#4e481d"
