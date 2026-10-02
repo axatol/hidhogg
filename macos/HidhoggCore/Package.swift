@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS("26.0")],
     products: [.library(name: "HidhoggCore", targets: ["HidhoggCore"])],
     targets: [
-        .target(name: "HidhoggCore", resources: [.process("Resources")]),
+        .target(name: "HidhoggCore", resources: [.process("Resources")], linkerSettings: [.linkedFramework("IOKit")]),
         .testTarget(name: "HidhoggCoreTests", dependencies: ["HidhoggCore"], resources: [.process("Resources")]),
     ]
 )

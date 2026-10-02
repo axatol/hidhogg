@@ -17,7 +17,7 @@ struct D200XArchiveFile {
     let method: UInt16
 }
 
-struct D200XDisplayArchive: Equatable {
+struct D200XDisplayArchive: Equatable, Sendable {
     let data: Data
     let paddingLength: Int
 }

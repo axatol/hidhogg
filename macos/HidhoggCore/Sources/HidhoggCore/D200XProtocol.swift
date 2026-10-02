@@ -1,6 +1,6 @@
 import Foundation
 
-enum D200XProtocolError: Error, Equatable {
+enum D200XProtocolError: Error, Equatable, Sendable {
     case invalidReportLength(actual: Int)
     case unsupportedReportID(UInt8)
     case invalidFrameMagic(UInt8, UInt8)
@@ -11,14 +11,14 @@ enum D200XProtocolError: Error, Equatable {
     case invalidBrightness(Int)
 }
 
-enum D200XOutboundCommand: UInt16, Equatable {
+enum D200XOutboundCommand: UInt16, Equatable, Sendable {
     case completeDisplayUpload = 0x0001
     case enableInputStream = 0x0002
     case brightness = 0x000A
     case unlockScreen = 0x0010
 }
 
-struct D200XOutboundFrame: Equatable {
+struct D200XOutboundFrame: Equatable, Sendable {
     let command: D200XOutboundCommand
     let payload: Data
 
@@ -28,7 +28,7 @@ struct D200XOutboundFrame: Equatable {
     }
 }
 
-enum D200XOutboundBatch: Equatable {
+enum D200XOutboundBatch: Equatable, Sendable {
     case startup(page: D200XLivePageUpdate, brightness: Int)
     case redraw(page: D200XLivePageUpdate)
     case setBrightness(Int)
@@ -56,12 +56,12 @@ enum D200XOutboundBatch: Equatable {
 
 }
 
-struct D200XDecodedFrame: Equatable {
+struct D200XDecodedFrame: Equatable, Sendable {
     let command: UInt16
     let payload: Data
 }
 
-struct D200XInputEvent: Equatable {
+struct D200XInputEvent: Equatable, Sendable {
     let deviceState: UInt8
     let wireIndex: UInt8
     let marker: UInt8

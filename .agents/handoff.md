@@ -16,9 +16,9 @@ Offline boundaries: no selected configuration, owner app, real HID enumeration/o
 - [x] v1 master checkpoint a1a64ed9d2e910951f38cf7189c2b499fb14fa10, 110 curated paths.
 - [x] Local v2 setup 2eec28b273e8c9236d95485560b13cc687248a6a.
 - [x] C01 strict configuration bba1dc616cfaa2734a4659e33788d7f9a5c1b606.
-- [x] C02 lossless edits/store 57f93a14451a3cb18b73e0dcb8d0654323649f51, current HEAD.
-- [x] D01 corrected codec/archive/renderer independent acceptance; commit integration next.
-- [ ] D02 native/simulated transport and session.
+- [x] C02 lossless edits/store 57f93a14451a3cb18b73e0dcb8d0654323649f51.
+- [x] D01 corrected codec/archive/renderer fb038c882d18ff67f64efce911bc5d50896dc473, current HEAD.
+- [ ] D02 native/simulated transport and session: core source independently accepted 96/96; exact commit/TaskView closure next.
 - [ ] R01 profiles/reload/idle/host state; R02 actions/input/notifications.
 - [ ] I01 Swift IPC/CLI; U01 app ownership; U02 complete button editor.
 - [ ] V01 full independent requirements and native app simulation.
@@ -33,9 +33,10 @@ Personal organization 2, HIDhogg project 5; list 48 legacy, list 49 v2. Listing 
 | Stable task | ID | Verified state |
 | --- | --- | --- |
 | P01 / C01 / C02 | 121 / 122 / 123 | Complete |
-| D01 | 124 | In progress; final gate passed, commit/closure next |
-| D02 | 125 | Pending; accepted interface plan recorded |
-| R01 / R02 | 126 / 128 | Pending |
+| D01 | 124 | Complete |
+| D02 | 125 | Core source accepted 96/96; commit and closure next |
+| R01 | 126 | In progress; compiled D02 interface permits coordinator source |
+| R02 | 128 | Pending |
 | I01 | 130 | Pending |
 | U01 / U02 | 132 / 134 | Pending |
 | V01 / X01 | 136 / 138 | Pending |
@@ -66,23 +67,37 @@ D02 chooses simulation before native discovery. Match VID 2207/PID 0019, DeviceU
 
 Input is copied/decoded independently of writes. Complete outbound batches serialize and fail-stop after write/removal uncertainty. Use one dedicated CFRunLoop callback model plus separate writer queue; idempotent nonblocking stop also works from callbacks. Separate completion waits in-flight write then unregister/unschedule/drain/close before context/buffer release. Do not mix dispatch cancellation. Existing OS writes cannot be preempted.
 
+Confirmed D02 API: factory make(selection: .simulated/.native), async candidates(), async open(candidate, onInput, onFailure), async perform(typed batch), synchronous stop(), async waitUntilStopped() returning a bounded closed/cleanupUncertain outcome. Input/failure callbacks are synchronous Sendable closures; fake backend injection supports paused writes without native construction. The first report failure aborts the remaining batch. The seven-file stage-one overlay compiled in isolation without HID invocation; subsequent session/native corrections changed two hashes, so that build is provisional rather than final-source acceptance. Root required a typed cleanup result because an asynchronously enqueued failure callback cannot reliably gate restart; prior write failure stays separate from confirmed teardown.
+
 Compile-only IOHID probe passed installed macOS 27 SDK/deployment 26 with no native invocation, at /Volumes/Data/tmp/hidhogg-v2-d02-verification. Actual hardware descriptor/registry placement remains unverified and excluded. D02 core gate uses fake/report-level simulation; native app simulation follows U01/V01 and remains required. Task 125 preserves these qualifications.
 
 R01 accepted plan: RuntimeCoordinator actor, immutable prebuilt candidates, explicit operation admission across awaits, publish after successful device writes, retain prior logical state/fail-stop after uncertainty. Thread-safe receipt fence stamps generation/active before actor enqueue; stale/active observations reconcile held state without dispatch. Hold admission through store.apply and noncancelled post-commit reload. Late cancellation cannot roll back page success. Fakeable monotonic clock, absolute 50-second keepalive, idle zero/equality, host sleep/wake, consumed wake/release. Test/service briefs retained by swift_v2_executor with cited Go oracles.
 
-R02: initial press/matched release; duplicate/orphan/changed-binding suppression; bounded direct execution; explicit permission and 16-entry input FIFO; metadata-only native history, bounded exec output tails on exact get (not list); exact-case source routing; TTL after commit; revalidated overlay selection; commit dismissal before static action admission. Do not infer all histories are metadata-only. No native posts in offline verification.
+R02: initial press/matched release; duplicate/orphan/changed-binding suppression; bounded direct execution; explicit permission and 16-entry input FIFO; metadata-only native history, bounded exec output tails on exact get (not list); exact-case source routing; TTL after commit; revalidated overlay selection; commit dismissal before static action admission. Do not infer all histories are metadata-only. No native posts in offline verification. Compile-only preparation passed macOS 27 SDK targeting 26: posix_spawn/actions/attrs, standard posix_spawn_file_actions_addchdir (available at 26; _np deprecated), separate process group and CoreGraphics permission/event signatures. Evidence /Volumes/Data/tmp/hidhogg-v2-r02-api-prep; brief SHA-256 c261015f2bbb649bc8d3e03f81da70077f323fa0c75ac28bfed4e5c1af7148a8, probe f98f2efdb461460248d3610c3a4111ef502b00716581d2483674941b0545d448. Root read the brief and confirmed the empty typecheck log hash. No spawn/permission/native behavior was exercised; source task remains pending.
+
+U01 simulation preparation found the current delegate constructs HidhoggAppModel before HIDHOGG_TEST_HOST suppresses model.start(). Default construction uses standard preferences; default bootstrap later reads environment/home and normal startup launches the Go child. Existing injection seams are only unit-level. The required native app simulation must select explicit test composition before model/default preferences/native adapters are constructed, inject synthetic config and fake HID/actions/input/preferences/observers, directly launch the isolated app executable with explicit arguments, and use I01 readiness plus graceful shutdown control. No launch or owner preference/config values were read in this static audit. Root verified the early constructor and current Supervisor cleanup-failure terminal guard in source. App simulation arguments/control are not implemented yet.
 
 ## Ownership and next actions
 
-- swift_configuration_edges: D01 frozen source plus docs/overview.md, docs/structure.md, docs/v2-plan.md; final doc proof next, then D02 after commit/activation.
-- verification_baseline: D01 independent acceptance complete; reuse for D02 frozen-source gate.
-- swift_v2_executor: C02 complete, R01 plan/test/service prep complete; code waits compile-stable D02 contract and task activation.
+- swift_configuration_edges: D02 executor, owning new device session/native backend/simulator and focused tests; necessary Sendable annotations to committed D01 values are allowed. D01/docs are committed; no new docs until verified D02 checkpoint.
+- verification_baseline: D02 correction-2 independently passed 95/95 with all 11 hashes matched. The final three-file test refinement is now under a fresh isolated 96-test gate. Preliminary R01 utility proof and R02 compile-only preparation are historical evidence, not full runtime acceptance.
+- swift_v2_executor: R01 runtime coordinator/models and focused Runtime tests, authorized after D02's isolated interface build and exact task 126 readback. No D02/D01/C02/Package/docs edits. Clock/fence owner gate passed 83/83 on committed D01 plus exactly four files; root matched all four hashes and read the log. Final coordinator acceptance requires independently verified D02.
 - Root owns .agents, integration, exact-manifest commits, TaskView and milestone notification.
 
 Explorer/scribe reactivation fails with collaboration thread-limit errors. Available workers perform bounded read-only audits/document work; no main source takeover. Preserve others' edits.
 
 Normal SwiftPM can fail manifest sandbox setup before tests; narrow elevated snapshot/scratch retries passed. Git index writes similarly need scoped elevation. Suppress Git identity and notification output; inspect only commit hash/parent/title/path lists. A root documentation heredoc failed before writes because shell temp creation was denied; apply_patch safely performs the ledger refresh.
 
-Next: finalize D01 documentation, exact 17-path commit, close TaskView 124 by readback, activate 125 preserving accepted HTML, then notify verified milestone. Delegate D02, obtain compile-stable API, activate/delegate R01 within documented parallel boundary. Continue through V01/X01. Goal completion requires native app simulation and final pure-Swift audit.
+Integration complete: D01 commit fb038c882d18ff67f64efce911bc5d50896dc473 has exact 17 manifest paths, parent 57f93a1, branch v2 and a verified clean tracked tree at commit time. TaskView 124 is complete; 125 and 126 are in progress with exact HTML readback. Status-only D01 Discord notification exited 0 with output suppressed. No later source commit exists. Next: freeze and independently verify D02, commit its exact manifest while excluding R01, then gate the completed coordinator. Continue through V01/X01; goal completion requires native app simulation and final pure-Swift audit.
+
+Current source checkpoint on 2026-10-02: R01's four independent files passed owner and preliminary independent 83-test gates. Root matched all four live hashes and independently read the passing log. Independent evidence is /Volumes/Data/tmp/hidhogg-v2-r01-utility-verification; manifest SHA-256 989af7d2e5936b58f4f24e1d907961774ff5a8fd6176b73a89314cda4ccd269d; test-log SHA-256 048b8cdb860368ed074db0ae7abeabaf88b540416295ab7992f2170e8e856649. No production defect; concurrent overlap and in-flight system-sleep cancellation are modest test limitations forwarded to the runtime owner for meaningful full-suite checks. D02's stage-one build log /Volumes/Data/tmp/hidhogg-v2-d02-owner-build.log reports success. Root checked /Volumes/Data/tmp/hidhogg-v2-d02-owner-hashes-stage1.txt: five files still match; session/native changed during accepted corrections. Full coordinator source is delegated; final R01 closure still requires verified D02.
+
+D02 verified corrections: terminal write failure is published inside the serial writer before continuation release; stop rejects new work and ignores late input; retained handlers clear after drain; opening state is rechecked after paused revalidation; callback-thread timeout is cancelled and drained. Native stop joiners await the actual cleanup result. Actual well-typed DeviceUsagePairs is authoritative while scalar keys remain manager matching criteria. Simulator state includes archive/brightness/unlock/input-enable and write/removal faults. These now pass frozen-source fake/injected tests. No live hardware was inspected.
 
 Historical decisions/checkpoints remain in .agents/log.md, Git, docs/v1-roadmap.md and TaskView archive 120; their old next-action statements are superseded here.
+
+Latest D02 checkpoint: final owner and independent suites passed 96/96, zero failures/skips, on D01 plus exactly 11 frozen paths. Root read the independent report/log and rematched all live hashes. The last refinement changed only three test/helper files, adding negative/integral-float metadata rejection and admitted-open stop/drain/once-only teardown with truthful cleanupUncertain. Final manifest /Volumes/Data/tmp/hidhogg-v2-d02-owner-hashes-edge-closure.txt SHA-256 804bfba83c508d733582b801215abce8bb040292bc48ee934f15c35c9cee09a3. Independent report /Volumes/Data/tmp/hidhogg-v2-d02-verification/edge-closure-independent-report.txt SHA-256 85c6a4b63d9f4971b3a496317b2278a904504c5ad9f8550fb3df8168846536b1; independent log edge-closure-independent-swift-test-escalated.log SHA-256 9f8e27a6e9f76647abd62f6535beb696e5ec2afceb68999bfecf33041f5eaa53. Normal manifest setup denial preceded compilation; the authorized scoped retry passed. The test-only async-autoclosure error was corrected before passing proof. Core source is accepted; exact commit/TaskView closure follow. Native IOHID/hardware and required app simulation remain unexecuted.
+
+R01 coordinator/models and dedicated tests now exist. Root routed required corrections: host-off keepalive, post-write absolute deadlines, encoder marker02 press/release/activity and marker-keyed held state, terminal uncertain cleanup, and bounded receipt overflow fail-stop. Initial package compilation/existing tests are provisional. A dedicated test hang was traced to RuntimeTestSession reading an optional pause gate before creation and losing an early resume; owner confirmed and is correcting its deterministic gate. The cleanup-uncertain assertion must expect failed. R01 is using a private copy of /Volumes/Data/tmp/hidhogg-v2-d02-verification/independent-correction2-snapshot/macos/HidhoggCore plus only Runtime-owned overlays to avoid in-flight D02 test changes. Full feature/frozen-source proof remains pending and must use the final accepted D02 checkpoint. The early four-file utility manifest is historical; the fence has since gained conditional begin support.
+
+I01 read-only client/service preparation is at /Volumes/Data/tmp/hidhogg-v2-i01-client-prep/brief.md, read by root. Existing Swift codec/client checks are reusable, but runtime-directory discovery/revalidation differs from the current app's explicit child socket. Current position-editor wire is label-only; define a typed digest-checked full-position patch before U02. TaskView 130 was converted to HTML with exact readback and remains pending. No process/socket/native API gate ran; confirm the concrete depth of synthetic socket/CLI integration before execution.

@@ -19,7 +19,7 @@ enum D200XPageRenderError: Error, Equatable {
     case manifestEncodingFailed
 }
 
-struct D200XLivePageUpdate: Equatable {
+struct D200XLivePageUpdate: Equatable, Sendable {
     let archive: D200XDisplayArchive
     let positions: [ConfiguredPosition]
 }
