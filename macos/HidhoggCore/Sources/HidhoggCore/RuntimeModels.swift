@@ -23,6 +23,16 @@ public struct RuntimeSnapshot: Sendable, Equatable {
     public let cleanupUncertain: Bool
 }
 
+public struct RuntimeConfigurationView: Sendable, Equatable {
+    public let configuration: HidhoggConfiguration
+    public let snapshot: RuntimeSnapshot
+
+    init(configuration: HidhoggConfiguration, snapshot: RuntimeSnapshot) {
+        self.configuration = configuration
+        self.snapshot = snapshot
+    }
+}
+
 public struct RuntimeActivationResult: Sendable, Equatable {
     public let profileID: String
     public let changed: Bool
@@ -33,6 +43,10 @@ public struct RuntimeReloadResult: Sendable, Equatable {
     public let profileID: String
     public let changed: Bool
     public let revision: UInt64
+    let previous: RuntimeConfigurationView
+    let current: RuntimeConfigurationView
+    let displayChanged: Bool
+    let displayUpdated: Bool
 }
 
 public enum RuntimeStopOutcome: Sendable, Equatable {
@@ -71,6 +85,21 @@ public struct RuntimeConfigurationEditResult: Sendable {
     public let digest: ConfigurationStoreDigest
     public let reloadOutcome: RuntimeConfigurationReloadOutcome
     public let snapshot: RuntimeSnapshot
+    let reloadResult: RuntimeReloadResult?
+
+    init(
+        fileOutcome: ConfigurationStoreOutcome,
+        digest: ConfigurationStoreDigest,
+        reloadOutcome: RuntimeConfigurationReloadOutcome,
+        snapshot: RuntimeSnapshot,
+        reloadResult: RuntimeReloadResult? = nil
+    ) {
+        self.fileOutcome = fileOutcome
+        self.digest = digest
+        self.reloadOutcome = reloadOutcome
+        self.snapshot = snapshot
+        self.reloadResult = reloadResult
+    }
 }
 
 struct RuntimeStaticActionRequest: Sendable {

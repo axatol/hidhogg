@@ -1,7 +1,7 @@
 # Hidhogg overview
 
-Status: v1 remains the Go-owned production runtime. The approved v2 migration has a verified standalone Swift core through R01; app and CLI integration remain pending.
-Updated: 2026-10-02
+Status: v1 remains the Go-owned production runtime. The approved v2 migration has a verified standalone Swift core through R02; app and CLI integration acceptance remain pending.
+Updated: 2026-10-03
 
 ## Goal
 
@@ -109,3 +109,12 @@ The Go runtime loads strict TOML, owns D200X display/input/brightness policy, ex
 - [Microsoft JSONC parser](https://github.com/microsoft/node-jsonc-parser)
 - [Tailscale HuJSON](https://github.com/tailscale/hujson)
 - [Feasibility evidence](research.md)
+
+
+## Verified R02 runtime services — 2026-10-03
+
+R02 adds bounded configured executable execution and native-input queues/history, immutable captured actions, and source-filtered notification overlays. Notification lifetimes begin after successful display commit; expiry catches newly overdue entries after slow writes. Selection revalidates captured bindings and dismisses overlays before static action admission. Owned shutdown awaits action services and the device session and preserves cleanup uncertainty. The coordinator supplies monotonic-to-wall date conversion and coherent reload views with actual display-update outcomes for IPC.
+
+Independent verification used committed R01 `b2d3c628bedaecb5e80dc0bbd784806b64cc86e0` plus exactly thirteen frozen R02 paths: 160 XCTest cases passed, zero failures or skips, and all live/snapshot hashes matched before and after testing. Evidence: `/Volumes/Data/tmp/hidhogg-v2-r02-independent-final-20261003/final-report.txt`; overlay manifest SHA-256 `df8acfbf9b1fbaf4e5bad6da09e4a4629f10539c9fce0ecc306fee9a0835dbcb`. This gate used fake process/input adapters and synthetic rendering; actual child execution, sockets, native HID/input, permission prompts and app simulation were not exercised. App/CLI acceptance and the required native simulated-app gate remain outstanding.
+
+Implementation: `macos/HidhoggCore/Sources/HidhoggCore/RuntimeActionServices.swift`, `RuntimeExecution.swift`, `RuntimePosixProcessRunner.swift`, `RuntimeNativeInput.swift`, `RuntimeNotifications.swift`, and the existing coordinator/models. Focused tests reside in `macos/HidhoggCore/Tests/HidhoggCoreTests/`.

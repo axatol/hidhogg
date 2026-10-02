@@ -1,6 +1,6 @@
 # V2 Swift migration plan
 
-Updated: 2026-10-02
+Updated: 2026-10-03
 
 TaskView project 5 owns current task status. This document is a durable requirements, dependency and direct-ID map; it is not a second status board.
 
@@ -108,3 +108,12 @@ V2-U01 makes the native app own runtime and device lifecycle and removes the Go 
 Implementation proceeds through bounded subagents; the main agent integrates their work and maintains the `.agents` decision and handoff ledger. Keep modules focused, use early returns, and avoid premature modularization, speculative features, or abstraction for hypothetical reuse. Each task receives a commit only after its focused and full Swift tests, feature and edge/failure tests, and independent verification pass. The final acceptance reports each requirement pass/fail/not-run and exercises the native app with the simulated D200X. No real device, selected configuration, existing owner app or native input injection is part of this offline task.
 
 The existing Go implementation remains available as the parity reference until V2-V01 passes. V2-X01 must verify that production builds no longer include Go while preserving approved reference fixtures and the exact v1 roadmap archive.
+
+
+## Verified R02 runtime services — 2026-10-03
+
+R02 adds bounded configured executable execution and native-input queues/history, immutable captured actions, and source-filtered notification overlays. Notification lifetimes begin after successful display commit; expiry catches newly overdue entries after slow writes. Selection revalidates captured bindings and dismisses overlays before static action admission. Owned shutdown awaits action services and the device session and preserves cleanup uncertainty. The coordinator supplies monotonic-to-wall date conversion and coherent reload views with actual display-update outcomes for IPC.
+
+Independent verification used committed R01 `b2d3c628bedaecb5e80dc0bbd784806b64cc86e0` plus exactly thirteen frozen R02 paths: 160 XCTest cases passed, zero failures or skips, and all live/snapshot hashes matched before and after testing. Evidence: `/Volumes/Data/tmp/hidhogg-v2-r02-independent-final-20261003/final-report.txt`; overlay manifest SHA-256 `df8acfbf9b1fbaf4e5bad6da09e4a4629f10539c9fce0ecc306fee9a0835dbcb`. This gate used fake process/input adapters and synthetic rendering; actual child execution, sockets, native HID/input, permission prompts and app simulation were not exercised. App/CLI acceptance and the required native simulated-app gate remain outstanding.
+
+Implementation: `macos/HidhoggCore/Sources/HidhoggCore/RuntimeActionServices.swift`, `RuntimeExecution.swift`, `RuntimePosixProcessRunner.swift`, `RuntimeNativeInput.swift`, `RuntimeNotifications.swift`, and the existing coordinator/models. Focused tests reside in `macos/HidhoggCore/Tests/HidhoggCoreTests/`.
