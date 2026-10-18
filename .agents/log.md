@@ -1524,3 +1524,28 @@ Independent Test/ARM64 build and148exactserialunitselectors passed148/148,0failu
 ### 2026-10-18 — GUI retry and final boundary audit
 
 NativeCUAinventoryresponds42apps but isolatedreadyHidhoggisabsent; exacttempbundleattachstilltimeout9.16s. Freshhg03gate reachedreadyPID88279; ownedstopendedappnormally0/rootempty, session7127terminal, exacttemppgrepnoPIDs. NoGUIinteraction, nootherapp/reset. Source-removalboundaryaudit separatesactiveSwiftgeneration/failuretypesfromdeadGosupervisor; noGodeletion. Remainingacceptanceaudit confirmsCLIcoversservergate, but activeprocessadapterfourcasegate remainsunrun/pendingexplicitdepthapproval. Fullgoalunproven; nofinalacceptanceclaimed.
+
+
+### 2026-10-18 — watched GUI reproduced real editor defects
+
+Windowlessnativeappattachmentfailed; useropenedSettingsandexactappattachmentworked. Sixfieldsave/runtimeReloadeddisplayandpersistencepassed. StaledigestpreservedfilebutmisclassifiedOutcomeunknownbecauseCoreandappstrictstale_sourcemessagesdiffer. ExecuteDRAFTargumentmiddleedit/removefirst trapped133; noactionexecuted. OwnersimplementcanonicalerrorcontractandstableUUIDrowbindingswithregressions. Prior148/Core205passesarepre-fix. Unexpectedpostcrashtemporaryappinstance99400stoppedscopedTERM; userdeniedrelaunch,causeunconfirmed. Failedartifacts preserved; GUIacceptancependingnewunits/build/retest.
+
+
+### 2026-10-18 — editor fixes verified and committed
+
+Committed 980f59e (stable-code error classification, local safe messages, actual Core response/shared fixture) and a915cec (stable UUID argument bindings). Revised Core 206/206 and Test/ARM64 app 152/152 passed; seven frozen hashes matched before/after. Production Debug rebuild exited 0. GUI retest remains pending fresh hg05. User explicitly approved retiring legacy physical diagnostic tools while preserving research documentation. Optional child integration is a qualified unrun boundary, not a required V01 blocker.
+
+
+## 2026-10-18 — GUI retry after permission to continue
+
+The owner said Go ahead. Prior hg05 gate ended at its ten-minute GUI deadline (harness 1), then cleanup exit 0. Fresh hash-pinned hg06 gate reached readiness as PID 12828/session 97825. Exact-path Computer Use attachment timed out; user asked to open Settings, matching the previously successful attachment sequence. Go remains until GUI acceptance. Diagnostic retirement choice remains confirmed; research and LLDB helpers stay. Independent acceptance matrix refresh delegated without test reruns.
+
+
+## 2026-10-18 — Argument GUI repair confirmed, activation investigation
+
+Owner manually opened hg06 Settings, allowing exact-path CUA attachment. Native first/last argument removal and surviving edits succeeded without prior trap. Synthetic button save reported file committed/runtime reloaded (display); file confirmed values. Alignment center selection did not commit, so that interaction remains unverified. Gate exited 0 with empty runtime root after parent marker. Remaining reopen/conflict/action-position/reset workflow is still open. User requested programmatic activation investigation and declined a custom URL proposal; standard reopen/scene alternatives are being researched before any source edits.
+
+
+## 2026-10-18 — V01 accepted; Go retirement started
+
+Independent tester accepted V01 after hg07 GUI workflow and terminal exit0/rootempty. Six edited fields persisted through Settings reopen; stale-source conflict refused without retry/overwrite; action/position drafts isolated; background reset removed only its key. Prior hg06 confirms stable argument removals. Settings scene launch modifier committed08a44f8; standard exact-app open restored Settings and retained PID17100. Cold-launch behavior remains unisolated; final smoke will explicitly instrument watchdog escalation. Extra temporaryPID15547 stopped before final GUI; likely linked to previous shutdown state query but cause is unconfirmed. No CUA after future stop requests. Task134/136 complete; Task138 in progress. Two owners assigned bounded Go/docs and Swift-child cleanup scopes, preserving research, fixtures, fonts, LLDB helpers and all untracked files.
