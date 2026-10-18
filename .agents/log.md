@@ -1359,3 +1359,143 @@ Independent R02 fresh R01 archive plus thirteen frozen paths passed 160 XCTest c
 ### R02 accepted gate — 2026-10-03
 
 Root read final-report.txt and integrity.txt under /Volumes/Data/tmp/hidhogg-v2-r02-independent-final-20261003. Independent 160/160 XCTest pass, zero failures/skips, thirteen live and snapshot paths match before/after. Accepted only frozen R02 surface on R01 b2d3c628; no child/socket/native input/HID/app execution. Exact eighteen-path task commit manifest prepared at /Volumes/Data/tmp/hidhogg-v2-r02-commit-manifest.paths, excluding I01 and app edits. Task128 verified note updated; completion awaits commit. Tester explicitly assigned three verified documentation files because source-worker restart hit thread limit.
+
+
+### U01 test-host isolation defect — 2026-10-03
+
+Worker observed native D200X input-loop thread in unit test-host PID59369 during direct/atomic-save watcher test. Native construction crossed the offline boundary; actual enumeration/open remains unestablished. Root stopped further app tests, directed exact-session termination/verification and a compile-time Test-only guard before eager app dependencies. Tester assigned static constructor/settings review. Task132 incident note readback verified. No app acceptance or hardware/input outcome claimed; existing environment-marker isolation is insufficient.
+
+
+### Test-host correction in source — 2026-10-03
+
+Root read delegate init compile-time HIDHOGG_TEST_HOST branch and testHost factory. Factory injects memory preference/mapping stores, simulated backend, fake observers and explicit bootstrap before production defaults; initial configuration error disables runtime. Independent static review and explicit Test compile-only proof pending; no host restart authorized yet. Correction to earlier causal shorthand: existing Test configuration already defines the compile condition; the watcher fixture uses TestRuntimeSessionGeneration. Environment propagation failure or actual native startup cause has not been established. Both testhost59369 and xcodebuild59355 are confirmed terminated.
+
+
+### Test-host isolation accepted — 2026-10-03
+
+Independent static constructor review passed. Root verified /Volumes/Data/tmp/hidhogg-v2-u01-xcode-build/test-config-build.log: explicit configuration Test, six -DHIDHOGG_TEST_HOST compiler occurrences and TEST BUILD SUCCEEDED. Explicit safe Test-unit rerun authorized using those newlybuilt products; no integration/native app launch implied. Task132 exact note readback updated. IPC client/discovery injection changes compiled successfully; new transport test implementation now underway, no new-unit pass claim yet.
+
+
+### Usage-limit checkpoint — 2026-10-03
+
+All three active source/review workers terminated with usage-limit errors. Root revalidated current files: IPCServerIdentity now stores fileType separately from mode, so the startup fix is present but unverified; preserved server log still shows original seven tests/eleven failures. New simulation-control explicit Test build passed (/Volumes/Data/tmp/hgU01.B2/build-for-testing-retry.log), but new five pure-control tests have no accepted result. Reviewer found ready/stop marker lexical distinctness insufficient: symlinked-parent or case-insensitive aliases can resolve to the same entry and trigger shutdown immediately after readiness. That defect remains to fix/test before any app gate. Root attempted bounded worker resumption; no native app/hardware/integration execution is authorized by this checkpoint. Latest accepted commit remains620b5ec. TaskView outage/update parsing failed for the latest server defect; reconcile task130 when available.
+
+
+### Resumed verification checkpoint — 2026-10-03
+
+Source workers resumed after terminal usage errors. Root read IPCServerTests-final-focused.log: seven cases passed, zero failures, SHA7a91e7698b4e204241b8203ecb9cfcbd27c460357e30f5d895c8f595d83cfd62. Separate fileType/mode fix and listener-close uncertainty are exercised. Earlier failure log remains historical. Owner full Core suite and complete I01 manifest next (original fifteen plus operations/four test files; expected twenty, verify actual). App worker resumed marker alias correction and five pure-control tests; no app launch. TaskView get130 retry returned isError without readable task; latest defect/proof updates remain to reconcile externally. Independent reviewer still usage-errored, retry only when exact new freeze available.
+
+### 2026-10-03 — IPC closure and simulation-control checkpoint
+
+- Root verified all 20 frozen IPC overlay hashes against the worktree. Owner terminal full SwiftPM suite: 205 tests, zero failures, no skips observed; log SHA-256 8171700aba9f47c9d41f5806387e4c2b14ac676c018c22b5af82a9fc02914cb4. Independent fresh-overlay verification delegated; acceptance remains pending.
+- Root verified exact five simulation-control tests passed and log SHA-256 9ab7b4e36778b6ebca7d3f56b90880c27384fe4b00b0342d12d121a60a14f2b4. Marker identities now compare resolved parent paths and case-folded names, allowing ordinary system directory aliases while rejecting marker aliases. Direct native simulated app launch has not occurred; reviewable harness preparation delegated.
+- C flock bridge language exception and separate socket/CLI integration execution remain pending user decisions. No task commit or completion claimed for I01/U01.
+
+### 2026-10-03 — Independent IPC closure finding
+
+The exact accepted R02 base plus frozen 20-path overlay independently passed 205 tests with zero failures and no skips observed; all live/snapshot hashes matched before and after. Full log SHA-256: 7040a957c8c7cc6b3305af99d8cd4feb8819f0d1e4401122800410e4af91d068. Acceptance failed on review: post-bind socket-path lstat failure closes the listener but leaves its socket entry without explicit cleanup uncertainty. The source owner is correcting the lifecycle and adding an injected regression; unknown identity must never authorize blind unlink. Historical independent report: /Volumes/Data/tmp/hidhogg-v2-i01-independent-closure-20261003/evidence/report.txt. I01 remains in progress.
+
+### 2026-10-03 — Native simulated launch checkpoint
+
+Root checked all nine U01 source hashes and harness shell syntax, then authorized the already-approved direct Debug executable simulation gate. The sandboxed launch aborted with status 134 before readiness; synthetic app log was empty, runtime root stayed empty, and owner confirmed exact PID 5134 no longer existed. Cause is unproven. No unified logs or owner crash artifacts were read. A single narrow escalated retry using fresh synthetic paths and the same candidate is delegated to distinguish a launch-environment restriction; no source fix inferred and no U01 acceptance claimed.
+
+### 2026-10-03 — Escalated simulated readiness failure
+
+The single scoped escalated retry used the same Debug candidate and fresh synthetic s2 paths. No readiness marker appeared; the watchdog terminated exact app PID 5436 with SIGTERM after the failure/stop wait, exit 143. Root verified the synthetic log remained zero bytes. Further app launches stopped. Source owner and independent tester are tracing delegate startup, transition ordering, and readiness dependencies; root observed synchronous UnixSocketClient.health in the MainActor readiness closure, which is only a hypothesis pending review. IPC owner has approval to implement the concrete identity-safe rollback correction and regression tests.
+
+### 2026-10-03 — IPC rollback correction test checkpoint
+
+Owner applied identity-safe rollback correction in IPCServer.swift and three new regressions in IPCServerTests.swift. Focused server gate passed 10/10, log SHA-256 9d1f983ad179c9f2f3ca61be06721063579b9626a4357ab0066d59c911ef9f81. Root directly read the current full log final totals: 208 tests, zero failures. Owner terminal confirmation and refreshed20manifest pending, followed by fresh independent gate. App owner confirmed escalated retry generation contained lock/metadata/socket; initial health and readiness completion remain unproven. Controlled-simulation-only fixed stage diagnostics approved; no arbitrary failure detail or owner logs. App rebuild waits Core freeze.
+
+### 2026-10-03 — Frozen rollback candidate and next gates
+
+Root verified every path in the refreshed20manifest (SHA-256 393254ff8f69c392909bc7654b9dbf23ef0c7fd04ddc40e74b013f156a7a25a5). Owner full gate terminal exit0:208tests/no failures/no skips. Fresh independent rollback snapshot hashes matched before run; normal SwiftPM setup denial led to scoped retry session64429. App worker is implementing controlled-simulation fixed stage diagnostics and will verify Debug test-host flags before another launch. Independent source trace found no explicit-simulation preference or transition-order race; failure remains at first health/watcher/reload/isRunning/second health boundaries. TaskView task130 still unreadable/isError; no external tracking update succeeded. Existing IPC owner assigned read-only U02 editor gap/implementation plan; no GUI writes before task checkpoints.
+
+### 2026-10-03 — Independent rollback gate passed
+
+Root verified independent report/log hashes: report a18e21c73a4bc375f33c9c59f90082ebad042cfcbfdec486dc9b4f2b68615095; full log dfb40523dce838bcd2f0be4691301d5c051f3b23ca7e5d7fd34848ef01139afb. Fresh acceptedR02+exact20candidate passed208/208 tests,10/10server,no failures/no skips;20live/snapshot hashes matched before/after. Independent rollback review PASS. This closes the concrete defect. I01 task acceptance/commit remains pending Cbridge language exception and separately approved actual integration depth; fakeunit gate does not prove live socket/app behavior. App worker informed Core frozen and independent gate passed; controlled diagnostics build next.
+
+### 2026-10-03 — U02 editor plan checkpoint
+
+Read-only owner review confirms SettingsView.swift contains both view and view model (no separate SettingsViewModel.swift). Position detail carries six normalized fields; current controls expose label only, and app clients still offer label-only mutation. Core already accepts typed keep/set/reset batch patches. Planned U02 edit surface: Protocol.swift, UnixSocketClient.swift, ConfigEditorClient.swift, SettingsView.swift, and existing protocol/client/view-model tests. Planned controls cover label, hex background preview, alignment, size, notification-source IDs, and variant-specific actions. Captured instance/profile/position/digest guard a single batch request; no automatic retry after conflict/uncertainty. Reset means schema default, not profile inheritance; normalized get values cannot reveal source-field explicitness. No U02 writes before I01/U01 task checkpoints. App diagnostic Test build normal setup denied before compile; identical scoped escalation running session15353.
+
+### 2026-10-03 — Diagnostic composition verification
+
+Root verified explicit Test build log SHA-256 65d84ce5bbc26c1f13eb640da4b8286a9586b2ba99b1183ff001425202afe6c3 and exact8test log SHA-256 5599ff7009355c9b210eb173f9689d58a854c2d91b7554464c91f42a67535d3b; all8fake/parser/testhost cases passed. Independent review confirms fixedenum-only output and sink scoped to controlledsimulation. Review found initialhealth client construction preceding begin/catch boundary; owner approved to move construction inside bracket, then compileverify in requiredDebugbuild and refresh9freeze. Existing8proof remains historical/exercisedbehavior only. No diagnostic app launch yet.
+
+### 2026-10-03 — Diagnostic native gate narrows failure to quit
+
+Final Debug build terminal exit0; root verified no HIDHOGG_TEST_HOST flag and all9sourcefreeze hashes. Exact candidate binary SHA-256 5210ee95b43ec8dab4f65abc03a5929bec78b4abfed4986cc09f8259f6a4f7d6. Root reviewed freshs3harness identical assertions and authorized one scoped native diagnostic gate session52197. Root read synthetic stages: coordinator/server startup, initial health, session ready, second health, ready marker, stop marker, app.quit.begin. Terminal harness failed exit1 after watchdogTERM appPID12371 exit143; no generationstopbegin. Therefore startup/readiness nowproven in this candidate, gracefulquit notproven. Owner tracing observation task/profile shutdown/display power shutdown waits before runtimeSession.quit; no retry authorized. Source/logs fixedstageonly, no ownerlogsread.
+
+### 2026-10-03 — Graceful-quit trace boundaries
+
+Source owner and independent tester found no provable self-await in static review. Appmodelquit waits observationTask, profileCoordinator.shutdown, and displayPowerCoordinator.shutdown before runtimeSession.quit; observation can itself await profile endpoint replacement. Deadline-configured clients do not establish whichwait stalled. Root approved only six controlledsimulation fixedstage events around these3awaits and existingfakecomposition ordering assertion where feasible; no lifecyclechange/deadlinebandaid or retry yet. Independentreport explicitly partial; gracefulquit gate remains failed.
+
+### 2026-10-03 — Shutdown task-entry boundary narrowed
+
+Root verified1/1no-runtime quit-order test andlogSHA113128cc61be42616733850ddbb9e2842f13aebe2800bf0e071f02e74251a41c. FinalDebugbuilt with6shutdownwaitmarkers;9hasheschecked, s4harnesssyntax/diffreviewed, onecontrolledgateauthorized. Livehandle77545 reachedbothhealthready/readymarker/stopmarker/app.quit.begin. Rootterminalfile confirmswatchdogTERM appPID14277 exit143, harnessfailed. Crucially NONE ofthe3shutdownwaitbeginevents emitted (profilebegin isunconditionalinsidemodelquitTask), so previoussuspectedawaits remain unproven: blockmayprecededelegate/modeltaskexecution. Owner instructed to trace taskentry/terminationreentrancy, confirmPIDgone, nofurtherlaunchwithoutdiagnosis. No taskaccepted/committed.
+
+### 2026-10-03 — AppKit termination lifecycle correction plan
+
+Root verified Apple official terminateLater documentation: returning it runs NSModalPanelRunLoopMode until reply. Combined with s4 app.quit.begin but no task/waitbegin, modal-mode starvation is plausible, not established rootcause. Source owner and independentreviewer approve testing cancel-cleanup-reterminate lifecycle: delegate sets cleaning synchronously, first/duplicates returnterminateCancel, exactlyoneownedcleanup runs normalrunloop, afterawaitedmodelquit marksready andrequeststerminationagain, nextcallbackterminateNow. No replyToShouldTerminate oncancelpath. State remainsindelegate; injectedterminationcallback supports gatedpuretests. Root approvedownedsource/testchanges; no newnativegateuntilcompile/test/review. Officialsource: https://developer.apple.com/documentation/appkit/nsapplication/terminatereply/terminatelater .
+
+### 2026-10-03 — Termination patch independently reviewed and tested
+
+Root read implementeddelegate states: cleaningbeforetaskspawn, duplicatesCancel, awaitmodelquit, readybeforeterminationcallback, reentryNow, noReply. IndependentreviewerPASS nomaterialdefect; fakecasehasnoexplicitcleanupgate butorderedcompletion/re-request assertionisqualifiedcoverage. First2selector runpassednewlifecyclebutfailedoldquit-order expectationomittingnewentrymarkers (actualtestfailure, notsetup). Correctedexact2selectors passed2/2; rootverifiedlogSHA3c07656c1a3f4d5eae56c22af9102c334e2fefaa9db66362918d47934cffa728. No runtime/start/socketselected. FinalDebugbuild then9freeze/freshnativegate pending; modalcauseinferenceunproven untilsuccessfulquit.
+
+### 2026-10-03 — Native readiness and graceful quit passed
+
+Root verified one freshs5native controlledsimulatedD200Xgate: terminalPASS PID17734, gracefulexit0, actualsocket94bytesincludingNUL. Bothhealthchecksready, readymarkerpublished, stopdetected, delegate/modeltasksentered, all3shutdownwaitscompleted, generationstopclosed/appquitcleanupclosed. Rootconfirmedexplicitruntime_rootexistswith0entries. Stage log SHA7f297bdf2470ea32323dc8dc5d518216f6d9426afe905b46cced4fbea2f6b1d3; terminalSHAff570c16f45b68dc1742f5dc8b218b721c048b46db40c8d4ca2e1490848439ea. Rootfreeze9checked/binarySHA7883a8a6a1aa743d87a14c27ec832e2548aade1e7649865659abb19f032d9500. Nativefailureclosedbycancel-cleanup-reterminate change; exactmodalcauseremainsinference. Independentproofauditdelegated, no redundantlaunch/tests. I01Cbridgeexception/separateCLIintegrationdecisionspending; no taskcommitsyet. U02editorandfinalV01simulatededitingworkflow remainrequired.
+
+### 2026-10-03 — Independent native-proof audit passed
+
+Independenttester verified9app/20Core sourcehashesbeforeandafter, exactDebugbinary/buildlog/2testlog, s5PASS PID17734 exit0/socket94NUL, bothhealthyIPCchecks/normalstop/allshutdownawaits/generationclosed andemptyruntime_root. No reruns/processes. Qualifiedscope: nativecontrolledsimulationstartup/readiness/gracefulquit only; fullGUI/CLI/physicalHID/finalV01notproven. RootgetTaskView130/132 bothisErrorunreadable, no externaltrackingupdates. Docs3currentcandidatecheckpointdelegated; authoritativetaskcommit remains blockedpending Cflocklanguageexception and separatelyscoped CLIintegration decision. Goalstillactivewhile documentationcheckpointfinishes.
+
+### 2026-10-03 — Approval-blocked handoff audit
+
+Root verified all3candidate docs updated anddiffcheckclean; HEAD remains620b5ece492c6389ce26263101850d45d42bbd06. All3existingworkers terminalcompleted; no livebuild/test/apphandles pending. Latesttechnicalgates: independentCore208/208 and independentnativecontrolledsimulation readiness/gracefulquit/filecleanup qualifiedPASS. Remaining I01checkpointacceptance needs ownerdecision on two-functionCflock exception to pureSwift and explicitauthorizationforprepared separateCLI/socketintegrationdepth. Questions remainunanswered acrossatleast3consecutivegoalturns; nocontinuationtextisapproval. Userrequirescommitsbetweentasks; I01beforeU01beforeU02writes. Nootherindependentrequiredworkremainsbeforethesecheckpointdecisions; no broadretests/editsjustified. TaskView130/132continueunreadable/isError; localhandoffcurrent. Fullobjective notcomplete: fullbuttoneditor/finalV01/productionGoremoval pending. Requestinggoalblockedstatus onthisaudit; resumeafterdecision, preserve29sourcepaths/docsuncommitted, neverstageunrelatedsensitive/untrackedfiles.
+
+### 2026-10-04 — Owner-approved MVP locking removal
+
+Owner explicitly approved removal after confirming app and Swift runtime are combined. Supersedes pendingCbridgeexception: removepersistentadvisorylocking andCtarget entirely, assumeoneapp-ownedruntime forMVP, retainprivatepermissions/nofollow/UID/identity-safe cleanup andstrictwire/digestguards. Multiprocess/sharedexplicitdirectorycoordinationunsupported; no replacelockingframework/singletonfeature authorized. Prior208unit/nativeS5proofhistoricalbeforechange; newCore/appgatesrequired. RootverifiedHEAD620b5ec andprior20hashes beforedelegation. Coreimplementation assignedswift_v2_executor; appmarkerremoval/fakeunits/Debug/nativegate assignedswift_app_ownership, disjointownership/coordinationbeforebuild. ActualseparateCLI/socketintegrationquestion remainspending; noexecutionauthorizedbylockingapproval. No sourcecommit yet.
+
+### 2026-10-04 — MVP no-lock owner gates and native cleanup pass
+
+Corelocking/Ctarget/lockidentity removal frozen26retainedpaths+3explicitremovals, manifestSHA4b684c3ac9c7aeb40b0a7963342922d8c0394f648e7b1daf474586420c8caeaa; root26hashcheckallOK. OwnerfocusedIPC45/45/fullCore205/205; rootread2050failurefinaltotals. Appfake7/7 andDebugbuildpassednoTesthost; app9manifestallrootverified. Oneauthorizednative no-lockgatePASSPID6875 exit0/socket88NUL; no runtime.lockreadinessassertionpassed; rootexplicitruntime/s/r0entries, stageclosedcleanup. TerminalSHAaa78729f866b89bb1fd24bc36a0ba9023e3686e55e1b963c6fbb30a3cbf887f2; stageSHA7f297bdf2470ea32323dc8dc5d518216f6d9426afe905b46cced4fbea2f6b1d3. FreshindependentCoregateandboundednativeproofauditpendingverification_baseline; 3docsupdateassignedCoreowner. NoCexceptionapprovalneededanymore; actualseparateCLIexecutionquestionunchanged/pending. Multiapp/sharedexplicitdirectorycoordinationunsupported.
+
+
+### 2026-10-04 — approved MVP runtime-lock removal verified
+
+Removed runtime-file locking and the C bridge from the uncommitted I01/U01 candidate. The app owns the Swift runtime in process; the MVP assumes one app process with a private UUID-generation directory and does not enforce singleton use. Owner-only permissions and identity-guarded cleanup remain.
+
+Owner Core verification passed 205/205 tests (focused IPC 45/45); independent Core verification passed 205/205 with zero failures or skips. All 26 live and 17 snapshot source hashes matched before and after verification; the three retired lock/C paths remained absent. Independent report: /Volumes/Data/tmp/hidhogg-v2-no-lock-independent-20261004/independent-report.txt (SHA-256 eec698ca85299dfb9d3a7db50552bace5672b756c80da204d109c3fe666a728c); full log SHA-256 65d2bfff3beefbebe0c473a4c4b3bf40eb8b2512702484d4349680463054bb4e.
+
+The app fake suite passed 7/7. The controlled native Debug app with simulated D200X reached readiness without runtime.lock, terminated gracefully with exit 0, and left its runtime root empty. Evidence: /Volumes/Data/tmp/hidhogg-v2-no-lock-app-20261004/gate-terminal.log (SHA-256 aa78729f866b89bb1fd24bc36a0ba9023e3686e55e1b963c6fbb30a3cbf887f2). No live HID, native input, owner configuration, or separate CLI integration was exercised.
+
+Updated docs/overview.md, docs/structure.md and docs/v2-plan.md; their diff check passed. The C-bridge exception is superseded. HEAD remains accepted R02 620b5ec; I01/U01 source remains uncommitted pending the separate CLI integration execution approval/gate. U02, V01 and X01 remain unfinished. TaskView status could not be verified because direct reads failed; no completion update or milestone notification was sent.
+
+
+### 2026-10-04 — Apple Silicon-only app builds
+
+Owner explicitly requested completely dropping Intel after a fresh My Mac build reproduced the incompatible HidhoggCore module error. Core compiled ARM64 while the app also requested x86_64. Added ARCHS=arm64 to all nine project/app/test Debug/Test/Release configurations; preserved macOS 26 targets and Test host flags. Updated overview/structure platform statements. Project lint and scoped diff checks passed.
+
+Fresh Debug My Mac build and Release generic macOS build both passed exit 0. Logs: /Volumes/Data/tmp/hidhogg-arm64-only-debug-20261004.log and /Volumes/Data/tmp/hidhogg-arm64-only-release-20261004.log. App compiler targets and both resulting app executable architectures are ARM64 only. Release SwiftPM still emits an unused x86_64 Core intermediate independently of the project ARCHS setting; it is not linked or shipped in the app. No app launch or tests were executed for this build-settings change. Source remains uncommitted with the I01/U01 candidate; unrelated pending acceptance gates remain unchanged.
+
+
+### 2026-10-04 — current TaskView checkpoint and CLI harness preparation
+
+TaskView direct reads recovered. Main updated I01 #130 and U01 #132 with the current no-lock/ARM64 verification evidence and read both back: project 5/list 49, incomplete, current dated checkpoint present. Earlier provider-unavailable status is superseded; no task completion was claimed.
+
+Executor aligned the temporary CLI harness with lock removal and ARM64 host restriction; main reviewed the final script. Shell syntax passed; script SHA-256 bc28ca6b3c213331c7cc8347a9467bb5925b9c6287c62593b12e6f42077e4c91. Invocation: sh /Volumes/Data/tmp/hidhogg-v2-i01-socket-cli-harness/run-harness.sh. Scope: build synthetic host/CLI, one explicitly simulated runtime, status/profile listing/notification emit-clear, bounded exact-PID shutdown and temporary socket/metadata/directory cleanup. RuntimeCoordinator simulated selection disables process/native-input adapters before construction. Harness has not been launched. Main requested the AGENTS-required integration execution-depth confirmation; acceptance/commits remain pending the reply and gate.
+
+
+### 2026-10-04 — blocked audit after resumed goal turns
+
+The same unanswered CLI integration execution-depth confirmation persisted through three resumed goal turns. Independent authorized preparation is finished: no-lock ARM64 harness reviewed and syntax-checked, TaskView I01/U01 checkpoints updated/read back, and stale documentation corrected with scoped diff checks passing. All three workers are terminal; no integration job has been launched. HEAD remains 620b5ec and prepared harness hash remains bc28ca6b3c213331c7cc8347a9467bb5925b9c6287c62593b12e6f42077e4c91. The prior two turns made preparation/tracking progress; this turn is a no-progress blocked audit. Further acceptance and per-task commits depend on the pending AGENTS-required scope reply. Do not treat automatic continuation as that approval. Resume on the explicit CLI-gate scope response, run the reviewed bounded synthetic harness, then complete I01/U01 checkpoints before U02/V01/X01.
+
+
+### 2026-10-18 — I01/U01 accepted and committed; U02 started
+
+The user reactivated after exact CLI gate scope clarification; main treated this as approval for that bounded synthetic test. Initial gate failed at a harness-only active-field expectation; status actually returns ready/protocol_version/instance_id. One assertion correction (no production change) followed by one corrected gate passed exit0 and all status/profiles/notification/shutdown/full-current-temp-cleanup assertions. Corrected report SHA36e65eb39d14fc217b5e0fc955f21f90d0e441ffcf2664a766eef6784cd46ab9; logSHA3b1130a99e0131ee1d760f70ea1c337bd1390921a022c57256909976703721ed. Earlier failed run retained; runtime subdir empty. Refreshed26sourcehashes verified, sole oldmanifestdelta exactlynineapprovedARM64settings.
+
+Committed I01 d714dfefae7c0bae7d1592018ab857b0793c59f1 (17paths), then U01 2418f54c6c70782936f72c23e26b8e19f00326fc (9paths); stageddiffchecks passed. TaskView130/132 markedcomplete;134 inprogress. Discordmilestonenotificationsexit0. U02 source delegated to existingSwift executor; appowner consolidatingthree shared docs; tester preparingboundedunit/GUIgateplan. .agents/handoff.md condensed to currentverifiedcheckpoint; fullhistory remainsinthislog. Overall9/12accepted, finaleditor/V01/X01unfinished.

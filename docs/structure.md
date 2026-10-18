@@ -1,9 +1,10 @@
 # Repository structure
 
-Status: v1 remains the production runtime. The standalone Swift core contains the C01/C02 configuration foundation, D01/D02 D200X core, and independently verified R01/R02 runtime services; app and CLI integration acceptance remain pending.
-Updated: 2026-10-03
+Status (2026-10-18): V2-I01 (`d714dfefae7c0bae7d1592018ab857b0793c59f1`) and V2-U01 (`2418f54c6c70782936f72c23e26b8e19f00326fc`) are accepted and committed. The native Swift app owns runtime/device lifecycle; Go sources remain as the v1 parity reference until V01/X01. U02 editor work is in progress; V01/X01 remain pending. See [v2-plan.md](v2-plan.md) for acceptance evidence.
+Updated: 2026-10-18
+Platform: macOS 26+ on Apple Silicon (`arm64`) only. Intel is unsupported in Debug, Test, and Release configurations.
 
-This file distinguishes the current repository layout from the approved target. The current Go packages and SwiftUI supervisor remain in place until the v2 parity and simulated-device acceptance gate passes.
+This file distinguishes the committed v1 layout from the accepted v2 implementation. The Go packages remain in the repository as v1 parity reference code; the native Swift app now composes and owns the Swift runtime directly.
 
 ```text
 hidhogg/
@@ -19,7 +20,7 @@ hidhogg/
     └── config-editing/   lossless TOML and JSONC comparison
 ```
 
-The repository also contains the isolated `macos/HidhoggCore` SwiftPM package for V2-C01, V2-C02, V2-D01, V2-D02, and V2-R01. It has one library target and one test target, with no external SwiftPM dependencies. The package owns strict Swift schema-v4 decoding, normalized immutable configuration values, its vendored TOML engine, typed lossless edits and a digest-guarded transactional source store, internal D200X framing/session/simulation, deterministic ZIP archive construction, page rendering, and a profile/reload/idle/host-display coordinator. It embeds the Go Regular font resource for wide labels. The package is not integrated with the app or CLI; Go remains the production runtime, configuration, and device owner. Configured action services, notification overlays, and IPC remain separate migration work.
+The repository contains the `macos/HidhoggCore` SwiftPM package, which provides the HidhoggCore library, Swift CLI executable, and test targets. It has no external SwiftPM package dependencies. The package owns strict Swift schema-v4 decoding, normalized immutable configuration values, its vendored TOML engine, typed lossless edits and a digest-guarded transactional source store, internal D200X framing/session/simulation, deterministic ZIP archive construction, page rendering, and the profile/reload/idle/host-display/action/notification/IPC services. It embeds the Go Regular font resource for wide labels. Accepted I01/U01 compose these services in the app and route CLI operations through Swift. The implementation has no C bridge or runtime-file lock and assumes one app-owned process using a private UUID-generation directory. It retains owner-only directory/socket permissions and identity-guarded cleanup; shared explicit-directory multiprocess use is unsupported and singleton use is not enforced. Go sources remain as the v1 parity reference until V01/X01.
 
 C02's independent package suite passed 59/59 tests and its refreshed TOML 1.1 corpus passed 681/681 cases on 2026-10-02. The verified C02 implementation is commit `57f93a14451a3cb18b73e0dcb8d0654323649f51`.
 
@@ -66,7 +67,7 @@ The current strict configuration is schema v4. `internal/config` owns keyed sour
 
 `internal/config` validates and defaults scalar press/release gestures; `internal/profile` owns immutable effective bindings; `internal/runtime/actions.go` owns held-input latches and matched-release candidates. `internal/runtime/idle.go` reconciles suppressed physical events without submitting actions.
 
-The Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-runtime`. The distinct helper name is required because `Hidhogg` and `hidhogg` collide on the default case-insensitive macOS filesystem.
+The committed v1 Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-runtime`. The distinct helper name is required because `Hidhogg` and `hidhogg` collide on the default case-insensitive macOS filesystem. Accepted U01 removes the Go-child launch phase.
 
 ## Ownership boundaries
 
@@ -75,7 +76,7 @@ The Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-run
 | HID spike | Transport feasibility and physical evidence | Production session architecture |
 | Config spike | Lossless mutation and conflict behavior | Published configuration compatibility |
 | Documentation | Verified facts, decisions, gates, and handoff | Unsupported hardware claims |
-| Go runtime | Lifecycle, strict configuration orchestration, one D200X session, profiles/actions, bounded execution history, keepalive/idle policy, transactional reload, typed profile-source edits, local notification overlays and IPC | Remote ingestion, multi-device policy, and arbitrary source editing |
+| Go v1 reference runtime | Historical lifecycle, strict configuration orchestration, one D200X session, profiles/actions, bounded execution history, keepalive/idle policy, transactional reload, typed profile-source edits, local notification overlays and IPC | Current app runtime ownership; remote ingestion, multi-device policy, and arbitrary source editing |
 | Configuration | Strict single-file decode, semantic validation, deterministic schema, immutable reload candidates, and semantic diffing | Mutation, lossless preservation, and root/device composition |
 | Swift configuration foundation (V2-C01) | Standalone strict Swift v4 decode, normalized 14-position layout, TOML 1.1 parser extension, and safe diagnostics | Production app/CLI wiring, device/runtime ownership, source mutation, and transactional storage |
 | Swift configuration edits/store (V2-C02) | Typed keep/set/reset field patches, profile label/clone/delete operations, same-engine byte-preserving edits, exact-digest atomic file replacement, and distinct file outcomes | Editor UI, runtime reload policy, generic TOML mutation, and external-editor compare-and-swap guarantees |
@@ -86,8 +87,8 @@ The Xcode build embeds the Go command as `Hidhogg.app/Contents/MacOS/hidhogg-run
 | Configuration watcher | Parent-directory event filtering, trailing debounce, and automatic reload hints | Source mutation, retry of unchanged invalid content, and runtime restart |
 | D200X adapter | Exact device selection, framing, configured page rendering, serialized session, and input decoding | Runtime policy, actions, notifications, reconnect |
 | Native input | Plain text/Enter construction and posting, native FIFO, permission checks/explicit request, metadata-only history, native object lifetime | Application delivery guarantees, foreground-app inspection, subprocess fallback, and executable admission policy |
-| Runtime discovery | Persistent advisory lock, strict readiness metadata, guarded stale recovery, and client identity revalidation | HID policy, remote discovery, PID authority, and non-cooperating same-UID processes |
-| SwiftUI client | Menu-bar status, runtime supervision, foreground-app mappings, and typed profile settings editor | Direct HID ownership and TOML source mutation |
+| Go runtime discovery (committed v1) | Persistent advisory lock, strict readiness metadata, guarded stale recovery, and client identity revalidation | HID policy, remote discovery, PID authority, and non-cooperating same-UID processes |
+| Native Swift app | Menu-bar status, Swift runtime/device lifecycle, foreground-app mappings, and typed profile settings editor | TOML source mutation outside the typed Core store; multi-device policy |
 | Internal IPC | Versioned, bounded health, profiles, execution history, reload/status, typed profile-editor mutations, input diagnostics and notification emit/clear messages | Remote access, executable submission, and full configuration contents |
 
 ## Approved v2 ownership targets
@@ -106,7 +107,7 @@ These are TaskView work boundaries, not directories or implemented modules. The 
 | App ownership of runtime and device | V2-U01 #132 | SwiftUI supervises the Go child |
 | Complete existing button editor | V2-U02 #134 | SwiftUI profile editor (partial) |
 | Independent unit, edge and simulator acceptance | V2-V01 #136 | Go and Swift test suites |
-| Remove production Go dependencies after acceptance | V2-X01 #138 | Go remains in production |
+| Remove production Go dependencies after acceptance | V2-X01 #138 | Go source/build dependencies remain for the v1 reference |
 
 TaskView project 5, list 49 owns these task states and dependencies. The full requirements and direct-ID map are in [v2-plan.md](v2-plan.md). Historical v1 contracts remain in [v1-roadmap.md](v1-roadmap.md).
 
@@ -115,6 +116,10 @@ TaskView project 5, list 49 owns these task states and dependencies. The full re
 
 R02 adds bounded configured executable execution and native-input queues/history, immutable captured actions, and source-filtered notification overlays. Notification lifetimes begin after successful display commit; expiry catches newly overdue entries after slow writes. Selection revalidates captured bindings and dismisses overlays before static action admission. Owned shutdown awaits action services and the device session and preserves cleanup uncertainty. The coordinator supplies monotonic-to-wall date conversion and coherent reload views with actual display-update outcomes for IPC.
 
-Independent verification used committed R01 `b2d3c628bedaecb5e80dc0bbd784806b64cc86e0` plus exactly thirteen frozen R02 paths: 160 XCTest cases passed, zero failures or skips, and all live/snapshot hashes matched before and after testing. Evidence: `/Volumes/Data/tmp/hidhogg-v2-r02-independent-final-20261003/final-report.txt`; overlay manifest SHA-256 `df8acfbf9b1fbaf4e5bad6da09e4a4629f10539c9fce0ecc306fee9a0835dbcb`. This gate used fake process/input adapters and synthetic rendering; actual child execution, sockets, native HID/input, permission prompts and app simulation were not exercised. App/CLI acceptance and the required native simulated-app gate remain outstanding.
+Independent verification used committed R01 `b2d3c628bedaecb5e80dc0bbd784806b64cc86e0` plus exactly thirteen frozen R02 paths: 160 XCTest cases passed, zero failures or skips, and all live/snapshot hashes matched before and after testing. Evidence: `/Volumes/Data/tmp/hidhogg-v2-r02-independent-final-20261003/final-report.txt`; overlay manifest SHA-256 `df8acfbf9b1fbaf4e5bad6da09e4a4629f10539c9fce0ecc306fee9a0835dbcb`. This gate used fake process/input adapters and synthetic rendering; actual child execution, sockets, native HID/input, permission prompts and app simulation were not exercised. At this 2026-10-03 checkpoint, app/CLI acceptance and the native simulated-app gate remained outstanding; I01/U01 acceptance is recorded below.
 
 Implementation: `macos/HidhoggCore/Sources/HidhoggCore/RuntimeActionServices.swift`, `RuntimeExecution.swift`, `RuntimePosixProcessRunner.swift`, `RuntimeNativeInput.swift`, `RuntimeNotifications.swift`, and the existing coordinator/models. Focused tests reside in `macos/HidhoggCore/Tests/HidhoggCoreTests/`.
+
+## Accepted I01/U01 integration — 2026-10-18
+
+I01 and U01 are committed and accepted. The native app owns Swift runtime/device lifecycle; it does not start the Go child. Detailed gate evidence, accepted process boundaries, and remaining V01/X01 work are in [v2-plan.md](v2-plan.md).
