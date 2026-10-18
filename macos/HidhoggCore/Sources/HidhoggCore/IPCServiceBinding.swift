@@ -6,23 +6,25 @@ public enum IPCServiceBindingError: Error, Sendable, Equatable {
 }
 
 public actor IPCServiceBinding {
+    private let operations: RuntimeOperations
     private let coordinator: RuntimeCoordinator
     private let configurationPath: String
-    private(set) var pendingConfigurationOperations = 0
-    private var lastReloadOutcome = "ready"
-    private var lastReloadReason = "none"
-    private var lastReloadDiagnostic: IPCJSONValue?
 
-    private var reloadInProgress: Bool { pendingConfigurationOperations > 0 }
+    var pendingConfigurationOperations: Int {
+        get async { await operations.pendingConfigurationOperations }
+    }
 
     public init(coordinator: RuntimeCoordinator, configurationPath: String) throws {
-        guard !configurationPath.isEmpty,
-              configurationPath.utf8.first == 0x2f,
-              !configurationPath.utf8.contains(0) else {
-            throw IPCServiceBindingError.invalidConfigurationPath
-        }
+        do { operations = try RuntimeOperations(coordinator: coordinator, configurationPath: configurationPath) }
+        catch { throw IPCServiceBindingError.invalidConfigurationPath }
         self.coordinator = coordinator
-        self.configurationPath = URL(fileURLWithPath: configurationPath).standardizedFileURL.path
+        self.configurationPath = operations.configurationPath
+    }
+
+    public init(operations: RuntimeOperations) {
+        self.operations = operations
+        coordinator = operations.coordinator
+        configurationPath = operations.configurationPath
     }
 
     public func startServer(
@@ -36,10 +38,8 @@ public actor IPCServiceBinding {
     }
 
     func handle(_ request: IPCWireRequest) async -> IPCWireResponse {
-        let snapshot = await coordinator.snapshot()
-        guard snapshot.lifecycle == .running, !snapshot.cleanupUncertain else {
-            return failure(request, "shutting_down", "runtime is not ready")
-        }
+        do { try await operations.checkAvailability() }
+        catch { return failure(request, "shutting_down", "runtime is not ready") }
 
         switch request.method {
         case .health:
@@ -87,35 +87,27 @@ public actor IPCServiceBinding {
     }
 
     private func profilesList(_ request: IPCWireRequest) async -> IPCWireResponse {
-        let view = await coordinator.configurationView()
-        let profiles = view.configuration.profiles.map { profile in
-            IPCJSONValue.object([
-                ("id", .string(profile.id)),
-                ("label", .string(profile.label)),
-                ("is_default", .boolean(profile.id == view.configuration.defaultProfileID)),
-                ("is_current", .boolean(profile.id == view.snapshot.profileID)),
-            ])
-        }
-        return success(request, [("profiles", .array(profiles))])
+        do {
+            let profiles = try await operations.profiles().map { profile in
+                IPCJSONValue.object([
+                    ("id", .string(profile.id)),
+                    ("label", .string(profile.label)),
+                    ("is_default", .boolean(profile.isDefault)),
+                    ("is_current", .boolean(profile.isCurrent)),
+                ])
+            }
+            return success(request, [("profiles", .array(profiles))])
+        } catch { return runtimeError(request, error) }
     }
 
     private func activateProfile(_ request: IPCWireRequest) async -> IPCWireResponse {
-        guard let profileID = request.params.value(for: "profile_id")?.stringValue else {
+        guard let profileID = string(request, "profile_id") else {
             return failure(request, "invalid_envelope", "request envelope is invalid")
         }
         do {
-            let result = try await coordinator.activateProfile(profileID)
-            return success(request, [
-                ("profile_id", .string(result.profileID)),
-                ("changed", .boolean(result.changed)),
-            ], includeInstanceID: false)
-        } catch RuntimeCoordinatorError.unknownProfile {
-            return failure(request, "profile_not_found", "profile was not found")
-        } catch RuntimeCoordinatorError.physicalWriteFailed {
-            return failure(request, "device_write_failed", "device update failed")
-        } catch {
-            return failure(request, "activation_failed", "profile activation failed")
-        }
+            let result = try await operations.activateProfile(profileID)
+            return success(request, [("profile_id", .string(result.profileID)), ("changed", .boolean(result.changed))], includeInstanceID: false)
+        } catch { return runtimeError(request, error) }
     }
 
     private func executionList(_ request: IPCWireRequest) async -> IPCWireResponse {
@@ -153,235 +145,118 @@ public actor IPCServiceBinding {
     }
 
     private func reloadConfiguration(_ request: IPCWireRequest) async -> IPCWireResponse {
-        pendingConfigurationOperations += 1
-        defer { pendingConfigurationOperations -= 1 }
-        let source: IPCConfigurationSource
-        do { source = try IPCConfigurationSource.read(configurationPath) }
-        catch let error as IPCConfigurationReadError {
-            recordReload(outcome: "rejected", reason: "candidate-rejected", diagnostic: error.projection)
-            return failure(request, "reload_rejected", "configuration reload was rejected")
-        } catch {
-            recordReload(outcome: "rejected", reason: "candidate-rejected", diagnostic: readDiagnostic(.read))
-            return failure(request, "reload_rejected", "configuration reload was rejected")
-        }
-        do { _ = try HidhoggConfigurationDecoder.decode(source.bytes) }
-        catch let diagnostic as ConfigurationDiagnostic {
-            recordReload(outcome: "rejected", reason: "candidate-rejected", diagnostic: diagnosticValue(diagnostic.safeProjection()))
-            return failure(request, "reload_rejected", "configuration reload was rejected")
-        } catch {
-            recordReload(outcome: "rejected", reason: "candidate-rejected", diagnostic: readDiagnostic(.decode))
-            return failure(request, "reload_rejected", "configuration reload was rejected")
-        }
         do {
-            let result = try await coordinator.reload(source: source.bytes)
-            let effects = reloadEffects(
-                from: result.previous,
-                to: result.current,
-                displayChanged: result.displayChanged
-            )
-            recordReload(outcome: result.changed ? "changed" : "unchanged", reason: "none", diagnostic: nil)
-            return success(request, reloadFields(
-                revision: result.revision,
-                changed: result.changed,
-                effects: effects,
-                displayUpdated: result.displayUpdated
-            ))
-        } catch RuntimeCoordinatorError.physicalWriteFailed {
-            recordReload(outcome: "rejected", reason: "device-write-failed", diagnostic: nil)
-            return failure(request, "device_write_failed", "device update failed")
-        } catch RuntimeCoordinatorError.cancelledBeforeAdmission {
-            recordReload(outcome: "rejected", reason: "canceled", diagnostic: nil)
-            return failure(request, "busy", "runtime is busy")
-        } catch {
-            recordReload(outcome: "rejected", reason: "candidate-rejected", diagnostic: readDiagnostic(.decode))
-            return failure(request, "reload_rejected", "configuration reload was rejected")
-        }
+            let result = try await operations.reloadConfiguration()
+            return success(request, reloadFields(revision: result.revision, changed: result.changed, effects: result.effects, displayUpdated: result.displayUpdated))
+        } catch { return runtimeError(request, error) }
     }
 
     private func configurationStatus(_ request: IPCWireRequest) async -> IPCWireResponse {
-        let view = await coordinator.configurationView()
-        let state = view.snapshot.lifecycle == .running ? (reloadInProgress ? "reloading" : "idle") : "closed"
-        return success(request, [
-            ("revision", integer(view.snapshot.revision)),
-            ("active", .boolean(view.snapshot.lifecycle == .running)),
-            ("state", .string(state)),
-            ("outcome", .string(lastReloadOutcome)),
-            ("reason", .string(view.snapshot.lifecycle == .running ? lastReloadReason : "closed")),
-            ("diagnostic", view.snapshot.lifecycle == .running ? (lastReloadDiagnostic ?? .null) : .null),
-        ])
+        do {
+            let status = try await operations.configurationStatus()
+            return success(request, [
+                ("revision", integer(status.revision)),
+                ("active", .boolean(status.active)),
+                ("state", .string(status.state.rawValue)),
+                ("outcome", .string(status.outcome.rawValue)),
+                ("reason", .string(status.reason.rawValue)),
+                ("diagnostic", status.diagnostic.map(diagnosticValue) ?? .null),
+            ])
+        } catch { return runtimeError(request, error) }
     }
 
     private func editorSnapshot(_ request: IPCWireRequest) async -> IPCWireResponse {
-        let configuration: HidhoggConfiguration
-        let source: IPCConfigurationSource
         do {
-            source = try IPCConfigurationSource.read(configurationPath)
-            configuration = try HidhoggConfigurationDecoder.decode(source.bytes)
-        } catch {
-            return failure(request, "reload_rejected", "configuration is unavailable")
-        }
-        let snapshot = await coordinator.snapshot()
-        let current = snapshot.profileID ?? configuration.defaultProfileID
-        return success(request, [
-            ("source_digest", .string(source.digest)),
-            ("revision", integer(snapshot.revision)),
-            ("default_profile_id", .string(configuration.defaultProfileID)),
-            ("current_profile_id", .string(current)),
-            ("profile_ids", .array(configuration.profiles.map { .string($0.id) })),
-        ])
+            let result = try await operations.editorSnapshot()
+            return success(request, [
+                ("source_digest", .string(result.sourceDigest)),
+                ("revision", integer(result.revision)),
+                ("default_profile_id", .string(result.defaultProfileID)),
+                ("current_profile_id", .string(result.currentProfileID)),
+                ("profile_ids", .array(result.profileIDs.map(IPCJSONValue.string))),
+            ])
+        } catch { return runtimeError(request, error) }
     }
 
     private func editorPositions(_ request: IPCWireRequest) async -> IPCWireResponse {
-        let loaded: (source: IPCConfigurationSource, configuration: HidhoggConfiguration)
-        do { loaded = try loadEditorSource(request) }
-        catch { return editorReadFailure(request, error) }
-        guard let profileID = string(request, "profile_id"), loaded.configuration.profile(id: profileID) != nil else {
-            return failure(request, "profile_not_found", "profile was not found")
+        guard let digest = string(request, "source_digest"), let profileID = string(request, "profile_id") else {
+            return failure(request, "invalid_envelope", "request envelope is invalid")
         }
-        let positions = HidhoggConfiguration.supportedPositions.map { spec in
-            IPCJSONValue.object([
-                ("position_id", .string(spec.name)),
-                ("position", .string(spec.name)),
+        do {
+            let result = try await operations.editorPositions(sourceDigest: digest, profileID: profileID)
+            return success(request, [
+                ("source_digest", .string(result.sourceDigest)),
+                ("profile_id", .string(result.profileID)),
+                ("positions", .array(result.positions.map { .object([("position_id", .string($0.positionID)), ("position", .string($0.position))]) })),
             ])
-        }
-        return success(request, [
-            ("source_digest", .string(loaded.source.digest)),
-            ("profile_id", .string(profileID)),
-            ("positions", .array(positions)),
-        ])
+        } catch { return runtimeError(request, error) }
     }
 
     private func editorProfile(_ request: IPCWireRequest) async -> IPCWireResponse {
-        let loaded: (source: IPCConfigurationSource, configuration: HidhoggConfiguration)
-        do { loaded = try loadEditorSource(request) }
-        catch { return editorReadFailure(request, error) }
-        guard let profileID = string(request, "profile_id"), let profile = loaded.configuration.profile(id: profileID) else {
-            return failure(request, "profile_not_found", "profile was not found")
+        guard let digest = string(request, "source_digest"), let profileID = string(request, "profile_id") else {
+            return failure(request, "invalid_envelope", "request envelope is invalid")
         }
-        return success(request, [
-            ("source_digest", .string(loaded.source.digest)),
-            ("profile_id", .string(profile.id)),
-            ("label", .string(profile.label)),
-        ])
+        do {
+            let result = try await operations.editorProfile(sourceDigest: digest, profileID: profileID)
+            return success(request, [("source_digest", .string(result.sourceDigest)), ("profile_id", .string(result.profileID)), ("label", .string(result.label))])
+        } catch { return runtimeError(request, error) }
     }
 
     private func editorPosition(_ request: IPCWireRequest) async -> IPCWireResponse {
-        let loaded: (source: IPCConfigurationSource, configuration: HidhoggConfiguration)
-        do { loaded = try loadEditorSource(request) }
-        catch { return editorReadFailure(request, error) }
-        guard let profileID = string(request, "profile_id"),
-              let positionID = string(request, "position_id"),
-              let profile = loaded.configuration.profile(id: profileID),
-              let position = profile.position(named: positionID) else {
-            return failure(request, "profile_not_found", "profile or position was not found")
+        guard let digest = string(request, "source_digest"), let profileID = string(request, "profile_id"), let positionID = string(request, "position_id") else {
+            return failure(request, "invalid_envelope", "request envelope is invalid")
         }
-        var fields: [(String, IPCJSONValue)] = [
-            ("source_digest", .string(loaded.source.digest)),
-            ("profile_id", .string(profile.id)),
-            ("position_id", .string(position.position)),
-            ("label", .string(position.label)),
-            ("background", .string(position.background)),
-            ("label_alignment", .string(position.labelAlignment)),
-            ("label_size", integer(position.labelSize)),
-            ("notification_sources", .array((position.notificationSources ?? []).map(IPCJSONValue.string))),
-        ]
-        if let action = position.action { fields.append(("action", IPCProtocol.encodeAction(action))) }
-        return success(request, fields)
+        do {
+            let result = try await operations.editorPosition(sourceDigest: digest, profileID: profileID, positionID: positionID)
+            var fields: [(String, IPCJSONValue)] = [
+                ("source_digest", .string(result.sourceDigest)),
+                ("profile_id", .string(result.profileID)),
+                ("position_id", .string(result.positionID)),
+                ("label", .string(result.label)),
+                ("background", .string(result.background)),
+                ("label_alignment", .string(result.labelAlignment)),
+                ("label_size", integer(result.labelSize)),
+                ("notification_sources", .array(result.notificationSources.map(IPCJSONValue.string))),
+            ]
+            if let action = result.action { fields.append(("action", IPCProtocol.encodeAction(action))) }
+            return success(request, fields)
+        } catch { return runtimeError(request, error) }
     }
 
     private func editConfiguration(_ request: IPCWireRequest) async -> IPCWireResponse {
-        pendingConfigurationOperations += 1
-        defer { pendingConfigurationOperations -= 1 }
-        let source: IPCConfigurationSource
-        let before: RuntimeConfigurationView
-        let configurationEdit: RuntimeConfigurationEdit
-        do {
-            source = try IPCConfigurationSource.read(configurationPath)
-            guard source.digest == string(request, "expected_digest") else {
-                return failure(request, "stale_source", "configuration source changed")
-            }
-            let current = try HidhoggConfigurationDecoder.decode(source.bytes)
-            before = await coordinator.configurationView()
-            configurationEdit = try makeConfigurationEdit(request, configuration: current)
-        } catch is ConfigurationEditingError {
-            return failure(request, "edit_invalid", "configuration edit is invalid")
-        } catch let error as RuntimeCoordinatorError {
-            return runtimeError(request, error)
-        } catch {
-            return failure(request, "reload_rejected", "configuration is unavailable")
+        guard let expectedDigest = string(request, "expected_digest") else {
+            return failure(request, "invalid_envelope", "request envelope is invalid")
         }
-
         do {
-            let changedSource = try applyConfigurationEdit(
-                configurationEdit,
-                to: source.bytes,
-                currentProfileID: before.snapshot.profileID ?? before.configuration.defaultProfileID
-            )
-            _ = try HidhoggConfigurationDecoder.decode(changedSource)
-        } catch {
-            return failure(request, "edit_invalid", "configuration edit is invalid")
-        }
-
-        do {
-            let result = try await coordinator.applyConfigurationEdit(
-                at: configurationPath,
-                expectedDigest: ConfigurationStore.digest(source.bytes),
-                edit: configurationEdit
-            )
-            let effects: IPCReloadEffects
-            if let reloadResult = result.reloadResult {
-                effects = reloadEffects(
-                    from: reloadResult.previous,
-                    to: reloadResult.current,
-                    displayChanged: reloadResult.displayChanged
-                )
-            } else {
-                effects = reloadEffects(from: before, to: before, displayChanged: false)
-            }
-            if result.fileOutcome != .unchanged {
-                let status: (String, String, IPCJSONValue?)
-                switch result.reloadOutcome {
-                case .unchanged: status = ("unchanged", "none", nil)
-                case .reloaded: status = ("changed", "none", nil)
-                case .rejected: status = ("rejected", "candidate-rejected", readDiagnostic(.validation))
-                case .runtimeFailed: status = ("rejected", "device-write-failed", nil)
+            let result: RuntimeOperationEditResult
+            if request.method == .editorProfileCreate {
+                guard let profileID = string(request, "profile_id"), let label = string(request, "label") else {
+                    throw IPCServiceRequestError.invalidRequest
                 }
-                recordReload(outcome: status.0, reason: status.1, diagnostic: status.2)
-            }
-            let reason: String
-            switch result.reloadOutcome {
-            case .unchanged, .reloaded: reason = "none"
-            case .rejected: reason = "candidate-rejected"
-            case .runtimeFailed: reason = "device-write-failed"
+                result = try await operations.cloneProfile(expectedDigest: expectedDigest, sourceProfileID: string(request, "source_profile_id"), profileID: profileID, label: label)
+            } else {
+                let edit = try makeConfigurationEdit(request)
+                result = try await operations.edit(expectedDigest: expectedDigest, edit: edit)
             }
             return success(request, [
-                ("source_digest", .string(result.digest.description)),
-                ("file_commit", .string(result.fileOutcome.rawValue)),
+                ("source_digest", .string(result.sourceDigest)),
+                ("file_commit", .string(result.fileCommit.rawValue)),
                 ("reload_outcome", .string(reloadOutcome(result.reloadOutcome))),
-                ("revision", integer(result.snapshot.revision)),
-                ("effect", .string(effects.effect)),
-                ("reason", .string(reason)),
+                ("revision", integer(result.revision)),
+                ("effect", .string(result.effect.rawValue)),
+                ("reason", .string(result.reason.rawValue)),
             ])
-        } catch {
-            return runtimeError(request, error)
-        }
+        } catch { return runtimeError(request, error) }
     }
 
     private func setDisplayHostState(_ request: IPCWireRequest) async -> IPCWireResponse {
         guard let awake = request.params.value(for: "display_awake")?.booleanValue else {
             return failure(request, "invalid_envelope", "request envelope is invalid")
         }
-        let before = await coordinator.snapshot().displayAwake
         do {
-            try await coordinator.setHostDisplayAwake(awake)
-            let after = await coordinator.snapshot().displayAwake
-            return success(request, [
-                ("display_awake", .boolean(after)),
-                ("changed", .boolean(before != after)),
-            ])
-        } catch {
-            return runtimeError(request, error)
-        }
+            let result = try await operations.setHostDisplayAwake(awake)
+            return success(request, [("display_awake", .boolean(result.displayAwake)), ("changed", .boolean(result.changed))])
+        } catch { return runtimeError(request, error) }
     }
 
     private func inputStatus(_ request: IPCWireRequest, requestPermission: Bool) async -> IPCWireResponse {
@@ -403,7 +278,7 @@ public actor IPCServiceBinding {
             _ = try HidhoggConfigurationDecoder.decode(source.bytes)
             sourceStatus = ("ready", .null)
         } catch let error as IPCConfigurationReadError {
-            sourceStatus = ("failed", error.projection)
+            sourceStatus = ("failed", diagnosticValue(error.projection))
         } catch let diagnostic as ConfigurationDiagnostic {
             sourceStatus = ("failed", diagnosticValue(diagnostic.safeProjection()))
         } catch {
@@ -465,25 +340,8 @@ public actor IPCServiceBinding {
         }
     }
 
-    private func loadEditorSource(_ request: IPCWireRequest) throws -> (source: IPCConfigurationSource, configuration: HidhoggConfiguration) {
-        let source = try IPCConfigurationSource.read(configurationPath)
-        guard source.digest == string(request, "source_digest") else { throw IPCServiceRequestError.staleSource }
-        return (source, try HidhoggConfigurationDecoder.decode(source.bytes))
-    }
-
-    private func editorReadFailure(_ request: IPCWireRequest, _ error: Error) -> IPCWireResponse {
-        if case IPCServiceRequestError.staleSource = error {
-            return failure(request, "stale_source", "configuration source changed")
-        }
-        if error is ConfigurationDiagnostic {
-            return failure(request, "reload_rejected", "configuration is unavailable")
-        }
-        return failure(request, "reload_rejected", "configuration is unavailable")
-    }
-
     private func makeConfigurationEdit(
-        _ request: IPCWireRequest,
-        configuration: HidhoggConfiguration
+        _ request: IPCWireRequest
     ) throws -> RuntimeConfigurationEdit {
         guard let profileID = string(request, "profile_id") else { throw IPCServiceRequestError.invalidRequest }
         switch request.method {
@@ -499,10 +357,6 @@ public actor IPCServiceBinding {
                 coordinate: positionID,
                 patch: ConfigurationPositionPatch(label: .set(label))
             )
-        case .editorProfileCreate:
-            guard let label = string(request, "label") else { throw IPCServiceRequestError.invalidRequest }
-            let sourceID = string(request, "source_profile_id") ?? configuration.defaultProfileID
-            return .cloneProfile(sourceID: sourceID, newID: profileID, label: label)
         case .editorProfileDelete:
             return .deleteProfile(profileID: profileID)
         case .editorPositionPatch:
@@ -517,61 +371,11 @@ public actor IPCServiceBinding {
         }
     }
 
-    private func applyConfigurationEdit(
-        _ edit: RuntimeConfigurationEdit,
-        to source: Data,
-        currentProfileID: String
-    ) throws -> Data {
-        switch edit {
-        case let .setProfileLabel(profileID, label):
-            try ConfigurationEditor.setProfileLabel(in: source, profileID: profileID, label: label)
-        case let .cloneProfile(sourceID, newID, label):
-            try ConfigurationEditor.cloneProfile(in: source, sourceID: sourceID, newID: newID, label: label)
-        case let .deleteProfile(profileID):
-            try ConfigurationEditor.deleteProfile(in: source, profileID: profileID, currentProfileID: currentProfileID)
-        case let .patchPosition(profileID, coordinate, patch):
-            try ConfigurationEditor.patchPosition(in: source, profileID: profileID, coordinate: coordinate, patch: patch)
-        }
-    }
-
-    private func reloadEffects(
-        from previous: RuntimeConfigurationView,
-        to current: RuntimeConfigurationView,
-        displayChanged: Bool
-    ) -> IPCReloadEffects {
-        let previousConfiguration = previous.configuration
-        let currentConfiguration = current.configuration
-        let oldID = previous.snapshot.profileID ?? previousConfiguration.defaultProfileID
-        let newID = current.snapshot.profileID ?? currentConfiguration.defaultProfileID
-        let fallback = previousConfiguration.profile(id: oldID) != nil && currentConfiguration.profile(id: oldID) == nil
-        let oldProfile = previousConfiguration.profile(id: oldID)
-        let newProfile = currentConfiguration.profile(id: newID)
-        let currentChanged = oldID != newID || oldProfile != newProfile
-        let actionChanged: Bool
-        if let oldProfile, let newProfile {
-            actionChanged = zip(oldProfile.positions, newProfile.positions).contains { pair in pair.0.action != pair.1.action }
-        } else {
-            actionChanged = false
-        }
-        let effects = IPCReloadEffects(
-            catalogChanged: previousConfiguration.profiles != currentConfiguration.profiles,
-            defaultChanged: previousConfiguration.defaultProfileID != currentConfiguration.defaultProfileID,
-            currentProfileChanged: currentChanged,
-            currentProfileFallback: fallback,
-            actionChanged: actionChanged,
-            displayChanged: displayChanged,
-            brightnessChanged: previousConfiguration.brightness != currentConfiguration.brightness,
-            idleChanged: previousConfiguration.idleTimeoutSeconds != currentConfiguration.idleTimeoutSeconds,
-            effect: ""
-        )
-        return effects.withEffect
-    }
-
-    private func reloadFields(revision: UInt64, changed: Bool, effects: IPCReloadEffects, displayUpdated: Bool) -> [(String, IPCJSONValue)] {
+    private func reloadFields(revision: UInt64, changed: Bool, effects: RuntimeOperationReloadEffects, displayUpdated: Bool) -> [(String, IPCJSONValue)] {
         [
             ("revision", integer(revision)),
             ("changed", .boolean(changed)),
-            ("effect", .string(effects.effect)),
+            ("effect", .string(effects.effect.rawValue)),
             ("catalog_changed", .boolean(effects.catalogChanged)),
             ("default_changed", .boolean(effects.defaultChanged)),
             ("current_profile_changed", .boolean(effects.currentProfileChanged)),
@@ -582,29 +386,6 @@ public actor IPCServiceBinding {
             ("idle_changed", .boolean(effects.idleChanged)),
             ("display_updated", .boolean(displayUpdated)),
         ]
-    }
-
-    private func configurationStatusResult(
-        _ request: IPCWireRequest,
-        snapshot: RuntimeSnapshot,
-        outcome: String,
-        reason: String,
-        diagnostic: IPCJSONValue?
-    ) -> IPCWireResponse {
-        return success(request, [
-            ("revision", integer(snapshot.revision)),
-            ("active", .boolean(snapshot.lifecycle == .running)),
-            ("state", .string(snapshot.lifecycle == .running ? "idle" : "closed")),
-            ("outcome", .string(outcome)),
-            ("reason", .string(snapshot.lifecycle == .running ? reason : "closed")),
-            ("diagnostic", diagnostic ?? .null),
-        ])
-    }
-
-    private func recordReload(outcome: String, reason: String, diagnostic: IPCJSONValue?) {
-        lastReloadOutcome = outcome
-        lastReloadReason = reason
-        lastReloadDiagnostic = diagnostic
     }
 
     private func executionSummary(_ summary: RuntimeExecutionSummary, services: RuntimeActionServices) -> IPCJSONValue {
@@ -762,39 +543,26 @@ public actor IPCServiceBinding {
     }
 
     private func runtimeError(_ request: IPCWireRequest, _ error: Error) -> IPCWireResponse {
-        if let error = error as? RuntimeCoordinatorError {
+        if let error = error as? RuntimeOperationError {
             switch error {
-            case .unknownProfile: return failure(request, "profile_not_found", "profile was not found")
-            case .physicalWriteFailed: return failure(request, "device_write_failed", "device update failed")
-            case .cancelledBeforeAdmission: return failure(request, "busy", "runtime is busy")
-            case .storeFailure(.stale): return failure(request, "stale_source", "configuration source changed")
-            case .storeFailure(.invalidConfiguration), .storeFailure(.mutationFailed): return failure(request, "edit_invalid", "configuration edit is invalid")
-            case .storeFailure(.invalidDestination), .storeFailure(.diskFailure), .storeFailure(.uncertain):
-                return failure(request, "file_commit_failed", "configuration file could not be committed")
-            default: return failure(request, "shutting_down", "runtime is not ready")
-            }
-        }
-        if let error = error as? ConfigurationEditingError {
-            switch error {
-            case .profileNotFound: return failure(request, "profile_not_found", "profile was not found")
-            default: return failure(request, "edit_invalid", "configuration edit is invalid")
-            }
-        }
-        if let error = error as? RuntimeNotificationError {
-            switch error {
-            case .invalidRequest: return failure(request, "invalid_notification", "notification is invalid")
-            case .busy: return failure(request, "busy", "runtime is busy")
-            case .uncertain: return failure(request, "device_write_failed", "device update failed")
             case .closed: return failure(request, "shutting_down", "runtime is not ready")
+            case .cancelledBeforeAdmission: return failure(request, "busy", "runtime is busy")
+            case .staleSource: return failure(request, "stale_source", "configuration source changed")
+            case .profileNotFound: return failure(request, "profile_not_found", request.method == .editorPositionGet ? "profile or position was not found" : "profile was not found")
+            case .editInvalid: return failure(request, "edit_invalid", "configuration edit is invalid")
+            case .configurationUnavailable: return failure(request, "reload_rejected", "configuration is unavailable")
+            case .fileCommitFailed: return failure(request, "file_commit_failed", "configuration file could not be committed")
+            case .deviceWriteFailed: return failure(request, "device_write_failed", "device update failed")
+            case .activationFailed: return failure(request, "activation_failed", "profile activation failed")
+            case .reloadRejected: return failure(request, "reload_rejected", "configuration reload was rejected")
+            case .invalidConfigurationPath: return failure(request, "internal", "internal server error")
             }
         }
         if let error = error as? IPCServiceRequestError {
             switch error {
-            case .staleSource: return failure(request, "stale_source", "configuration source changed")
             case .invalidRequest: return failure(request, "invalid_envelope", "request envelope is invalid")
             }
         }
-        if error is IPCConfigurationReadError { return failure(request, "reload_rejected", "configuration is unavailable") }
         return failure(request, "internal", "internal server error")
     }
 
@@ -817,118 +585,7 @@ public actor IPCServiceBinding {
 }
 
 private enum IPCServiceRequestError: Error {
-    case staleSource
     case invalidRequest
-}
-
-private enum IPCConfigurationReadError: Error {
-    case notFound
-    case denied
-    case invalid
-    case read
-    case decode
-
-    var projection: IPCJSONValue {
-        switch self {
-        case .notFound: readDiagnostic(.readNotFound)
-        case .denied: readDiagnostic(.readDenied)
-        case .invalid: readDiagnostic(.readInvalid)
-        case .read: readDiagnostic(.read)
-        case .decode: readDiagnostic(.decode)
-        }
-    }
-}
-
-private struct IPCConfigurationSource {
-    let bytes: Data
-    let digest: String
-
-    static func read(_ path: String) throws -> Self {
-        guard !path.isEmpty, path.utf8.first == 0x2f, !path.utf8.contains(0) else { throw IPCConfigurationReadError.invalid }
-        var before = stat()
-        guard path.withCString({ lstat($0, &before) }) == 0 else { throw readError(errno) }
-        guard before.st_mode & S_IFMT == S_IFREG else { throw IPCConfigurationReadError.invalid }
-        let descriptor = path.withCString { Darwin.open($0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK) }
-        guard descriptor >= 0 else { throw readError(errno) }
-        var descriptorOpen = true
-        defer { if descriptorOpen { _ = Darwin.close(descriptor) } }
-        var opened = stat()
-        guard fstat(descriptor, &opened) == 0 else { throw IPCConfigurationReadError.read }
-        guard opened.st_mode & S_IFMT == S_IFREG,
-              sameConfigurationFile(before, opened),
-              opened.st_size >= 0, opened.st_size <= 1_048_576 else {
-            throw IPCConfigurationReadError.invalid
-        }
-
-        let maximumBytes = 1_048_576
-        var bytes = Data()
-        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
-        while true {
-            let count = buffer.withUnsafeMutableBytes { Darwin.read(descriptor, $0.baseAddress!, $0.count) }
-            if count == 0 { break }
-            if count < 0 {
-                if errno == EINTR { continue }
-                throw readError(errno)
-            }
-            guard bytes.count + count <= maximumBytes else { throw IPCConfigurationReadError.invalid }
-            bytes.append(contentsOf: buffer.prefix(count))
-        }
-        var afterRead = stat()
-        guard fstat(descriptor, &afterRead) == 0,
-              sameConfigurationFile(opened, afterRead),
-              Int64(bytes.count) == afterRead.st_size else {
-            throw IPCConfigurationReadError.invalid
-        }
-        let closeResult = Darwin.close(descriptor)
-        descriptorOpen = false
-        guard closeResult == 0 else { throw IPCConfigurationReadError.read }
-        var after = stat()
-        guard path.withCString({ lstat($0, &after) }) == 0,
-              sameConfigurationFile(afterRead, after),
-              after.st_mode & S_IFMT == S_IFREG else {
-            throw IPCConfigurationReadError.invalid
-        }
-        return Self(bytes: bytes, digest: ConfigurationStore.digest(bytes).description)
-    }
-}
-
-private struct IPCReloadEffects {
-    let catalogChanged: Bool
-    let defaultChanged: Bool
-    let currentProfileChanged: Bool
-    let currentProfileFallback: Bool
-    let actionChanged: Bool
-    let displayChanged: Bool
-    let brightnessChanged: Bool
-    let idleChanged: Bool
-    var effect: String
-
-    var withEffect: Self {
-        let changed = catalogChanged || defaultChanged || currentProfileChanged || currentProfileFallback || actionChanged || displayChanged || brightnessChanged || idleChanged
-        if !changed { return with(effect: "unchanged") }
-        if actionChanged && !displayChanged && !brightnessChanged && !idleChanged && !defaultChanged && !currentProfileFallback && currentProfileChanged {
-            return with(effect: "action-only")
-        }
-        if displayChanged { return with(effect: "display") }
-        if brightnessChanged { return with(effect: "brightness") }
-        if idleChanged { return with(effect: "idle") }
-        if defaultChanged || currentProfileFallback { return with(effect: "default") }
-        return with(effect: "catalog")
-    }
-
-    private func with(effect: String) -> Self {
-        Self(
-            catalogChanged: catalogChanged,
-            defaultChanged: defaultChanged,
-            currentProfileChanged: currentProfileChanged,
-            currentProfileFallback: currentProfileFallback,
-            actionChanged: actionChanged,
-            displayChanged: displayChanged,
-            brightnessChanged: brightnessChanged,
-            idleChanged: idleChanged,
-            effect: effect
-        )
-    }
 }
 
 private func reloadOutcome(_ outcome: RuntimeConfigurationReloadOutcome) -> String {
@@ -938,10 +595,6 @@ private func reloadOutcome(_ outcome: RuntimeConfigurationReloadOutcome) -> Stri
     case .rejected: "rejected"
     case .runtimeFailed: "uncertain"
     }
-}
-
-private func configurationStatusDiagnostic(_ value: ConfigurationDiagnosticProjection) -> IPCJSONValue {
-    diagnosticValue(value)
 }
 
 private func diagnosticValue(_ value: ConfigurationDiagnosticProjection) -> IPCJSONValue {
@@ -969,19 +622,4 @@ private func integer(_ value: Int64) -> IPCJSONValue {
 
 private func integer(_ value: UInt64) -> IPCJSONValue {
     integer(value > UInt64(Int64.max) ? Int64.max : Int64(value))
-}
-
-private func readError(_ code: Int32) -> IPCConfigurationReadError {
-    switch code {
-    case ENOENT: .notFound
-    case EACCES, EPERM: .denied
-    case ELOOP, EISDIR, ENOTDIR: .invalid
-    default: .read
-    }
-}
-
-private func sameConfigurationFile(_ lhs: stat, _ rhs: stat) -> Bool {
-    lhs.st_dev == rhs.st_dev && lhs.st_ino == rhs.st_ino && lhs.st_size == rhs.st_size &&
-        lhs.st_mtimespec.tv_sec == rhs.st_mtimespec.tv_sec && lhs.st_mtimespec.tv_nsec == rhs.st_mtimespec.tv_nsec &&
-        lhs.st_ctimespec.tv_sec == rhs.st_ctimespec.tv_sec && lhs.st_ctimespec.tv_nsec == rhs.st_ctimespec.tv_nsec
 }

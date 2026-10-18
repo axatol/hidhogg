@@ -22,10 +22,6 @@ enum HidhoggSimulationDiagnosticEvent: String, Sendable {
     case readinessTransitionWaitBegan = "simulation.transition-wait.begin"
     case readinessTransitionWaitCompleted = "simulation.transition-wait.complete"
     case readinessRuntimeUnavailable = "simulation.runtime-unavailable"
-    case readinessHealthCheckBegan = "simulation.health-check.begin"
-    case readinessHealthCheckCompleted = "simulation.health-check.ready"
-    case readinessHealthCheckRejected = "simulation.health-check.rejected"
-    case readinessHealthCheckFailed = "simulation.health-check.failed"
     case readyMarkerPublished = "simulation.ready-marker.published"
     case readinessFailed = "simulation.readiness.failed"
     case stopMarkerDetected = "simulation.stop-marker.detected"
@@ -83,6 +79,8 @@ public final class RuntimeSessionController: ObservableObject {
     @Published public private(set) var lifecycleState: LifecycleState = .configurationRequired
     @Published public private(set) var endpoint: RuntimeEndpoint?
     @Published public private(set) var lastFailureDetail: String?
+    @Published private(set) var operationsHandle: RuntimeOperationsHandle?
+    @Published private(set) var cliConnectivityError: String?
 
     public var configurationPath: String? {
         AppPreferences.validConfigurationPath(requestedConfigurationPath)
@@ -278,10 +276,12 @@ public final class RuntimeSessionController: ObservableObject {
         activePath = validPath
         activeGenerationToken = token
         endpoint = nil
+        operationsHandle = nil
+        cliConnectivityError = nil
 
         do {
             simulationDiagnostics?.emit(.runtimeSessionStartBegan)
-            let readyEndpoint = try await generation.start()
+            let readyGeneration = try await generation.start()
             let watcher = try configurationWatcherFactory(validPath) { [weak self, generation] in
                 Task { @MainActor [weak self] in
                     guard let self,
@@ -299,7 +299,9 @@ public final class RuntimeSessionController: ObservableObject {
                 throw RuntimeSessionControllerError.runtimeNotReady
             }
 
-            endpoint = readyEndpoint
+            operationsHandle = readyGeneration.operationsHandle
+            endpoint = readyGeneration.endpoint
+            cliConnectivityError = readyGeneration.cliConnectivityError
             lifecycleState = .ready
             simulationDiagnostics?.emit(.runtimeSessionReady)
             activeObservationTask = Task { @MainActor [weak self, generation] in
@@ -351,6 +353,8 @@ public final class RuntimeSessionController: ObservableObject {
         activeGenerationToken = nil
         activePath = nil
         endpoint = nil
+        operationsHandle = nil
+        cliConnectivityError = nil
         lifecycleState = .failed(.restartExhausted)
     }
 
@@ -362,6 +366,8 @@ public final class RuntimeSessionController: ObservableObject {
         configurationWatcher?.stop()
         configurationWatcher = nil
         endpoint = nil
+        operationsHandle = nil
+        cliConnectivityError = nil
 
         guard let generation = activeGeneration else {
             activePath = nil
@@ -399,10 +405,56 @@ enum RuntimeSessionControllerError: Error {
 }
 
 protocol RuntimeSessionGeneration: Sendable {
-    func start() async throws -> RuntimeSessionController.RuntimeEndpoint
+    func start() async throws -> RuntimeGenerationStart
     func isRunning() async -> Bool
     func reloadConfiguration() async
     func stop() async -> RuntimeGenerationStopOutcome
+}
+
+public protocol HidhoggProfileOperations: Sendable {
+    func profiles() async throws -> [RuntimeOperationProfile]
+    func activateProfile(_ profileID: String) async throws -> RuntimeActivationResult
+}
+
+public protocol HidhoggDisplayOperations: Sendable {
+    func setHostDisplayAwake(_ awake: Bool) async throws -> RuntimeOperationDisplayResult
+}
+
+public protocol HidhoggEditorOperations: Sendable {
+    func editorSnapshot() async throws -> RuntimeOperationEditorSnapshot
+    func editorProfile(sourceDigest: String, profileID: String) async throws -> RuntimeOperationEditorProfile
+    func editorPositions(sourceDigest: String, profileID: String) async throws -> RuntimeOperationEditorPositions
+    func editorPosition(
+        sourceDigest: String,
+        profileID: String,
+        positionID: String
+    ) async throws -> RuntimeOperationEditorPosition
+    func edit(expectedDigest: String, edit: RuntimeConfigurationEdit) async throws -> RuntimeOperationEditResult
+    func cloneProfile(
+        expectedDigest: String,
+        sourceProfileID: String?,
+        profileID: String,
+        label: String
+    ) async throws -> RuntimeOperationEditResult
+}
+
+public protocol HidhoggAppRuntimeOperations: HidhoggProfileOperations, HidhoggDisplayOperations, HidhoggEditorOperations {
+    func reloadConfiguration() async throws -> RuntimeOperationReloadResult
+    func configurationStatus() async throws -> RuntimeOperationConfigurationStatus
+    func retire() async
+}
+
+extension RuntimeOperations: HidhoggAppRuntimeOperations {}
+
+struct RuntimeOperationsHandle: Sendable {
+    let identity: String
+    let operations: any HidhoggAppRuntimeOperations
+}
+
+struct RuntimeGenerationStart: Sendable {
+    let operationsHandle: RuntimeOperationsHandle
+    let endpoint: RuntimeSessionController.RuntimeEndpoint?
+    let cliConnectivityError: String?
 }
 
 enum RuntimeGenerationStopOutcome: Sendable, Equatable {
@@ -427,6 +479,7 @@ private actor CoreRuntimeGeneration: RuntimeSessionGeneration {
     private let runtimeDirectoryFactory: any GenerationDirectoryCreating
     private let simulationDiagnostics: HidhoggSimulationDiagnostics?
     private var coordinator: RuntimeCoordinator?
+    private var operations: RuntimeOperations?
     private var serviceBinding: IPCServiceBinding?
     private var server: IPCServer?
     private var generationDirectory: GenerationDirectory?
@@ -444,19 +497,44 @@ private actor CoreRuntimeGeneration: RuntimeSessionGeneration {
         self.simulationDiagnostics = simulationDiagnostics
     }
 
-    func start() async throws -> RuntimeSessionController.RuntimeEndpoint {
+    func start() async throws -> RuntimeGenerationStart {
         simulationDiagnostics?.emit(.runtimeGenerationStartBegan)
         let source = try Data(contentsOf: URL(fileURLWithPath: configurationPath))
         let configuration = try HidhoggConfigurationDecoder.decode(source)
         let coordinator = try RuntimeCoordinator(configuration: configuration, selection: backendSelection)
         self.coordinator = coordinator
+        let operations = try RuntimeOperations(coordinator: coordinator, configurationPath: configurationPath)
+        self.operations = operations
         try await coordinator.start()
         simulationDiagnostics?.emit(.runtimeCoordinatorStarted)
 
         let instanceID = UUID().uuidString.lowercased()
+        let operationsHandle = RuntimeOperationsHandle(identity: instanceID, operations: operations)
+        do {
+            let endpoint = try await startCLIEndpoint(instanceID: instanceID)
+            return RuntimeGenerationStart(
+                operationsHandle: operationsHandle,
+                endpoint: endpoint,
+                cliConnectivityError: nil
+            )
+        } catch {
+            if Task.isCancelled { throw error }
+            let cleanupConfirmed = await cleanupFailedCLIStart()
+            return RuntimeGenerationStart(
+                operationsHandle: operationsHandle,
+                endpoint: nil,
+                cliConnectivityError: cleanupConfirmed
+                    ? "The command-line service could not be started."
+                    : "The command-line service could not be started, and cleanup is uncertain."
+            )
+        }
+    }
+
+    private func startCLIEndpoint(instanceID: String) async throws -> RuntimeSessionController.RuntimeEndpoint {
         let generationDirectory = try runtimeDirectoryFactory.create(instanceID: instanceID)
         self.generationDirectory = generationDirectory
-        let binding = try IPCServiceBinding(coordinator: coordinator, configurationPath: configurationPath)
+        guard let operations else { throw RuntimeSessionControllerError.runtimeNotReady }
+        let binding = IPCServiceBinding(operations: operations)
         serviceBinding = binding
         simulationDiagnostics?.emit(.runtimeIPCServerStartBegan)
         let server = try await binding.startServer(
@@ -471,22 +549,37 @@ private actor CoreRuntimeGeneration: RuntimeSessionGeneration {
             socketPath: generationDirectory.socket.path
         )
         simulationDiagnostics?.emit(.runtimeInitialHealthCheckBegan)
-        let health: RuntimeResponse
+        let resolvedRuntime = try IPCRuntimeDiscovery.resolve(generationDirectory.directory.path)
+        guard resolvedRuntime.metadata.instanceID == instanceID else {
+            simulationDiagnostics?.emit(.runtimeInitialHealthCheckRejected)
+            throw RuntimeSessionControllerError.runtimeNotReady
+        }
+        let health: IPCWireResponse
         do {
-            let client = try UnixSocketClient(socketPath: endpoint.socketPath, instanceID: endpoint.instanceID)
-            health = try client.health(requestID: UUID().uuidString.lowercased())
+            health = try await IPCClient(runtime: resolvedRuntime).call(.health)
         } catch {
             simulationDiagnostics?.emit(.runtimeInitialHealthCheckFailed)
             throw error
         }
-        guard health.isSuccess,
-              health.instanceID == instanceID,
-              health.state == "ready" else {
+        guard health.failure == nil,
+              health.result?.value(for: "state")?.stringValue == "ready" else {
             simulationDiagnostics?.emit(.runtimeInitialHealthCheckRejected)
             throw RuntimeSessionControllerError.runtimeNotReady
         }
         simulationDiagnostics?.emit(.runtimeInitialHealthCheckReady)
         return endpoint
+    }
+
+    private func cleanupFailedCLIStart() async -> Bool {
+        let serverOutcome = await server?.stop() ?? IPCServerStopOutcome.closed
+        guard serverOutcome == .closed,
+              removeRuntimeGeneration() else {
+            return false
+        }
+        server = nil
+        serviceBinding = nil
+        generationDirectory = nil
+        return true
     }
 
     func isRunning() async -> Bool {
@@ -496,11 +589,8 @@ private actor CoreRuntimeGeneration: RuntimeSessionGeneration {
     }
 
     func reloadConfiguration() async {
-        guard let coordinator,
-              let source = try? Data(contentsOf: URL(fileURLWithPath: configurationPath)) else {
-            return
-        }
-        _ = try? await coordinator.reload(source: source)
+        guard let operations else { return }
+        _ = try? await operations.reloadConfiguration()
     }
 
     func stop() async -> RuntimeGenerationStopOutcome {
@@ -513,6 +603,7 @@ private actor CoreRuntimeGeneration: RuntimeSessionGeneration {
     }
 
     private func stopCore() async -> RuntimeGenerationStopOutcome {
+        await operations?.retire()
         let serverOutcome = await server?.stop() ?? IPCServerStopOutcome.closed
         let runtimeOutcome = await coordinator?.stop() ?? RuntimeStopOutcome.closed
         let directoryClean = serverOutcome == .closed && removeRuntimeGeneration()
@@ -523,6 +614,7 @@ private actor CoreRuntimeGeneration: RuntimeSessionGeneration {
         if outcome == .closed {
             server = nil
             serviceBinding = nil
+            operations = nil
             coordinator = nil
             generationDirectory = nil
         }
@@ -531,24 +623,12 @@ private actor CoreRuntimeGeneration: RuntimeSessionGeneration {
 
     private func removeRuntimeGeneration() -> Bool {
         guard let generationDirectory else { return true }
-        let socketIdentity: FileIdentity?
-        do {
-            let socket = try PathSecurity.lstat(generationDirectory.socket.path)
-            guard socket.type == UInt16(S_IFSOCK),
-                  socket.mode == 0o600,
-                  socket.owner == UInt32(geteuid()) else {
-                return false
-            }
-            socketIdentity = socket.identity
-        } catch {
-            socketIdentity = nil
-        }
         do {
             switch try PathSecurity.removeMatchingGeneration(
                 directory: generationDirectory.directory,
                 directoryIdentity: generationDirectory.directoryIdentity,
                 socket: generationDirectory.socket,
-                socketIdentity: socketIdentity
+                socketIdentity: nil
             ) {
             case .removed, .alreadyAbsent:
                 return true

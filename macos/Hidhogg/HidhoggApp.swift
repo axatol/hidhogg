@@ -122,28 +122,14 @@ final class HidhoggApplicationDelegate: NSObject, NSApplicationDelegate {
                     await model.runtimeSession.waitForTransition()
                     diagnostics.emit(.readinessTransitionWaitCompleted)
                     guard model.runtimeSession.lifecycleState == .ready,
-                          let endpoint = model.runtimeSession.endpoint else {
+                          let operationsHandle = model.runtimeSession.operationsHandle else {
                         diagnostics.emit(.readinessRuntimeUnavailable)
                         return nil
                     }
-                    diagnostics.emit(.readinessHealthCheckBegan)
-                    do {
-                        let client = try UnixSocketClient(
-                            socketPath: endpoint.socketPath,
-                            instanceID: endpoint.instanceID
-                        )
-                        let health = try client.health(requestID: UUID().uuidString.lowercased())
-                        guard health.instanceID == endpoint.instanceID,
-                              health.state == "ready" else {
-                            diagnostics.emit(.readinessHealthCheckRejected)
-                            return nil
-                        }
-                        diagnostics.emit(.readinessHealthCheckCompleted)
-                        return endpoint
-                    } catch {
-                        diagnostics.emit(.readinessHealthCheckFailed)
-                        return nil
-                    }
+                    return HidhoggSimulationRuntimeReadiness(
+                        instanceID: operationsHandle.identity,
+                        endpoint: model.runtimeSession.endpoint
+                    )
                 }
             )
         case .invalid(let message):
@@ -215,7 +201,7 @@ final class HidhoggAppModel: ObservableObject {
     @Published private(set) var profileStatusText = "Profile: waiting for runtime"
     @Published private(set) var currentProfileID: String?
     @Published private(set) var currentBundleIdentifier: String?
-    @Published private(set) var profileCatalog: ProfileListResponse?
+    @Published private(set) var profileCatalog: [RuntimeOperationProfile]?
     @Published private(set) var profileState: ProfileSwitchCoordinatorState = .idle
     @Published private(set) var mappings: ProfileMappingPreferences
     @Published private(set) var resolvedConfigurationPath: String?
@@ -474,15 +460,15 @@ final class HidhoggAppModel: ObservableObject {
     }
 
     private func observeRuntime() async {
-        var observedEndpoint: RuntimeSessionController.RuntimeEndpoint?
-        var hasObservedEndpoint = false
+        var observedIdentity: String?
+        var hasObservedOperations = false
         while !Task.isCancelled {
-            let endpoint = runtimeSession.endpoint
-            if !hasObservedEndpoint || endpoint != observedEndpoint {
-                hasObservedEndpoint = true
-                observedEndpoint = endpoint
-                await profileCoordinator.setRuntimeEndpoint(endpoint)
-                displayPowerCoordinator.setRuntimeEndpoint(endpoint)
+            let operationsHandle = runtimeSession.operationsHandle
+            if !hasObservedOperations || operationsHandle?.identity != observedIdentity {
+                hasObservedOperations = true
+                observedIdentity = operationsHandle?.identity
+                await profileCoordinator.setRuntimeOperations(operationsHandle)
+                displayPowerCoordinator.setRuntimeOperations(operationsHandle)
             }
             publishRuntimeState()
             publishProfileState()
@@ -560,7 +546,11 @@ final class HidhoggAppModel: ObservableObject {
         }
         healthText = switch state {
         case .ready:
-            "Health: ready"
+            if let cliConnectivityError = runtimeSession.cliConnectivityError {
+                "Health: ready\n\(cliConnectivityError)"
+            } else {
+                "Health: ready"
+            }
         case .configurationRequired:
             "Configuration required"
         case .failed(let failure):
@@ -803,15 +793,15 @@ final class HidhoggSimulationLaunchControl {
 
     private let maximumPollCount: Int
     private let pollIntervalNanoseconds: UInt64
-    private let readiness: @MainActor () async -> RuntimeSessionController.RuntimeEndpoint?
-    private let publishReady: @MainActor (RuntimeSessionController.RuntimeEndpoint) -> Bool
+    private let readiness: @MainActor () async -> HidhoggSimulationRuntimeReadiness?
+    private let publishReady: @MainActor (HidhoggSimulationRuntimeReadiness) -> Bool
     private let stopRequested: @MainActor () -> Bool
     private let pause: @MainActor (UInt64) async -> Void
     private let terminate: @MainActor () -> Void
     private let diagnostics: HidhoggSimulationDiagnostics?
     private var monitorTask: Task<Void, Never>?
     private var readinessTask: Task<Void, Never>?
-    private var readinessOutcome: RuntimeSessionController.RuntimeEndpoint??
+    private var readinessOutcome: HidhoggSimulationRuntimeReadiness??
     private var didHandleReadiness = false
     private var readinessPollCount = 0
     private(set) var state: State = .idle
@@ -822,8 +812,8 @@ final class HidhoggSimulationLaunchControl {
         diagnostics: HidhoggSimulationDiagnostics? = nil,
         maximumPollCount: Int = 2_400,
         pollIntervalNanoseconds: UInt64 = 50_000_000,
-        readiness: @escaping @MainActor () async -> RuntimeSessionController.RuntimeEndpoint?,
-        publishReady: (@MainActor (RuntimeSessionController.RuntimeEndpoint) -> Bool)? = nil,
+        readiness: @escaping @MainActor () async -> HidhoggSimulationRuntimeReadiness?,
+        publishReady: (@MainActor (HidhoggSimulationRuntimeReadiness) -> Bool)? = nil,
         stopRequested: (@MainActor () -> Bool)? = nil,
         pause: @escaping @MainActor (UInt64) async -> Void = { interval in
             do {
@@ -838,7 +828,7 @@ final class HidhoggSimulationLaunchControl {
         self.pollIntervalNanoseconds = max(1, pollIntervalNanoseconds)
         self.readiness = readiness
         self.publishReady = publishReady ?? { endpoint in
-            Self.publishReadyMarker(at: readyMarkerPath, endpoint: endpoint)
+            Self.publishReadyMarker(at: readyMarkerPath, readiness: endpoint)
         }
         self.stopRequested = stopRequested ?? {
             Self.hasValidStopMarker(at: stopMarkerPath)
@@ -892,7 +882,7 @@ final class HidhoggSimulationLaunchControl {
             if !didHandleReadiness {
                 if let readinessOutcome {
                     didHandleReadiness = true
-                    if let endpoint = readinessOutcome, publishReady(endpoint) {
+                    if let readiness = readinessOutcome, publishReady(readiness) {
                         state = .readyPublished
                         diagnostics?.emit(.readyMarkerPublished)
                     } else {
@@ -915,17 +905,21 @@ final class HidhoggSimulationLaunchControl {
 
     static func publishReadyMarker(
         at path: String,
-        endpoint: RuntimeSessionController.RuntimeEndpoint
+        readiness: HidhoggSimulationRuntimeReadiness
     ) -> Bool {
-        let generationDirectory = URL(fileURLWithPath: endpoint.socketPath)
-            .deletingLastPathComponent()
-            .path
-        let contents = """
-        state=ready
-        instance_id=\(endpoint.instanceID)
-        generation_directory=\(generationDirectory)
-        socket_path=\(endpoint.socketPath)
-        """
+        var lines = [
+            "state=ready",
+            "instance_id=\(readiness.instanceID)",
+            "cli_state=\(readiness.endpoint == nil ? "unavailable" : "available")"
+        ]
+        if let endpoint = readiness.endpoint {
+            let generationDirectory = URL(fileURLWithPath: endpoint.socketPath)
+                .deletingLastPathComponent()
+                .path
+            lines.append("generation_directory=\(generationDirectory)")
+            lines.append("socket_path=\(endpoint.socketPath)")
+        }
+        let contents = lines.joined(separator: "\n")
         let markerURL = URL(fileURLWithPath: path)
         let temporaryURL = markerURL.deletingLastPathComponent()
             .appendingPathComponent(".\(markerURL.lastPathComponent).\(UUID().uuidString).tmp")
@@ -978,6 +972,11 @@ final class HidhoggSimulationLaunchControl {
         }
         return true
     }
+}
+
+struct HidhoggSimulationRuntimeReadiness: Equatable, Sendable {
+    let instanceID: String
+    let endpoint: RuntimeSessionController.RuntimeEndpoint?
 }
 
 @MainActor

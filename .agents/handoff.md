@@ -2,9 +2,23 @@
 
 Updated: 2026-10-18, Australia/Brisbane.
 
-## Next task — V2-A01 #414
+## Latest completed task — V2-A01 #414
 
-Owner requested internal runtime simplification next, after closing the current feature. Queued in TaskView project5/list49; no next-feature code started. Direction: replace internal app-to-runtime socket calls with direct Swift interfaces, retain RuntimeCoordinator engine/lifecycle and external CLI socket/owner-only endpoint protections, remove obsolete supervisor/process terminology. Existing app already owns runtime in-process. Next: map current boundaries, present a concrete code/test plan for confirmation, then implement. No new process/helper or speculative features. Confirm integration depth separately; protect owner config/env/PII and unrelated untracked files.
+On 2026-10-18 the authorised internal-runtime simplification completed. See docs/runtime-simplification.md for all sixteen implementation decisions, alternatives, evidence and qualifications. TaskView project 5/list 49 is authoritative. Source checkpoint is the scoped in-process-runtime commit (see git log); no push, installation, deployment or worktree used.
+
+App profile/display/editor calls now use captured typed RuntimeOperationsHandle instances. One session-owned Core RuntimeOperations actor serves app, watcher and IPCServiceBinding. CLI socket startup is optional with visible degradation; the external protocol/security remain. Retired operations reject new calls, cancel pre-admission work and drain admitted work before server/device shutdown. Separate disk digests, file-commit and reload outcomes remain. Four app wire files and two associated wire test files were removed; ProfileValidation.swift/AppValidationTests.swift retain app and path-security checks. Supervisor.swift still contains active lifecycle/directory utilities, not a child-process supervisor; no broad observer/state-machine rewrite.
+
+Independent verification: Core 212/212; safe app 125/125; Debug arm64 production app and Release arm64 CLI builds; controlled native simulated-D200X app/CLI smoke passed. The app suite excluded only the explicit Core-server composition selector, covered separately by packaged app/CLI smoke. No production TestHost define. Smoke verified same UUID where returned, readiness/protocol 1, profile activation and notifications, graceful app exit 0, no watchdog escalation, empty runtime root and removed synthetic root; exact owned PID gone.
+
+Evidence root: /Volumes/Data/tmp/hidhogg-runtime-simplification-20261018. Final source manifest final-source-manifest-r3.json: 100 entries (94 present, six deleted), zero mismatches after all gates; SHA256 ff4e8e9993ae3fef46c407ecafc67fe198c21ec7dd64aa9afd10e2f553f3376b.
+- CoreFinal/full-suite.log SHA256 5a82099f3e3b7e031d17757ce164800eeeb2e9ba418538d532cf043d46c14806.
+- AppTestsR3/safe-app-suite.log SHA256 92b56d0ed39be2a4fd4d47b7c177d1ea00743ef5ffb0377879c84b98d9104112.
+- Smoke/smoke-a01smk1-escalated.log SHA256 82c6b05ab76744be83fa89cc1f3e9bb4bd9edfad787f5636435ea8ace995df15.
+- SmokeArtifacts/a01smk1/harness-result.json SHA256 198f885abaea256441aa44df9308eb2e73ebe0ca486cb0c17704b6b2c63a3032.
+
+Built app: /Volumes/Data/tmp/hidhogg-runtime-simplification-20261018/AppDebug/DerivedData/Build/Products/Debug/Hidhogg.app (executable SHA256 c20428f1d7c7f9c114ee4908f6d2da7543816d9e5c907a5516ea358a4ca74212). CLI: /Volumes/Data/tmp/hidhogg-runtime-simplification-20261018/CLIRel/SwiftPM/out/Products/Release/hidhoggctl (SHA256 80ceb9da900f0e879eae3ce46f3c8d31bc2a813d236937eb7cbd6d43735ac502).
+
+Qualification: earlier app gate stalled in fixture mkdir before any runtime. Owned-process sample and interrupted log retained; cause unconfirmed. Only new fixture roots moved to short /private/tmp; isolated then full suite passed. No product-deadlock fix claim. Final adversarial review corrected stale clone validation order, ownership-unsafe fallback cleanup and invalid new ID expectation; re-review found no blocker. No physical HID/input, real configured actions or GUI testing for this task. No owner configuration/environment/PII reads. Temporary diagnostics reverted. Unrelated untracked files preserved. No remaining implementation work in this authorised slice; owner may review decisions and runnable artifact.
 
 ## Accepted feature — V2-U03 #412 / V2-U04 #413
 

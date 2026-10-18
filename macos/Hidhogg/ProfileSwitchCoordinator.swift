@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import HidhoggCore
 
 public enum ProfileSwitchCoordinatorState: Equatable, Sendable {
     case idle
@@ -14,33 +15,17 @@ public enum ProfileSwitchCoordinatorState: Equatable, Sendable {
     case stopped
 }
 
-public struct StaticRuntimeProfileClientFactory: RuntimeProfileClientCreating, @unchecked Sendable {
-    private let client: any RuntimeProfileChecking
-
-    public init(client: any RuntimeProfileChecking) {
-        self.client = client
-    }
-
-    public func make(socketPath: String, instanceID: String) throws -> any RuntimeProfileChecking {
-        client
-    }
-}
-
 @MainActor
 public final class ProfileSwitchCoordinator: ObservableObject {
-    public typealias RuntimeEndpoint = RuntimeSessionController.RuntimeEndpoint
-
     @Published public private(set) var state: ProfileSwitchCoordinatorState = .idle
     @Published public private(set) var currentProfileID: String?
     @Published public private(set) var currentBundleIdentifier: String?
-    @Published public private(set) var catalog: ProfileListResponse?
+    @Published public private(set) var catalog: [RuntimeOperationProfile]?
 
     public private(set) var mappings: ProfileMappingPreferences
-    public private(set) var runtimeEndpoint: RuntimeEndpoint?
+    public private(set) var runtimeIdentity: String?
 
-    private let clientFactory: any RuntimeProfileClientCreating
-    private let requestIDProvider: any RequestIDProviding
-    private var profileClient: (any RuntimeProfileChecking)?
+    private var operations: (any HidhoggProfileOperations)?
     private var foregroundObserver: (any ForegroundApplicationObserving)?
     private var pendingBundleIdentifier: String?
     private var pendingCatalogRefresh = false
@@ -53,25 +38,9 @@ public final class ProfileSwitchCoordinator: ObservableObject {
     private var quiescenceWaiters: [CheckedContinuation<Void, Never>] = []
 
     public init(
-        mappings: ProfileMappingPreferences = ProfileMappingPreferences(),
-        clientFactory: any RuntimeProfileClientCreating = UnixSocketProfileClientFactory(),
-        requestIDProvider: any RequestIDProviding = SystemRequestIDProvider()
+        mappings: ProfileMappingPreferences = ProfileMappingPreferences()
     ) {
         self.mappings = mappings
-        self.clientFactory = clientFactory
-        self.requestIDProvider = requestIDProvider
-    }
-
-    public convenience init(
-        mappings: ProfileMappingPreferences = ProfileMappingPreferences(),
-        client: any RuntimeProfileChecking,
-        requestIDProvider: any RequestIDProviding = SystemRequestIDProvider()
-    ) {
-        self.init(
-            mappings: mappings,
-            clientFactory: StaticRuntimeProfileClientFactory(client: client),
-            requestIDProvider: requestIDProvider
-        )
     }
 
     public var isBusy: Bool {
@@ -96,10 +65,10 @@ public final class ProfileSwitchCoordinator: ObservableObject {
         foregroundObserver = nil
     }
 
-    public func setRuntimeEndpoint(_ endpoint: RuntimeEndpoint?) async {
+    func setRuntimeOperations(_ handle: RuntimeOperationsHandle?) async {
         await waitForQuiescence()
         guard !hasQuit else { return }
-        guard endpoint != runtimeEndpoint || profileClient == nil else { return }
+        guard handle?.identity != runtimeIdentity || operations == nil else { return }
 
         let currentOperation = beginQuiescence()
         _ = await currentOperation?.value
@@ -110,25 +79,14 @@ public final class ProfileSwitchCoordinator: ObservableObject {
         }
 
         let bundleToReevaluate = currentBundleIdentifier
-        runtimeEndpoint = endpoint
-        profileClient = nil
+        runtimeIdentity = handle?.identity
+        operations = handle.map { $0.operations as any HidhoggProfileOperations }
         catalog = nil
         currentProfileID = nil
         pendingCatalogRefresh = false
 
-        guard let endpoint else {
+        guard handle != nil else {
             state = .waitingForRuntime
-            endQuiescence()
-            return
-        }
-
-        do {
-            profileClient = try clientFactory.make(
-                socketPath: endpoint.socketPath,
-                instanceID: endpoint.instanceID
-            )
-        } catch {
-            state = .unavailable
             endQuiescence()
             return
         }
@@ -202,8 +160,8 @@ public final class ProfileSwitchCoordinator: ObservableObject {
         pendingCatalogRefresh = false
         processingBundleIdentifier = nil
         operationTask = nil
-        profileClient = nil
-        runtimeEndpoint = nil
+        operations = nil
+        runtimeIdentity = nil
         catalog = nil
         currentProfileID = nil
         state = .stopped
@@ -219,8 +177,8 @@ public final class ProfileSwitchCoordinator: ObservableObject {
         guard !hasQuit else { return }
         guard let bundleIdentifier, !bundleIdentifier.isEmpty else {
             let shouldRefreshCatalog = !isQuiescing
-                && runtimeEndpoint != nil
-                && profileClient != nil
+                && runtimeIdentity != nil
+                && operations != nil
                 && currentProfileID == nil
                 && operationTask == nil
             currentBundleIdentifier = nil
@@ -258,15 +216,14 @@ public final class ProfileSwitchCoordinator: ObservableObject {
         guard !isQuiescing else { return }
         guard operationTask == nil else { return }
         guard pendingBundleIdentifier != nil || pendingCatalogRefresh else { return }
-        guard let profileClient else {
+        guard let operations else {
             pendingBundleIdentifier = nil
             pendingCatalogRefresh = false
-            state = runtimeEndpoint == nil ? .waitingForRuntime : .unavailable
+            state = runtimeIdentity == nil ? .waitingForRuntime : .unavailable
             return
         }
 
         state = .loadingCatalog
-        let requestIDProvider = self.requestIDProvider
         let generation = self.generation
 
         let bundleIdentifier = pendingBundleIdentifier
@@ -277,16 +234,14 @@ public final class ProfileSwitchCoordinator: ObservableObject {
         let foregroundResetGeneration = self.foregroundResetGeneration
         let operation = Task.detached(priority: nil) {
             if let bundleIdentifier {
-                return ProfileSwitchCoordinator.evaluate(
+                return await ProfileSwitchCoordinator.evaluate(
                     bundleIdentifier: bundleIdentifier,
                     mappings: mappings,
-                    client: profileClient,
-                    requestIDProvider: requestIDProvider
+                    operations: operations
                 )
             }
-            return ProfileSwitchCoordinator.refreshCatalog(
-                client: profileClient,
-                requestIDProvider: requestIDProvider
+            return await ProfileSwitchCoordinator.refreshCatalog(
+                operations: operations
             )
         }
         operationTask = operation
@@ -402,12 +357,12 @@ public final class ProfileSwitchCoordinator: ObservableObject {
     }
 
     private func startActivation(
-        response: ProfileListResponse,
+        response: [RuntimeOperationProfile],
         profileID: String,
         bundleIdentifier: String,
         generation: Int
     ) {
-        guard let profileClient else {
+        guard let operations else {
             operationTask = nil
             processingBundleIdentifier = nil
             state = .unavailable
@@ -415,13 +370,9 @@ public final class ProfileSwitchCoordinator: ObservableObject {
             return
         }
         processingBundleIdentifier = bundleIdentifier
-        let requestIDProvider = self.requestIDProvider
         let operation = Task.detached(priority: nil) {
             do {
-                let activation = try profileClient.activateProfile(
-                    profileID: profileID,
-                    requestID: requestIDProvider.makeRequestID()
-                )
+                let activation = try await operations.activateProfile(profileID)
                 guard activation.profileID == profileID else {
                     return ProfileEvaluationResult.outcomeUnknown(
                         response: response,
@@ -450,51 +401,49 @@ public final class ProfileSwitchCoordinator: ObservableObject {
         }
     }
 
-    private func applyCatalog(_ response: ProfileListResponse) {
+    private func applyCatalog(_ response: [RuntimeOperationProfile]) {
         catalog = response
-        currentProfileID = response.profiles.first(where: \.isCurrent)?.id
+        currentProfileID = response.first(where: \.isCurrent)?.id
     }
 
     nonisolated private static func evaluate(
         bundleIdentifier: String,
         mappings: [String: String],
-        client: any RuntimeProfileChecking,
-        requestIDProvider: any RequestIDProviding
-    ) -> ProfileEvaluationResult {
-        let listResponse: ProfileListResponse
+        operations: any HidhoggProfileOperations
+    ) async -> ProfileEvaluationResult {
+        let profiles: [RuntimeOperationProfile]
         do {
-            listResponse = try client.listProfiles(requestID: requestIDProvider.makeRequestID())
+            profiles = try await operations.profiles()
         } catch {
             return .unavailable
         }
 
-        guard let currentProfileID = listResponse.profiles.first(where: \.isCurrent)?.id else {
+        guard let currentProfileID = profiles.first(where: \.isCurrent)?.id else {
             return .unavailable
         }
         let profileID: String
         if let mappedProfileID = mappings[bundleIdentifier] {
-            guard listResponse.profiles.contains(where: { $0.id == mappedProfileID }) else {
-                return .invalidMapping(response: listResponse, profileID: mappedProfileID)
+            guard profiles.contains(where: { $0.id == mappedProfileID }) else {
+                return .invalidMapping(response: profiles, profileID: mappedProfileID)
             }
             profileID = mappedProfileID
         } else {
-            guard let defaultProfileID = listResponse.profiles.first(where: \.isDefault)?.id else {
+            guard let defaultProfileID = profiles.first(where: \.isDefault)?.id else {
                 return .unavailable
             }
             profileID = defaultProfileID
         }
         guard profileID != currentProfileID else {
-            return .alreadyCurrent(response: listResponse, profileID: profileID)
+            return .alreadyCurrent(response: profiles, profileID: profileID)
         }
-        return .needsActivation(response: listResponse, profileID: profileID)
+        return .needsActivation(response: profiles, profileID: profileID)
     }
 
     nonisolated private static func refreshCatalog(
-        client: any RuntimeProfileChecking,
-        requestIDProvider: any RequestIDProviding
-    ) -> ProfileEvaluationResult {
+        operations: any HidhoggProfileOperations
+    ) async -> ProfileEvaluationResult {
         do {
-            return .catalogOnly(try client.listProfiles(requestID: requestIDProvider.makeRequestID()))
+            return .catalogOnly(try await operations.profiles())
         } catch {
             return .unavailable
         }
@@ -502,13 +451,13 @@ public final class ProfileSwitchCoordinator: ObservableObject {
 }
 
 private enum ProfileEvaluationResult: Sendable {
-    case catalogOnly(ProfileListResponse)
+    case catalogOnly([RuntimeOperationProfile])
     case unavailable
-    case invalidMapping(response: ProfileListResponse, profileID: String)
-    case alreadyCurrent(response: ProfileListResponse, profileID: String)
-    case needsActivation(response: ProfileListResponse, profileID: String)
-    case activationSucceeded(response: ProfileListResponse, profileID: String)
-    case outcomeUnknown(response: ProfileListResponse, profileID: String)
+    case invalidMapping(response: [RuntimeOperationProfile], profileID: String)
+    case alreadyCurrent(response: [RuntimeOperationProfile], profileID: String)
+    case needsActivation(response: [RuntimeOperationProfile], profileID: String)
+    case activationSucceeded(response: [RuntimeOperationProfile], profileID: String)
+    case outcomeUnknown(response: [RuntimeOperationProfile], profileID: String)
 }
 
 public typealias ProfileSwitchState = ProfileSwitchCoordinatorState

@@ -1,4 +1,3 @@
-import Darwin
 import AppKit
 import Foundation
 import XCTest
@@ -167,13 +166,9 @@ final class SettingsViewModelTests: XCTestCase {
             "com.example.editor": "Removed.Profile",
             "com.example.terminal": "Default"
         ])
-        let catalog = ProfileListResponse(
-            requestID: "request",
-            instanceID: "instance",
-            profiles: [
-                ProfileSummary(id: "Default", label: "Default", isDefault: true, isCurrent: true)
-            ]
-        )
+        let catalog = [
+            RuntimeOperationProfile(id: "Default", label: "Default", isDefault: true, isCurrent: true)
+        ]
 
         let rows = SettingsViewModel.makeMappingRows(
             preferences: preferences,
@@ -382,24 +377,24 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(panel.allowedContentTypes, [.applicationBundle])
     }
 
-    func testEditorEndpointReplacementDropsLateSnapshotAndClearsEditor() async throws {
+    func testEditorRuntimeReplacementDropsLateSnapshotAndClearsEditor() async throws {
         let firstEndpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
         let secondEndpoint = editorEndpoint(instanceID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
-        let firstClient = SettingsConfigEditorTestClient(
+        let firstClient = SettingsEditorOperationsFake(
             instanceID: firstEndpoint.instanceID,
             blocksFirstSnapshot: true
         )
-        let secondClient = SettingsConfigEditorTestClient(instanceID: secondEndpoint.instanceID)
-        let factory = SettingsConfigEditorTestClientFactory(clients: [
-            firstEndpoint.instanceID: firstClient,
-            secondEndpoint.instanceID: secondClient
-        ])
-        let endpointBox = SettingsEditorEndpointBox(endpoint: firstEndpoint)
+        let secondClient = SettingsEditorOperationsFake(
+            instanceID: secondEndpoint.instanceID,
+            digest: String(repeating: "b", count: 64)
+        )
+        let firstHandle = RuntimeOperationsHandle(identity: firstEndpoint.instanceID, operations: firstClient)
+        let secondHandle = RuntimeOperationsHandle(identity: secondEndpoint.instanceID, operations: secondClient)
+        let runtimeBox = SettingsEditorOperationsBox(handle: firstHandle)
         let viewModel = SettingsViewModel(
             model: makeSettingsModel(),
             applicationSelector: { .cancelled },
-            editorClientFactory: factory,
-            runtimeEndpointProvider: { endpointBox.endpoint }
+            runtimeOperationsProvider: { runtimeBox.handle }
         )
 
         for _ in 0..<200 where firstClient.snapshotCallCount == 0 {
@@ -407,42 +402,42 @@ final class SettingsViewModelTests: XCTestCase {
         }
         XCTAssertEqual(firstClient.snapshotCallCount, 1)
 
-        endpointBox.endpoint = secondEndpoint
-        viewModel.setEditorEndpoint(secondEndpoint)
+        runtimeBox.handle = secondHandle
+        viewModel.setRuntimeOperations(secondHandle)
         await viewModel.waitForEditorIdle()
-        XCTAssertEqual(viewModel.editorSnapshot?.instanceID, secondEndpoint.instanceID)
-        XCTAssertEqual(factory.socketPaths, [firstEndpoint.socketPath, secondEndpoint.socketPath])
-        XCTAssertEqual(factory.instanceIDs, [firstEndpoint.instanceID, secondEndpoint.instanceID])
+        XCTAssertEqual(viewModel.editorSnapshot?.sourceDigest, secondClient.sourceDigest)
+        XCTAssertEqual(secondClient.snapshotCallCount, 1)
 
         firstClient.releaseFirstSnapshot()
         for _ in 0..<200 where firstClient.snapshotCompletionCount == 0 {
             try await Task.sleep(nanoseconds: 1_000_000)
         }
         await Task.yield()
-        XCTAssertEqual(viewModel.editorSnapshot?.instanceID, secondEndpoint.instanceID)
+        XCTAssertEqual(viewModel.editorSnapshot?.sourceDigest, secondClient.sourceDigest)
 
-        endpointBox.endpoint = nil
-        viewModel.setEditorEndpoint(nil)
+        runtimeBox.handle = nil
+        viewModel.setRuntimeOperations(nil)
         XCTAssertNil(viewModel.editorSnapshot)
         XCTAssertNil(viewModel.selectedEditorProfileID)
         XCTAssertNil(viewModel.lastMutationSummary)
-        XCTAssertFalse(viewModel.hasEditorEndpoint)
+        XCTAssertFalse(viewModel.hasEditorRuntime)
     }
 
-    func testLateDeleteMutationResultIsDiscardedAfterEndpointReplacement() async throws {
+    func testLateDeleteMutationResultIsDiscardedAfterRuntimeReplacement() async throws {
         let firstEndpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
         let secondEndpoint = editorEndpoint(instanceID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
-        let firstClient = SettingsConfigEditorTestClient(instanceID: firstEndpoint.instanceID)
-        let secondClient = SettingsConfigEditorTestClient(instanceID: secondEndpoint.instanceID)
-        let endpointBox = SettingsEditorEndpointBox(endpoint: firstEndpoint)
+        let firstClient = SettingsEditorOperationsFake(instanceID: firstEndpoint.instanceID)
+        let secondClient = SettingsEditorOperationsFake(
+            instanceID: secondEndpoint.instanceID,
+            digest: String(repeating: "b", count: 64)
+        )
+        let firstHandle = RuntimeOperationsHandle(identity: firstEndpoint.instanceID, operations: firstClient)
+        let secondHandle = RuntimeOperationsHandle(identity: secondEndpoint.instanceID, operations: secondClient)
+        let runtimeBox = SettingsEditorOperationsBox(handle: firstHandle)
         let viewModel = SettingsViewModel(
             model: makeSettingsModel(),
             applicationSelector: { .cancelled },
-            editorClientFactory: SettingsConfigEditorTestClientFactory(clients: [
-                firstEndpoint.instanceID: firstClient,
-                secondEndpoint.instanceID: secondClient
-            ]),
-            runtimeEndpointProvider: { endpointBox.endpoint }
+            runtimeOperationsProvider: { runtimeBox.handle }
         )
         await viewModel.waitForEditorIdle()
 
@@ -455,10 +450,10 @@ final class SettingsViewModelTests: XCTestCase {
         }
         XCTAssertEqual(firstClient.deleteCallCount, 1)
 
-        endpointBox.endpoint = secondEndpoint
-        viewModel.setEditorEndpoint(secondEndpoint)
+        runtimeBox.handle = secondHandle
+        viewModel.setRuntimeOperations(secondHandle)
         await viewModel.waitForEditorIdle()
-        XCTAssertEqual(viewModel.editorSnapshot?.instanceID, secondEndpoint.instanceID)
+        XCTAssertEqual(viewModel.editorSnapshot?.sourceDigest, secondClient.sourceDigest)
         XCTAssertNil(viewModel.lastMutationSummary)
 
         firstClient.releaseDelete()
@@ -470,27 +465,21 @@ final class SettingsViewModelTests: XCTestCase {
         }
 
         XCTAssertEqual(firstClient.deleteCompletionCount, 1)
-        XCTAssertEqual(viewModel.editorSnapshot?.instanceID, secondEndpoint.instanceID)
+        XCTAssertEqual(viewModel.editorSnapshot?.sourceDigest, secondClient.sourceDigest)
         XCTAssertNil(viewModel.lastMutationSummary)
         XCTAssertFalse(viewModel.isEditorBusy)
     }
 
     func testCloneRequiresConfirmedIDAndLabelAndStaleDigestRefreshesWithoutRetry() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
-        client.setNextMutationError(
-            .response(.serverError(RuntimeError(
-                code: "stale_source",
-                message: "configuration source changed; refresh and retry"
-            )))
-        )
+        let client = SettingsEditorOperationsFake(instanceID: endpoint.instanceID)
+        client.setNextMutationError(.staleSource)
         let viewModel = SettingsViewModel(
             model: makeSettingsModel(),
             applicationSelector: { .cancelled },
-            editorClientFactory: SettingsConfigEditorTestClientFactory(clients: [
-                endpoint.instanceID: client
-            ]),
-            runtimeEndpointProvider: { endpoint }
+            runtimeOperationsProvider: {
+                RuntimeOperationsHandle(identity: endpoint.instanceID, operations: client)
+            }
         )
         await viewModel.waitForEditorIdle()
 
@@ -519,10 +508,10 @@ final class SettingsViewModelTests: XCTestCase {
 
     }
 
-    func testMutationTimeoutIsOutcomeUnknownAndNotRetried() async throws {
+    func testUncertainFileCommitIsOutcomeUnknownAndNotRetried() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
-        client.setNextMutationError(.readTimedOut)
+        let client = SettingsEditorOperationsFake(instanceID: endpoint.instanceID)
+        client.setNextMutationError(.fileCommitFailed(uncertain: true))
         let viewModel = makeEditorViewModel(
             client: client,
             endpoint: endpoint,
@@ -554,7 +543,7 @@ final class SettingsViewModelTests: XCTestCase {
             mappings: initialMappings
         )
         let endpoint = editorEndpoint(instanceID: "settings-test")
-        let editorClient = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
+        let editorClient = SettingsEditorOperationsFake(instanceID: endpoint.instanceID)
         let viewModel = makeEditorViewModel(client: editorClient, endpoint: endpoint, model: model)
         await viewModel.waitForEditorIdle()
 
@@ -594,7 +583,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testCurrentProfileDeletionIsRejectedSeparatelyFromDefault() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(
+        let client = SettingsEditorOperationsFake(
             instanceID: endpoint.instanceID,
             currentProfileID: "Work.Profile"
         )
@@ -624,7 +613,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testPositionEditorCanClearLabelButRejectsWhitespace() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
+        let client = SettingsEditorOperationsFake(instanceID: endpoint.instanceID)
         let viewModel = makeEditorViewModel(
             client: client,
             endpoint: endpoint,
@@ -654,7 +643,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testPositionEditorLoadsStableChoicesAndSavesAgainstSnapshotDigest() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
+        let client = SettingsEditorOperationsFake(instanceID: endpoint.instanceID)
         let viewModel = makeEditorViewModel(
             client: client,
             endpoint: endpoint,
@@ -701,7 +690,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testPositionDraftBuildsAtomicSixFieldPatchWithOrderedExecuteAction() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(
+        let client = SettingsEditorOperationsFake(
             instanceID: endpoint.instanceID,
             notificationSources: ["device.power"]
         )
@@ -756,7 +745,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testExecuteArgumentRowsKeepStableIdentityThroughRemovalAndSerializeInOrder() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(
+        let client = SettingsEditorOperationsFake(
             instanceID: endpoint.instanceID,
             action: .execute(
                 executable: "/usr/bin/printf",
@@ -804,7 +793,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testExecuteArgumentIDsExpireWhenActionOrPositionChanges() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(
+        let client = SettingsEditorOperationsFake(
             instanceID: endpoint.instanceID,
             action: .execute(
                 executable: "/usr/bin/printf",
@@ -846,7 +835,7 @@ final class SettingsViewModelTests: XCTestCase {
 
         for (instanceID, kind, gesture) in scenarios {
             let endpoint = editorEndpoint(instanceID: instanceID)
-            let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
+            let client = SettingsEditorOperationsFake(instanceID: endpoint.instanceID)
             let viewModel = await makeSelectedPositionEditor(client: client, endpoint: endpoint)
             viewModel.editedPositionActionKind = kind
             viewModel.editedPositionActionGesture = gesture
@@ -879,7 +868,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testPositionDraftNoOpAndUseDefaultResetsAreDistinct() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
+        let client = SettingsEditorOperationsFake(instanceID: endpoint.instanceID)
         let viewModel = await makeSelectedPositionEditor(client: client, endpoint: endpoint)
 
         XCTAssertFalse(viewModel.canSavePosition)
@@ -910,7 +899,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testRemovingLastNotificationSourceAndClearingActionUseReset() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(
+        let client = SettingsEditorOperationsFake(
             instanceID: endpoint.instanceID,
             notificationSources: ["device.power"],
             action: .typeText(text: "Wake", gesture: .release)
@@ -932,7 +921,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testPositionDraftRejectsInvalidBoundsAndIncompleteActions() async throws {
         let existingActionEndpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let existingActionClient = SettingsConfigEditorTestClient(
+        let existingActionClient = SettingsEditorOperationsFake(
             instanceID: existingActionEndpoint.instanceID,
             action: .typeText(text: "Wake", gesture: .release)
         )
@@ -946,7 +935,7 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(existingActionClient.positionPatchCallCount, 0)
 
         let emptyActionEndpoint = editorEndpoint(instanceID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
-        let emptyActionClient = SettingsConfigEditorTestClient(instanceID: emptyActionEndpoint.instanceID)
+        let emptyActionClient = SettingsEditorOperationsFake(instanceID: emptyActionEndpoint.instanceID)
         let emptyActionViewModel = await makeSelectedPositionEditor(
             client: emptyActionClient,
             endpoint: emptyActionEndpoint
@@ -977,7 +966,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testNotificationSourceAndArgumentGuardsRejectDuplicatesAndLimitOverflow() async throws {
         let sourceEndpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let sourceClient = SettingsConfigEditorTestClient(
+        let sourceClient = SettingsEditorOperationsFake(
             instanceID: sourceEndpoint.instanceID,
             notificationSources: ["device.power"]
         )
@@ -1000,7 +989,7 @@ final class SettingsViewModelTests: XCTestCase {
 
         let fullSources = (0..<16).map { "source\($0)" }
         let fullSourcesEndpoint = editorEndpoint(instanceID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
-        let fullSourcesClient = SettingsConfigEditorTestClient(
+        let fullSourcesClient = SettingsEditorOperationsFake(
             instanceID: fullSourcesEndpoint.instanceID,
             notificationSources: fullSources
         )
@@ -1015,7 +1004,7 @@ final class SettingsViewModelTests: XCTestCase {
 
         let arguments = Array(repeating: "arg", count: 32)
         let argumentEndpoint = editorEndpoint(instanceID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
-        let argumentClient = SettingsConfigEditorTestClient(
+        let argumentClient = SettingsEditorOperationsFake(
             instanceID: argumentEndpoint.instanceID,
             action: .execute(
                 executable: "/usr/bin/echo",
@@ -1036,9 +1025,9 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testUncertainPositionPatchRequiresManualRefreshWithoutRetry() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
+        let client = SettingsEditorOperationsFake(instanceID: endpoint.instanceID)
         let viewModel = await makeSelectedPositionEditor(client: client, endpoint: endpoint)
-        client.setNextMutationError(.readTimedOut)
+        client.setNextMutationError(.deviceWriteFailed)
         viewModel.editedPositionLabel = "Clock"
 
         viewModel.saveEditedPosition()
@@ -1057,14 +1046,9 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testStalePositionPatchRefreshesSnapshotWithoutRetry() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
+        let client = SettingsEditorOperationsFake(instanceID: endpoint.instanceID)
         let viewModel = await makeSelectedPositionEditor(client: client, endpoint: endpoint)
-        client.setNextMutationError(
-            .response(.serverError(RuntimeError(
-                code: "stale_source",
-                message: "configuration source changed; refresh and retry"
-            )))
-        )
+        client.setNextMutationError(.staleSource)
         viewModel.editedPositionLabel = "Clock"
 
         viewModel.saveEditedPosition()
@@ -1077,20 +1061,18 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.editorNoticeMessage?.contains("edit was not retried") == true)
     }
 
-    func testLatePositionPatchIsDiscardedAfterEndpointReplacement() async throws {
+    func testLatePositionPatchIsDiscardedAfterRuntimeReplacement() async throws {
         let firstEndpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
         let secondEndpoint = editorEndpoint(instanceID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
-        let firstClient = SettingsConfigEditorTestClient(instanceID: firstEndpoint.instanceID)
-        let secondClient = SettingsConfigEditorTestClient(instanceID: secondEndpoint.instanceID)
-        let endpointBox = SettingsEditorEndpointBox(endpoint: firstEndpoint)
+        let firstClient = SettingsEditorOperationsFake(instanceID: firstEndpoint.instanceID)
+        let secondClient = SettingsEditorOperationsFake(instanceID: secondEndpoint.instanceID, digest: String(repeating: "b", count: 64))
+        let firstHandle = RuntimeOperationsHandle(identity: firstEndpoint.instanceID, operations: firstClient)
+        let secondHandle = RuntimeOperationsHandle(identity: secondEndpoint.instanceID, operations: secondClient)
+        let runtimeBox = SettingsEditorOperationsBox(handle: firstHandle)
         let viewModel = SettingsViewModel(
             model: makeSettingsModel(),
             applicationSelector: { .cancelled },
-            editorClientFactory: SettingsConfigEditorTestClientFactory(clients: [
-                firstEndpoint.instanceID: firstClient,
-                secondEndpoint.instanceID: secondClient
-            ]),
-            runtimeEndpointProvider: { endpointBox.endpoint }
+            runtimeOperationsProvider: { runtimeBox.handle }
         )
         await viewModel.waitForEditorIdle()
         viewModel.selectProfileForEditing("Work.Profile")
@@ -1106,10 +1088,10 @@ final class SettingsViewModelTests: XCTestCase {
         }
         XCTAssertEqual(firstClient.positionPatchCallCount, 1)
 
-        endpointBox.endpoint = secondEndpoint
-        viewModel.setEditorEndpoint(secondEndpoint)
+        runtimeBox.handle = secondHandle
+        viewModel.setRuntimeOperations(secondHandle)
         await viewModel.waitForEditorIdle()
-        XCTAssertEqual(viewModel.editorSnapshot?.instanceID, secondEndpoint.instanceID)
+        XCTAssertEqual(viewModel.editorSnapshot?.sourceDigest, secondClient.sourceDigest)
 
         firstClient.releasePositionPatch()
         for _ in 0..<200 where firstClient.positionPatchCompletionCount == 0 {
@@ -1120,7 +1102,7 @@ final class SettingsViewModelTests: XCTestCase {
         }
 
         XCTAssertEqual(firstClient.positionPatchCompletionCount, 1)
-        XCTAssertEqual(viewModel.editorSnapshot?.instanceID, secondEndpoint.instanceID)
+        XCTAssertEqual(viewModel.editorSnapshot?.sourceDigest, secondClient.sourceDigest)
         XCTAssertNil(viewModel.lastMutationSummary)
         XCTAssertNil(viewModel.selectedEditorProfileID)
         XCTAssertFalse(viewModel.isEditorBusy)
@@ -1128,7 +1110,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testPositionSelectionAndDraftResetWhenProfileChanges() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
+        let client = SettingsEditorOperationsFake(instanceID: endpoint.instanceID)
         let viewModel = makeEditorViewModel(
             client: client,
             endpoint: endpoint,
@@ -1156,20 +1138,18 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.editedPositionLabel, "")
     }
 
-    func testLatePositionDetailIsDiscardedAfterEndpointReplacement() async throws {
+    func testLatePositionDetailIsDiscardedAfterRuntimeReplacement() async throws {
         let firstEndpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
         let secondEndpoint = editorEndpoint(instanceID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
-        let firstClient = SettingsConfigEditorTestClient(instanceID: firstEndpoint.instanceID)
-        let secondClient = SettingsConfigEditorTestClient(instanceID: secondEndpoint.instanceID)
-        let endpointBox = SettingsEditorEndpointBox(endpoint: firstEndpoint)
+        let firstClient = SettingsEditorOperationsFake(instanceID: firstEndpoint.instanceID)
+        let secondClient = SettingsEditorOperationsFake(instanceID: secondEndpoint.instanceID, digest: String(repeating: "b", count: 64))
+        let firstHandle = RuntimeOperationsHandle(identity: firstEndpoint.instanceID, operations: firstClient)
+        let secondHandle = RuntimeOperationsHandle(identity: secondEndpoint.instanceID, operations: secondClient)
+        let runtimeBox = SettingsEditorOperationsBox(handle: firstHandle)
         let viewModel = SettingsViewModel(
             model: makeSettingsModel(),
             applicationSelector: { .cancelled },
-            editorClientFactory: SettingsConfigEditorTestClientFactory(clients: [
-                firstEndpoint.instanceID: firstClient,
-                secondEndpoint.instanceID: secondClient
-            ]),
-            runtimeEndpointProvider: { endpointBox.endpoint }
+            runtimeOperationsProvider: { runtimeBox.handle }
         )
         await viewModel.waitForEditorIdle()
         viewModel.selectProfileForEditing("Work.Profile")
@@ -1183,11 +1163,11 @@ final class SettingsViewModelTests: XCTestCase {
         }
         XCTAssertEqual(firstClient.positionGetCallCount, 1)
 
-        endpointBox.endpoint = secondEndpoint
-        viewModel.setEditorEndpoint(secondEndpoint)
+        runtimeBox.handle = secondHandle
+        viewModel.setRuntimeOperations(secondHandle)
         await viewModel.waitForEditorIdle()
 
-        XCTAssertEqual(viewModel.editorSnapshot?.instanceID, secondEndpoint.instanceID)
+        XCTAssertEqual(viewModel.editorSnapshot?.sourceDigest, secondClient.sourceDigest)
         XCTAssertNil(viewModel.selectedEditorProfileID)
         XCTAssertTrue(viewModel.editorPositions.isEmpty)
         XCTAssertNil(viewModel.selectedEditorPositionID)
@@ -1203,7 +1183,7 @@ final class SettingsViewModelTests: XCTestCase {
         }
 
         XCTAssertEqual(firstClient.positionGetCompletionCount, 1)
-        XCTAssertEqual(viewModel.editorSnapshot?.instanceID, secondEndpoint.instanceID)
+        XCTAssertEqual(viewModel.editorSnapshot?.sourceDigest, secondClient.sourceDigest)
         XCTAssertNil(viewModel.selectedEditorProfileID)
         XCTAssertTrue(viewModel.editorPositions.isEmpty)
         XCTAssertNil(viewModel.selectedEditorPositionID)
@@ -1214,13 +1194,8 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testStalePositionDetailRefreshesSnapshotWithoutRetryingRead() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
-        client.setNextPositionGetError(
-            .response(.serverError(RuntimeError(
-                code: "stale_source",
-                message: "configuration source changed; refresh and retry"
-            )))
-        )
+        let client = SettingsEditorOperationsFake(instanceID: endpoint.instanceID)
+        client.setNextPositionGetError(.staleSource)
         let viewModel = makeEditorViewModel(
             client: client,
             endpoint: endpoint,
@@ -1242,7 +1217,7 @@ final class SettingsViewModelTests: XCTestCase {
 
     func testSuccessfulLabelMutationRefreshesSnapshotDigestAndReportsOutcomes() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
+        let client = SettingsEditorOperationsFake(instanceID: endpoint.instanceID)
         let viewModel = makeEditorViewModel(
             client: client,
             endpoint: endpoint,
@@ -1262,42 +1237,14 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.lastMutationSummary, "File committed; runtime reloaded (catalog)")
     }
 
-    func testSettingsEditorFactoryUsesTenSecondTimeoutForSlowSnapshot() throws {
-        let instanceID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-        let requestID = "11111111-1111-4111-8111-111111111111"
-        let transport = DelayedConfigEditorSnapshotTransport(instanceID: instanceID, delay: 1.1)
-        let factory = SettingsConfigEditorClientFactory(transportFactory: { transport })
-        let endpoint = try makeEditorSocketEndpoint()
-        defer { endpoint.cleanup() }
-        let client = try factory.make(socketPath: endpoint.socket.path, instanceID: instanceID)
-
-        let start = Date()
-        let snapshot = try client.configEditorSnapshot(requestID: requestID)
-        let elapsed = Date().timeIntervalSince(start)
-
-        XCTAssertEqual(snapshot.instanceID, instanceID)
-        XCTAssertGreaterThan(elapsed, 1.0)
-        XCTAssertEqual(
-            transport.timeouts,
-            [SettingsConfigEditorClientFactory.phaseTimeoutNanoseconds]
-        )
-        XCTAssertEqual(SettingsConfigEditorClientFactory.phaseTimeoutNanoseconds, 10_000_000_000)
-    }
-
     private func makeConfiguredModel(
         store: TestSettingsMappingStore,
         mappings: [String: String]
     ) async throws -> (HidhoggAppModel, SettingsProfileClient) {
         let client = SettingsProfileClient()
-        let coordinator = ProfileSwitchCoordinator(
-            mappings: ProfileMappingPreferences(mappings: mappings),
-            client: client
-        )
-        await coordinator.setRuntimeEndpoint(
-            RuntimeSessionController.RuntimeEndpoint(
-                instanceID: "settings-test",
-                socketPath: "/private/tmp/settings-test.sock"
-            )
+        let coordinator = ProfileSwitchCoordinator(mappings: ProfileMappingPreferences(mappings: mappings))
+        await coordinator.setRuntimeOperations(
+            RuntimeOperationsHandle(identity: "settings-test", operations: client)
         )
         coordinator.startObserving(
             SettingsForegroundObserver(initialBundleIdentifier: "com.example.editor")
@@ -1321,22 +1268,21 @@ final class SettingsViewModelTests: XCTestCase {
     }
 
     private func makeEditorViewModel(
-        client: SettingsConfigEditorTestClient,
+        client: SettingsEditorOperationsFake,
         endpoint: RuntimeSessionController.RuntimeEndpoint,
         model: HidhoggAppModel
     ) -> SettingsViewModel {
         SettingsViewModel(
             model: model,
             applicationSelector: { .cancelled },
-            editorClientFactory: SettingsConfigEditorTestClientFactory(clients: [
-                endpoint.instanceID: client
-            ]),
-            runtimeEndpointProvider: { endpoint }
+            runtimeOperationsProvider: {
+                RuntimeOperationsHandle(identity: endpoint.instanceID, operations: client)
+            }
         )
     }
 
     private func makeSelectedPositionEditor(
-        client: SettingsConfigEditorTestClient,
+        client: SettingsEditorOperationsFake,
         endpoint: RuntimeSessionController.RuntimeEndpoint
     ) async -> SettingsViewModel {
         let viewModel = makeEditorViewModel(
@@ -1398,51 +1344,6 @@ final class SettingsViewModelTests: XCTestCase {
         )
     }
 
-    private func makeEditorSocketEndpoint() throws -> SettingsEditorSocketEndpoint {
-        let directory = URL(
-            fileURLWithPath: "/private/tmp/hidhogg-settings-editor-\(UUID().uuidString.lowercased())",
-            isDirectory: true
-        )
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: false,
-            attributes: [.posixPermissions: 0o700]
-        )
-        let socket = directory.appendingPathComponent("runtime.sock")
-        let descriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
-        guard descriptor >= 0 else {
-            try? FileManager.default.removeItem(at: directory)
-            throw UnixSocketClientError.systemCall("socket", errno)
-        }
-
-        do {
-            var address = sockaddr_un()
-            address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
-            address.sun_family = sa_family_t(AF_UNIX)
-            let pathBytes = Array(socket.path.utf8)
-            withUnsafeMutableBytes(of: &address.sun_path) { rawBuffer in
-                for offset in 0..<rawBuffer.count {
-                    rawBuffer[offset] = 0
-                }
-                for (offset, byte) in pathBytes.enumerated() where offset < rawBuffer.count - 1 {
-                    rawBuffer[offset] = byte
-                }
-            }
-            let bindResult = withUnsafePointer(to: &address) { addressPointer in
-                addressPointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
-                }
-            }
-            guard bindResult == 0, Darwin.chmod(socket.path, mode_t(0o600)) == 0 else {
-                throw UnixSocketClientError.systemCall("bind", errno)
-            }
-        } catch {
-            _ = Darwin.close(descriptor)
-            try? FileManager.default.removeItem(at: directory)
-            throw error
-        }
-        return SettingsEditorSocketEndpoint(directory: directory, socket: socket, descriptor: descriptor)
-    }
 
 }
 
@@ -1483,12 +1384,13 @@ private final class TestSettingsMappingStore: @unchecked Sendable, ProfileMappin
     }
 }
 
-private final class SettingsProfileClient: @unchecked Sendable, RuntimeProfileChecking {
+private final class SettingsProfileClient: @unchecked Sendable, HidhoggAppRuntimeOperations {
     private let lock = NSLock()
     private var currentProfileID = "Default"
     private var profileIDs = ["Default", "Work.Profile"]
     private var activationCountStorage = 0
     private var listCountStorage = 0
+    private let digest = String(repeating: "a", count: 64)
 
     var activationCount: Int {
         lock.lock()
@@ -1508,109 +1410,170 @@ private final class SettingsProfileClient: @unchecked Sendable, RuntimeProfileCh
         lock.unlock()
     }
 
-    func listProfiles(requestID: String) throws -> ProfileListResponse {
-        lock.lock()
-        listCountStorage += 1
-        let currentProfileID = self.currentProfileID
-        let profileIDs = self.profileIDs
-        lock.unlock()
-        return ProfileListResponse(
-            requestID: requestID,
-            instanceID: "settings-test",
-            profiles: profileIDs.map { profileID in
-                ProfileSummary(
-                    id: profileID,
-                    label: profileID,
-                    isDefault: profileID == "Default",
-                    isCurrent: profileID == currentProfileID
-                )
-            }
-        )
-    }
-
-    func activateProfile(profileID: String, requestID: String) throws -> ProfileActivationResponse {
-        lock.lock()
-        defer { lock.unlock() }
-        activationCountStorage += 1
-        guard profileIDs.contains(profileID) else {
-            throw SettingsProfileClientError.profileMissing
+    func profiles() async throws -> [RuntimeOperationProfile] {
+        let (currentProfileID, profileIDs) = lock.withLock {
+            listCountStorage += 1
+            return (self.currentProfileID, self.profileIDs)
         }
-        currentProfileID = profileID
-        return ProfileActivationResponse(
-            requestID: requestID,
-            profileID: profileID,
-            changed: true
+        return profileIDs.map { profileID in
+            RuntimeOperationProfile(
+                id: profileID,
+                label: profileID,
+                isDefault: profileID == "Default",
+                isCurrent: profileID == currentProfileID
+            )
+        }
+    }
+
+    func activateProfile(_ profileID: String) async throws -> RuntimeActivationResult {
+        try lock.withLock {
+            activationCountStorage += 1
+            guard profileIDs.contains(profileID) else {
+                throw RuntimeOperationError.profileNotFound
+            }
+            currentProfileID = profileID
+            return RuntimeActivationResult(profileID: profileID, changed: true, revision: 1)
+        }
+    }
+
+    func setHostDisplayAwake(_ awake: Bool) async throws -> RuntimeOperationDisplayResult {
+        RuntimeOperationDisplayResult(displayAwake: awake, changed: false)
+    }
+
+    func editorSnapshot() async throws -> RuntimeOperationEditorSnapshot {
+        let profileIDs = lock.withLock { self.profileIDs }
+        return RuntimeOperationEditorSnapshot(
+            sourceDigest: digest,
+            revision: 1,
+            defaultProfileID: "Default",
+            currentProfileID: lock.withLock { currentProfileID },
+            profileIDs: profileIDs
         )
     }
-}
 
-private enum SettingsConfigEditorTestFailure: Error, Sendable {
-    case missingClient
-}
-
-@MainActor
-private final class SettingsEditorEndpointBox {
-    var endpoint: RuntimeSessionController.RuntimeEndpoint?
-
-    init(endpoint: RuntimeSessionController.RuntimeEndpoint?) {
-        self.endpoint = endpoint
+    func editorProfile(sourceDigest: String, profileID: String) async throws -> RuntimeOperationEditorProfile {
+        guard sourceDigest == digest,
+              lock.withLock({ profileIDs.contains(profileID) }) else {
+            throw RuntimeOperationError.profileNotFound
+        }
+        return RuntimeOperationEditorProfile(sourceDigest: digest, profileID: profileID, label: profileID)
     }
-}
 
-private struct SettingsEditorSocketEndpoint {
-    let directory: URL
-    let socket: URL
-    let descriptor: Int32
-
-    func cleanup() {
-        _ = Darwin.close(descriptor)
-        try? FileManager.default.removeItem(at: directory)
+    func editorPositions(sourceDigest: String, profileID: String) async throws -> RuntimeOperationEditorPositions {
+        guard sourceDigest == digest,
+              lock.withLock({ profileIDs.contains(profileID) }) else {
+            throw RuntimeOperationError.profileNotFound
+        }
+        return RuntimeOperationEditorPositions(sourceDigest: digest, profileID: profileID, positions: [])
     }
+
+    func editorPosition(
+        sourceDigest: String,
+        profileID: String,
+        positionID: String
+    ) async throws -> RuntimeOperationEditorPosition {
+        throw RuntimeOperationError.profileNotFound
+    }
+
+    func edit(expectedDigest: String, edit: RuntimeConfigurationEdit) async throws -> RuntimeOperationEditResult {
+        throw RuntimeOperationError.editInvalid
+    }
+
+    func cloneProfile(
+        expectedDigest: String,
+        sourceProfileID: String?,
+        profileID: String,
+        label: String
+    ) async throws -> RuntimeOperationEditResult {
+        throw RuntimeOperationError.editInvalid
+    }
+
+    func reloadConfiguration() async throws -> RuntimeOperationReloadResult {
+        RuntimeOperationReloadResult(
+            revision: 1,
+            changed: false,
+            effects: RuntimeOperationReloadEffects(
+                catalogChanged: false,
+                defaultChanged: false,
+                currentProfileChanged: false,
+                currentProfileFallback: false,
+                actionChanged: false,
+                displayChanged: false,
+                brightnessChanged: false,
+                idleChanged: false,
+                effect: .unchanged
+            ),
+            displayUpdated: false
+        )
+    }
+
+    func configurationStatus() async throws -> RuntimeOperationConfigurationStatus {
+        RuntimeOperationConfigurationStatus(
+            revision: 1,
+            active: true,
+            state: .idle,
+            outcome: .ready,
+            reason: .none,
+            diagnostic: nil
+        )
+    }
+
+    func retire() async {}
 }
 
-private final class SettingsConfigEditorTestClientFactory: @unchecked Sendable, RuntimeConfigEditorClientCreating {
+private final class SettingsEditorOperationsBox: @unchecked Sendable {
     private let lock = NSLock()
-    private let clients: [String: SettingsConfigEditorTestClient]
-    private var socketPathsStorage: [String] = []
-    private var instanceIDsStorage: [String] = []
+    private var storedHandle: RuntimeOperationsHandle?
 
-    var socketPaths: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return socketPathsStorage
+    init(handle: RuntimeOperationsHandle?) {
+        storedHandle = handle
     }
 
-    var instanceIDs: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return instanceIDsStorage
-    }
-
-    init(clients: [String: SettingsConfigEditorTestClient]) {
-        self.clients = clients
-    }
-
-    func make(socketPath: String, instanceID: String) throws -> any RuntimeConfigEditorChecking {
-        lock.lock()
-        socketPathsStorage.append(socketPath)
-        instanceIDsStorage.append(instanceID)
-        let client = clients[instanceID]
-        lock.unlock()
-        guard let client else { throw SettingsConfigEditorTestFailure.missingClient }
-        return client
+    var handle: RuntimeOperationsHandle? {
+        get { lock.withLock { storedHandle } }
+        set { lock.withLock { storedHandle = newValue } }
     }
 }
 
-private final class SettingsConfigEditorTestClient: @unchecked Sendable, RuntimeConfigEditorChecking {
+private final class SettingsAsyncGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isOpen = false
+    private var waiters = [CheckedContinuation<Void, Never>]()
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            let resumeImmediately = lock.withLock {
+                guard !isOpen else { return true }
+                waiters.append(continuation)
+                return false
+            }
+            if resumeImmediately {
+                continuation.resume()
+            }
+        }
+    }
+
+    func open() {
+        let waiting = lock.withLock {
+            isOpen = true
+            let waiting = waiters
+            waiters.removeAll()
+            return waiting
+        }
+        waiting.forEach { $0.resume() }
+    }
+}
+
+private final class SettingsEditorOperationsFake: HidhoggAppRuntimeOperations, @unchecked Sendable {
     private let lock = NSLock()
     private let instanceID: String
     private let blocksFirstSnapshot: Bool
-    private let firstSnapshotRelease = DispatchSemaphore(value: 0)
-    private let deleteRelease = DispatchSemaphore(value: 0)
-    private let positionGetRelease = DispatchSemaphore(value: 0)
-    private let positionPatchRelease = DispatchSemaphore(value: 0)
+    private let firstSnapshotRelease = SettingsAsyncGate()
+    private let deleteRelease = SettingsAsyncGate()
+    private let positionGetRelease = SettingsAsyncGate()
+    private let positionPatchRelease = SettingsAsyncGate()
     private var revisionStorage: UInt64 = 1
-    private var digestStorage = String(repeating: "a", count: 64)
+    private var digestStorage: String
     private var profileIDsStorage = ["Default", "Work.Profile"]
     private var labelsStorage = ["Default": "Default", "Work.Profile": "Work"]
     private let positionCoordinates = [
@@ -1619,9 +1582,12 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
         "0_2", "1_2", "2_2", "3_2"
     ]
     private var positionLabelsStorage: [String: String] = [:]
+    private var positionBackgroundStorage: [String: String] = [:]
+    private var positionAlignmentStorage: [String: String] = [:]
+    private var positionSizeStorage: [String: Int] = [:]
     private var positionNotificationSourcesStorage: [String]
     private var positionActionStorage: ConfiguredAction?
-    private var currentProfileIDStorage = "Default"
+    private var currentProfileIDStorage: String
     private var snapshotCallCountStorage = 0
     private var snapshotCompletionCountStorage = 0
     private var createCallCountStorage = 0
@@ -1631,7 +1597,6 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
     private var positionsListCallCountStorage = 0
     private var positionGetCallCountStorage = 0
     private var positionGetCompletionCountStorage = 0
-    private var positionLabelSetCallCountStorage = 0
     private var positionPatchCallCountStorage = 0
     private var positionPatchCompletionCountStorage = 0
     private var lastCreateProfileIDStorage: String?
@@ -1642,34 +1607,33 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
     private var lastPositionGetProfileIDStorage: String?
     private var lastPositionGetIDStorage: String?
     private var lastPositionGetDigestStorage: String?
-    private var lastPositionSetProfileIDStorage: String?
-    private var lastPositionSetIDStorage: String?
-    private var lastPositionSetLabelStorage: String?
-    private var lastPositionSetDigestStorage: String?
     private var lastPositionPatchProfileIDStorage: String?
     private var lastPositionPatchIDStorage: String?
     private var lastPositionPatchDigestStorage: String?
     private var lastPositionPatchStorage: ConfigurationPositionPatch?
-    private var nextMutationError: UnixSocketClientError?
-    private var nextPositionGetError: UnixSocketClientError?
+    private var nextMutationError: RuntimeOperationError?
+    private var nextPositionGetError: RuntimeOperationError?
     private var blocksNextDelete = false
     private var blocksNextPositionGet = false
     private var blocksNextPositionPatch = false
 
     init(
         instanceID: String,
+        digest: String = String(repeating: "a", count: 64),
         blocksFirstSnapshot: Bool = false,
         currentProfileID: String = "Default",
         notificationSources: [String] = [],
         action: ConfiguredAction? = nil
     ) {
         self.instanceID = instanceID
+        digestStorage = digest
         self.blocksFirstSnapshot = blocksFirstSnapshot
         currentProfileIDStorage = currentProfileID
         positionNotificationSourcesStorage = notificationSources
         positionActionStorage = action
     }
 
+    var sourceDigest: String { read { digestStorage } }
     var snapshotCallCount: Int { read { snapshotCallCountStorage } }
     var snapshotCompletionCount: Int { read { snapshotCompletionCountStorage } }
     var createCallCount: Int { read { createCallCountStorage } }
@@ -1679,7 +1643,6 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
     var positionsListCallCount: Int { read { positionsListCallCountStorage } }
     var positionGetCallCount: Int { read { positionGetCallCountStorage } }
     var positionGetCompletionCount: Int { read { positionGetCompletionCountStorage } }
-    var positionLabelSetCallCount: Int { read { positionLabelSetCallCountStorage } }
     var positionPatchCallCount: Int { read { positionPatchCallCountStorage } }
     var positionPatchCompletionCount: Int { read { positionPatchCompletionCountStorage } }
     var lastCreateProfileID: String? { read { lastCreateProfileIDStorage } }
@@ -1690,323 +1653,395 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
     var lastPositionGetProfileID: String? { read { lastPositionGetProfileIDStorage } }
     var lastPositionGetID: String? { read { lastPositionGetIDStorage } }
     var lastPositionGetDigest: String? { read { lastPositionGetDigestStorage } }
-    var lastPositionSetProfileID: String? { read { lastPositionSetProfileIDStorage } }
-    var lastPositionSetID: String? { read { lastPositionSetIDStorage } }
-    var lastPositionSetLabel: String? { read { lastPositionSetLabelStorage } }
-    var lastPositionSetDigest: String? { read { lastPositionSetDigestStorage } }
     var lastPositionPatchProfileID: String? { read { lastPositionPatchProfileIDStorage } }
     var lastPositionPatchID: String? { read { lastPositionPatchIDStorage } }
     var lastPositionPatchDigest: String? { read { lastPositionPatchDigestStorage } }
     var lastPositionPatch: ConfigurationPositionPatch? { read { lastPositionPatchStorage } }
 
-    func setNextMutationError(_ error: UnixSocketClientError) {
-        lock.lock()
-        nextMutationError = error
-        lock.unlock()
+    func setNextMutationError(_ error: RuntimeOperationError) {
+        lock.withLock { nextMutationError = error }
     }
 
-    func setNextPositionGetError(_ error: UnixSocketClientError) {
-        lock.lock()
-        nextPositionGetError = error
-        lock.unlock()
+    func setNextPositionGetError(_ error: RuntimeOperationError) {
+        lock.withLock { nextPositionGetError = error }
+    }
+
+    func setProfileIDs(_ profileIDs: [String]) {
+        lock.withLock { profileIDsStorage = profileIDs }
     }
 
     func blockNextDelete() {
-        lock.lock()
-        blocksNextDelete = true
-        lock.unlock()
+        lock.withLock { blocksNextDelete = true }
     }
 
     func blockNextPositionGet() {
-        lock.lock()
-        blocksNextPositionGet = true
-        lock.unlock()
+        lock.withLock { blocksNextPositionGet = true }
     }
 
     func blockNextPositionPatch() {
-        lock.lock()
-        blocksNextPositionPatch = true
-        lock.unlock()
+        lock.withLock { blocksNextPositionPatch = true }
     }
 
-    func releaseFirstSnapshot() {
-        firstSnapshotRelease.signal()
+    func releaseFirstSnapshot() { firstSnapshotRelease.open() }
+    func releaseDelete() { deleteRelease.open() }
+    func releasePositionGet() { positionGetRelease.open() }
+    func releasePositionPatch() { positionPatchRelease.open() }
+
+    func profiles() async throws -> [RuntimeOperationProfile] {
+        lock.withLock {
+            profileIDsStorage.map { profileID in
+                RuntimeOperationProfile(
+                    id: profileID,
+                    label: labelsStorage[profileID] ?? profileID,
+                    isDefault: profileID == "Default",
+                    isCurrent: profileID == currentProfileIDStorage
+                )
+            }
+        }
     }
 
-    func releaseDelete() {
-        deleteRelease.signal()
+    func activateProfile(_ profileID: String) async throws -> RuntimeActivationResult {
+        try lock.withLock {
+            guard profileIDsStorage.contains(profileID) else {
+                throw RuntimeOperationError.profileNotFound
+            }
+            let changed = currentProfileIDStorage != profileID
+            currentProfileIDStorage = profileID
+            return RuntimeActivationResult(
+                profileID: profileID,
+                changed: changed,
+                revision: revisionStorage
+            )
+        }
     }
 
-    func releasePositionGet() {
-        positionGetRelease.signal()
+    func setHostDisplayAwake(_ awake: Bool) async throws -> RuntimeOperationDisplayResult {
+        RuntimeOperationDisplayResult(displayAwake: awake, changed: false)
     }
 
-    func releasePositionPatch() {
-        positionPatchRelease.signal()
-    }
-
-    func configEditorSnapshot(requestID: String) throws -> ConfigEditorSnapshotResponse {
-        lock.lock()
-        snapshotCallCountStorage += 1
-        let shouldBlock = blocksFirstSnapshot && snapshotCallCountStorage == 1
-        lock.unlock()
-
+    func editorSnapshot() async throws -> RuntimeOperationEditorSnapshot {
+        let shouldBlock = lock.withLock {
+            snapshotCallCountStorage += 1
+            return blocksFirstSnapshot && snapshotCallCountStorage == 1
+        }
         if shouldBlock {
-            firstSnapshotRelease.wait()
+            await firstSnapshotRelease.wait()
         }
-
-        lock.lock()
-        snapshotCompletionCountStorage += 1
-        let snapshot = makeSnapshot(requestID: requestID)
-        lock.unlock()
-        return snapshot
+        return lock.withLock {
+            snapshotCompletionCountStorage += 1
+            return makeSnapshot()
+        }
     }
 
-    func configEditorProfile(
-        profileID: String,
+    func editorProfile(
         sourceDigest: String,
-        requestID: String
-    ) throws -> ConfigEditorProfileResponse {
-        lock.lock()
-        defer { lock.unlock() }
-        guard digestStorage == sourceDigest,
-              let label = labelsStorage[profileID] else {
-            throw staleSourceError
+        profileID: String
+    ) async throws -> RuntimeOperationEditorProfile {
+        try lock.withLock {
+            guard digestStorage == sourceDigest,
+                  let label = labelsStorage[profileID] else {
+                throw RuntimeOperationError.staleSource
+            }
+            return RuntimeOperationEditorProfile(
+                sourceDigest: digestStorage,
+                profileID: profileID,
+                label: label
+            )
         }
-        return ConfigEditorProfileResponse(
-            requestID: requestID,
-            instanceID: instanceID,
-            sourceDigest: sourceDigest,
-            profileID: profileID,
-            label: label
+    }
+
+    func editorPositions(
+        sourceDigest: String,
+        profileID: String
+    ) async throws -> RuntimeOperationEditorPositions {
+        try lock.withLock {
+            positionsListCallCountStorage += 1
+            lastPositionsProfileIDStorage = profileID
+            lastPositionsSourceDigestStorage = sourceDigest
+            guard digestStorage == sourceDigest,
+                  labelsStorage[profileID] != nil else {
+                throw RuntimeOperationError.staleSource
+            }
+            return RuntimeOperationEditorPositions(
+                sourceDigest: digestStorage,
+                profileID: profileID,
+                positions: positionCoordinates.map {
+                    RuntimeOperationPositionSummary(positionID: $0, position: $0)
+                }
+            )
+        }
+    }
+
+    func editorPosition(
+        sourceDigest: String,
+        profileID: String,
+        positionID: String
+    ) async throws -> RuntimeOperationEditorPosition {
+        let gate = lock.withLock {
+            positionGetCallCountStorage += 1
+            lastPositionGetProfileIDStorage = profileID
+            lastPositionGetIDStorage = positionID
+            lastPositionGetDigestStorage = sourceDigest
+            let shouldBlock = blocksNextPositionGet
+            blocksNextPositionGet = false
+            let error = nextPositionGetError
+            nextPositionGetError = nil
+            return (shouldBlock, error)
+        }
+        if gate.0 {
+            await positionGetRelease.wait()
+        }
+
+        return try lock.withLock {
+            positionGetCompletionCountStorage += 1
+            if let error = gate.1 {
+                if error == .staleSource { advanceSnapshot() }
+                throw error
+            }
+            guard digestStorage == sourceDigest,
+                  labelsStorage[profileID] != nil,
+                  positionIndex(for: positionID) != nil else {
+                advanceSnapshot()
+                throw RuntimeOperationError.staleSource
+            }
+            return makePosition(profileID: profileID, positionID: positionID)
+        }
+    }
+
+    func edit(
+        expectedDigest: String,
+        edit: RuntimeConfigurationEdit
+    ) async throws -> RuntimeOperationEditResult {
+        switch edit {
+        case .setProfileLabel(let profileID, let label):
+            return try lock.withLock {
+                labelSetCallCountStorage += 1
+                try throwPendingMutationError()
+                guard digestStorage == expectedDigest,
+                      labelsStorage[profileID] != nil else {
+                    advanceSnapshot()
+                    throw RuntimeOperationError.staleSource
+                }
+                labelsStorage[profileID] = label
+                advanceSnapshot()
+                return mutationResult(effect: .catalog)
+            }
+        case .cloneProfile(let sourceID, let newID, let label):
+            return try await cloneProfile(
+                expectedDigest: expectedDigest,
+                sourceProfileID: sourceID,
+                profileID: newID,
+                label: label
+            )
+        case .deleteProfile(let profileID):
+            return try await deleteProfile(profileID, expectedDigest: expectedDigest)
+        case .patchPosition(let profileID, let coordinate, let patch):
+            return try await patchPosition(
+                profileID: profileID,
+                positionID: coordinate,
+                patch: patch,
+                expectedDigest: expectedDigest
+            )
+        }
+    }
+
+    func cloneProfile(
+        expectedDigest: String,
+        sourceProfileID: String?,
+        profileID: String,
+        label: String
+    ) async throws -> RuntimeOperationEditResult {
+        try lock.withLock {
+            createCallCountStorage += 1
+            lastCreateProfileIDStorage = profileID
+            lastCreateLabelStorage = label
+            lastCreateSourceProfileIDStorage = sourceProfileID
+            try throwPendingMutationError()
+            let resolvedSource = sourceProfileID ?? "Default"
+            guard digestStorage == expectedDigest,
+                  !profileIDsStorage.contains(profileID),
+                  profileIDsStorage.contains(resolvedSource) else {
+                advanceSnapshot()
+                throw RuntimeOperationError.staleSource
+            }
+            profileIDsStorage.append(profileID)
+            labelsStorage[profileID] = label
+            advanceSnapshot()
+            return mutationResult(effect: .catalog)
+        }
+    }
+
+    func reloadConfiguration() async throws -> RuntimeOperationReloadResult {
+        let effects = RuntimeOperationReloadEffects(
+            catalogChanged: false,
+            defaultChanged: false,
+            currentProfileChanged: false,
+            currentProfileFallback: false,
+            actionChanged: false,
+            displayChanged: false,
+            brightnessChanged: false,
+            idleChanged: false,
+            effect: .unchanged
+        )
+        return RuntimeOperationReloadResult(
+            revision: read { revisionStorage },
+            changed: false,
+            effects: effects,
+            displayUpdated: false
         )
     }
 
-    func configEditorPositions(
-        profileID: String,
-        sourceDigest: String,
-        requestID: String
-    ) throws -> ConfigEditorPositionsResponse {
-        lock.lock()
-        defer { lock.unlock() }
-        positionsListCallCountStorage += 1
-        lastPositionsProfileIDStorage = profileID
-        lastPositionsSourceDigestStorage = sourceDigest
-        guard digestStorage == sourceDigest,
-              labelsStorage[profileID] != nil else {
-            throw staleSourceError
-        }
-        let positions = positionCoordinates.map { coordinate in
-            ConfigEditorPositionSummary(positionID: coordinate, position: coordinate)
-        }
-        return ConfigEditorPositionsResponse(
-            requestID: requestID,
-            instanceID: instanceID,
-            sourceDigest: sourceDigest,
-            profileID: profileID,
-            positions: positions
+    func configurationStatus() async throws -> RuntimeOperationConfigurationStatus {
+        RuntimeOperationConfigurationStatus(
+            revision: read { revisionStorage },
+            active: true,
+            state: .idle,
+            outcome: .ready,
+            reason: .none,
+            diagnostic: nil
         )
     }
 
-    func configEditorPosition(
+    func retire() async {}
+
+    private func deleteProfile(
+        _ profileID: String,
+        expectedDigest: String
+    ) async throws -> RuntimeOperationEditResult {
+        let shouldBlock = lock.withLock {
+            deleteCallCountStorage += 1
+            let shouldBlock = blocksNextDelete
+            blocksNextDelete = false
+            return shouldBlock
+        }
+        if shouldBlock {
+            await deleteRelease.wait()
+        }
+
+        return try lock.withLock {
+            try throwPendingMutationError()
+            guard digestStorage == expectedDigest,
+                  profileIDsStorage.contains(profileID),
+                  profileID != "Default",
+                  profileID != currentProfileIDStorage else {
+                advanceSnapshot()
+                throw RuntimeOperationError.staleSource
+            }
+            profileIDsStorage.removeAll { $0 == profileID }
+            labelsStorage.removeValue(forKey: profileID)
+            advanceSnapshot()
+            deleteCompletionCountStorage += 1
+            return mutationResult(effect: .catalog)
+        }
+    }
+
+    private func patchPosition(
         profileID: String,
         positionID: String,
-        sourceDigest: String,
-        requestID: String
-    ) throws -> ConfigEditorPositionResponse {
-        lock.lock()
-        positionGetCallCountStorage += 1
-        lastPositionGetProfileIDStorage = profileID
-        lastPositionGetIDStorage = positionID
-        lastPositionGetDigestStorage = sourceDigest
-        let shouldBlock = blocksNextPositionGet
-        blocksNextPositionGet = false
-        let configuredError = nextPositionGetError
-        nextPositionGetError = nil
-        lock.unlock()
-
+        patch: ConfigurationPositionPatch,
+        expectedDigest: String
+    ) async throws -> RuntimeOperationEditResult {
+        let shouldBlock = lock.withLock {
+            positionPatchCallCountStorage += 1
+            lastPositionPatchProfileIDStorage = profileID
+            lastPositionPatchIDStorage = positionID
+            lastPositionPatchDigestStorage = expectedDigest
+            lastPositionPatchStorage = patch
+            let shouldBlock = blocksNextPositionPatch
+            blocksNextPositionPatch = false
+            return shouldBlock
+        }
         if shouldBlock {
-            positionGetRelease.wait()
+            await positionPatchRelease.wait()
         }
 
-        lock.lock()
-        defer { lock.unlock() }
-        positionGetCompletionCountStorage += 1
-        if let configuredError {
-            if case .response(.serverError(let runtimeError)) = configuredError,
-               runtimeError.code == "stale_source" {
+        return try lock.withLock {
+            positionPatchCompletionCountStorage += 1
+            try throwPendingMutationError()
+            guard digestStorage == expectedDigest,
+                  labelsStorage[profileID] != nil,
+                  positionIndex(for: positionID) != nil else {
                 advanceSnapshot()
+                throw RuntimeOperationError.staleSource
             }
-            throw configuredError
+            apply(patch, to: positionID)
+            advanceSnapshot()
+            return mutationResult(effect: .display)
         }
-        guard digestStorage == sourceDigest,
-              labelsStorage[profileID] != nil,
-              let index = positionIndex(for: positionID) else {
-            throw staleSourceError
+    }
+
+    private func apply(_ patch: ConfigurationPositionPatch, to positionID: String) {
+        switch patch.label {
+        case .keep: break
+        case .set(let value): positionLabelsStorage[positionID] = value
+        case .reset: positionLabelsStorage.removeValue(forKey: positionID)
         }
-        return ConfigEditorPositionResponse(
-            requestID: requestID,
-            instanceID: instanceID,
-            sourceDigest: sourceDigest,
+        switch patch.background {
+        case .keep: break
+        case .set(let value): positionBackgroundStorage[positionID] = value
+        case .reset: positionBackgroundStorage.removeValue(forKey: positionID)
+        }
+        switch patch.labelAlignment {
+        case .keep: break
+        case .set(let value): positionAlignmentStorage[positionID] = value
+        case .reset: positionAlignmentStorage.removeValue(forKey: positionID)
+        }
+        switch patch.labelSize {
+        case .keep: break
+        case .set(let value): positionSizeStorage[positionID] = value
+        case .reset: positionSizeStorage.removeValue(forKey: positionID)
+        }
+        switch patch.notificationSources {
+        case .keep: break
+        case .set(let value): positionNotificationSourcesStorage = value
+        case .reset: positionNotificationSourcesStorage = []
+        }
+        switch patch.action {
+        case .keep: break
+        case .set(let value): positionActionStorage = value
+        case .reset: positionActionStorage = nil
+        }
+    }
+
+    private func makeSnapshot() -> RuntimeOperationEditorSnapshot {
+        RuntimeOperationEditorSnapshot(
+            sourceDigest: digestStorage,
+            revision: revisionStorage,
+            defaultProfileID: "Default",
+            currentProfileID: currentProfileIDStorage,
+            profileIDs: profileIDsStorage
+        )
+    }
+
+    private func makePosition(profileID: String, positionID: String) -> RuntimeOperationEditorPosition {
+        RuntimeOperationEditorPosition(
+            sourceDigest: digestStorage,
             profileID: profileID,
             positionID: positionID,
-            label: positionLabelsStorage[positionID] ?? "Label \(positionCoordinates[index])",
-            background: "#000000",
-            labelAlignment: "bottom",
-            labelSize: 10,
+            label: positionLabelsStorage[positionID] ?? "Label \(positionID)",
+            background: positionBackgroundStorage[positionID] ?? "#000000",
+            labelAlignment: positionAlignmentStorage[positionID] ?? "bottom",
+            labelSize: positionSizeStorage[positionID] ?? 10,
             notificationSources: positionNotificationSourcesStorage,
             action: positionActionStorage
         )
     }
 
-    func setConfigEditorProfileLabel(
-        profileID: String,
-        label: String,
-        expectedDigest: String,
-        requestID: String
-    ) throws -> ConfigEditorMutationResponse {
-        lock.lock()
-        defer { lock.unlock() }
-        labelSetCallCountStorage += 1
-        try throwPendingMutationError()
-        guard digestStorage == expectedDigest,
-              labelsStorage[profileID] != nil else {
-            throw staleSourceError
-        }
-        labelsStorage[profileID] = label
-        advanceSnapshot()
-        return mutationResponse(requestID: requestID)
-    }
-
-    func createConfigEditorProfile(
-        profileID: String,
-        label: String,
-        expectedDigest: String,
-        sourceProfileID: String?,
-        requestID: String
-    ) throws -> ConfigEditorMutationResponse {
-        lock.lock()
-        defer { lock.unlock() }
-        createCallCountStorage += 1
-        lastCreateProfileIDStorage = profileID
-        lastCreateLabelStorage = label
-        lastCreateSourceProfileIDStorage = sourceProfileID
-        try throwPendingMutationError()
-        guard digestStorage == expectedDigest,
-              !profileIDsStorage.contains(profileID),
-              sourceProfileID.map({ profileIDsStorage.contains($0) }) ?? true else {
-            throw staleSourceError
-        }
-        profileIDsStorage.append(profileID)
-        labelsStorage[profileID] = label
-        advanceSnapshot()
-        return mutationResponse(requestID: requestID)
-    }
-
-    func deleteConfigEditorProfile(
-        profileID: String,
-        expectedDigest: String,
-        requestID: String
-    ) throws -> ConfigEditorMutationResponse {
-        lock.lock()
-        deleteCallCountStorage += 1
-        let shouldBlock = blocksNextDelete
-        blocksNextDelete = false
-        lock.unlock()
-
-        if shouldBlock {
-            deleteRelease.wait()
-        }
-
-        lock.lock()
-        defer { lock.unlock() }
-        try throwPendingMutationError()
-        guard digestStorage == expectedDigest,
-              profileIDsStorage.contains(profileID),
-              profileID != "Default",
-              profileID != currentProfileIDStorage else {
-            throw staleSourceError
-        }
-        profileIDsStorage.removeAll { $0 == profileID }
-        labelsStorage.removeValue(forKey: profileID)
-        advanceSnapshot()
-        deleteCompletionCountStorage += 1
-        return mutationResponse(requestID: requestID)
-    }
-
-    func setConfigEditorPositionLabel(
-        profileID: String,
-        positionID: String,
-        label: String,
-        expectedDigest: String,
-        requestID: String
-    ) throws -> ConfigEditorMutationResponse {
-        lock.lock()
-        defer { lock.unlock() }
-        positionLabelSetCallCountStorage += 1
-        lastPositionSetProfileIDStorage = profileID
-        lastPositionSetIDStorage = positionID
-        lastPositionSetLabelStorage = label
-        lastPositionSetDigestStorage = expectedDigest
-        try throwPendingMutationError()
-        guard digestStorage == expectedDigest,
-              labelsStorage[profileID] != nil,
-              positionIndex(for: positionID) != nil else {
-            throw staleSourceError
-        }
-        positionLabelsStorage[positionID] = label
-        advanceSnapshot()
-        return mutationResponse(requestID: requestID, effect: .display)
-    }
-
-    func patchConfigEditorPosition(
-        profileID: String,
-        positionID: String,
-        patch: ConfigurationPositionPatch,
-        expectedDigest: String,
-        requestID: String
-    ) throws -> ConfigEditorMutationResponse {
-        lock.lock()
-        positionPatchCallCountStorage += 1
-        lastPositionPatchProfileIDStorage = profileID
-        lastPositionPatchIDStorage = positionID
-        lastPositionPatchDigestStorage = expectedDigest
-        lastPositionPatchStorage = patch
-        let shouldBlock = blocksNextPositionPatch
-        blocksNextPositionPatch = false
-        lock.unlock()
-
-        if shouldBlock {
-            positionPatchRelease.wait()
-        }
-
-        lock.lock()
-        defer { lock.unlock() }
-        positionPatchCompletionCountStorage += 1
-        try throwPendingMutationError()
-        guard digestStorage == expectedDigest,
-              labelsStorage[profileID] != nil,
-              positionIndex(for: positionID) != nil else {
-            throw staleSourceError
-        }
-        advanceSnapshot()
-        return mutationResponse(requestID: requestID, effect: .display)
-    }
-
-    private var staleSourceError: UnixSocketClientError {
-        .response(.serverError(RuntimeError(
-            code: "stale_source",
-            message: "configuration source changed; refresh and retry"
-        )))
+    private func mutationResult(effect: RuntimeOperationEffect) -> RuntimeOperationEditResult {
+        RuntimeOperationEditResult(
+            sourceDigest: digestStorage,
+            fileCommit: .committed,
+            reloadOutcome: .reloaded,
+            revision: revisionStorage,
+            effect: effect,
+            reason: .none
+        )
     }
 
     private func throwPendingMutationError() throws {
         guard let error = nextMutationError else { return }
         nextMutationError = nil
-        if case .response(.serverError(let runtimeError)) = error,
-           runtimeError.code == "stale_source" {
-            advanceSnapshot()
-        }
+        if error == .staleSource { advanceSnapshot() }
         throw error
     }
 
@@ -2021,92 +2056,9 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
         positionCoordinates.firstIndex(of: positionID)
     }
 
-    private func makeSnapshot(requestID: String) -> ConfigEditorSnapshotResponse {
-        ConfigEditorSnapshotResponse(
-            requestID: requestID,
-            instanceID: instanceID,
-            sourceDigest: digestStorage,
-            revision: revisionStorage,
-            defaultProfileID: "Default",
-            currentProfileID: currentProfileIDStorage,
-            profileIDs: profileIDsStorage
-        )
-    }
-
-    private func mutationResponse(
-        requestID: String,
-        effect: ConfigEditorEffect = .catalog
-    ) -> ConfigEditorMutationResponse {
-        ConfigEditorMutationResponse(
-            requestID: requestID,
-            instanceID: instanceID,
-            sourceDigest: digestStorage,
-            fileCommit: .committed,
-            reloadOutcome: .changed,
-            revision: revisionStorage,
-            effect: effect,
-            reason: .none
-        )
-    }
-
     private func read<Value>(_ body: () -> Value) -> Value {
-        lock.lock()
-        defer { lock.unlock() }
-        return body()
+        lock.withLock(body)
     }
-}
-
-private final class DelayedConfigEditorSnapshotTransport: @unchecked Sendable, SocketTransport {
-    private let instanceID: String
-    private let delay: TimeInterval
-    private let lock = NSLock()
-    private var timeoutsStorage: [UInt64] = []
-
-    var timeouts: [UInt64] {
-        lock.lock()
-        defer { lock.unlock() }
-        return timeoutsStorage
-    }
-
-    init(instanceID: String, delay: TimeInterval) {
-        self.instanceID = instanceID
-        self.delay = delay
-    }
-
-    func exchange(request: Data, socketPath: String, timeoutNanoseconds: UInt64) throws -> Data {
-        lock.lock()
-        timeoutsStorage.append(timeoutNanoseconds)
-        lock.unlock()
-
-        guard let envelope = try JSONSerialization.jsonObject(
-            with: Data(request.dropLast())
-        ) as? [String: Any],
-              let requestID = envelope["request_id"] as? String else {
-            throw UnixSocketClientError.malformedResponse
-        }
-
-        Thread.sleep(forTimeInterval: delay)
-        let response: [String: Any] = [
-            "protocol_version": 1,
-            "request_id": requestID,
-            "result": [
-                "instance_id": instanceID,
-                "source_digest": String(repeating: "a", count: 64),
-                "revision": 1,
-                "default_profile_id": "Default",
-                "current_profile_id": "Default",
-                "profile_ids": ["Default"]
-            ],
-            "error": NSNull()
-        ]
-        var frame = try JSONSerialization.data(withJSONObject: response, options: [.sortedKeys])
-        frame.append(0x0a)
-        return frame
-    }
-}
-
-private enum SettingsProfileClientError: Error {
-    case profileMissing
 }
 
 @MainActor

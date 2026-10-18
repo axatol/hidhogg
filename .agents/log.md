@@ -1598,3 +1598,23 @@ V2-U04 production Debug build passed, arm64 and no TestHost define confirmed. Ap
 ## 2026-10-18 — Permissions and restart accepted
 
 Owner confirmed actual drag and restart work and requested feature closeout. Tasks412/413 marked complete. Final source hashes match independently verified48/48 tests and arm64 Debug build; closeout static audit found no unrelated source changes or blockers, so no redundant rerun. Exact undocumented Settings destination not independently observed; best-effort shortcut/manual fallback remains. Queued V2-A01 task414: direct in-process app/runtime interfaces retaining external CLI endpoint and runtime engine/lifecycle; no next-feature implementation started. Scoped commit and milestone notification follow.
+
+## 2026-10-18 — V2-A01 implementation authorised
+
+Owner approved revised plan/recommendations and delegated implementation decisions with recorded alternatives. App usability independent of CLI socket, shared watcher/app/CLI operations and synthetic simulation/CLI integration authorised. Main establishing interface contract and bounded agent ownership before edits; baseline2bd2fb6 tracked clean.
+
+V2-A01 early Core review: existing6 IPC binding tests passed after extraction; review identified clone digest/error precedence regression and weak preflight-only cancellation test synchronization. Core owner correcting both; minimal internal observation predicates approved without admission behavior change. App consumer migration ongoing; main reviewed session composition and required partial CLI cleanup/cancellation propagation.
+
+V2-A01 Core extraction independently passed212/212 with unchanged4-path manifest; adversarial fixes re-reviewed without blocker. App regression ownership split: direct_coordinator_regressions owns profile/display test files only; swift_v2_executor owns app source/Settings/session/composition tests/project. No overlapping edit ownership.
+
+V2-A01 source/app test migration frozen100path source-only manifest; Testtarget compiled and final independentCore/app/build gates started. Broad manifest including TOML was auto-review rejected before execution; narrowed Swift/project/scheme freeze succeeded without config read. Final adversarial review and targeted architecture docs delegated; temporary smoke harness must be reviewed by main before launch within already authorised synthetic boundary.
+
+V2-A01 finalCore212green after constructor addition. Final adversarial review caught invalid new digit-leadingID test expectation and inherited socket-identity adoption reused by optionalcleanup. App gate paused before execution. Minimal app-only fixes assigned: preservevalidation; delegate socket removal to IPCServer recorded identities and only remove empty generation dir; add preexisting syntheticSocket+metadata survival regression. DecisionsD13/D14 recorded; freshmanifest required.
+
+V2-A01 app gate interrupted/nonpass: native sample of exactowned inert testhost shows fixturemkdir before runtime construction, not proven productdeadlock. Original xcodebuild SIGINT exit75; exactownedprocesses gone. Temporary testdiagnostics neverexecuted and being reverted to r2. Bounded filesystem probes assigned before any fixture change. Preserve interruptedlog/sample evidence.
+
+V2-A01 finalr3 app gate passed125/125, zero failures, sourceunchanged andwatchdognotfired after fixture-only shortOS-temp adjustment; originalfilesystemstallcause remainsunconfirmed. Core212passed. Production Debugapp/ReleaseCLI builds next; native simulatedapp/CLI harness mainreview beforelaunch with short/private/tmpsynthetic roots.
+
+## 2026-10-18 — V2-A01 completed
+
+Independent final gates passed: Core212, safe app125, arm64 Debugapp and ReleaseCLI builds, reviewed native simulatedapp/CLI smoke exit0 with no watchdog escalation and all owned runtime/simulation roots removed; owned PID gone. Final100path r3source manifest unchanged. Adversarial findings corrected and re-reviewed. Complete decisions/alternatives and retained failure evidence documented in docs/runtime-simplification.md; earlier fixturemkdir stall cause remains unconfirmed, not a productdeadlock repair. Scoped commit and milestone notification follow; no push/installation/deploy or untracked cleanup.

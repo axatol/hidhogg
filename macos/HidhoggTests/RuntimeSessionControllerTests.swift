@@ -320,6 +320,7 @@ private actor AsyncGate {
 
 private actor TestRuntimeSessionGeneration: RuntimeSessionGeneration {
     private let endpoint: RuntimeSessionController.RuntimeEndpoint
+    private let operations: any HidhoggAppRuntimeOperations
     private let startGate: AsyncGate?
     private let stopGate: AsyncGate?
     private let stopOutcome: RuntimeGenerationStopOutcome
@@ -331,21 +332,27 @@ private actor TestRuntimeSessionGeneration: RuntimeSessionGeneration {
 
     init(
         endpoint: RuntimeSessionController.RuntimeEndpoint,
+        operations: any HidhoggAppRuntimeOperations = TestAppRuntimeOperations(),
         startGate: AsyncGate?,
         stopGate: AsyncGate?,
         stopOutcome: RuntimeGenerationStopOutcome
     ) {
         self.endpoint = endpoint
+        self.operations = operations
         self.startGate = startGate
         self.stopGate = stopGate
         self.stopOutcome = stopOutcome
     }
 
-    func start() async throws -> RuntimeSessionController.RuntimeEndpoint {
+    func start() async throws -> RuntimeGenerationStart {
         await startCalled.open()
         await startGate?.wait()
         running = true
-        return endpoint
+        return RuntimeGenerationStart(
+            operationsHandle: RuntimeOperationsHandle(identity: endpoint.instanceID, operations: operations),
+            endpoint: endpoint,
+            cliConnectivityError: nil
+        )
     }
 
     func isRunning() async -> Bool { running }
@@ -364,6 +371,104 @@ private actor TestRuntimeSessionGeneration: RuntimeSessionGeneration {
     func waitForStop() async { await stopCalled.wait() }
     func reloadCount() -> Int { reloads }
     func stopCount() -> Int { stops }
+}
+
+final class TestAppRuntimeOperations: HidhoggAppRuntimeOperations, @unchecked Sendable {
+    private let digest = String(repeating: "a", count: 64)
+
+    func profiles() async throws -> [RuntimeOperationProfile] { [] }
+
+    func activateProfile(_ profileID: String) async throws -> RuntimeActivationResult {
+        RuntimeActivationResult(profileID: profileID, changed: false, revision: 0)
+    }
+
+    func setHostDisplayAwake(_ awake: Bool) async throws -> RuntimeOperationDisplayResult {
+        RuntimeOperationDisplayResult(displayAwake: awake, changed: false)
+    }
+
+    func editorSnapshot() async throws -> RuntimeOperationEditorSnapshot {
+        RuntimeOperationEditorSnapshot(
+            sourceDigest: digest,
+            revision: 0,
+            defaultProfileID: "Default",
+            currentProfileID: "Default",
+            profileIDs: ["Default"]
+        )
+    }
+
+    func editorProfile(sourceDigest: String, profileID: String) async throws -> RuntimeOperationEditorProfile {
+        RuntimeOperationEditorProfile(sourceDigest: digest, profileID: profileID, label: profileID)
+    }
+
+    func editorPositions(sourceDigest: String, profileID: String) async throws -> RuntimeOperationEditorPositions {
+        RuntimeOperationEditorPositions(sourceDigest: digest, profileID: profileID, positions: [])
+    }
+
+    func editorPosition(
+        sourceDigest: String,
+        profileID: String,
+        positionID: String
+    ) async throws -> RuntimeOperationEditorPosition {
+        RuntimeOperationEditorPosition(
+            sourceDigest: digest,
+            profileID: profileID,
+            positionID: positionID,
+            label: "",
+            background: "#000000",
+            labelAlignment: "bottom",
+            labelSize: 10,
+            notificationSources: [],
+            action: nil
+        )
+    }
+
+    func edit(expectedDigest: String, edit: RuntimeConfigurationEdit) async throws -> RuntimeOperationEditResult {
+        RuntimeOperationEditResult(
+            sourceDigest: digest,
+            fileCommit: .unchanged,
+            reloadOutcome: .unchanged,
+            revision: 0,
+            effect: .unchanged,
+            reason: .none
+        )
+    }
+
+    func cloneProfile(
+        expectedDigest: String,
+        sourceProfileID: String?,
+        profileID: String,
+        label: String
+    ) async throws -> RuntimeOperationEditResult {
+        try await edit(expectedDigest: expectedDigest, edit: .cloneProfile(sourceID: sourceProfileID ?? "Default", newID: profileID, label: label))
+    }
+
+    func reloadConfiguration() async throws -> RuntimeOperationReloadResult {
+        let effects = RuntimeOperationReloadEffects(
+            catalogChanged: false,
+            defaultChanged: false,
+            currentProfileChanged: false,
+            currentProfileFallback: false,
+            actionChanged: false,
+            displayChanged: false,
+            brightnessChanged: false,
+            idleChanged: false,
+            effect: .unchanged
+        )
+        return RuntimeOperationReloadResult(revision: 0, changed: false, effects: effects, displayUpdated: false)
+    }
+
+    func configurationStatus() async throws -> RuntimeOperationConfigurationStatus {
+        RuntimeOperationConfigurationStatus(
+            revision: 0,
+            active: true,
+            state: .idle,
+            outcome: .ready,
+            reason: .none,
+            diagnostic: nil
+        )
+    }
+
+    func retire() async {}
 }
 
 private final class TestConfigurationWatcher: RuntimeConfigurationWatching, @unchecked Sendable {

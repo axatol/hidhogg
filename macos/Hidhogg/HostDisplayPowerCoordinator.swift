@@ -1,32 +1,35 @@
 import Combine
 import Foundation
+import HidhoggCore
 
 @MainActor
 public final class HostDisplayPowerCoordinator: ObservableObject {
-    public typealias RuntimeEndpoint = RuntimeSessionController.RuntimeEndpoint
-
     @Published public private(set) var desiredDisplayAwake: Bool?
     @Published public private(set) var errorText: String?
-    @Published public private(set) var runtimeEndpoint: RuntimeEndpoint?
+    @Published public private(set) var runtimeIdentity: String?
+
+    private struct Binding {
+        let identity: String
+        let operations: any HidhoggDisplayOperations
+    }
 
     private struct StateAttempt: Equatable {
-        let endpoint: RuntimeEndpoint
+        let identity: String
         let revision: UInt64
     }
 
     private struct PendingWrite {
-        let endpoint: RuntimeEndpoint
+        let binding: Binding
         let displayAwake: Bool
         let revision: UInt64
 
         var attempt: StateAttempt {
-            StateAttempt(endpoint: endpoint, revision: revision)
+            StateAttempt(identity: binding.identity, revision: revision)
         }
     }
 
     private let observer: any HostDisplayPowerObserving
-    private let clientFactory: any RuntimeDisplayHostStateClientCreating
-    private let requestIDProvider: any RequestIDProviding
+    private var binding: Binding?
     private var desiredRevision: UInt64 = 0
     private var appliedAttempt: StateAttempt?
     private var failedAttempt: StateAttempt?
@@ -34,14 +37,8 @@ public final class HostDisplayPowerCoordinator: ObservableObject {
     private var isStarted = false
     private var hasShutdown = false
 
-    public init(
-        observer: any HostDisplayPowerObserving = HostDisplayPowerObserver(),
-        clientFactory: any RuntimeDisplayHostStateClientCreating = UnixSocketDisplayHostStateClientFactory(),
-        requestIDProvider: any RequestIDProviding = SystemRequestIDProvider()
-    ) {
+    public init(observer: any HostDisplayPowerObserving = HostDisplayPowerObserver()) {
         self.observer = observer
-        self.clientFactory = clientFactory
-        self.requestIDProvider = requestIDProvider
     }
 
     public func start() {
@@ -53,12 +50,18 @@ public final class HostDisplayPowerCoordinator: ObservableObject {
         )
     }
 
-    public func setRuntimeEndpoint(_ endpoint: RuntimeEndpoint?) {
-        guard !hasShutdown, endpoint != runtimeEndpoint else { return }
-        runtimeEndpoint = endpoint
+    func setRuntimeOperations(_ handle: RuntimeOperationsHandle?) {
+        guard !hasShutdown,
+              handle?.identity != runtimeIdentity || (handle != nil && binding == nil) else {
+            return
+        }
+        runtimeIdentity = handle?.identity
+        binding = handle.map {
+            Binding(identity: $0.identity, operations: $0.operations as any HidhoggDisplayOperations)
+        }
         appliedAttempt = nil
         failedAttempt = nil
-        if endpoint != nil, desiredDisplayAwake == nil {
+        if binding != nil, desiredDisplayAwake == nil {
             observer.reconcileIfUnknown()
         }
         startWorkerIfNeeded()
@@ -77,7 +80,8 @@ public final class HostDisplayPowerCoordinator: ObservableObject {
         }
         hasShutdown = true
         observer.stop()
-        runtimeEndpoint = nil
+        runtimeIdentity = nil
+        binding = nil
         await waitForIdle()
         workerTask = nil
     }
@@ -108,32 +112,20 @@ public final class HostDisplayPowerCoordinator: ObservableObject {
 
     private func drainWrites() async {
         while let write = nextWrite() {
-            let requestID = requestIDProvider.makeRequestID()
             do {
-                let response = try await Task.detached(priority: .utility) { [clientFactory] in
-                    let client = try clientFactory.make(
-                        socketPath: write.endpoint.socketPath,
-                        instanceID: write.endpoint.instanceID
-                    )
-                    return try client.setDisplayHostState(
-                        displayAwake: write.displayAwake,
-                        requestID: requestID
-                    )
-                }.value
-                guard response.requestID == requestID,
-                      response.instanceID == write.endpoint.instanceID,
-                      response.displayAwake == write.displayAwake else {
-                    throw UnixSocketClientError.response(.invalidResult)
+                let result = try await write.binding.operations.setHostDisplayAwake(write.displayAwake)
+                guard result.displayAwake == write.displayAwake else {
+                    throw RuntimeOperationError.deviceWriteFailed
                 }
-                guard runtimeEndpoint == write.endpoint,
+                guard binding?.identity == write.binding.identity,
                       desiredDisplayAwake == write.displayAwake else {
                     continue
                 }
-                appliedAttempt = StateAttempt(endpoint: write.endpoint, revision: desiredRevision)
+                appliedAttempt = StateAttempt(identity: write.binding.identity, revision: desiredRevision)
                 errorText = nil
             } catch {
                 failedAttempt = write.attempt
-                guard runtimeEndpoint == write.endpoint,
+                guard binding?.identity == write.binding.identity,
                       desiredRevision == write.revision,
                       desiredDisplayAwake == write.displayAwake else {
                     continue
@@ -145,12 +137,12 @@ public final class HostDisplayPowerCoordinator: ObservableObject {
 
     private func nextWrite() -> PendingWrite? {
         guard !hasShutdown,
-              let runtimeEndpoint,
+              let binding,
               let desiredDisplayAwake else {
             return nil
         }
         let write = PendingWrite(
-            endpoint: runtimeEndpoint,
+            binding: binding,
             displayAwake: desiredDisplayAwake,
             revision: desiredRevision
         )

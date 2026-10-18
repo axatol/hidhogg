@@ -9,13 +9,10 @@
 /* Begin PBXBuildFile section */
 		A10000010000000000000001 /* HidhoggApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000001 /* HidhoggApp.swift */; };
 		A10000020000000000000001 /* PathSecurity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000020000000000000001 /* PathSecurity.swift */; };
-		A10000040000000000000001 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000040000000000000001 /* Protocol.swift */; };
 		A10000050000000000000001 /* Supervisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000050000000000000001 /* Supervisor.swift */; };
-		A10000060000000000000001 /* UnixSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000060000000000000001 /* UnixSocketClient.swift */; };
 		A10000070000000000000001 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000070000000000000001 /* AppPreferences.swift */; };
 		A10000080000000000000001 /* RuntimeSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000080000000000000001 /* RuntimeSessionController.swift */; };
 		A10000090000000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A20000090000000000000001 /* PrivacyInfo.xcprivacy */; };
-		A10000140000000000000001 /* ProfileClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000150000000000000001 /* ProfileClient.swift */; };
 		A10000160000000000000001 /* ForegroundApplicationObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000170000000000000001 /* ForegroundApplicationObserver.swift */; };
 		A10000180000000000000001 /* ProfileMappingPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000190000000000000001 /* ProfileMappingPreferences.swift */; };
 		A10000200000000000000001 /* ProfileSwitchCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000210000000000000001 /* ProfileSwitchCoordinator.swift */; };
@@ -23,10 +20,9 @@
 		A10000240000000000000001 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000250000000000000001 /* SettingsView.swift */; };
 		A10000260000000000000001 /* DefaultConfig.toml in Resources */ = {isa = PBXBuildFile; fileRef = A20000270000000000000001 /* DefaultConfig.toml */; };
 		A10000270000000000000001 /* DefaultConfigurationBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000280000000000000001 /* DefaultConfigurationBootstrap.swift */; };
-		A10000290000000000000001 /* ConfigEditorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000300000000000000001 /* ConfigEditorClient.swift */; };
-		A10000100000000000000001 /* ProtocolFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000100000000000000001 /* ProtocolFixtureTests.swift */; };
 		A10000130000000000000001 /* RuntimeSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000140000000000000001 /* RuntimeSessionControllerTests.swift */; };
-		A10000150000000000000001 /* ProfileClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000160000000000000001 /* ProfileClientTests.swift */; };
+		E10000010000000000000001 /* ProfileValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000010000000000000001 /* ProfileValidation.swift */; };
+		E10000020000000000000001 /* AppValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000020000000000000001 /* AppValidationTests.swift */; };
 		A10000170000000000000001 /* ForegroundApplicationObserverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000180000000000000001 /* ForegroundApplicationObserverTests.swift */; };
 		A10000190000000000000001 /* ProfileMappingPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000200000000000000001 /* ProfileMappingPreferencesTests.swift */; };
 		A10000210000000000000001 /* ProfileSwitchCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000220000000000000001 /* ProfileSwitchCoordinatorTests.swift */; };
@@ -54,23 +50,19 @@
 		A20000000000000000000001 /* Hidhogg.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Hidhogg.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A20000010000000000000001 /* HidhoggApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HidhoggApp.swift; sourceTree = "<group>"; };
 		A20000020000000000000001 /* PathSecurity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PathSecurity.swift; sourceTree = "<group>"; };
-		A20000040000000000000001 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
 		A20000050000000000000001 /* Supervisor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Supervisor.swift; sourceTree = "<group>"; };
-		A20000060000000000000001 /* UnixSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnixSocketClient.swift; sourceTree = "<group>"; };
 		A20000070000000000000001 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		A20000080000000000000001 /* RuntimeSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeSessionController.swift; sourceTree = "<group>"; };
 		A20000090000000000000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		A20000150000000000000001 /* ProfileClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileClient.swift; sourceTree = "<group>"; };
 		A20000170000000000000001 /* ForegroundApplicationObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForegroundApplicationObserver.swift; sourceTree = "<group>"; };
 		A20000190000000000000001 /* ProfileMappingPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMappingPreferences.swift; sourceTree = "<group>"; };
 		A20000210000000000000001 /* ProfileSwitchCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSwitchCoordinator.swift; sourceTree = "<group>"; };
 		A20000230000000000000001 /* ProfileMappingSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMappingSettings.swift; sourceTree = "<group>"; };
 		A20000250000000000000001 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A20000280000000000000001 /* DefaultConfigurationBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultConfigurationBootstrap.swift; sourceTree = "<group>"; };
-		A20000300000000000000001 /* ConfigEditorClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigEditorClient.swift; sourceTree = "<group>"; };
-		A20000100000000000000001 /* ProtocolFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolFixtureTests.swift; sourceTree = "<group>"; };
 		A20000140000000000000001 /* RuntimeSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeSessionControllerTests.swift; sourceTree = "<group>"; };
-		A20000160000000000000001 /* ProfileClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileClientTests.swift; sourceTree = "<group>"; };
+		E20000010000000000000001 /* ProfileValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileValidation.swift; sourceTree = "<group>"; };
+		E20000020000000000000001 /* AppValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppValidationTests.swift; sourceTree = "<group>"; };
 		A20000180000000000000001 /* ForegroundApplicationObserverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForegroundApplicationObserverTests.swift; sourceTree = "<group>"; };
 		A20000200000000000000001 /* ProfileMappingPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileMappingPreferencesTests.swift; sourceTree = "<group>"; };
 		A20000220000000000000001 /* ProfileSwitchCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSwitchCoordinatorTests.swift; sourceTree = "<group>"; };
@@ -118,13 +110,10 @@
 			children = (
 				A20000010000000000000001 /* HidhoggApp.swift */,
 				A20000020000000000000001 /* PathSecurity.swift */,
-				A20000040000000000000001 /* Protocol.swift */,
 				A20000050000000000000001 /* Supervisor.swift */,
-				A20000060000000000000001 /* UnixSocketClient.swift */,
 				A20000070000000000000001 /* AppPreferences.swift */,
 				A20000080000000000000001 /* RuntimeSessionController.swift */,
 				A20000090000000000000001 /* PrivacyInfo.xcprivacy */,
-				A20000150000000000000001 /* ProfileClient.swift */,
 				A20000170000000000000001 /* ForegroundApplicationObserver.swift */,
 				A20000190000000000000001 /* ProfileMappingPreferences.swift */,
 				A20000210000000000000001 /* ProfileSwitchCoordinator.swift */,
@@ -132,7 +121,7 @@
 				A20000250000000000000001 /* SettingsView.swift */,
 				A20000270000000000000001 /* DefaultConfig.toml */,
 				A20000280000000000000001 /* DefaultConfigurationBootstrap.swift */,
-				A20000300000000000000001 /* ConfigEditorClient.swift */,
+				E20000010000000000000001 /* ProfileValidation.swift */,
 				B20000010000000000000001 /* HostDisplayPowerObserver.swift */,
 				B20000020000000000000001 /* HostDisplayPowerCoordinator.swift */,
 			);
@@ -142,9 +131,8 @@
 		A40000100000000000000001 /* HidhoggTests */ = {
 			isa = PBXGroup;
 			children = (
-				A20000100000000000000001 /* ProtocolFixtureTests.swift */,
+				E20000020000000000000001 /* AppValidationTests.swift */,
 				A20000140000000000000001 /* RuntimeSessionControllerTests.swift */,
-				A20000160000000000000001 /* ProfileClientTests.swift */,
 				A20000180000000000000001 /* ForegroundApplicationObserverTests.swift */,
 				A20000200000000000000001 /* ProfileMappingPreferencesTests.swift */,
 				A20000220000000000000001 /* ProfileSwitchCoordinatorTests.swift */,
@@ -283,19 +271,16 @@
 			files = (
 				A10000010000000000000001 /* HidhoggApp.swift in Sources */,
 				A10000020000000000000001 /* PathSecurity.swift in Sources */,
-				A10000040000000000000001 /* Protocol.swift in Sources */,
 				A10000050000000000000001 /* Supervisor.swift in Sources */,
-				A10000060000000000000001 /* UnixSocketClient.swift in Sources */,
 				A10000070000000000000001 /* AppPreferences.swift in Sources */,
 				A10000080000000000000001 /* RuntimeSessionController.swift in Sources */,
-				A10000140000000000000001 /* ProfileClient.swift in Sources */,
 				A10000160000000000000001 /* ForegroundApplicationObserver.swift in Sources */,
 				A10000180000000000000001 /* ProfileMappingPreferences.swift in Sources */,
 				A10000200000000000000001 /* ProfileSwitchCoordinator.swift in Sources */,
 				A10000220000000000000001 /* ProfileMappingSettings.swift in Sources */,
 				A10000240000000000000001 /* SettingsView.swift in Sources */,
 				A10000270000000000000001 /* DefaultConfigurationBootstrap.swift in Sources */,
-				A10000290000000000000001 /* ConfigEditorClient.swift in Sources */,
+				E10000010000000000000001 /* ProfileValidation.swift in Sources */,
 				B10000010000000000000001 /* HostDisplayPowerObserver.swift in Sources */,
 				B10000020000000000000001 /* HostDisplayPowerCoordinator.swift in Sources */,
 			);
@@ -305,9 +290,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A10000100000000000000001 /* ProtocolFixtureTests.swift in Sources */,
+				E10000020000000000000001 /* AppValidationTests.swift in Sources */,
 				A10000130000000000000001 /* RuntimeSessionControllerTests.swift in Sources */,
-				A10000150000000000000001 /* ProfileClientTests.swift in Sources */,
 				A10000170000000000000001 /* ForegroundApplicationObserverTests.swift in Sources */,
 				A10000190000000000000001 /* ProfileMappingPreferencesTests.swift in Sources */,
 				A10000210000000000000001 /* ProfileSwitchCoordinatorTests.swift in Sources */,

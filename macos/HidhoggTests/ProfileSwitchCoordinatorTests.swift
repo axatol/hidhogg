@@ -1,35 +1,31 @@
 import Foundation
 import XCTest
 @testable import Hidhogg
+import HidhoggCore
 
 @MainActor
 final class ProfileSwitchCoordinatorTests: XCTestCase {
     func testInitialMatchingApplicationActivatesMappedProfile() async {
-        let client = RecordingProfileClient(currentProfileID: "Default")
+        let operations = RecordingProfileOperations(currentProfileID: "Default")
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.editor")
-        let coordinator = makeCoordinator(
-            client: client,
-            mappings: ["com.example.editor": "Work.Profile"]
-        )
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Work.Profile"])
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         coordinator.startObserving(source)
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(client.activationIDs, ["Work.Profile"])
+        let snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.activationIDs, ["Work.Profile"])
         XCTAssertEqual(coordinator.currentProfileID, "Work.Profile")
         XCTAssertEqual(coordinator.state, .current(profileID: "Work.Profile"))
     }
 
     func testUnmappedApplicationActivatesDefaultAfterMappedApplicationAndOnlyOnce() async {
-        let client = RecordingProfileClient(currentProfileID: "Default")
+        let operations = RecordingProfileOperations(currentProfileID: "Default")
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.editor")
-        let coordinator = makeCoordinator(
-            client: client,
-            mappings: ["com.example.editor": "Work.Profile"]
-        )
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Work.Profile"])
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         coordinator.startObserving(source)
         await coordinator.waitForIdle()
 
@@ -38,63 +34,56 @@ final class ProfileSwitchCoordinatorTests: XCTestCase {
         source.emit("com.example.unmapped")
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(client.activationIDs, ["Work.Profile", "Default"])
+        let snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.activationIDs, ["Work.Profile", "Default"])
         XCTAssertEqual(coordinator.currentProfileID, "Default")
         XCTAssertEqual(coordinator.state, .current(profileID: "Default"))
     }
 
     func testUnmappedApplicationAlreadyOnDefaultDoesNotActivate() async {
-        let client = RecordingProfileClient(currentProfileID: "Default")
+        let operations = RecordingProfileOperations(currentProfileID: "Default")
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.unmapped")
-        let coordinator = makeCoordinator(client: client)
+        let coordinator = makeCoordinator()
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         coordinator.startObserving(source)
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(client.activationIDs, [])
+        let snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.activationIDs, [])
         XCTAssertEqual(coordinator.currentProfileID, "Default")
         XCTAssertEqual(coordinator.state, .current(profileID: "Default"))
     }
 
     func testNilAndEmptyEventsClearForegroundIdentityWithoutChangingProfile() async {
-        let client = RecordingProfileClient(currentProfileID: "Default")
+        let operations = RecordingProfileOperations(currentProfileID: "Default")
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.editor")
-        let coordinator = makeCoordinator(
-            client: client,
-            mappings: ["com.example.editor": "Work.Profile"]
-        )
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Work.Profile"])
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         coordinator.startObserving(source)
         await coordinator.waitForIdle()
-        let listCount = client.listCount
+        let listCount = await operations.snapshot().listCount
 
         source.emit(nil)
         source.emit("")
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(client.activationIDs, ["Work.Profile"])
-        XCTAssertEqual(client.listCount, listCount)
+        let snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.activationIDs, ["Work.Profile"])
+        XCTAssertEqual(snapshot.listCount, listCount)
         XCTAssertNil(coordinator.currentBundleIdentifier)
         XCTAssertEqual(coordinator.currentProfileID, "Work.Profile")
         XCTAssertEqual(coordinator.state, .current(profileID: "Work.Profile"))
     }
 
     func testClearedForegroundIdentityIsNotReusedByMappingEditOrEndpointReplacement() async throws {
-        let oldClient = RecordingProfileClient(currentProfileID: "Default")
-        let newClient = RecordingProfileClient(currentProfileID: "Work.Profile")
+        let oldOperations = RecordingProfileOperations(currentProfileID: "Default")
+        let newOperations = RecordingProfileOperations(currentProfileID: "Work.Profile")
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.editor")
-        let factory = EndpointClientFactory(clients: [
-            "old": oldClient,
-            "new": newClient
-        ])
-        let coordinator = ProfileSwitchCoordinator(
-            mappings: ProfileMappingPreferences(mappings: ["com.example.editor": "Work.Profile"]),
-            clientFactory: factory
-        )
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Work.Profile"])
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "old"))
+        await coordinator.setRuntimeOperations(handle(oldOperations, identity: "old"))
         coordinator.startObserving(source)
         await coordinator.waitForIdle()
         XCTAssertEqual(coordinator.currentProfileID, "Work.Profile")
@@ -111,131 +100,113 @@ final class ProfileSwitchCoordinatorTests: XCTestCase {
             forBundleIdentifier: "com.example.editor"
         )
         await coordinator.waitForIdle()
-        XCTAssertEqual(oldClient.activationIDs, ["Work.Profile"])
+        let oldSnapshot = await oldOperations.snapshot()
+        XCTAssertEqual(oldSnapshot.activationIDs, ["Work.Profile"])
         XCTAssertEqual(coordinator.currentProfileID, "Work.Profile")
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "new"))
+        await coordinator.setRuntimeOperations(handle(newOperations, identity: "new"))
         await coordinator.waitForIdle()
-        XCTAssertEqual(newClient.listCount, 1)
-        XCTAssertEqual(newClient.activationIDs, [])
+        let newSnapshot = await newOperations.snapshot()
+        XCTAssertEqual(newSnapshot.listCount, 1)
+        XCTAssertEqual(newSnapshot.activationIDs, [])
         XCTAssertEqual(coordinator.currentProfileID, "Work.Profile")
         XCTAssertEqual(coordinator.state, .current(profileID: "Work.Profile"))
 
         source.emit("com.example.editor")
         await coordinator.waitForIdle()
-        XCTAssertEqual(newClient.activationIDs, ["Gaming.Profile"])
+        let refreshedSnapshot = await newOperations.snapshot()
+        XCTAssertEqual(refreshedSnapshot.activationIDs, ["Gaming.Profile"])
         XCTAssertEqual(coordinator.currentProfileID, "Gaming.Profile")
     }
 
     func testNilEventDuringCatalogReadPreventsStaleActivation() async {
-        let client = RecordingProfileClient(currentProfileID: "Default")
-        client.blockNextList()
+        let operations = RecordingProfileOperations(currentProfileID: "Default")
+        let catalogGate = ProfileOperationGate()
+        await operations.blockNextCatalogRead(using: catalogGate)
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.editor")
-        let coordinator = makeCoordinator(
-            client: client,
-            mappings: ["com.example.editor": "Work.Profile"]
-        )
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Work.Profile"])
 
         coordinator.startObserving(source)
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
-        for _ in 0..<100 where !client.listHasStarted {
-            await Task.yield()
-        }
-        XCTAssertTrue(client.listHasStarted)
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
+        await catalogGate.waitForArrival()
 
         source.emit(nil)
-        client.continueBlockedList.signal()
+        await catalogGate.open()
         await coordinator.waitForIdle()
 
+        let snapshot = await operations.snapshot()
         XCTAssertNil(coordinator.currentBundleIdentifier)
-        XCTAssertEqual(client.activationIDs, [])
+        XCTAssertEqual(snapshot.activationIDs, [])
         XCTAssertEqual(coordinator.currentProfileID, "Default")
         XCTAssertEqual(coordinator.state, .current(profileID: "Default"))
     }
 
     func testExplicitCatalogRefreshDoesNotActivateProfile() async {
-        let client = RecordingProfileClient(currentProfileID: "Work.Profile")
-        let coordinator = makeCoordinator(
-            client: client,
-            mappings: ["com.example.editor": "Gaming.Profile"]
-        )
+        let operations = RecordingProfileOperations(currentProfileID: "Work.Profile")
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Gaming.Profile"])
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         coordinator.refreshCatalog()
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(client.listCount, 1)
-        XCTAssertEqual(client.activationIDs, [])
+        let snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.listCount, 1)
+        XCTAssertEqual(snapshot.activationIDs, [])
         XCTAssertEqual(coordinator.currentProfileID, "Work.Profile")
         XCTAssertEqual(coordinator.state, .current(profileID: "Work.Profile"))
     }
 
     func testRepeatedSameEffectiveProfileDoesNotActivateAgain() async {
-        let client = RecordingProfileClient(currentProfileID: "Default")
+        let operations = RecordingProfileOperations(currentProfileID: "Default")
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.editor")
-        let coordinator = makeCoordinator(
-            client: client,
-            mappings: ["com.example.editor": "Work.Profile"]
-        )
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Work.Profile"])
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         coordinator.startObserving(source)
         await coordinator.waitForIdle()
         source.emit("com.example.editor")
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(client.activationIDs, ["Work.Profile"])
-        XCTAssertEqual(client.listCount, 2)
+        let snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.activationIDs, ["Work.Profile"])
+        XCTAssertEqual(snapshot.listCount, 2)
     }
 
     func testRapidAThenBEventsSerializeActivationInArrivalOrder() async {
-        let client = RecordingProfileClient(currentProfileID: "Default")
-        client.blockProfileID = "Work.Profile"
+        let operations = RecordingProfileOperations(currentProfileID: "Default")
+        let activationGate = ProfileOperationGate()
+        await operations.blockActivation("Work.Profile", using: activationGate)
         let source = TestForegroundObserver(initialBundleIdentifier: nil)
-        let coordinator = makeCoordinator(
-            client: client,
-            mappings: [
-                "com.example.a": "Work.Profile",
-                "com.example.b": "Gaming.Profile"
-            ]
-        )
+        let coordinator = makeCoordinator(mappings: [
+            "com.example.a": "Work.Profile",
+            "com.example.b": "Gaming.Profile"
+        ])
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         coordinator.startObserving(source)
         source.emit("com.example.a")
-        for _ in 0..<100 where coordinator.state != .switching(profileID: "Work.Profile") {
-            await Task.yield()
-        }
+        await activationGate.waitForArrival()
+
         XCTAssertEqual(coordinator.state, .switching(profileID: "Work.Profile"))
-        var activationStarted = false
-        for _ in 0..<100 {
-            if client.activationHasStarted {
-                activationStarted = true
-                break
-            }
-            await Task.yield()
-        }
-        XCTAssertTrue(activationStarted)
         source.emit("com.example.b")
-        client.continueBlockedActivation.signal()
+        await activationGate.open()
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(client.activationIDs, ["Work.Profile", "Gaming.Profile"])
+        let snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.activationIDs, ["Work.Profile", "Gaming.Profile"])
     }
 
     func testMappingToMissingCatalogProfileIsRejectedWithoutActivation() async {
-        let client = RecordingProfileClient(currentProfileID: "Default")
+        let operations = RecordingProfileOperations(currentProfileID: "Default")
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.editor")
-        let coordinator = makeCoordinator(
-            client: client,
-            mappings: ["com.example.editor": "Missing.Profile"]
-        )
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Missing.Profile"])
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         coordinator.startObserving(source)
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(client.activationIDs, [])
+        let snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.activationIDs, [])
         XCTAssertEqual(
             coordinator.state,
             .invalidMapping(bundleIdentifier: "com.example.editor", profileID: "Missing.Profile")
@@ -243,54 +214,51 @@ final class ProfileSwitchCoordinatorTests: XCTestCase {
     }
 
     func testUnavailableRuntimeDoesNotIssueActivationAndRecoversOnEndpoint() async {
-        let client = RecordingProfileClient(currentProfileID: "Default")
+        let operations = RecordingProfileOperations(currentProfileID: "Default")
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.editor")
-        let coordinator = makeCoordinator(
-            client: client,
-            mappings: ["com.example.editor": "Work.Profile"]
-        )
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Work.Profile"])
 
         coordinator.startObserving(source)
         await coordinator.waitForIdle()
         XCTAssertEqual(coordinator.state, .waitingForRuntime)
-        XCTAssertEqual(client.listCount, 0)
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(client.activationIDs, ["Work.Profile"])
+        let snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.activationIDs, ["Work.Profile"])
     }
 
     func testOutcomeUnknownWaitsForNewEventBeforeRetrying() async {
-        let client = RecordingProfileClient(currentProfileID: "Default")
-        client.activationError = true
+        let operations = RecordingProfileOperations(currentProfileID: "Default")
+        await operations.failActivation("Work.Profile")
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.editor")
-        let coordinator = makeCoordinator(
-            client: client,
-            mappings: ["com.example.editor": "Work.Profile"]
-        )
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Work.Profile"])
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         coordinator.startObserving(source)
         await coordinator.waitForIdle()
         XCTAssertEqual(coordinator.state, .outcomeUnknown(profileID: "Work.Profile"))
-        XCTAssertEqual(client.activationIDs, ["Work.Profile"])
+        var snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.activationIDs, ["Work.Profile"])
 
-        client.activationError = false
+        await operations.clearActivationFailure("Work.Profile")
         await coordinator.waitForIdle()
-        XCTAssertEqual(client.activationIDs, ["Work.Profile"])
+        snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.activationIDs, ["Work.Profile"])
         source.emit("com.example.editor")
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(client.activationIDs, ["Work.Profile", "Work.Profile"])
+        snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.activationIDs, ["Work.Profile", "Work.Profile"])
     }
 
     func testMappingEditReevaluatesCurrentForegroundApplication() async throws {
-        let client = RecordingProfileClient(currentProfileID: "Default")
+        let operations = RecordingProfileOperations(currentProfileID: "Default")
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.editor")
-        let coordinator = makeCoordinator(client: client)
+        let coordinator = makeCoordinator()
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         coordinator.startObserving(source)
         await coordinator.waitForIdle()
         XCTAssertEqual(coordinator.state, .current(profileID: "Default"))
@@ -301,276 +269,326 @@ final class ProfileSwitchCoordinatorTests: XCTestCase {
         )
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(client.activationIDs, ["Work.Profile"])
+        let snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.activationIDs, ["Work.Profile"])
         XCTAssertEqual(coordinator.currentProfileID, "Work.Profile")
     }
 
     func testEndpointReplacementDiscardsOldCatalogAndReevaluatesCurrentApplication() async {
-        let oldClient = RecordingProfileClient(currentProfileID: "Default")
-        let newClient = RecordingProfileClient(currentProfileID: "Default")
+        let oldOperations = RecordingProfileOperations(currentProfileID: "Default")
+        let newOperations = RecordingProfileOperations(currentProfileID: "Default")
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.editor")
-        let factory = EndpointClientFactory(clients: [
-            "old": oldClient,
-            "new": newClient
-        ])
-        let coordinator = ProfileSwitchCoordinator(
-            mappings: ProfileMappingPreferences(mappings: ["com.example.editor": "Work.Profile"]),
-            clientFactory: factory
-        )
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Work.Profile"])
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "old"))
+        await coordinator.setRuntimeOperations(handle(oldOperations, identity: "old"))
         coordinator.startObserving(source)
         await coordinator.waitForIdle()
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "new"))
+        await coordinator.setRuntimeOperations(handle(newOperations, identity: "new"))
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(oldClient.activationIDs, ["Work.Profile"])
-        XCTAssertEqual(newClient.activationIDs, ["Work.Profile"])
-        XCTAssertEqual(coordinator.runtimeEndpoint?.instanceID, "new")
+        let oldSnapshot = await oldOperations.snapshot()
+        let newSnapshot = await newOperations.snapshot()
+        XCTAssertEqual(oldSnapshot.activationIDs, ["Work.Profile"])
+        XCTAssertEqual(newSnapshot.activationIDs, ["Work.Profile"])
+        XCTAssertEqual(coordinator.runtimeIdentity, "new")
     }
 
     func testEndpointReplacementWaitsForBlockedActivationBeforeFinalizing() async {
-        let oldClient = RecordingProfileClient(currentProfileID: "Default")
-        oldClient.blockProfileID = "Work.Profile"
-        let newClient = RecordingProfileClient(currentProfileID: "Default")
+        let oldOperations = RecordingProfileOperations(currentProfileID: "Default")
+        let activationGate = ProfileOperationGate()
+        await oldOperations.blockActivation("Work.Profile", using: activationGate)
+        let newOperations = RecordingProfileOperations(currentProfileID: "Default")
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.editor")
-        let factory = EndpointClientFactory(clients: [
-            "old": oldClient,
-            "new": newClient
-        ])
-        let coordinator = ProfileSwitchCoordinator(
-            mappings: ProfileMappingPreferences(mappings: ["com.example.editor": "Work.Profile"]),
-            clientFactory: factory
-        )
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Work.Profile"])
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "old"))
+        await coordinator.setRuntimeOperations(handle(oldOperations, identity: "old"))
         coordinator.startObserving(source)
-        for _ in 0..<100 where !oldClient.activationHasStarted {
-            await Task.yield()
-        }
-        XCTAssertTrue(oldClient.activationHasStarted)
+        await activationGate.waitForArrival()
 
+        let replacementStatus = TaskStatus()
         let replacement = Task { @MainActor in
-            await coordinator.setRuntimeEndpoint(endpoint(instanceID: "new"))
+            replacementStatus.didStart = true
+            await coordinator.setRuntimeOperations(handle(newOperations, identity: "new"))
+            replacementStatus.didFinish = true
         }
-        for _ in 0..<100 {
+        for _ in 0..<100 where !replacementStatus.didStart {
             await Task.yield()
-            if oldClient.inFlightCount > 0 { break }
         }
+        XCTAssertTrue(replacementStatus.didStart)
+        XCTAssertFalse(replacementStatus.didFinish)
 
-        XCTAssertEqual(coordinator.runtimeEndpoint?.instanceID, "old")
-        XCTAssertEqual(newClient.listCount, 0)
-        XCTAssertGreaterThan(oldClient.inFlightCount, 0)
+        let newSnapshotBeforeRelease = await newOperations.snapshot()
+        XCTAssertEqual(coordinator.runtimeIdentity, "old")
+        XCTAssertEqual(newSnapshotBeforeRelease.listCount, 0)
+        let oldSnapshot = await oldOperations.snapshot()
+        XCTAssertEqual(oldSnapshot.inFlightCount, 1)
 
-        oldClient.continueBlockedActivation.signal()
+        await activationGate.open()
         await replacement.value
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(oldClient.inFlightCount, 0)
-        XCTAssertEqual(newClient.activationIDs, ["Work.Profile"])
-        XCTAssertEqual(coordinator.runtimeEndpoint?.instanceID, "new")
+        let finishedOldSnapshot = await oldOperations.snapshot()
+        let newSnapshot = await newOperations.snapshot()
+        XCTAssertEqual(finishedOldSnapshot.inFlightCount, 0)
+        XCTAssertEqual(newSnapshot.activationIDs, ["Work.Profile"])
+        XCTAssertEqual(coordinator.runtimeIdentity, "new")
         XCTAssertEqual(coordinator.state, .current(profileID: "Work.Profile"))
     }
 
     func testShutdownStopsObservationAndAdmission() async {
-        let client = RecordingProfileClient(currentProfileID: "Default")
+        let operations = RecordingProfileOperations(currentProfileID: "Default")
         let source = TestForegroundObserver(initialBundleIdentifier: nil)
-        let coordinator = makeCoordinator(
-            client: client,
-            mappings: ["com.example.editor": "Work.Profile"]
-        )
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Work.Profile"])
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         coordinator.startObserving(source)
         await coordinator.shutdown()
         source.emit("com.example.editor")
         await coordinator.waitForIdle()
 
+        let snapshot = await operations.snapshot()
         XCTAssertEqual(coordinator.state, .stopped)
-        XCTAssertEqual(client.activationIDs, [])
+        XCTAssertEqual(snapshot.activationIDs, [])
         XCTAssertEqual(source.stopCount, 1)
     }
 
     func testShutdownWaitsForBlockedActivationBeforeFinalizing() async {
-        let client = RecordingProfileClient(currentProfileID: "Default")
-        client.blockProfileID = "Work.Profile"
+        let operations = RecordingProfileOperations(currentProfileID: "Default")
+        let activationGate = ProfileOperationGate()
+        await operations.blockActivation("Work.Profile", using: activationGate)
         let source = TestForegroundObserver(initialBundleIdentifier: "com.example.editor")
-        let coordinator = makeCoordinator(
-            client: client,
-            mappings: ["com.example.editor": "Work.Profile"]
-        )
+        let coordinator = makeCoordinator(mappings: ["com.example.editor": "Work.Profile"])
 
-        await coordinator.setRuntimeEndpoint(endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        await coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         coordinator.startObserving(source)
-        for _ in 0..<100 where !client.activationHasStarted {
-            await Task.yield()
-        }
-        XCTAssertTrue(client.activationHasStarted)
+        await activationGate.waitForArrival()
 
+        let shutdownStatus = TaskStatus()
         let shutdown = Task { @MainActor in
+            shutdownStatus.didStart = true
             await coordinator.shutdown()
+            shutdownStatus.didFinish = true
         }
-        for _ in 0..<100 {
+        for _ in 0..<100 where !shutdownStatus.didStart {
             await Task.yield()
-            if client.inFlightCount > 0 { break }
         }
+        XCTAssertTrue(shutdownStatus.didStart)
+        XCTAssertFalse(shutdownStatus.didFinish)
 
         XCTAssertNotEqual(coordinator.state, .stopped)
-        XCTAssertGreaterThan(client.inFlightCount, 0)
+        var snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.inFlightCount, 1)
 
         source.emit("com.example.editor")
-        XCTAssertEqual(client.activationIDs, ["Work.Profile"])
+        snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.activationIDs, ["Work.Profile"])
 
-        client.continueBlockedActivation.signal()
+        await activationGate.open()
         await shutdown.value
 
-        XCTAssertEqual(client.inFlightCount, 0)
+        snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.inFlightCount, 0)
         XCTAssertEqual(coordinator.state, .stopped)
-        XCTAssertNil(coordinator.runtimeEndpoint)
+        XCTAssertNil(coordinator.runtimeIdentity)
     }
 
     private func makeCoordinator(
-        client: RecordingProfileClient,
         mappings: [String: String] = [:]
     ) -> ProfileSwitchCoordinator {
-        ProfileSwitchCoordinator(
-            mappings: ProfileMappingPreferences(mappings: mappings),
-            client: client
-        )
-    }
-
-    private func endpoint(instanceID: String) -> RuntimeSessionController.RuntimeEndpoint {
-        RuntimeSessionController.RuntimeEndpoint(instanceID: instanceID, socketPath: "/private/tmp/runtime.sock")
+        ProfileSwitchCoordinator(mappings: ProfileMappingPreferences(mappings: mappings))
     }
 }
 
-private enum TestProfileClientError: Error {
-    case activationFailed
+private func handle(
+    _ operations: RecordingProfileOperations,
+    identity: String
+) -> RuntimeOperationsHandle {
+    RuntimeOperationsHandle(identity: identity, operations: operations)
 }
 
-private final class RecordingProfileClient: @unchecked Sendable, RuntimeProfileChecking {
-    private let lock = NSLock()
-    private var currentProfileIDStorage: String
-    private var activationIDsStorage: [String] = []
-    private var listCountStorage = 0
-    private var blockNextListStorage = false
-    private var listHasStartedStorage = false
-    private var inFlightCountStorage = 0
-    private var activationHasStartedStorage = false
-    var activationError = false
-    var blockProfileID: String?
-    let continueBlockedActivation = DispatchSemaphore(value: 0)
-    let continueBlockedList = DispatchSemaphore(value: 0)
+private struct RecordingProfileOperationsSnapshot: Sendable {
+    let activationIDs: [String]
+    let listCount: Int
+    let inFlightCount: Int
+}
+
+private actor RecordingProfileOperations: HidhoggAppRuntimeOperations {
+    private static let profileIDs = ["Default", "Work.Profile", "Gaming.Profile"]
+
+    private var currentProfileID: String
+    private var activationIDs: [String] = []
+    private var listCount = 0
+    private var inFlightCount = 0
+    private var nextCatalogGate: ProfileOperationGate?
+    private var activationGates: [String: ProfileOperationGate] = [:]
+    private var failedActivations = Set<String>()
 
     init(currentProfileID: String) {
-        currentProfileIDStorage = currentProfileID
+        self.currentProfileID = currentProfileID
     }
 
-    var activationIDs: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return activationIDsStorage
-    }
-
-    var listCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return listCountStorage
-    }
-
-    var listHasStarted: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return listHasStartedStorage
-    }
-
-    func blockNextList() {
-        lock.lock()
-        blockNextListStorage = true
-        lock.unlock()
-    }
-
-    var activationHasStarted: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return activationHasStartedStorage
-    }
-
-    var inFlightCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return inFlightCountStorage
-    }
-
-    func listProfiles(requestID: String) throws -> ProfileListResponse {
-        lock.lock()
-        listCountStorage += 1
-        inFlightCountStorage += 1
-        let currentProfileID = currentProfileIDStorage
-        let shouldBlock = blockNextListStorage
-        blockNextListStorage = false
-        listHasStartedStorage = true
-        lock.unlock()
-        defer {
-            lock.lock()
-            inFlightCountStorage -= 1
-            lock.unlock()
-        }
-        if shouldBlock {
-            continueBlockedList.wait()
-        }
-        return ProfileListResponse(
-            requestID: requestID,
-            instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            profiles: [
-                ProfileSummary(id: "Default", label: "Default", isDefault: true, isCurrent: currentProfileID == "Default"),
-                ProfileSummary(id: "Work.Profile", label: "Work", isDefault: false, isCurrent: currentProfileID == "Work.Profile"),
-                ProfileSummary(id: "Gaming.Profile", label: "Gaming", isDefault: false, isCurrent: currentProfileID == "Gaming.Profile")
-            ]
+    func snapshot() -> RecordingProfileOperationsSnapshot {
+        RecordingProfileOperationsSnapshot(
+            activationIDs: activationIDs,
+            listCount: listCount,
+            inFlightCount: inFlightCount
         )
     }
 
-    func activateProfile(profileID: String, requestID: String) throws -> ProfileActivationResponse {
-        lock.lock()
-        activationIDsStorage.append(profileID)
-        inFlightCountStorage += 1
-        let shouldFail = activationError
-        let shouldBlock = blockProfileID == profileID
-        lock.unlock()
-        defer {
-            lock.lock()
-            inFlightCountStorage -= 1
-            lock.unlock()
+    func blockNextCatalogRead(using gate: ProfileOperationGate) {
+        nextCatalogGate = gate
+    }
+
+    func blockActivation(_ profileID: String, using gate: ProfileOperationGate) {
+        activationGates[profileID] = gate
+    }
+
+    func failActivation(_ profileID: String) {
+        failedActivations.insert(profileID)
+    }
+
+    func clearActivationFailure(_ profileID: String) {
+        failedActivations.remove(profileID)
+    }
+
+    func profiles() async throws -> [RuntimeOperationProfile] {
+        listCount += 1
+        let currentProfileID = self.currentProfileID
+        let response = Self.profileIDs.map { profileID in
+            RuntimeOperationProfile(
+                id: profileID,
+                label: profileID,
+                isDefault: profileID == "Default",
+                isCurrent: profileID == currentProfileID
+            )
         }
-        if shouldBlock {
-            lock.lock()
-            activationHasStartedStorage = true
-            lock.unlock()
-            continueBlockedActivation.wait()
+        let gate = nextCatalogGate
+        nextCatalogGate = nil
+        if let gate {
+            inFlightCount += 1
+            defer { inFlightCount -= 1 }
+            await gate.arriveAndWait()
         }
-        if shouldFail {
-            throw TestProfileClientError.activationFailed
+        return response
+    }
+
+    func activateProfile(_ profileID: String) async throws -> RuntimeActivationResult {
+        activationIDs.append(profileID)
+        inFlightCount += 1
+        let gate = activationGates.removeValue(forKey: profileID)
+        let shouldFail = failedActivations.contains(profileID)
+        defer { inFlightCount -= 1 }
+
+        if let gate {
+            await gate.arriveAndWait()
         }
-        lock.lock()
-        currentProfileIDStorage = profileID
-        lock.unlock()
-        return ProfileActivationResponse(requestID: requestID, profileID: profileID, changed: true)
+        guard !shouldFail else {
+            throw TestCoordinatorOperationError.activationFailed
+        }
+
+        currentProfileID = profileID
+        return RuntimeActivationResult(
+            profileID: profileID,
+            changed: true,
+            revision: UInt64(activationIDs.count)
+        )
+    }
+
+    func setHostDisplayAwake(_ awake: Bool) async throws -> RuntimeOperationDisplayResult {
+        RuntimeOperationDisplayResult(displayAwake: awake, changed: true)
+    }
+
+    func editorSnapshot() async throws -> RuntimeOperationEditorSnapshot {
+        throw TestCoordinatorOperationError.unused
+    }
+
+    func editorProfile(
+        sourceDigest: String,
+        profileID: String
+    ) async throws -> RuntimeOperationEditorProfile {
+        throw TestCoordinatorOperationError.unused
+    }
+
+    func editorPositions(
+        sourceDigest: String,
+        profileID: String
+    ) async throws -> RuntimeOperationEditorPositions {
+        throw TestCoordinatorOperationError.unused
+    }
+
+    func editorPosition(
+        sourceDigest: String,
+        profileID: String,
+        positionID: String
+    ) async throws -> RuntimeOperationEditorPosition {
+        throw TestCoordinatorOperationError.unused
+    }
+
+    func edit(
+        expectedDigest: String,
+        edit: RuntimeConfigurationEdit
+    ) async throws -> RuntimeOperationEditResult {
+        throw TestCoordinatorOperationError.unused
+    }
+
+    func cloneProfile(
+        expectedDigest: String,
+        sourceProfileID: String?,
+        profileID: String,
+        label: String
+    ) async throws -> RuntimeOperationEditResult {
+        throw TestCoordinatorOperationError.unused
+    }
+
+    func reloadConfiguration() async throws -> RuntimeOperationReloadResult {
+        throw TestCoordinatorOperationError.unused
+    }
+
+    func configurationStatus() async throws -> RuntimeOperationConfigurationStatus {
+        throw TestCoordinatorOperationError.unused
+    }
+
+    func retire() async {}
+}
+
+private actor ProfileOperationGate {
+    private var isOpen = false
+    private var hasArrived = false
+    private var blockedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var arrivalWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func arriveAndWait() async {
+        hasArrived = true
+        let arrivals = arrivalWaiters
+        arrivalWaiters.removeAll()
+        arrivals.forEach { $0.resume() }
+        guard !isOpen else { return }
+        await withCheckedContinuation { blockedWaiters.append($0) }
+    }
+
+    func waitForArrival() async {
+        guard !hasArrived else { return }
+        await withCheckedContinuation { arrivalWaiters.append($0) }
+    }
+
+    func open() {
+        guard !isOpen else { return }
+        isOpen = true
+        let waiters = blockedWaiters
+        blockedWaiters.removeAll()
+        waiters.forEach { $0.resume() }
     }
 }
 
-private final class EndpointClientFactory: RuntimeProfileClientCreating, @unchecked Sendable {
-    private let clients: [String: RecordingProfileClient]
+@MainActor
+private final class TaskStatus {
+    var didStart = false
+    var didFinish = false
+}
 
-    init(clients: [String: RecordingProfileClient]) {
-        self.clients = clients
-    }
-
-    func make(socketPath: String, instanceID: String) throws -> any RuntimeProfileChecking {
-        guard let client = clients[instanceID] else {
-            throw TestProfileClientError.activationFailed
-        }
-        return client
-    }
+private enum TestCoordinatorOperationError: Error, Sendable {
+    case unused
+    case activationFailed
 }
 
 @MainActor

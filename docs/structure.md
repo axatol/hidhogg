@@ -27,13 +27,17 @@ hidhogg/
 
 The Go runtime, CLI, source modules, and Go diagnostic wrappers have been retired from this candidate. The tracked Go-named spike artifacts are preserved as research material and are not production build inputs. The exact v1 roadmap, protocol reference, renderer font/provenance, and research notes remain for historical context. V1 Go commands in those records describe the retired implementation and are not current operating instructions.
 
+### Runtime session boundary
+
+`macos/Hidhogg` composes one app-owned runtime session. `RuntimeSessionController` publishes a captured `RuntimeOperationsHandle` for direct app callers and starts a configuration watcher. In HidhoggCore, `RuntimeOperations` is the shared session actor used by those callers and `IPCServiceBinding`; the latter exposes the external socket service used by the Swift CLI. CLI endpoint startup is optional, so a failed endpoint can leave the app runtime ready with a visible connectivity warning. Retirement rejects new operations, cancels queued work before coordinator admission, and drains admitted operations before endpoint and device shutdown. File commit and reload outcomes remain separately represented. App-only socket/wire client code was removed, while `ProfileValidation.swift` retains profile and UUID validation. See [runtime simplification](runtime-simplification.md) for the decision record and verification evidence.
+
 ## Current ownership
 
 | Area | Responsibility | Boundary |
 |---|---|---|
 | `macos/HidhoggCore` | Strict TOML v4 decoding, typed lossless edits, digest-guarded source storage, D200X protocol/session/simulation, rendering, runtime policy, actions, notifications, IPC, discovery, and Swift CLI | No Go production dependency; app-owned runtime composition is in `Hidhogg` |
-| `macos/Hidhogg` | Native SwiftUI app, runtime/device lifecycle, settings UI, and generation-owned IPC server composition | Uses simulated D200X for offline app acceptance; no physical-device claim |
-| `macos/HidhoggTests` | App lifecycle, client, protocol, editor, and simulation checks | Does not establish physical HID or native-input delivery |
+| `macos/Hidhogg` | Native SwiftUI app, runtime/device lifecycle, settings UI, direct typed Core operations, and optional generation-owned CLI endpoint | Uses simulated D200X for offline app acceptance; no physical-device claim |
+| `macos/HidhoggTests` | App lifecycle, direct-operations coordination, editor, validation, and simulation checks | Does not establish physical HID or native-input delivery |
 | `api/protocol/v1` | Retained wire-protocol specification and fixtures | Historical contract reference; not a Go implementation |
 | `scripts/diagnostics/ulanzi-lldb` | Preserved static preflight and temporary evidence helpers | Separate authorization gate; does not launch or attach to the application |
 | `spikes` | Preserved tracked README, fixture, and result evidence | No tracked spike executable or Go module remains in the candidate |

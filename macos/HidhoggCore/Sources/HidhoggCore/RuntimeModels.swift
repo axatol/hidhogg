@@ -37,6 +37,12 @@ public struct RuntimeActivationResult: Sendable, Equatable {
     public let profileID: String
     public let changed: Bool
     public let revision: UInt64
+
+    public init(profileID: String, changed: Bool, revision: UInt64) {
+        self.profileID = profileID
+        self.changed = changed
+        self.revision = revision
+    }
 }
 
 public struct RuntimeReloadResult: Sendable, Equatable {

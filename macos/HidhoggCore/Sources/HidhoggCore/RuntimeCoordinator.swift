@@ -174,6 +174,8 @@ public actor RuntimeCoordinator {
         nextKeepAliveDeadline = clock.now().advanced(by: Self.keepAliveInterval)
     }
 
+    var pendingAdmissionCount: Int { admissionWaiters.count }
+
     public func snapshot() -> RuntimeSnapshot {
         makeSnapshot(transitioning: transitionFence.stampAtReceipt().active)
     }

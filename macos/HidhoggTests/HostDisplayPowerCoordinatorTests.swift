@@ -1,35 +1,30 @@
 import Foundation
 import XCTest
 @testable import Hidhogg
+import HidhoggCore
 
 @MainActor
 final class HostDisplayPowerCoordinatorTests: XCTestCase {
     func testDelayedWriteIsFollowedByTheLatestDesiredStateSerially() async {
-        let oldEndpoint = endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
         let observer = FakeHostDisplayPowerObserver(initialState: true)
-        let client = DisplayHostStateClientStub(
-            instanceID: oldEndpoint.instanceID,
-            blockFirstCall: true
-        )
-        let coordinator = HostDisplayPowerCoordinator(
-            observer: observer,
-            clientFactory: DisplayHostStateClientFactory(clients: [
-                oldEndpoint.instanceID: client
-            ]),
-            requestIDProvider: FixedRequestIDProvider()
-        )
+        let operations = RecordingDisplayOperations()
+        let writeGate = DisplayOperationGate()
+        await operations.blockFirstWrite(using: writeGate)
+        let coordinator = HostDisplayPowerCoordinator(observer: observer)
 
         coordinator.start()
-        coordinator.setRuntimeEndpoint(oldEndpoint)
-        let started = await waitForCall(client)
-        XCTAssertTrue(started)
+        coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
+        await writeGate.waitForArrival()
 
         observer.emit(false)
-        client.firstCallReleased.signal()
+        observer.emit(true)
+        observer.emit(false)
+        await writeGate.open()
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(client.displayAwakeValues, [true, false])
-        XCTAssertEqual(client.maximumConcurrentCalls, 1)
+        let snapshot = await operations.snapshot()
+        XCTAssertEqual(snapshot.displayAwakeValues, [true, false])
+        XCTAssertEqual(snapshot.maximumConcurrentCalls, 1)
         XCTAssertEqual(coordinator.desiredDisplayAwake, false)
         XCTAssertNil(coordinator.errorText)
         await coordinator.shutdown()
@@ -37,116 +32,220 @@ final class HostDisplayPowerCoordinatorTests: XCTestCase {
     }
 
     func testEndpointReplacementUsesCurrentStateAfterAnOldReplyArrives() async {
-        let oldEndpoint = endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let newEndpoint = endpoint(instanceID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
         let observer = FakeHostDisplayPowerObserver(initialState: true)
-        let oldClient = DisplayHostStateClientStub(
-            instanceID: oldEndpoint.instanceID,
-            blockFirstCall: true
-        )
-        let newClient = DisplayHostStateClientStub(instanceID: newEndpoint.instanceID)
-        let coordinator = HostDisplayPowerCoordinator(
-            observer: observer,
-            clientFactory: DisplayHostStateClientFactory(clients: [
-                oldEndpoint.instanceID: oldClient,
-                newEndpoint.instanceID: newClient
-            ]),
-            requestIDProvider: FixedRequestIDProvider()
-        )
+        let oldOperations = RecordingDisplayOperations()
+        let writeGate = DisplayOperationGate()
+        await oldOperations.blockFirstWrite(using: writeGate)
+        let newOperations = RecordingDisplayOperations()
+        let coordinator = HostDisplayPowerCoordinator(observer: observer)
 
         coordinator.start()
-        coordinator.setRuntimeEndpoint(oldEndpoint)
-        let started = await waitForCall(oldClient)
-        XCTAssertTrue(started)
+        coordinator.setRuntimeOperations(handle(oldOperations, identity: "old"))
+        await writeGate.waitForArrival()
 
         observer.emit(false)
-        coordinator.setRuntimeEndpoint(newEndpoint)
-        oldClient.firstCallReleased.signal()
+        coordinator.setRuntimeOperations(handle(newOperations, identity: "new"))
+        await writeGate.open()
         await coordinator.waitForIdle()
 
-        XCTAssertEqual(oldClient.displayAwakeValues, [true])
-        XCTAssertEqual(newClient.displayAwakeValues, [false])
-        XCTAssertEqual(coordinator.runtimeEndpoint, newEndpoint)
+        let oldSnapshot = await oldOperations.snapshot()
+        let newSnapshot = await newOperations.snapshot()
+        XCTAssertEqual(oldSnapshot.displayAwakeValues, [true])
+        XCTAssertEqual(newSnapshot.displayAwakeValues, [false])
+        XCTAssertEqual(coordinator.runtimeIdentity, "new")
         XCTAssertEqual(coordinator.desiredDisplayAwake, false)
         await coordinator.shutdown()
     }
 
     func testUnknownInitialStateDoesNotSendSpeculativeDarkState() async {
-        let activeEndpoint = endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
         let observer = FakeHostDisplayPowerObserver(
             initialState: nil,
             reconciliationState: nil,
             initialError: "display query failed"
         )
-        let client = DisplayHostStateClientStub(instanceID: activeEndpoint.instanceID)
-        let coordinator = HostDisplayPowerCoordinator(
-            observer: observer,
-            clientFactory: DisplayHostStateClientFactory(clients: [
-                activeEndpoint.instanceID: client
-            ]),
-            requestIDProvider: FixedRequestIDProvider()
-        )
+        let operations = RecordingDisplayOperations()
+        let coordinator = HostDisplayPowerCoordinator(observer: observer)
 
         coordinator.start()
-        coordinator.setRuntimeEndpoint(activeEndpoint)
+        coordinator.setRuntimeOperations(handle(operations, identity: "runtime"))
         await coordinator.waitForIdle()
 
+        let snapshot = await operations.snapshot()
         XCTAssertNil(coordinator.desiredDisplayAwake)
         XCTAssertEqual(coordinator.errorText, "display query failed")
         XCTAssertEqual(observer.reconciliationCount, 1)
-        XCTAssertEqual(client.callCount, 0)
+        XCTAssertEqual(snapshot.callCount, 0)
         await coordinator.shutdown()
     }
 
     func testOutcomeUnknownWriteIsNotRetriedButReplacementGetsFreshApplication() async throws {
-        let oldEndpoint = endpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
-        let newEndpoint = endpoint(instanceID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
         let observer = FakeHostDisplayPowerObserver(initialState: true)
-        let failingClient = DisplayHostStateClientStub(
-            instanceID: oldEndpoint.instanceID,
-            failsAllCalls: true
-        )
-        let replacementClient = DisplayHostStateClientStub(instanceID: newEndpoint.instanceID)
-        let coordinator = HostDisplayPowerCoordinator(
-            observer: observer,
-            clientFactory: DisplayHostStateClientFactory(clients: [
-                oldEndpoint.instanceID: failingClient,
-                newEndpoint.instanceID: replacementClient
-            ]),
-            requestIDProvider: FixedRequestIDProvider()
-        )
+        let failingOperations = RecordingDisplayOperations(failsAllCalls: true)
+        let replacementOperations = RecordingDisplayOperations()
+        let coordinator = HostDisplayPowerCoordinator(observer: observer)
 
         coordinator.start()
-        coordinator.setRuntimeEndpoint(oldEndpoint)
+        coordinator.setRuntimeOperations(handle(failingOperations, identity: "old"))
         await coordinator.waitForIdle()
-        XCTAssertEqual(failingClient.callCount, 1)
+        var snapshot = await failingOperations.snapshot()
+        XCTAssertEqual(snapshot.callCount, 1)
         let failureText = try XCTUnwrap(coordinator.errorText)
 
         observer.emit(true)
         await coordinator.waitForIdle()
-        XCTAssertEqual(failingClient.callCount, 1)
+        snapshot = await failingOperations.snapshot()
+        XCTAssertEqual(snapshot.callCount, 1)
         XCTAssertEqual(coordinator.errorText, failureText)
 
-        coordinator.setRuntimeEndpoint(newEndpoint)
+        coordinator.setRuntimeOperations(handle(replacementOperations, identity: "new"))
         await coordinator.waitForIdle()
-        XCTAssertEqual(replacementClient.displayAwakeValues, [true])
+        let replacementSnapshot = await replacementOperations.snapshot()
+        XCTAssertEqual(replacementSnapshot.displayAwakeValues, [true])
         XCTAssertNil(coordinator.errorText)
         await coordinator.shutdown()
     }
+}
 
-    private func endpoint(instanceID: String) -> RuntimeSessionController.RuntimeEndpoint {
-        RuntimeSessionController.RuntimeEndpoint(
-            instanceID: instanceID,
-            socketPath: "/private/tmp/\(instanceID).sock"
+private func handle(
+    _ operations: RecordingDisplayOperations,
+    identity: String
+) -> RuntimeOperationsHandle {
+    RuntimeOperationsHandle(identity: identity, operations: operations)
+}
+
+private struct RecordingDisplayOperationsSnapshot: Sendable {
+    let displayAwakeValues: [Bool]
+    let callCount: Int
+    let maximumConcurrentCalls: Int
+}
+
+private actor RecordingDisplayOperations: HidhoggAppRuntimeOperations {
+    private var displayAwakeValues: [Bool] = []
+    private var inFlightCount = 0
+    private var maximumConcurrentCalls = 0
+    private var firstWriteGate: DisplayOperationGate?
+    private let failsAllCalls: Bool
+
+    init(failsAllCalls: Bool = false) {
+        self.failsAllCalls = failsAllCalls
+    }
+
+    func blockFirstWrite(using gate: DisplayOperationGate) {
+        firstWriteGate = gate
+    }
+
+    func snapshot() -> RecordingDisplayOperationsSnapshot {
+        RecordingDisplayOperationsSnapshot(
+            displayAwakeValues: displayAwakeValues,
+            callCount: displayAwakeValues.count,
+            maximumConcurrentCalls: maximumConcurrentCalls
         )
     }
 
-    private func waitForCall(_ client: DisplayHostStateClientStub) async -> Bool {
-        for _ in 0..<300 {
-            if client.callCount > 0 { return true }
-            try? await Task.sleep(nanoseconds: 10_000_000)
+    func profiles() async throws -> [RuntimeOperationProfile] {
+        throw RuntimeOperationError.closed
+    }
+
+    func activateProfile(_ profileID: String) async throws -> RuntimeActivationResult {
+        throw RuntimeOperationError.closed
+    }
+
+    func setHostDisplayAwake(_ awake: Bool) async throws -> RuntimeOperationDisplayResult {
+        displayAwakeValues.append(awake)
+        inFlightCount += 1
+        maximumConcurrentCalls = max(maximumConcurrentCalls, inFlightCount)
+        let gate = firstWriteGate
+        firstWriteGate = nil
+        defer { inFlightCount -= 1 }
+
+        if let gate {
+            await gate.arriveAndWait()
         }
-        return false
+        if failsAllCalls {
+            throw RuntimeOperationError.deviceWriteFailed
+        }
+        return RuntimeOperationDisplayResult(displayAwake: awake, changed: true)
+    }
+
+    func editorSnapshot() async throws -> RuntimeOperationEditorSnapshot {
+        throw RuntimeOperationError.closed
+    }
+
+    func editorProfile(
+        sourceDigest: String,
+        profileID: String
+    ) async throws -> RuntimeOperationEditorProfile {
+        throw RuntimeOperationError.closed
+    }
+
+    func editorPositions(
+        sourceDigest: String,
+        profileID: String
+    ) async throws -> RuntimeOperationEditorPositions {
+        throw RuntimeOperationError.closed
+    }
+
+    func editorPosition(
+        sourceDigest: String,
+        profileID: String,
+        positionID: String
+    ) async throws -> RuntimeOperationEditorPosition {
+        throw RuntimeOperationError.closed
+    }
+
+    func edit(
+        expectedDigest: String,
+        edit: RuntimeConfigurationEdit
+    ) async throws -> RuntimeOperationEditResult {
+        throw RuntimeOperationError.closed
+    }
+
+    func cloneProfile(
+        expectedDigest: String,
+        sourceProfileID: String?,
+        profileID: String,
+        label: String
+    ) async throws -> RuntimeOperationEditResult {
+        throw RuntimeOperationError.closed
+    }
+
+    func reloadConfiguration() async throws -> RuntimeOperationReloadResult {
+        throw RuntimeOperationError.closed
+    }
+
+    func configurationStatus() async throws -> RuntimeOperationConfigurationStatus {
+        throw RuntimeOperationError.closed
+    }
+
+    func retire() async {}
+}
+
+private actor DisplayOperationGate {
+    private var isOpen = false
+    private var hasArrived = false
+    private var blockedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var arrivalWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func arriveAndWait() async {
+        hasArrived = true
+        let arrivals = arrivalWaiters
+        arrivalWaiters.removeAll()
+        arrivals.forEach { $0.resume() }
+        guard !isOpen else { return }
+        await withCheckedContinuation { blockedWaiters.append($0) }
+    }
+
+    func waitForArrival() async {
+        guard !hasArrived else { return }
+        await withCheckedContinuation { arrivalWaiters.append($0) }
+    }
+
+    func open() {
+        guard !isOpen else { return }
+        isOpen = true
+        let waiters = blockedWaiters
+        blockedWaiters.removeAll()
+        waiters.forEach { $0.resume() }
     }
 }
 
@@ -202,94 +301,5 @@ private final class FakeHostDisplayPowerObserver: HostDisplayPowerObserving {
         lastKnownDisplayAwake = displayAwake
         errorHandler?(nil)
         stateHandler?(displayAwake)
-    }
-}
-
-private struct FixedRequestIDProvider: RequestIDProviding {
-    func makeRequestID() -> String {
-        "11111111-1111-4111-8111-111111111111"
-    }
-}
-
-private final class DisplayHostStateClientFactory: RuntimeDisplayHostStateClientCreating, @unchecked Sendable {
-    private let clients: [String: DisplayHostStateClientStub]
-
-    init(clients: [String: DisplayHostStateClientStub]) {
-        self.clients = clients
-    }
-
-    func make(socketPath: String, instanceID: String) throws -> any RuntimeDisplayHostStateChecking {
-        guard let client = clients[instanceID] else {
-            throw UnixSocketClientError.invalidRequest
-        }
-        return client
-    }
-}
-
-private final class DisplayHostStateClientStub: RuntimeDisplayHostStateChecking, @unchecked Sendable {
-    let firstCallReleased = DispatchSemaphore(value: 0)
-
-    private let instanceID: String
-    private let blockFirstCall: Bool
-    private let failsAllCalls: Bool
-    private let lock = NSLock()
-    private var calls: [(Bool, String)] = []
-    private var inFlightCount = 0
-    private var maximumInFlightCount = 0
-
-    init(instanceID: String, blockFirstCall: Bool = false, failsAllCalls: Bool = false) {
-        self.instanceID = instanceID
-        self.blockFirstCall = blockFirstCall
-        self.failsAllCalls = failsAllCalls
-    }
-
-    var displayAwakeValues: [Bool] {
-        lock.lock()
-        defer { lock.unlock() }
-        return calls.map(\.0)
-    }
-
-    var callCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return calls.count
-    }
-
-    var maximumConcurrentCalls: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return maximumInFlightCount
-    }
-
-    func setDisplayHostState(
-        displayAwake: Bool,
-        requestID: String
-    ) throws -> DisplayHostStateResponse {
-        lock.lock()
-        let callIndex = calls.count
-        calls.append((displayAwake, requestID))
-        inFlightCount += 1
-        maximumInFlightCount = max(maximumInFlightCount, inFlightCount)
-        lock.unlock()
-
-        if callIndex == 0 {
-            if blockFirstCall {
-                firstCallReleased.wait()
-            }
-        }
-
-        lock.lock()
-        inFlightCount -= 1
-        lock.unlock()
-
-        if failsAllCalls {
-            throw UnixSocketClientError.connectionClosed
-        }
-        return DisplayHostStateResponse(
-            requestID: requestID,
-            instanceID: instanceID,
-            displayAwake: displayAwake,
-            changed: true
-        )
     }
 }

@@ -15,25 +15,6 @@ struct PositionActionArgumentDraft: Identifiable, Equatable {
     }
 }
 
-struct SettingsConfigEditorClientFactory: RuntimeConfigEditorClientCreating, Sendable {
-    static let phaseTimeoutNanoseconds: UInt64 = 10_000_000_000
-
-    private let transportFactory: @Sendable () -> any SocketTransport
-
-    init(transportFactory: @escaping @Sendable () -> any SocketTransport = { DarwinSocketTransport() }) {
-        self.transportFactory = transportFactory
-    }
-
-    func make(socketPath: String, instanceID: String) throws -> any RuntimeConfigEditorChecking {
-        try ConfigEditorClient(
-            socketPath: socketPath,
-            instanceID: instanceID,
-            transport: transportFactory(),
-            phaseTimeoutNanoseconds: Self.phaseTimeoutNanoseconds
-        )
-    }
-}
-
 @MainActor
 final class SettingsViewModel: ObservableObject {
     enum MappingStatus: Equatable {
@@ -129,7 +110,7 @@ final class SettingsViewModel: ObservableObject {
         var newNotificationSourceID = ""
         var newActionArgument = ""
 
-        init(_ response: ConfigEditorPositionResponse) {
+        init(_ response: RuntimeOperationEditorPosition) {
             profileID = response.profileID
             positionID = response.positionID
             sourceDigest = response.sourceDigest
@@ -229,7 +210,7 @@ final class SettingsViewModel: ObservableObject {
     }
 
     typealias ApplicationSelector = @MainActor () -> ApplicationBundleSelection
-    typealias RuntimeEndpointProvider = @MainActor () -> RuntimeSessionController.RuntimeEndpoint?
+    typealias RuntimeOperationsProvider = @MainActor () -> RuntimeOperationsHandle?
 
     struct CloneRequest: Equatable, Sendable {
         let profileID: String
@@ -251,10 +232,10 @@ final class SettingsViewModel: ObservableObject {
     @Published private(set) var pendingBundleIdentifier: String?
     @Published private(set) var pendingProfileID: String?
     @Published private(set) var errorMessage: String?
-    @Published private(set) var editorSnapshot: ConfigEditorSnapshotResponse?
-    @Published private(set) var editedProfile: ConfigEditorProfileResponse?
-    @Published private(set) var editorPositions: [ConfigEditorPositionSummary] = []
-    @Published private(set) var editedPosition: ConfigEditorPositionResponse?
+    @Published private(set) var editorSnapshot: RuntimeOperationEditorSnapshot?
+    @Published private(set) var editedProfile: RuntimeOperationEditorProfile?
+    @Published private(set) var editorPositions: [RuntimeOperationPositionSummary] = []
+    @Published private(set) var editedPosition: RuntimeOperationEditorPosition?
     @Published private(set) var selectedEditorProfileID: String?
     @Published private(set) var selectedEditorPositionID: String?
     @Published private(set) var pendingConfirmation: PendingConfirmation?
@@ -271,9 +252,8 @@ final class SettingsViewModel: ObservableObject {
 
     private let model: HidhoggAppModel
     private let applicationSelector: ApplicationSelector
-    private let editorClientFactory: any RuntimeConfigEditorClientCreating
-    private let runtimeEndpointProvider: RuntimeEndpointProvider
-    private var boundEndpoint: RuntimeSessionController.RuntimeEndpoint?
+    private let runtimeOperationsProvider: RuntimeOperationsProvider
+    private var boundRuntimeIdentity: String?
     private var editorSession: EditorSession?
     private var editorRequestGeneration: UInt64 = 0
     private var profileSelectionGeneration: UInt64 = 0
@@ -282,9 +262,9 @@ final class SettingsViewModel: ObservableObject {
     private var catalogRefreshTask: Task<Void, Never>?
 
     private struct EditorSession: Sendable {
-        let endpoint: RuntimeSessionController.RuntimeEndpoint
+        let identity: String
         let generation: UInt64
-        let client: any RuntimeConfigEditorChecking
+        let operations: any HidhoggEditorOperations
     }
 
     convenience init(model: HidhoggAppModel) {
@@ -297,23 +277,21 @@ final class SettingsViewModel: ObservableObject {
     init(
         model: HidhoggAppModel,
         applicationSelector: @escaping ApplicationSelector,
-        editorClientFactory: any RuntimeConfigEditorClientCreating = SettingsConfigEditorClientFactory(),
-        runtimeEndpointProvider: RuntimeEndpointProvider? = nil
+        runtimeOperationsProvider: RuntimeOperationsProvider? = nil
     ) {
         self.model = model
         self.applicationSelector = applicationSelector
-        self.editorClientFactory = editorClientFactory
-        self.runtimeEndpointProvider = runtimeEndpointProvider ?? { [weak model] in
-            model?.runtimeSession.endpoint
+        self.runtimeOperationsProvider = runtimeOperationsProvider ?? { [weak model] in
+            model?.runtimeSession.operationsHandle
         }
-        setEditorEndpoint(self.runtimeEndpointProvider())
+        setRuntimeOperations(self.runtimeOperationsProvider())
     }
 
-    var availableProfiles: [ProfileSummary] {
-        model.profileCatalog?.profiles ?? []
+    var availableProfiles: [RuntimeOperationProfile] {
+        model.profileCatalog ?? []
     }
 
-    var hasEditorEndpoint: Bool {
+    var hasEditorRuntime: Bool {
         editorSession != nil
     }
 
@@ -618,14 +596,14 @@ final class SettingsViewModel: ObservableObject {
         positionDraft = draft
     }
 
-    func setEditorEndpoint(_ endpoint: RuntimeSessionController.RuntimeEndpoint?) {
-        if endpoint == boundEndpoint, editorSession != nil { return }
-        if endpoint == nil, boundEndpoint == nil, editorSession == nil { return }
+    func setRuntimeOperations(_ handle: RuntimeOperationsHandle?) {
+        if handle?.identity == boundRuntimeIdentity, editorSession != nil { return }
+        if handle == nil, boundRuntimeIdentity == nil, editorSession == nil { return }
 
         editorRequestGeneration &+= 1
         editorRequestTask = nil
         editorSession = nil
-        boundEndpoint = endpoint
+        boundRuntimeIdentity = handle?.identity
         editorSnapshot = nil
         clearProfileEditingState()
         pendingConfirmation = nil
@@ -638,20 +616,13 @@ final class SettingsViewModel: ObservableObject {
         newProfileLabel = ""
         newProfileSourceID = nil
 
-        guard let endpoint else { return }
-        do {
-            editorSession = EditorSession(
-                endpoint: endpoint,
-                generation: editorRequestGeneration,
-                client: try editorClientFactory.make(
-                    socketPath: endpoint.socketPath,
-                    instanceID: endpoint.instanceID
-                )
-            )
-            refreshEditorSnapshot()
-        } catch {
-            editorErrorMessage = "The profile editor could not connect to the current runtime."
-        }
+        guard let handle else { return }
+        editorSession = EditorSession(
+            identity: handle.identity,
+            generation: editorRequestGeneration,
+            operations: handle.operations as any HidhoggEditorOperations
+        )
+        refreshEditorSnapshot()
     }
 
     func refreshEditorSnapshot() {
@@ -661,19 +632,12 @@ final class SettingsViewModel: ObservableObject {
         clearProfileEditingState()
         editorErrorMessage = nil
         isEditorBusy = true
-        let client = session.client
-        let requestID = UUID().uuidString.lowercased()
-        let operation = Task.detached(priority: .userInitiated) {
-            Result {
-                try client.configEditorSnapshot(requestID: requestID)
-            }
-        }
         editorRequestTask = Task { @MainActor [weak self] in
-            let result = await operation.value
+            let result = await Self.capture { try await session.operations.editorSnapshot() }
             guard let self else { return }
             guard self.editorRequestGeneration == session.generation else { return }
             guard self.isCurrent(session) else {
-                self.setEditorEndpoint(self.runtimeEndpointProvider())
+                self.setRuntimeOperations(self.runtimeOperationsProvider())
                 return
             }
 
@@ -681,10 +645,6 @@ final class SettingsViewModel: ObservableObject {
             self.isEditorBusy = false
             switch result {
             case .success(let snapshot):
-                guard snapshot.instanceID == session.endpoint.instanceID else {
-                    self.editorErrorMessage = "The editor response did not match the current runtime."
-                    return
-                }
                 self.editorSnapshot = snapshot
                 if let newProfileSourceID = self.newProfileSourceID,
                    !snapshot.profileIDs.contains(newProfileSourceID) {
@@ -721,26 +681,17 @@ final class SettingsViewModel: ObservableObject {
         editedProfileLabel = ""
         editorErrorMessage = nil
         isEditorBusy = true
-        let client = session.client
-        let requestID = UUID().uuidString.lowercased()
         let sourceDigest = snapshot.sourceDigest
-        let operation = Task.detached(priority: .userInitiated) {
-            Result {
-                try client.configEditorProfile(
-                    profileID: profileID,
-                    sourceDigest: sourceDigest,
-                    requestID: requestID
-                )
-            }
-        }
         editorRequestTask = Task { @MainActor [weak self] in
-            let result = await operation.value
+            let result = await Self.capture {
+                try await session.operations.editorProfile(sourceDigest: sourceDigest, profileID: profileID)
+            }
             guard let self else { return }
             guard self.editorRequestGeneration == session.generation else { return }
             guard self.profileSelectionGeneration == selectionGeneration,
                   self.selectedEditorProfileID == profileID else { return }
             guard self.isCurrent(session) else {
-                self.setEditorEndpoint(self.runtimeEndpointProvider())
+                self.setRuntimeOperations(self.runtimeOperationsProvider())
                 return
             }
 
@@ -748,8 +699,7 @@ final class SettingsViewModel: ObservableObject {
             self.isEditorBusy = false
             switch result {
             case .success(let profile):
-                guard profile.instanceID == session.endpoint.instanceID,
-                      profile.sourceDigest == sourceDigest,
+                guard profile.sourceDigest == sourceDigest,
                       profile.profileID == profileID else {
                     self.editorErrorMessage = "The editor response did not match the current profile snapshot."
                     return
@@ -781,30 +731,21 @@ final class SettingsViewModel: ObservableObject {
             return
         }
         guard isCurrent(session) else {
-            setEditorEndpoint(runtimeEndpointProvider())
+            setRuntimeOperations(runtimeOperationsProvider())
             return
         }
 
         isEditorBusy = true
-        let client = session.client
-        let requestID = UUID().uuidString.lowercased()
-        let operation = Task.detached(priority: .userInitiated) {
-            Result {
-                try client.configEditorPositions(
-                    profileID: profileID,
-                    sourceDigest: sourceDigest,
-                    requestID: requestID
-                )
-            }
-        }
         editorRequestTask = Task { @MainActor [weak self] in
-            let result = await operation.value
+            let result = await Self.capture {
+                try await session.operations.editorPositions(sourceDigest: sourceDigest, profileID: profileID)
+            }
             guard let self else { return }
             guard self.editorRequestGeneration == session.generation,
                   self.profileSelectionGeneration == selectionGeneration,
                   self.selectedEditorProfileID == profileID else { return }
             guard self.isCurrent(session) else {
-                self.setEditorEndpoint(self.runtimeEndpointProvider())
+                self.setRuntimeOperations(self.runtimeOperationsProvider())
                 return
             }
 
@@ -812,8 +753,7 @@ final class SettingsViewModel: ObservableObject {
             self.isEditorBusy = false
             switch result {
             case .success(let response):
-                guard response.instanceID == session.endpoint.instanceID,
-                      response.sourceDigest == sourceDigest,
+                guard response.sourceDigest == sourceDigest,
                       response.profileID == profileID else {
                     self.editorErrorMessage = "Position choices did not match the current profile snapshot."
                     return
@@ -852,21 +792,15 @@ final class SettingsViewModel: ObservableObject {
         positionDraft = nil
         editorErrorMessage = nil
         isEditorBusy = true
-        let client = session.client
-        let requestID = UUID().uuidString.lowercased()
         let sourceDigest = snapshot.sourceDigest
-        let operation = Task.detached(priority: .userInitiated) {
-            Result {
-                try client.configEditorPosition(
-                    profileID: profileID,
-                    positionID: positionID,
+        editorRequestTask = Task { @MainActor [weak self] in
+            let result = await Self.capture {
+                try await session.operations.editorPosition(
                     sourceDigest: sourceDigest,
-                    requestID: requestID
+                    profileID: profileID,
+                    positionID: positionID
                 )
             }
-        }
-        editorRequestTask = Task { @MainActor [weak self] in
-            let result = await operation.value
             guard let self else { return }
             guard self.editorRequestGeneration == session.generation,
                   self.profileSelectionGeneration == profileGeneration,
@@ -874,7 +808,7 @@ final class SettingsViewModel: ObservableObject {
                   self.selectedEditorProfileID == profileID,
                   self.selectedEditorPositionID == positionID else { return }
             guard self.isCurrent(session) else {
-                self.setEditorEndpoint(self.runtimeEndpointProvider())
+                self.setRuntimeOperations(self.runtimeOperationsProvider())
                 return
             }
 
@@ -882,8 +816,7 @@ final class SettingsViewModel: ObservableObject {
             self.isEditorBusy = false
             switch result {
             case .success(let response):
-                guard response.instanceID == session.endpoint.instanceID,
-                      response.sourceDigest == sourceDigest,
+                guard response.sourceDigest == sourceDigest,
                       response.profileID == profileID,
                       response.positionID == positionID else {
                     self.editorErrorMessage = "The position details did not match the current profile snapshot."
@@ -950,13 +883,12 @@ final class SettingsViewModel: ObservableObject {
                 editorErrorMessage = "The clone details changed. Review them and confirm again."
                 return
             }
-            performMutation(session: session) { client in
-                try client.createConfigEditorProfile(
-                    profileID: request.profileID,
-                    label: request.label,
+            performMutation(session: session) { operations in
+                try await operations.cloneProfile(
                     expectedDigest: request.sourceDigest,
                     sourceProfileID: request.sourceProfileID,
-                    requestID: UUID().uuidString.lowercased()
+                    profileID: request.profileID,
+                    label: request.label
                 )
             }
         case .delete(let request):
@@ -966,11 +898,10 @@ final class SettingsViewModel: ObservableObject {
                     ?? "The editor snapshot changed. Refresh before deleting."
                 return
             }
-            performMutation(session: session) { client in
-                try client.deleteConfigEditorProfile(
-                    profileID: request.profileID,
+            performMutation(session: session) { operations in
+                try await operations.edit(
                     expectedDigest: request.sourceDigest,
-                    requestID: UUID().uuidString.lowercased()
+                    edit: .deleteProfile(profileID: request.profileID)
                 )
             }
         }
@@ -991,12 +922,10 @@ final class SettingsViewModel: ObservableObject {
         let profileID = editedProfile.profileID
         let label = editedProfileLabel
         let expectedDigest = snapshot.sourceDigest
-        performMutation(session: session) { client in
-            try client.setConfigEditorProfileLabel(
-                profileID: profileID,
-                label: label,
+        performMutation(session: session) { operations in
+            try await operations.edit(
                 expectedDigest: expectedDigest,
-                requestID: UUID().uuidString.lowercased()
+                edit: .setProfileLabel(profileID: profileID, label: label)
             )
         }
     }
@@ -1014,13 +943,10 @@ final class SettingsViewModel: ObservableObject {
         let profileID = editedPosition.profileID
         let positionID = editedPosition.positionID
         let expectedDigest = snapshot.sourceDigest
-        performMutation(session: session) { client in
-            try client.patchConfigEditorPosition(
-                profileID: profileID,
-                positionID: positionID,
-                patch: patch,
+        performMutation(session: session) { operations in
+            try await operations.edit(
                 expectedDigest: expectedDigest,
-                requestID: UUID().uuidString.lowercased()
+                edit: .patchPosition(profileID: profileID, coordinate: positionID, patch: patch)
             )
         }
     }
@@ -1045,7 +971,7 @@ final class SettingsViewModel: ObservableObject {
 
     private func performMutation(
         session: EditorSession,
-        operation: @escaping @Sendable (any RuntimeConfigEditorChecking) throws -> ConfigEditorMutationResponse
+        operation: @escaping @Sendable (any HidhoggEditorOperations) async throws -> RuntimeOperationEditResult
     ) {
         guard !isEditorBusy,
               !requiresSnapshotRefresh,
@@ -1056,17 +982,12 @@ final class SettingsViewModel: ObservableObject {
 
         isEditorBusy = true
         editorErrorMessage = nil
-        let request = Task.detached(priority: .userInitiated) {
-            Result {
-                try operation(session.client)
-            }
-        }
         editorRequestTask = Task { @MainActor [weak self] in
-            let result = await request.value
+            let result = await Self.capture { try await operation(session.operations) }
             guard let self else { return }
             guard self.editorRequestGeneration == session.generation else { return }
             guard self.isCurrent(session) else {
-                self.setEditorEndpoint(self.runtimeEndpointProvider())
+                self.setRuntimeOperations(self.runtimeOperationsProvider())
                 return
             }
 
@@ -1074,11 +995,6 @@ final class SettingsViewModel: ObservableObject {
             self.isEditorBusy = false
             switch result {
             case .success(let response):
-                guard response.instanceID == session.endpoint.instanceID else {
-                    self.requiresSnapshotRefresh = true
-                    self.editorErrorMessage = "The editor response did not match the current runtime."
-                    return
-                }
                 self.lastMutationSummary = Self.mutationSummary(response)
                 self.editorNoticeMessage = nil
                 self.requiresSnapshotRefresh = true
@@ -1108,8 +1024,8 @@ final class SettingsViewModel: ObservableObject {
     }
 
     private func currentEditorSession() -> EditorSession? {
-        guard runtimeEndpointProvider() == boundEndpoint else {
-            setEditorEndpoint(runtimeEndpointProvider())
+        guard runtimeOperationsProvider()?.identity == boundRuntimeIdentity else {
+            setRuntimeOperations(runtimeOperationsProvider())
             return nil
         }
         return editorSession
@@ -1117,8 +1033,18 @@ final class SettingsViewModel: ObservableObject {
 
     private func isCurrent(_ session: EditorSession) -> Bool {
         editorRequestGeneration == session.generation &&
-            boundEndpoint == session.endpoint &&
-            runtimeEndpointProvider() == session.endpoint
+            boundRuntimeIdentity == session.identity &&
+            runtimeOperationsProvider()?.identity == session.identity
+    }
+
+    private static func capture<Value>(
+        _ operation: () async throws -> Value
+    ) async -> Result<Value, Error> {
+        do {
+            return .success(try await operation())
+        } catch {
+            return .failure(error)
+        }
     }
 
     private func handleReadFailure(
@@ -1135,23 +1061,21 @@ final class SettingsViewModel: ObservableObject {
     }
 
     private static func isStaleSourceError(_ error: Error) -> Bool {
-        guard case UnixSocketClientError.response(.serverError(let runtimeError)) = error else {
-            return false
-        }
-        return runtimeError.code == "stale_source"
+        guard let operationError = error as? RuntimeOperationError else { return false }
+        return operationError == .staleSource
     }
 
     private static func isUncertainMutationError(_ error: Error) -> Bool {
-        guard let error = error as? UnixSocketClientError else { return true }
-        switch error {
-        case .response(.serverError):
-            return false
-        default:
+        guard let operationError = error as? RuntimeOperationError else { return true }
+        switch operationError {
+        case .fileCommitFailed(uncertain: true), .deviceWriteFailed:
             return true
+        default:
+            return false
         }
     }
 
-    private static func mutationSummary(_ response: ConfigEditorMutationResponse) -> String {
+    private static func mutationSummary(_ response: RuntimeOperationEditResult) -> String {
         let file = switch response.fileCommit {
         case .unchanged: "File unchanged"
         case .committed: "File committed"
@@ -1159,10 +1083,9 @@ final class SettingsViewModel: ObservableObject {
         }
         let reload = switch response.reloadOutcome {
         case .unchanged: "runtime unchanged"
-        case .changed: "runtime reloaded"
+        case .reloaded: "runtime reloaded"
         case .rejected: "runtime rejected reload"
-        case .uncertain: "runtime outcome uncertain"
-        case .notAttempted: "runtime reload not attempted"
+        case .runtimeFailed: "runtime effect failed"
         }
         let effect = response.effect == .unchanged ? "" : " (\(response.effect.rawValue))"
         let reason = response.reason == .none ? "" : " — \(response.reason.rawValue)"
@@ -1262,9 +1185,9 @@ final class SettingsViewModel: ObservableObject {
 
     static func makeMappingRows(
         preferences: ProfileMappingPreferences,
-        catalog: ProfileListResponse?
+        catalog: [RuntimeOperationProfile]?
     ) -> [MappingRow] {
-        let availableProfileIDs = Set(catalog?.profiles.map(\.id) ?? [])
+        let availableProfileIDs = Set(catalog?.map(\.id) ?? [])
         let validRows = preferences.sortedMappings.map { mapping in
             MappingRow(
                 bundleIdentifier: mapping.bundleIdentifier,
@@ -1449,7 +1372,7 @@ struct SettingsView: View {
             }
 
             Section("Profiles") {
-                if !viewModel.hasEditorEndpoint {
+                if !viewModel.hasEditorRuntime {
                     Text("Profile editing is available when the runtime is ready.")
                         .foregroundStyle(.secondary)
                 } else if let snapshot = viewModel.editorSnapshot {
@@ -1583,8 +1506,8 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(minWidth: 540, minHeight: 420)
         .padding()
-        .onReceive(model.runtimeSession.$endpoint) { endpoint in
-            viewModel.setEditorEndpoint(endpoint)
+        .onReceive(model.runtimeSession.$operationsHandle) { handle in
+            viewModel.setRuntimeOperations(handle)
         }
         .confirmationDialog(
             "Confirm profile change",
@@ -1619,7 +1542,7 @@ struct SettingsView: View {
         } message: {
             switch viewModel.pendingConfirmation {
             case .clone(let request):
-                let source = request.sourceProfileID ?? "the current profile when the change is committed"
+                let source = request.sourceProfileID ?? "the default profile"
                 Text("Clone \(source) as \(request.profileID) with label “\(request.label)”?")
             case .delete(let request):
                 Text("Delete \(request.profileID)? The runtime will also refuse deletion if the profile is referenced by a TOML action.")
@@ -1945,10 +1868,10 @@ private struct SettingsMappingRowView: View {
                         set: { viewModel.updateMapping(bundleIdentifier: row.bundleIdentifier, profileID: $0) }
                     )
                 ) {
-                    if !model.profileCatalog!.profiles.contains(where: { $0.id == row.profileID }) {
+                    if !model.profileCatalog!.contains(where: { $0.id == row.profileID }) {
                         Text("Missing: \(row.profileID)").tag(row.profileID)
                     }
-                    ForEach(model.profileCatalog!.profiles, id: \.id) { profile in
+                    ForEach(model.profileCatalog!, id: \.id) { profile in
                         Text("\(profile.label) (\(profile.id))").tag(profile.id)
                     }
                 }

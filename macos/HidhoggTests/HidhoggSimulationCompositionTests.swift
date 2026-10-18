@@ -1,6 +1,8 @@
 import AppKit
+import Darwin
 import Foundation
 import XCTest
+import HidhoggCore
 @testable import Hidhogg
 
 @MainActor
@@ -413,13 +415,15 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
         )
         let markerPath = directory.appendingPathComponent("ready").path
 
-        XCTAssertTrue(HidhoggSimulationLaunchControl.publishReadyMarker(at: markerPath, endpoint: endpoint))
-        XCTAssertFalse(HidhoggSimulationLaunchControl.publishReadyMarker(at: markerPath, endpoint: endpoint))
+        let readiness = HidhoggSimulationRuntimeReadiness(instanceID: endpoint.instanceID, endpoint: endpoint)
+        XCTAssertTrue(HidhoggSimulationLaunchControl.publishReadyMarker(at: markerPath, readiness: readiness))
+        XCTAssertFalse(HidhoggSimulationLaunchControl.publishReadyMarker(at: markerPath, readiness: readiness))
         XCTAssertEqual(
             try String(contentsOfFile: markerPath, encoding: .utf8),
             """
             state=ready
             instance_id=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+            cli_state=available
             generation_directory=\(directory.appendingPathComponent("runtime/generation-1").path)
             socket_path=\(socketPath)
             """
@@ -429,12 +433,40 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["ready"])
     }
 
+    func testSimulationReadyMarkerReportsUnavailableCLIWithoutBlockingRuntimeReadiness() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hidhogg-ready-cli-unavailable-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let markerPath = directory.appendingPathComponent("ready").path
+        let readiness = HidhoggSimulationRuntimeReadiness(
+            instanceID: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+            endpoint: nil
+        )
+
+        XCTAssertTrue(HidhoggSimulationLaunchControl.publishReadyMarker(at: markerPath, readiness: readiness))
+        XCTAssertEqual(
+            try String(contentsOfFile: markerPath, encoding: .utf8),
+            """
+            state=ready
+            instance_id=ffffffff-ffff-4fff-8fff-ffffffffffff
+            cli_state=unavailable
+            """
+        )
+    }
+
     func testSimulationLaunchControlPublishesReadyThenTerminatesForStopMarker() async {
         let endpoint = RuntimeSessionController.RuntimeEndpoint(
             instanceID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             socketPath: "/tmp/runtime/generation-2/runtime.sock"
         )
-        var publishedEndpoint: RuntimeSessionController.RuntimeEndpoint?
+        let readiness = HidhoggSimulationRuntimeReadiness(instanceID: endpoint.instanceID, endpoint: endpoint)
+        var publishedReadiness: HidhoggSimulationRuntimeReadiness?
         var stopRequested = false
         var terminationCount = 0
         let diagnostics = HidhoggSimulationDiagnosticRecorder()
@@ -444,15 +476,15 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
             diagnostics: diagnostics.sink,
             maximumPollCount: 5,
             pollIntervalNanoseconds: 1,
-            readiness: { endpoint },
-            publishReady: { readyEndpoint in
-                publishedEndpoint = readyEndpoint
+            readiness: { readiness },
+            publishReady: { readyValue in
+                publishedReadiness = readyValue
                 return true
             },
             stopRequested: { stopRequested },
             pause: { _ in
                 await Task.yield()
-                if publishedEndpoint != nil {
+                if publishedReadiness != nil {
                     stopRequested = true
                 }
             },
@@ -462,7 +494,7 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
         control.start()
         await control.waitForMonitoring()
 
-        XCTAssertEqual(publishedEndpoint, endpoint)
+        XCTAssertEqual(publishedReadiness, readiness)
         XCTAssertEqual(terminationCount, 1)
         XCTAssertEqual(control.state, .completed)
         XCTAssertEqual(
@@ -476,7 +508,8 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
             instanceID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
             socketPath: "/tmp/runtime/generation-3/runtime.sock"
         )
-        var publishedEndpoint: RuntimeSessionController.RuntimeEndpoint?
+        let readiness = HidhoggSimulationRuntimeReadiness(instanceID: endpoint.instanceID, endpoint: endpoint)
+        var publishedReadiness: HidhoggSimulationRuntimeReadiness?
         var stopRequested = false
         var pauseCount = 0
         var terminationCount = 0
@@ -487,16 +520,16 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
             diagnostics: diagnostics.sink,
             maximumPollCount: 2,
             pollIntervalNanoseconds: 1,
-            readiness: { endpoint },
-            publishReady: { readyEndpoint in
-                publishedEndpoint = readyEndpoint
+            readiness: { readiness },
+            publishReady: { readyValue in
+                publishedReadiness = readyValue
                 return true
             },
             stopRequested: { stopRequested },
             pause: { _ in
                 pauseCount += 1
                 await Task.yield()
-                if pauseCount == 2, publishedEndpoint != nil {
+                if pauseCount == 2, publishedReadiness != nil {
                     stopRequested = true
                 }
             },
@@ -507,7 +540,7 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
         await control.waitForMonitoring()
 
         XCTAssertEqual(pauseCount, 2)
-        XCTAssertEqual(publishedEndpoint, endpoint)
+        XCTAssertEqual(publishedReadiness, readiness)
         XCTAssertEqual(terminationCount, 1)
         XCTAssertEqual(control.state, .completed)
         XCTAssertEqual(
@@ -521,9 +554,10 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
             instanceID: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             socketPath: "/tmp/runtime/generation-4/runtime.sock"
         )
+        let readiness = HidhoggSimulationRuntimeReadiness(instanceID: endpoint.instanceID, endpoint: endpoint)
         let timeoutReached = expectation(description: "readiness deadline is reached")
         let readinessReturned = expectation(description: "late readiness result returns")
-        var resumeReadiness: ((RuntimeSessionController.RuntimeEndpoint?) -> Void)?
+        var resumeReadiness: ((HidhoggSimulationRuntimeReadiness?) -> Void)?
         var publicationCount = 0
         var didSignalTimeout = false
         let diagnostics = HidhoggSimulationDiagnosticRecorder()
@@ -535,7 +569,7 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
             pollIntervalNanoseconds: 1,
             readiness: {
                 let result = await withCheckedContinuation {
-                    (continuation: CheckedContinuation<RuntimeSessionController.RuntimeEndpoint?, Never>) in
+                    (continuation: CheckedContinuation<HidhoggSimulationRuntimeReadiness?, Never>) in
                     resumeReadiness = { continuation.resume(returning: $0) }
                 }
                 readinessReturned.fulfill()
@@ -560,7 +594,7 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
 
         XCTAssertEqual(control.state, .timedOut)
         XCTAssertEqual(diagnostics.events, [.launchControlStarted, .readinessTimedOut])
-        resumeReadiness?(endpoint)
+        resumeReadiness?(readiness)
         await fulfillment(of: [readinessReturned], timeout: 2)
         await Task.yield()
         XCTAssertEqual(publicationCount, 0)
@@ -576,6 +610,7 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
             instanceID: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
             socketPath: "/tmp/runtime/generation-5/runtime.sock"
         )
+        let readiness = HidhoggSimulationRuntimeReadiness(instanceID: endpoint.instanceID, endpoint: endpoint)
         var publicationCount = 0
         var terminationCount = 0
         let diagnostics = HidhoggSimulationDiagnosticRecorder()
@@ -583,7 +618,7 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
             readyMarkerPath: "/tmp/ready",
             stopMarkerPath: "/tmp/stop",
             diagnostics: diagnostics.sink,
-            readiness: { endpoint },
+            readiness: { readiness },
             publishReady: { _ in
                 publicationCount += 1
                 return true
@@ -719,10 +754,13 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
 
         XCTAssertEqual(model.runtimeSession.lifecycleState, .ready, model.runtimeSession.lastFailureDetail ?? "")
         let endpoint = try XCTUnwrap(model.runtimeSession.endpoint)
-        let client = try UnixSocketClient(socketPath: endpoint.socketPath, instanceID: endpoint.instanceID)
-        let health = try client.health(requestID: UUID().uuidString.lowercased())
-        XCTAssertEqual(health.instanceID, endpoint.instanceID)
-        XCTAssertEqual(health.state, "ready")
+        let resolvedRuntime = try IPCRuntimeDiscovery.resolve(
+            URL(fileURLWithPath: endpoint.socketPath).deletingLastPathComponent().path
+        )
+        let health = try await IPCClient(runtime: resolvedRuntime).call(.health)
+        XCTAssertNil(health.failure)
+        XCTAssertEqual(health.result?.value(for: "instance_id")?.stringValue, endpoint.instanceID)
+        XCTAssertEqual(health.result?.value(for: "state")?.stringValue, "ready")
 
         await model.quit()
 
@@ -730,6 +768,153 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
         XCTAssertNil(model.runtimeSession.endpoint)
         XCTAssertFalse(FileManager.default.fileExists(atPath: endpoint.socketPath))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: runtimeRoot.path), [])
+    }
+
+    func testSimulatedOperationsRemainReadyWhenOptionalCLIRuntimeCannotBeCreated() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp/hga-\(UUID().uuidString.prefix(6))", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let syntheticConfiguration = Self.syntheticConfiguration
+        let configurationURL = root.appendingPathComponent("synthetic-config.toml")
+        try Data(syntheticConfiguration.utf8).write(to: configurationURL)
+        let runtimeSession = RuntimeSessionController(
+            backendSelection: .simulated,
+            runtimeDirectoryFactory: FailingGenerationDirectoryFactory(),
+            simulationDiagnostics: nil
+        )
+
+        runtimeSession.start(configurationPath: configurationURL.path)
+        await runtimeSession.waitForTransition()
+
+        XCTAssertEqual(runtimeSession.lifecycleState, .ready, runtimeSession.lastFailureDetail ?? "")
+        XCTAssertNil(runtimeSession.endpoint)
+        XCTAssertEqual(runtimeSession.cliConnectivityError, "The command-line service could not be started.")
+
+        let handle = try XCTUnwrap(runtimeSession.operationsHandle)
+        let snapshot = try await handle.operations.editorSnapshot()
+        let profile = try await handle.operations.editorProfile(
+            sourceDigest: snapshot.sourceDigest,
+            profileID: "default"
+        )
+        XCTAssertEqual(profile.label, "Synthetic")
+
+        let edit = try await handle.operations.edit(
+            expectedDigest: snapshot.sourceDigest,
+            edit: .patchPosition(
+                profileID: "default",
+                coordinate: "0_0",
+                patch: ConfigurationPositionPatch(label: .set("Updated"))
+            )
+        )
+        XCTAssertEqual(edit.fileCommit, .committed)
+        XCTAssertEqual(edit.reloadOutcome, .reloaded)
+
+        let updatedSnapshot = try await handle.operations.editorSnapshot()
+        let updatedPosition = try await handle.operations.editorPosition(
+            sourceDigest: updatedSnapshot.sourceDigest,
+            profileID: "default",
+            positionID: "0_0"
+        )
+        let status = try await handle.operations.configurationStatus()
+        XCTAssertNotEqual(updatedSnapshot.sourceDigest, snapshot.sourceDigest)
+        XCTAssertEqual(updatedPosition.label, "Updated")
+        XCTAssertTrue(status.active)
+
+        await runtimeSession.quit()
+        XCTAssertEqual(runtimeSession.lifecycleState, .stopped)
+    }
+
+    func testUncertainCLICleanupKeepsSimulatedRuntimeReadyAndReportsUncertaintyOnQuit() async throws {
+        let root = URL(fileURLWithPath: "/private/tmp/hgu-\(UUID().uuidString.prefix(6))", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let syntheticConfiguration = Self.syntheticConfiguration
+        let configurationURL = root.appendingPathComponent("synthetic-config.toml")
+        try Data(syntheticConfiguration.utf8).write(to: configurationURL)
+        let runtimeDirectoryFactory = ReservedMetadataGenerationDirectoryFactory(root: root)
+        let runtimeSession = RuntimeSessionController(
+            backendSelection: .simulated,
+            runtimeDirectoryFactory: runtimeDirectoryFactory,
+            simulationDiagnostics: nil
+        )
+        let model = HidhoggAppModel(
+            preferencesStore: ExplicitConfigurationPathStore(path: configurationURL.path),
+            runtimeSession: runtimeSession,
+            profileMappingStore: RestartTestProfileMappingPreferencesStore(),
+            displayPowerCoordinator: HostDisplayPowerCoordinator(
+                observer: RestartTestHostDisplayPowerObserver()
+            ),
+            foregroundObserver: RestartTestForegroundApplicationObserver(),
+            allowsConfigurationSelection: false,
+            configurationBootstrapFactory: {
+                DefaultConfigurationBootstrap(
+                    xdgConfigHome: nil,
+                    homeDirectory: root,
+                    templateData: Data(syntheticConfiguration.utf8)
+                )
+            }
+        )
+
+        model.start()
+        await runtimeSession.waitForTransition()
+
+        XCTAssertEqual(runtimeSession.lifecycleState, .ready, runtimeSession.lastFailureDetail ?? "")
+        XCTAssertNil(runtimeSession.endpoint)
+        XCTAssertEqual(
+            runtimeSession.cliConnectivityError,
+            "The command-line service could not be started, and cleanup is uncertain."
+        )
+        let handle = try XCTUnwrap(runtimeSession.operationsHandle)
+        let snapshot = try await handle.operations.editorSnapshot()
+        let profile = try await handle.operations.editorProfile(
+            sourceDigest: snapshot.sourceDigest,
+            profileID: "default"
+        )
+        XCTAssertEqual(profile.label, "Synthetic")
+
+        for _ in 0..<50 where !model.healthText.contains("cleanup is uncertain") {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(
+            model.healthText,
+            "Health: ready\nThe command-line service could not be started, and cleanup is uncertain."
+        )
+
+        let occupiedPath = try XCTUnwrap(runtimeDirectoryFactory.metadataPath)
+        let metadataURL = URL(fileURLWithPath: occupiedPath)
+        let socketURL = metadataURL.deletingLastPathComponent().appendingPathComponent("runtime.sock")
+        let socketIdentity = try XCTUnwrap(runtimeDirectoryFactory.socketIdentity)
+        XCTAssertEqual(try PathSecurity.lstat(socketURL.path).identity, socketIdentity)
+        XCTAssertEqual(
+            Set(try FileManager.default.contentsOfDirectory(atPath: metadataURL.deletingLastPathComponent().path)),
+            Set(["runtime.json", "runtime.sock"])
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: occupiedPath))
+        XCTAssertEqual(
+            try Data(contentsOf: metadataURL),
+            Data("synthetic reserved metadata".utf8)
+        )
+        await model.quit()
+        guard case .failed(.cleanup) = runtimeSession.lifecycleState else {
+            XCTFail("uncertain CLI cleanup must not report a closed runtime")
+            return
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: occupiedPath))
+        XCTAssertEqual(try PathSecurity.lstat(socketURL.path).identity, socketIdentity)
+        XCTAssertEqual(
+            Set(try FileManager.default.contentsOfDirectory(atPath: metadataURL.deletingLastPathComponent().path)),
+            Set(["runtime.json", "runtime.sock"])
+        )
     }
 
     private static let syntheticConfiguration = """
@@ -744,6 +929,95 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
     """
 }
 
+private struct FailingGenerationDirectoryFactory: GenerationDirectoryCreating {
+    func create(instanceID: String) throws -> GenerationDirectory {
+        throw PathSecurityError.pathTooLong
+    }
+}
+
+private final class ReservedMetadataGenerationDirectoryFactory: GenerationDirectoryCreating, @unchecked Sendable {
+    private let lock = NSLock()
+    let root: URL
+    private var metadataPathStorage: String?
+    private var socketIdentityStorage: FileIdentity?
+
+    init(root: URL) {
+        self.root = root
+    }
+
+    var metadataPath: String? {
+        lock.withLock { metadataPathStorage }
+    }
+
+    func create(instanceID: String) throws -> GenerationDirectory {
+        let generation = try DefaultGenerationDirectoryFactory(
+            root: root,
+            rootPolicy: .injected
+        ).create(instanceID: instanceID)
+        guard generation.socket.path.utf8.count + 1 <= PathSecurity.unixPathBytes else {
+            throw PathSecurityError.pathTooLong
+        }
+        try bindSyntheticUnixSocket(at: generation.socket)
+        let socketIdentity = try PathSecurity.lstat(generation.socket.path).identity
+        let metadataURL = generation.directory.appendingPathComponent("runtime.json")
+        guard FileManager.default.createFile(
+            atPath: metadataURL.path,
+            contents: Data("synthetic reserved metadata".utf8),
+            attributes: [.posixPermissions: 0o600]
+        ) else {
+            throw PathSecurityError.unexpectedEndpoint(metadataURL.path)
+        }
+        lock.withLock {
+            metadataPathStorage = metadataURL.path
+            socketIdentityStorage = socketIdentity
+        }
+        return generation
+    }
+
+    var socketIdentity: FileIdentity? {
+        lock.withLock { socketIdentityStorage }
+    }
+}
+
+private func bindSyntheticUnixSocket(at socketURL: URL) throws {
+    let descriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+    guard descriptor >= 0 else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+    defer { _ = Darwin.close(descriptor) }
+
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+    let pathBytes = Array(socketURL.path.utf8)
+    withUnsafeMutableBytes(of: &address.sun_path) { destination in
+        destination.initializeMemory(as: UInt8.self, repeating: 0)
+        destination.copyBytes(from: pathBytes)
+    }
+    let bindResult = withUnsafePointer(to: &address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+        }
+    }
+    guard bindResult == 0 else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+    let chmodResult = socketURL.path.withCString { Darwin.chmod($0, mode_t(0o600)) }
+    guard chmodResult == 0 else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+}
+
+private struct ExplicitConfigurationPathStore: AppPreferencesStore {
+    let path: String
+
+    func string(forKey key: String) -> String? {
+        key == AppPreferences.configurationPathKey ? path : nil
+    }
+
+    func set(_ value: String?, forKey key: String) {}
+}
+
 private actor RestartTestRuntimeGeneration: RuntimeSessionGeneration {
     private let stopOutcome: RuntimeGenerationStopOutcome
     private let stopGate: RestartTestStopGate?
@@ -754,11 +1028,19 @@ private actor RestartTestRuntimeGeneration: RuntimeSessionGeneration {
         self.stopGate = stopGate
     }
 
-    func start() async throws -> RuntimeSessionController.RuntimeEndpoint {
+    func start() async throws -> RuntimeGenerationStart {
         running = true
-        return RuntimeSessionController.RuntimeEndpoint(
+        let endpoint = RuntimeSessionController.RuntimeEndpoint(
             instanceID: "restart-test",
             socketPath: "/private/tmp/restart-test.sock"
+        )
+        return RuntimeGenerationStart(
+            operationsHandle: RuntimeOperationsHandle(
+                identity: endpoint.instanceID,
+                operations: TestAppRuntimeOperations()
+            ),
+            endpoint: endpoint,
+            cliConnectivityError: nil
         )
     }
 
