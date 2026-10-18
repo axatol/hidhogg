@@ -17,6 +17,7 @@ struct HidhoggApp: App {
         Settings {
             SettingsView(model: applicationDelegate.model)
         }
+        .defaultLaunchBehavior(.presented)
     }
 }
 
