@@ -1618,3 +1618,7 @@ V2-A01 finalr3 app gate passed125/125, zero failures, sourceunchanged andwatchdo
 ## 2026-10-18 — V2-A01 completed
 
 Independent final gates passed: Core212, safe app125, arm64 Debugapp and ReleaseCLI builds, reviewed native simulatedapp/CLI smoke exit0 with no watchdog escalation and all owned runtime/simulation roots removed; owned PID gone. Final100path r3source manifest unchanged. Adversarial findings corrected and re-reviewed. Complete decisions/alternatives and retained failure evidence documented in docs/runtime-simplification.md; earlier fixturemkdir stall cause remains unconfirmed, not a productdeadlock repair. Scoped commit and milestone notification follow; no push/installation/deploy or untracked cleanup.
+
+## Owner follow-up — V2-A01
+
+Owner confirmed the new build still works and reported an earlier screen lock. Record the lock as contextual evidence only: its timing relative to the fixture mkdir stall and causal relationship were not established. No source change or additional test needed.

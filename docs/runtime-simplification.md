@@ -118,6 +118,10 @@ Earlier compile-only attempts exposed missing imports, privileged test imports a
 
 No physical HID, native keyboard posting, real configured-action execution or GUI interaction was performed. Owner configuration, environment values and unrelated untracked files were not inspected. The actual smoke app PID was absent after exit. No push, installation or deployment was performed.
 
+### Owner confirmation
+
+The owner confirmed that the new build still works after the in-process refactor. They also reported that the screen had locked earlier. The timing relative to the interrupted fixture test and any causal relationship remain unverified; this does not establish the cause of that stall.
+
 ## Completion checklist
 
 - [x] Concrete interface and bounded ownership

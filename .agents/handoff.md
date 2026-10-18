@@ -4,6 +4,8 @@ Updated: 2026-10-18, Australia/Brisbane.
 
 ## Latest completed task — V2-A01 #414
 
+Owner follow-up: confirmed the new build still works and reported that the screen had locked earlier. The timing relative to the fixture mkdir stall and any causal relationship remain unverified. This adds owner acceptance, not proof of the earlier stall cause.
+
 On 2026-10-18 the authorised internal-runtime simplification completed. See docs/runtime-simplification.md for all sixteen implementation decisions, alternatives, evidence and qualifications. TaskView project 5/list 49 is authoritative. Source checkpoint is the scoped in-process-runtime commit (see git log); no push, installation, deployment or worktree used.
 
 App profile/display/editor calls now use captured typed RuntimeOperationsHandle instances. One session-owned Core RuntimeOperations actor serves app, watcher and IPCServiceBinding. CLI socket startup is optional with visible degradation; the external protocol/security remain. Retired operations reject new calls, cancel pre-admission work and drain admitted work before server/device shutdown. Separate disk digests, file-commit and reload outcomes remain. Four app wire files and two associated wire test files were removed; ProfileValidation.swift/AppValidationTests.swift retain app and path-security checks. Supervisor.swift still contains active lifecycle/directory utilities, not a child-process supervisor; no broad observer/state-machine rewrite.
