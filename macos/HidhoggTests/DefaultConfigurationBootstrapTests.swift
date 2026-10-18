@@ -225,6 +225,9 @@ final class DefaultConfigurationBootstrapTests: XCTestCase {
             preferencesStore: TestPreferencesStore(),
             runtimeSession: runtimeSession,
             profileMappingStore: TestProfileMappingStore(),
+            displayPowerCoordinator: HostDisplayPowerCoordinator(
+                observer: InertHostDisplayPowerObserver()
+            ),
             foregroundObserver: EmptyForegroundObserver(),
             configurationBootstrapFactory: { bootstrap }
         )
@@ -289,4 +292,18 @@ private final class TestProfileMappingStore: @unchecked Sendable, ProfileMapping
     func dictionary(forKey key: String) -> [String: String]? { nil }
 
     func set(_ value: [String: String]?, forKey key: String) {}
+}
+
+@MainActor
+private final class InertHostDisplayPowerObserver: HostDisplayPowerObserving {
+    var lastKnownDisplayAwake: Bool? { nil }
+
+    func start(
+        stateHandler: @escaping HostDisplayPowerStateHandler,
+        errorHandler: @escaping HostDisplayPowerErrorHandler
+    ) {}
+
+    func reconcileIfUnknown() {}
+
+    func stop() {}
 }

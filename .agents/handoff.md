@@ -67,3 +67,10 @@ User reports another Codex session using Computer Use. Same-app contention is do
 
 
 Native delayed-stop recheck session11210 is now terminal exit0. Fresh appPID85551 stayedready135seconds, detectedstop, quitnormally and removedgeneration/socket/metadata, runtimerootempty. Terminal log SHAa8428e61b6ad5e6e9bbf74696ca39b6b1ed18f4dbd1b157c1a6d6d1b173c6c4f; app log SHA7f297bdf2470ea32323dc8dc5d518216f6d9426afe905b46cced4fbea2f6b1d3. Root read diagnostic chain stopdetected through cleanupclosed, no readinessTimedOut. GUIstillunrun. Tester approvedtoexecute prepared full safe148unitgate afterthisnativeprocessended; four actual integration/childselectors explicitlyexcluded, sourceobserverfake included. Preserve samebuild/testhandles once returned.
+
+
+## Full bounded app-unit result (2026-10-18)
+
+Tester confirmed same escalated session16945 terminal exit0 after Test/ARM64 build and148exactserialselectors:148passed,0failures,0skips. Build proved HIDHOGG_TEST_HOST. Unit log `/Volumes/Data/tmp/hidhogg-v01-audit-20261018/full-safe-unit-tests-escalated.log` SHAa8e5d883427a809be152b658802e851ec332a08f3074f404426abdbfcdba9722; buildlogSHAce8824ec92dc035dd8106e18551de8ada26c2523451aad2274825c7b735999dc. 13testsourcehashes matchedbefore/after; selectorSHAbcbe65e0a0b293a41b1d4caf188f8e689a0b056d85730f024cee364e4c859794. Fourexplicitexclusions: simulatedserverintegration, twoactualchildprocesstests, LiveIntegration. Default sandbox attempt failed SwiftPM resolutionbeforetests; preserved. Thisgate includes inert displayobserverinjection in bootstrapfailuretest. No livebuild/test/nativeprocess remains.
+
+Delayedstoprepair committed185bf34. Native report `/Volumes/Data/tmp/hidhogg-v2-v01-gui-prep-20261018/delayed-stop-native-report.md` SHAb5e2f8f76c63ccbe13ce672ce9b3a9bffc11ea88b0393b1b5e9f00b83b06dafd; updatedtemp matrix SHA72716c9afaf5810f2fdc4ab83ed93b5ccc123e2b173a672e6f9bc7c1c088d342. Next requiredwork: nativeGUI sixfield/save/reopen/conflict/reload and argumentindexinteractions onceCUAaccessready, requirementaudit/resolvequalifiedintegrationcoverage, thenX01removeGo andfinalbuild/docs. Do notmarkcomplete ordeleteGo yet.

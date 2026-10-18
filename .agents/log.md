@@ -1514,3 +1514,8 @@ Regression first failed as expected; repaired readiness-only budget/ongoingstopm
 ### 2026-10-18 — extended native simulation shutdown passed
 
 Reviewed gate session11210 terminal0: readyPID85551,135second postreadyhold, ownedstopmarker, gracefulexit0 and runtimegeneration/socket/metadatagone, rootempty. Appdiagnostics confirmstop and cleanupclosed; noGUIinteraction. TerminalSHAa8428e61b6ad5e6e9bbf74696ca39b6b1ed18f4dbd1b157c1a6d6d1b173c6c4f, appSHA7f297bdf2470ea32323dc8dc5d518216f6d9426afe905b46cced4fbea2f6b1d3. This closesdelayedstopregression, noteditorGUIacceptance. Full148safeAppunitgateapprovedafter nativeended; fourintegrationselectorsremainqualified.
+
+
+### 2026-10-18 — full bounded app unit gate passed
+
+Independent Test/ARM64 build and148exactserialunitselectors passed148/148,0failures/skips, terminal0. Inert bootstrapdisplayobserverinjection verified;13testsourcehashesmatchbefore/after. UnitlogSHAa8e5d883427a809be152b658802e851ec332a08f3074f404426abdbfcdba9722, buildSHAce8824ec92dc035dd8106e18551de8ada26c2523451aad2274825c7b735999dc. Fouractualintegration/childselectors explicitlyexcluded; no GUIacceptanceclaim. Default sandboxfailurepretestsretained. Delayedstoprepair185bf34 and native135secondgatealreadygreen.
