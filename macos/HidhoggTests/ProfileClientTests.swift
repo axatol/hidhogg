@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import XCTest
+import HidhoggCore
 @testable import Hidhogg
 
 final class ProfileClientTests: XCTestCase {
@@ -390,6 +391,66 @@ final class ProfileClientTests: XCTestCase {
         XCTAssertEqual(mutationParams["label"] as? String, label)
     }
 
+    func testConfigEditorPositionPatchClientUsesTypedPatchAndMutationResponse() throws {
+        let endpoint = try makeSocketEndpoint()
+        defer { endpoint.cleanup() }
+        let requestID = "99999999-9999-4999-8999-999999999999"
+        let digest = String(repeating: "a", count: 64)
+        let resultDigest = String(repeating: "b", count: 64)
+        let transport = RecordingProfileTransport(responses: [
+            try configEditorFrame(
+                requestID: requestID,
+                instanceID: instanceID,
+                result: editorMutationResult(digest: resultDigest, revision: 7)
+            )
+        ])
+        let client = try ConfigEditorClient(
+            socketPath: endpoint.socket.path,
+            instanceID: instanceID,
+            transport: transport,
+            phaseTimeoutNanoseconds: 11
+        )
+        let patch = ConfigurationPositionPatch(
+            label: .set("Clock"),
+            background: .set("#10203040"),
+            labelAlignment: .reset,
+            labelSize: .set(28),
+            notificationSources: .set(["Calendar"]),
+            action: .reset
+        )
+
+        let mutation = try client.patchConfigEditorPosition(
+            profileID: "Work.Profile",
+            positionID: "0_0",
+            patch: patch,
+            expectedDigest: digest,
+            requestID: requestID
+        )
+
+        XCTAssertEqual(mutation.sourceDigest, resultDigest)
+        XCTAssertEqual(mutation.revision, 7)
+        XCTAssertEqual(transport.requests.count, 1)
+        XCTAssertEqual(transport.socketPaths, [endpoint.socket.path])
+        XCTAssertEqual(transport.timeouts, [11])
+        let envelope = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(transport.requests[0].dropLast())) as? [String: Any]
+        )
+        XCTAssertEqual(envelope["request_id"] as? String, requestID)
+        XCTAssertEqual(envelope["method"] as? String, RuntimeMethod.configEditorPositionPatch.rawValue)
+        let params = try XCTUnwrap(envelope["params"] as? [String: Any])
+        XCTAssertEqual(params["expected_digest"] as? String, digest)
+        XCTAssertEqual(params["profile_id"] as? String, "Work.Profile")
+        XCTAssertEqual(params["position_id"] as? String, "0_0")
+        let patchObject = try XCTUnwrap(params["patch"] as? [String: Any])
+        XCTAssertEqual(Set(patchObject.keys), ["label", "background", "label_alignment", "label_size", "notification_sources", "action"])
+        XCTAssertEqual(try XCTUnwrap(patchObject["label"] as? [String: Any])["value"] as? String, "Clock")
+        XCTAssertEqual(try XCTUnwrap(patchObject["background"] as? [String: Any])["value"] as? String, "#10203040")
+        XCTAssertEqual(try XCTUnwrap(patchObject["label_alignment"] as? [String: Any])["op"] as? String, "reset")
+        XCTAssertEqual(try XCTUnwrap(patchObject["label_size"] as? [String: Any])["value"] as? Int, 28)
+        XCTAssertEqual(try XCTUnwrap(patchObject["notification_sources"] as? [String: Any])["value"] as? [String], ["Calendar"])
+        XCTAssertEqual(try XCTUnwrap(patchObject["action"] as? [String: Any])["op"] as? String, "reset")
+    }
+
     func testConfigEditorClientRejectsInvalidRequestBeforeTransport() throws {
         let endpoint = try makeSocketEndpoint()
         defer { endpoint.cleanup() }
@@ -403,6 +464,15 @@ final class ProfileClientTests: XCTestCase {
         XCTAssertThrowsError(try client.configEditorProfile(
             profileID: "bad profile",
             sourceDigest: String(repeating: "a", count: 64),
+            requestID: listRequestID
+        )) { error in
+            XCTAssertEqual(error as? UnixSocketClientError, .invalidRequest)
+        }
+        XCTAssertThrowsError(try client.patchConfigEditorPosition(
+            profileID: "Work.Profile",
+            positionID: "0_0",
+            patch: ConfigurationPositionPatch(labelSize: .set(33)),
+            expectedDigest: String(repeating: "a", count: 64),
             requestID: listRequestID
         )) { error in
             XCTAssertEqual(error as? UnixSocketClientError, .invalidRequest)

@@ -3,6 +3,7 @@ import AppKit
 import Foundation
 import XCTest
 import UniformTypeIdentifiers
+import HidhoggCore
 @testable import Hidhogg
 
 @MainActor
@@ -512,7 +513,7 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(client.deleteCallCount, 0)
     }
 
-    func testPositionLabelEditorCanClearLabelButRejectsWhitespace() async throws {
+    func testPositionEditorCanClearLabelButRejectsWhitespace() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
         let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
         let viewModel = makeEditorViewModel(
@@ -527,18 +528,22 @@ final class SettingsViewModelTests: XCTestCase {
         await viewModel.waitForEditorIdle()
 
         viewModel.editedPositionLabel = " "
-        XCTAssertFalse(viewModel.canSavePositionLabel)
+        XCTAssertFalse(viewModel.canSavePosition)
         viewModel.editedPositionLabel = ""
-        XCTAssertTrue(viewModel.canSavePositionLabel)
-        viewModel.saveEditedPositionLabel()
+        XCTAssertTrue(viewModel.canSavePosition)
+        viewModel.saveEditedPosition()
         await viewModel.waitForEditorIdle()
 
-        XCTAssertEqual(client.positionLabelSetCallCount, 1)
-        XCTAssertEqual(client.lastPositionSetLabel, "")
+        XCTAssertEqual(client.positionPatchCallCount, 1)
+        guard let patch = client.lastPositionPatch else {
+            return XCTFail("Expected the position patch to be recorded")
+        }
+        assertSet(patch.label, "")
+        assertKeep(patch.background)
         XCTAssertEqual(viewModel.lastMutationSummary, "File committed; runtime reloaded (display)")
     }
 
-    func testPositionLabelEditorLoadsStableChoicesAndSavesAgainstSnapshotDigest() async throws {
+    func testPositionEditorLoadsStableChoicesAndSavesAgainstSnapshotDigest() async throws {
         let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
         let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
         let viewModel = makeEditorViewModel(
@@ -567,18 +572,367 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(client.lastPositionGetDigest, String(repeating: "a", count: 64))
 
         viewModel.editedPositionLabel = "Clock"
-        XCTAssertTrue(viewModel.canSavePositionLabel)
-        viewModel.saveEditedPositionLabel()
+        XCTAssertTrue(viewModel.canSavePosition)
+        viewModel.saveEditedPosition()
         await viewModel.waitForEditorIdle()
 
-        XCTAssertEqual(client.positionLabelSetCallCount, 1)
-        XCTAssertEqual(client.lastPositionSetProfileID, "Work.Profile")
-        XCTAssertEqual(client.lastPositionSetID, "0_0")
-        XCTAssertEqual(client.lastPositionSetLabel, "Clock")
-        XCTAssertEqual(client.lastPositionSetDigest, String(repeating: "a", count: 64))
+        XCTAssertEqual(client.positionPatchCallCount, 1)
+        XCTAssertEqual(client.lastPositionPatchProfileID, "Work.Profile")
+        XCTAssertEqual(client.lastPositionPatchID, "0_0")
+        XCTAssertEqual(client.lastPositionPatchDigest, String(repeating: "a", count: 64))
+        guard let patch = client.lastPositionPatch else {
+            return XCTFail("Expected the position patch to be recorded")
+        }
+        assertSet(patch.label, "Clock")
+        assertKeep(patch.background)
         XCTAssertEqual(viewModel.editorSnapshot?.sourceDigest, String(repeating: "b", count: 64))
         XCTAssertEqual(viewModel.lastMutationSummary, "File committed; runtime reloaded (display)")
         XCTAssertNil(viewModel.selectedEditorProfileID)
+    }
+
+    func testPositionDraftBuildsAtomicSixFieldPatchWithOrderedExecuteAction() async throws {
+        let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        let client = SettingsConfigEditorTestClient(
+            instanceID: endpoint.instanceID,
+            notificationSources: ["device.power"]
+        )
+        let viewModel = await makeSelectedPositionEditor(client: client, endpoint: endpoint)
+
+        viewModel.editedPositionLabel = "Clock"
+        viewModel.editedPositionBackground = "#1A2B3C80"
+        viewModel.editedPositionAlignment = "center"
+        viewModel.editedPositionSize = 18
+        viewModel.newPositionNotificationSourceID = "button.alerts"
+        XCTAssertTrue(viewModel.canAddPositionNotificationSource)
+        viewModel.addPositionNotificationSource()
+        XCTAssertFalse(viewModel.canAddPositionNotificationSource)
+        XCTAssertEqual(viewModel.editedPositionNotificationSources, ["device.power", "button.alerts"])
+        viewModel.editedPositionActionKind = .execute
+        viewModel.editedPositionActionExecutable = "/usr/bin/printf"
+        viewModel.newPositionActionArgument = "%s"
+        viewModel.addPositionActionArgument()
+        viewModel.newPositionActionArgument = "two words"
+        viewModel.addPositionActionArgument()
+        viewModel.editedPositionActionTimeoutSeconds = 15
+        viewModel.editedPositionActionGesture = .press
+
+        XCTAssertNotNil(viewModel.editedPositionPreviewColor)
+        XCTAssertTrue(viewModel.canSavePosition)
+        viewModel.saveEditedPosition()
+        await viewModel.waitForEditorIdle()
+
+        XCTAssertEqual(client.positionPatchCallCount, 1)
+        XCTAssertEqual(client.lastPositionPatchProfileID, "Work.Profile")
+        XCTAssertEqual(client.lastPositionPatchID, "0_0")
+        XCTAssertEqual(client.lastPositionPatchDigest, String(repeating: "a", count: 64))
+        guard let patch = client.lastPositionPatch else {
+            return XCTFail("Expected the position patch to be recorded")
+        }
+        assertSet(patch.label, "Clock")
+        assertSet(patch.background, "#1A2B3C80")
+        assertSet(patch.labelAlignment, "center")
+        assertSet(patch.labelSize, 18)
+        assertSet(patch.notificationSources, ["device.power", "button.alerts"])
+        assertSet(
+            patch.action,
+            .execute(
+                executable: "/usr/bin/printf",
+                arguments: ["%s", "two words"],
+                timeoutSeconds: 15,
+                gesture: .press
+            )
+        )
+        XCTAssertEqual(viewModel.lastMutationSummary, "File committed; runtime reloaded (display)")
+    }
+
+    func testPositionDraftBuildsProfileTextAndEnterActions() async throws {
+        let scenarios: [(String, SettingsViewModel.PositionActionKind, ButtonGesture)] = [
+            ("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", .activateProfile, .press),
+            ("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", .typeText, .press),
+            ("cccccccc-cccc-4ccc-8ccc-cccccccccccc", .keyPress, .press),
+            ("dddddddd-dddd-4ddd-8ddd-dddddddddddd", .typeText, .release)
+        ]
+
+        for (instanceID, kind, gesture) in scenarios {
+            let endpoint = editorEndpoint(instanceID: instanceID)
+            let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
+            let viewModel = await makeSelectedPositionEditor(client: client, endpoint: endpoint)
+            viewModel.editedPositionActionKind = kind
+            viewModel.editedPositionActionGesture = gesture
+
+            let expected: ConfiguredAction
+            switch kind {
+            case .activateProfile:
+                viewModel.editedPositionActionProfileID = "Work.Profile"
+                expected = .activateProfile(profileID: "Work.Profile", gesture: gesture)
+            case .typeText:
+                viewModel.editedPositionActionText = "Wake"
+                expected = .typeText(text: "Wake", gesture: gesture)
+            case .keyPress:
+                expected = .keyPress(key: "enter", gesture: gesture)
+            case .none, .execute:
+                XCTFail("Unexpected scenario")
+                continue
+            }
+
+            XCTAssertTrue(viewModel.canSavePosition)
+            viewModel.saveEditedPosition()
+            await viewModel.waitForEditorIdle()
+            XCTAssertEqual(client.positionPatchCallCount, 1)
+            guard let patch = client.lastPositionPatch else {
+                return XCTFail("Expected the position patch to be recorded")
+            }
+            assertSet(patch.action, expected)
+        }
+    }
+
+    func testPositionDraftNoOpAndUseDefaultResetsAreDistinct() async throws {
+        let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
+        let viewModel = await makeSelectedPositionEditor(client: client, endpoint: endpoint)
+
+        XCTAssertFalse(viewModel.canSavePosition)
+        viewModel.editedPositionLabel = "Temporary"
+        XCTAssertTrue(viewModel.canSavePosition)
+        viewModel.editedPositionLabel = "Label 0_0"
+        XCTAssertFalse(viewModel.canSavePosition)
+        XCTAssertEqual(client.positionPatchCallCount, 0)
+
+        for field in SettingsViewModel.PositionField.allCases {
+            viewModel.resetPositionField(field)
+        }
+
+        XCTAssertTrue(viewModel.canSavePosition)
+        viewModel.saveEditedPosition()
+        await viewModel.waitForEditorIdle()
+
+        guard let patch = client.lastPositionPatch else {
+            return XCTFail("Expected the reset patch to be recorded")
+        }
+        assertReset(patch.label)
+        assertReset(patch.background)
+        assertReset(patch.labelAlignment)
+        assertReset(patch.labelSize)
+        assertReset(patch.notificationSources)
+        assertReset(patch.action)
+    }
+
+    func testRemovingLastNotificationSourceAndClearingActionUseReset() async throws {
+        let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        let client = SettingsConfigEditorTestClient(
+            instanceID: endpoint.instanceID,
+            notificationSources: ["device.power"],
+            action: .typeText(text: "Wake", gesture: .release)
+        )
+        let viewModel = await makeSelectedPositionEditor(client: client, endpoint: endpoint)
+
+        viewModel.removePositionNotificationSource("device.power")
+        viewModel.editedPositionActionKind = .none
+        XCTAssertTrue(viewModel.canSavePosition)
+        viewModel.saveEditedPosition()
+        await viewModel.waitForEditorIdle()
+
+        guard let patch = client.lastPositionPatch else {
+            return XCTFail("Expected the position patch to be recorded")
+        }
+        assertReset(patch.notificationSources)
+        assertReset(patch.action)
+    }
+
+    func testPositionDraftRejectsInvalidBoundsAndIncompleteActions() async throws {
+        let existingActionEndpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        let existingActionClient = SettingsConfigEditorTestClient(
+            instanceID: existingActionEndpoint.instanceID,
+            action: .typeText(text: "Wake", gesture: .release)
+        )
+        let existingActionViewModel = await makeSelectedPositionEditor(
+            client: existingActionClient,
+            endpoint: existingActionEndpoint
+        )
+        existingActionViewModel.editedPositionActionKind = .activateProfile
+        XCTAssertFalse(existingActionViewModel.canSavePosition)
+        XCTAssertEqual(existingActionViewModel.positionDraftErrorMessage, "Complete the selected action fields.")
+        XCTAssertEqual(existingActionClient.positionPatchCallCount, 0)
+
+        let emptyActionEndpoint = editorEndpoint(instanceID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+        let emptyActionClient = SettingsConfigEditorTestClient(instanceID: emptyActionEndpoint.instanceID)
+        let emptyActionViewModel = await makeSelectedPositionEditor(
+            client: emptyActionClient,
+            endpoint: emptyActionEndpoint
+        )
+        emptyActionViewModel.editedPositionActionKind = .activateProfile
+        XCTAssertFalse(emptyActionViewModel.canSavePosition)
+        XCTAssertEqual(emptyActionViewModel.positionDraftErrorMessage, "Complete the selected action fields.")
+
+        emptyActionViewModel.editedPositionActionProfileID = "Work.Profile"
+        emptyActionViewModel.editedPositionBackground = "#fff"
+        XCTAssertFalse(emptyActionViewModel.canSavePosition)
+        emptyActionViewModel.editedPositionBackground = "#000000"
+        emptyActionViewModel.editedPositionSize = 7
+        XCTAssertFalse(emptyActionViewModel.canSavePosition)
+        emptyActionViewModel.editedPositionSize = 10
+        emptyActionViewModel.editedPositionActionKind = .execute
+        emptyActionViewModel.editedPositionActionExecutable = "relative/path"
+        emptyActionViewModel.editedPositionActionTimeoutSeconds = 0
+        XCTAssertFalse(emptyActionViewModel.canSavePosition)
+        emptyActionViewModel.editedPositionActionExecutable = "/usr/bin/echo"
+        emptyActionViewModel.editedPositionActionTimeoutSeconds = 61
+        XCTAssertFalse(emptyActionViewModel.canSavePosition)
+        emptyActionViewModel.editedPositionActionTimeoutSeconds = 60
+        emptyActionViewModel.editedPositionSize = 33
+        XCTAssertFalse(emptyActionViewModel.canSavePosition)
+        XCTAssertEqual(emptyActionClient.positionPatchCallCount, 0)
+    }
+
+    func testNotificationSourceAndArgumentGuardsRejectDuplicatesAndLimitOverflow() async throws {
+        let sourceEndpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        let sourceClient = SettingsConfigEditorTestClient(
+            instanceID: sourceEndpoint.instanceID,
+            notificationSources: ["device.power"]
+        )
+        let sourceViewModel = await makeSelectedPositionEditor(client: sourceClient, endpoint: sourceEndpoint)
+
+        sourceViewModel.newPositionNotificationSourceID = "device.power"
+        XCTAssertFalse(sourceViewModel.canAddPositionNotificationSource)
+        sourceViewModel.addPositionNotificationSource()
+        XCTAssertEqual(sourceViewModel.editedPositionNotificationSources, ["device.power"])
+
+        sourceViewModel.newPositionNotificationSourceID = "invalid source"
+        XCTAssertFalse(sourceViewModel.canAddPositionNotificationSource)
+        sourceViewModel.addPositionNotificationSource()
+        XCTAssertEqual(sourceViewModel.editedPositionNotificationSources, ["device.power"])
+
+        sourceViewModel.newPositionNotificationSourceID = "button.alerts"
+        XCTAssertTrue(sourceViewModel.canAddPositionNotificationSource)
+        sourceViewModel.addPositionNotificationSource()
+        XCTAssertEqual(sourceViewModel.editedPositionNotificationSources, ["device.power", "button.alerts"])
+
+        let fullSources = (0..<16).map { "source\($0)" }
+        let fullSourcesEndpoint = editorEndpoint(instanceID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+        let fullSourcesClient = SettingsConfigEditorTestClient(
+            instanceID: fullSourcesEndpoint.instanceID,
+            notificationSources: fullSources
+        )
+        let fullSourcesViewModel = await makeSelectedPositionEditor(
+            client: fullSourcesClient,
+            endpoint: fullSourcesEndpoint
+        )
+        fullSourcesViewModel.newPositionNotificationSourceID = "source.extra"
+        XCTAssertFalse(fullSourcesViewModel.canAddPositionNotificationSource)
+        fullSourcesViewModel.addPositionNotificationSource()
+        XCTAssertEqual(fullSourcesViewModel.editedPositionNotificationSources.count, 16)
+
+        let arguments = Array(repeating: "arg", count: 32)
+        let argumentEndpoint = editorEndpoint(instanceID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+        let argumentClient = SettingsConfigEditorTestClient(
+            instanceID: argumentEndpoint.instanceID,
+            action: .execute(
+                executable: "/usr/bin/echo",
+                arguments: arguments,
+                timeoutSeconds: 10,
+                gesture: .release
+            )
+        )
+        let argumentViewModel = await makeSelectedPositionEditor(
+            client: argumentClient,
+            endpoint: argumentEndpoint
+        )
+        argumentViewModel.newPositionActionArgument = "extra"
+        XCTAssertFalse(argumentViewModel.canAddPositionActionArgument)
+        argumentViewModel.addPositionActionArgument()
+        XCTAssertEqual(argumentViewModel.editedPositionActionArguments.count, 32)
+    }
+
+    func testUncertainPositionPatchRequiresManualRefreshWithoutRetry() async throws {
+        let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
+        let viewModel = await makeSelectedPositionEditor(client: client, endpoint: endpoint)
+        client.setNextMutationError(.readTimedOut)
+        viewModel.editedPositionLabel = "Clock"
+
+        viewModel.saveEditedPosition()
+        await viewModel.waitForEditorIdle()
+
+        XCTAssertEqual(client.positionPatchCallCount, 1)
+        XCTAssertEqual(client.snapshotCallCount, 1)
+        XCTAssertTrue(viewModel.requiresSnapshotRefresh)
+        XCTAssertTrue(viewModel.editorErrorMessage?.contains("Outcome unknown") == true)
+
+        viewModel.refreshEditorSnapshot()
+        await viewModel.waitForEditorIdle()
+        XCTAssertEqual(client.positionPatchCallCount, 1)
+        XCTAssertEqual(client.snapshotCallCount, 2)
+    }
+
+    func testStalePositionPatchRefreshesSnapshotWithoutRetry() async throws {
+        let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        let client = SettingsConfigEditorTestClient(instanceID: endpoint.instanceID)
+        let viewModel = await makeSelectedPositionEditor(client: client, endpoint: endpoint)
+        client.setNextMutationError(
+            .response(.serverError(RuntimeError(
+                code: "stale_source",
+                message: "configuration source changed; refresh and retry"
+            )))
+        )
+        viewModel.editedPositionLabel = "Clock"
+
+        viewModel.saveEditedPosition()
+        await viewModel.waitForEditorIdle()
+
+        XCTAssertEqual(client.positionPatchCallCount, 1)
+        XCTAssertEqual(client.snapshotCallCount, 2)
+        XCTAssertEqual(viewModel.editorSnapshot?.sourceDigest, String(repeating: "b", count: 64))
+        XCTAssertNil(viewModel.selectedEditorProfileID)
+        XCTAssertTrue(viewModel.editorNoticeMessage?.contains("edit was not retried") == true)
+    }
+
+    func testLatePositionPatchIsDiscardedAfterEndpointReplacement() async throws {
+        let firstEndpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        let secondEndpoint = editorEndpoint(instanceID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+        let firstClient = SettingsConfigEditorTestClient(instanceID: firstEndpoint.instanceID)
+        let secondClient = SettingsConfigEditorTestClient(instanceID: secondEndpoint.instanceID)
+        let endpointBox = SettingsEditorEndpointBox(endpoint: firstEndpoint)
+        let viewModel = SettingsViewModel(
+            model: makeSettingsModel(),
+            applicationSelector: { .cancelled },
+            editorClientFactory: SettingsConfigEditorTestClientFactory(clients: [
+                firstEndpoint.instanceID: firstClient,
+                secondEndpoint.instanceID: secondClient
+            ]),
+            runtimeEndpointProvider: { endpointBox.endpoint }
+        )
+        await viewModel.waitForEditorIdle()
+        viewModel.selectProfileForEditing("Work.Profile")
+        await viewModel.waitForEditorIdle()
+        viewModel.selectPositionForEditing("0_0")
+        await viewModel.waitForEditorIdle()
+        firstClient.blockNextPositionPatch()
+        viewModel.editedPositionLabel = "Clock"
+
+        viewModel.saveEditedPosition()
+        for _ in 0..<200 where firstClient.positionPatchCallCount == 0 {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertEqual(firstClient.positionPatchCallCount, 1)
+
+        endpointBox.endpoint = secondEndpoint
+        viewModel.setEditorEndpoint(secondEndpoint)
+        await viewModel.waitForEditorIdle()
+        XCTAssertEqual(viewModel.editorSnapshot?.instanceID, secondEndpoint.instanceID)
+
+        firstClient.releasePositionPatch()
+        for _ in 0..<200 where firstClient.positionPatchCompletionCount == 0 {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        for _ in 0..<20 {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+
+        XCTAssertEqual(firstClient.positionPatchCompletionCount, 1)
+        XCTAssertEqual(viewModel.editorSnapshot?.instanceID, secondEndpoint.instanceID)
+        XCTAssertNil(viewModel.lastMutationSummary)
+        XCTAssertNil(viewModel.selectedEditorProfileID)
+        XCTAssertFalse(viewModel.isEditorBusy)
     }
 
     func testPositionSelectionAndDraftResetWhenProfileChanges() async throws {
@@ -788,6 +1142,55 @@ final class SettingsViewModelTests: XCTestCase {
             ]),
             runtimeEndpointProvider: { endpoint }
         )
+    }
+
+    private func makeSelectedPositionEditor(
+        client: SettingsConfigEditorTestClient,
+        endpoint: RuntimeSessionController.RuntimeEndpoint
+    ) async -> SettingsViewModel {
+        let viewModel = makeEditorViewModel(
+            client: client,
+            endpoint: endpoint,
+            model: makeSettingsModel()
+        )
+        await viewModel.waitForEditorIdle()
+        viewModel.selectProfileForEditing("Work.Profile")
+        await viewModel.waitForEditorIdle()
+        viewModel.selectPositionForEditing("0_0")
+        await viewModel.waitForEditorIdle()
+        return viewModel
+    }
+
+    private func assertSet<Value: Equatable>(
+        _ edit: ConfigurationFieldEdit<Value>,
+        _ expected: Value,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard case .set(let value) = edit else {
+            return XCTFail("Expected a set edit", file: file, line: line)
+        }
+        XCTAssertEqual(value, expected, file: file, line: line)
+    }
+
+    private func assertKeep<Value>(
+        _ edit: ConfigurationFieldEdit<Value>,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard case .keep = edit else {
+            return XCTFail("Expected a keep edit", file: file, line: line)
+        }
+    }
+
+    private func assertReset<Value>(
+        _ edit: ConfigurationFieldEdit<Value>,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard case .reset = edit else {
+            return XCTFail("Expected a reset edit", file: file, line: line)
+        }
     }
 
     private func makeSettingsModel() -> HidhoggAppModel {
@@ -1014,6 +1417,7 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
     private let firstSnapshotRelease = DispatchSemaphore(value: 0)
     private let deleteRelease = DispatchSemaphore(value: 0)
     private let positionGetRelease = DispatchSemaphore(value: 0)
+    private let positionPatchRelease = DispatchSemaphore(value: 0)
     private var revisionStorage: UInt64 = 1
     private var digestStorage = String(repeating: "a", count: 64)
     private var profileIDsStorage = ["Default", "Work.Profile"]
@@ -1024,6 +1428,8 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
         "0_2", "1_2", "2_2", "3_2"
     ]
     private var positionLabelsStorage: [String: String] = [:]
+    private var positionNotificationSourcesStorage: [String]
+    private var positionActionStorage: ConfiguredAction?
     private var currentProfileIDStorage = "Default"
     private var snapshotCallCountStorage = 0
     private var snapshotCompletionCountStorage = 0
@@ -1035,6 +1441,8 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
     private var positionGetCallCountStorage = 0
     private var positionGetCompletionCountStorage = 0
     private var positionLabelSetCallCountStorage = 0
+    private var positionPatchCallCountStorage = 0
+    private var positionPatchCompletionCountStorage = 0
     private var lastCreateProfileIDStorage: String?
     private var lastCreateLabelStorage: String?
     private var lastCreateSourceProfileIDStorage: String?
@@ -1047,19 +1455,28 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
     private var lastPositionSetIDStorage: String?
     private var lastPositionSetLabelStorage: String?
     private var lastPositionSetDigestStorage: String?
+    private var lastPositionPatchProfileIDStorage: String?
+    private var lastPositionPatchIDStorage: String?
+    private var lastPositionPatchDigestStorage: String?
+    private var lastPositionPatchStorage: ConfigurationPositionPatch?
     private var nextMutationError: UnixSocketClientError?
     private var nextPositionGetError: UnixSocketClientError?
     private var blocksNextDelete = false
     private var blocksNextPositionGet = false
+    private var blocksNextPositionPatch = false
 
     init(
         instanceID: String,
         blocksFirstSnapshot: Bool = false,
-        currentProfileID: String = "Default"
+        currentProfileID: String = "Default",
+        notificationSources: [String] = [],
+        action: ConfiguredAction? = nil
     ) {
         self.instanceID = instanceID
         self.blocksFirstSnapshot = blocksFirstSnapshot
         currentProfileIDStorage = currentProfileID
+        positionNotificationSourcesStorage = notificationSources
+        positionActionStorage = action
     }
 
     var snapshotCallCount: Int { read { snapshotCallCountStorage } }
@@ -1072,6 +1489,8 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
     var positionGetCallCount: Int { read { positionGetCallCountStorage } }
     var positionGetCompletionCount: Int { read { positionGetCompletionCountStorage } }
     var positionLabelSetCallCount: Int { read { positionLabelSetCallCountStorage } }
+    var positionPatchCallCount: Int { read { positionPatchCallCountStorage } }
+    var positionPatchCompletionCount: Int { read { positionPatchCompletionCountStorage } }
     var lastCreateProfileID: String? { read { lastCreateProfileIDStorage } }
     var lastCreateLabel: String? { read { lastCreateLabelStorage } }
     var lastCreateSourceProfileID: String? { read { lastCreateSourceProfileIDStorage } }
@@ -1084,6 +1503,10 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
     var lastPositionSetID: String? { read { lastPositionSetIDStorage } }
     var lastPositionSetLabel: String? { read { lastPositionSetLabelStorage } }
     var lastPositionSetDigest: String? { read { lastPositionSetDigestStorage } }
+    var lastPositionPatchProfileID: String? { read { lastPositionPatchProfileIDStorage } }
+    var lastPositionPatchID: String? { read { lastPositionPatchIDStorage } }
+    var lastPositionPatchDigest: String? { read { lastPositionPatchDigestStorage } }
+    var lastPositionPatch: ConfigurationPositionPatch? { read { lastPositionPatchStorage } }
 
     func setNextMutationError(_ error: UnixSocketClientError) {
         lock.lock()
@@ -1109,6 +1532,12 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
         lock.unlock()
     }
 
+    func blockNextPositionPatch() {
+        lock.lock()
+        blocksNextPositionPatch = true
+        lock.unlock()
+    }
+
     func releaseFirstSnapshot() {
         firstSnapshotRelease.signal()
     }
@@ -1119,6 +1548,10 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
 
     func releasePositionGet() {
         positionGetRelease.signal()
+    }
+
+    func releasePositionPatch() {
+        positionPatchRelease.signal()
     }
 
     func configEditorSnapshot(requestID: String) throws -> ConfigEditorSnapshotResponse {
@@ -1226,7 +1659,12 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
             sourceDigest: sourceDigest,
             profileID: profileID,
             positionID: positionID,
-            label: positionLabelsStorage[positionID] ?? "Label \(positionCoordinates[index])"
+            label: positionLabelsStorage[positionID] ?? "Label \(positionCoordinates[index])",
+            background: "#000000",
+            labelAlignment: "bottom",
+            labelSize: 10,
+            notificationSources: positionNotificationSourcesStorage,
+            action: positionActionStorage
         )
     }
 
@@ -1326,6 +1764,40 @@ private final class SettingsConfigEditorTestClient: @unchecked Sendable, Runtime
             throw staleSourceError
         }
         positionLabelsStorage[positionID] = label
+        advanceSnapshot()
+        return mutationResponse(requestID: requestID, effect: .display)
+    }
+
+    func patchConfigEditorPosition(
+        profileID: String,
+        positionID: String,
+        patch: ConfigurationPositionPatch,
+        expectedDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse {
+        lock.lock()
+        positionPatchCallCountStorage += 1
+        lastPositionPatchProfileIDStorage = profileID
+        lastPositionPatchIDStorage = positionID
+        lastPositionPatchDigestStorage = expectedDigest
+        lastPositionPatchStorage = patch
+        let shouldBlock = blocksNextPositionPatch
+        blocksNextPositionPatch = false
+        lock.unlock()
+
+        if shouldBlock {
+            positionPatchRelease.wait()
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+        positionPatchCompletionCountStorage += 1
+        try throwPendingMutationError()
+        guard digestStorage == expectedDigest,
+              labelsStorage[profileID] != nil,
+              positionIndex(for: positionID) != nil else {
+            throw staleSourceError
+        }
         advanceSnapshot()
         return mutationResponse(requestID: requestID, effect: .display)
     }

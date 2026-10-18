@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import HidhoggCore
 @testable import Hidhogg
 
 final class ProtocolFixtureTests: XCTestCase {
@@ -360,6 +361,237 @@ final class ProtocolFixtureTests: XCTestCase {
         )) { XCTAssertEqual($0 as? ProtocolRequestValidationError, .invalidLabel) }
     }
 
+    func testConfigEditorPositionPatchEncodesKeepSetResetAndClosedActions() throws {
+        let requestID = "11111111-1111-4111-8111-111111111111"
+        let instanceID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        let digest = String(repeating: "a", count: 64)
+        let patch = ConfigurationPositionPatch(
+            label: .set("Clock"),
+            background: .set("#12345678"),
+            labelAlignment: .reset,
+            labelSize: .keep,
+            notificationSources: .set(["Calendar", "Weather"]),
+            action: .set(.execute(
+                executable: "/usr/bin/example",
+                arguments: ["--mode", "ordered"],
+                timeoutSeconds: 10,
+                gesture: .press
+            ))
+        )
+        let frame = try ProtocolV1.configEditorRequest(
+            method: .configEditorPositionPatch,
+            requestID: requestID,
+            instanceID: instanceID,
+            profileID: "Work.Profile",
+            positionID: "0_0",
+            expectedDigest: digest,
+            positionPatch: patch
+        )
+        let envelope = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(frame.dropLast())) as? [String: Any])
+        XCTAssertLessThanOrEqual(frame.count, ProtocolV1.frameLimit)
+        XCTAssertEqual(envelope["request_id"] as? String, requestID)
+        XCTAssertEqual(envelope["method"] as? String, "config.editor.position.patch")
+        let params = try XCTUnwrap(envelope["params"] as? [String: Any])
+        XCTAssertEqual(Set(params.keys), ["instance_id", "expected_digest", "profile_id", "position_id", "patch"])
+        let encoded = try XCTUnwrap(params["patch"] as? [String: Any])
+        XCTAssertEqual(Set(encoded.keys), ["label", "background", "label_alignment", "notification_sources", "action"])
+        XCTAssertEqual(try XCTUnwrap(encoded["label"] as? [String: Any])["value"] as? String, "Clock")
+        XCTAssertEqual(try XCTUnwrap(encoded["background"] as? [String: Any])["value"] as? String, "#12345678")
+        XCTAssertEqual(try XCTUnwrap(encoded["label_alignment"] as? [String: Any])["op"] as? String, "reset")
+        XCTAssertNil(encoded["label_size"])
+        XCTAssertEqual(try XCTUnwrap(encoded["notification_sources"] as? [String: Any])["value"] as? [String], ["Calendar", "Weather"])
+        let actionEdit = try XCTUnwrap(encoded["action"] as? [String: Any])
+        XCTAssertEqual(actionEdit["op"] as? String, "set")
+        let action = try XCTUnwrap(actionEdit["value"] as? [String: Any])
+        XCTAssertEqual(Set(action.keys), ["type", "executable", "arguments", "timeout_seconds", "gesture"])
+        XCTAssertEqual(action["type"] as? String, "execute")
+        XCTAssertEqual(action["arguments"] as? [String], ["--mode", "ordered"])
+        XCTAssertEqual(action["timeout_seconds"] as? Int, 10)
+        XCTAssertEqual(action["gesture"] as? String, "press")
+
+        let emptyPatchFrame = try ProtocolV1.configEditorRequest(
+            method: .configEditorPositionPatch,
+            requestID: requestID,
+            instanceID: instanceID,
+            profileID: "Work.Profile",
+            positionID: "0_0",
+            expectedDigest: digest,
+            positionPatch: ConfigurationPositionPatch()
+        )
+        let emptyEnvelope = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(emptyPatchFrame.dropLast())) as? [String: Any]
+        )
+        let emptyParams = try XCTUnwrap(emptyEnvelope["params"] as? [String: Any])
+        let emptyPatch = try XCTUnwrap(emptyParams["patch"] as? [String: Any])
+        XCTAssertTrue(emptyPatch.isEmpty)
+
+        let actions: [ConfiguredAction] = [
+            .activateProfile(profileID: "Default", gesture: .release),
+            .execute(executable: "/bin/true", arguments: [], timeoutSeconds: 1, gesture: .press),
+            .typeText(text: "Ready", gesture: .release),
+            .keyPress(key: "enter", gesture: .press),
+            .execute(executable: "/bin/true", arguments: [], timeoutSeconds: 60, gesture: .release)
+        ]
+        let expectedTypes = ["activate_profile", "execute", "type_text", "key_press", "execute"]
+        for (action, expectedType) in zip(actions, expectedTypes) {
+            let actionPatch = ConfigurationPositionPatch(action: .set(action))
+            let actionFrame = try ProtocolV1.configEditorRequest(
+                method: .configEditorPositionPatch,
+                requestID: requestID,
+                instanceID: instanceID,
+                profileID: "Work.Profile",
+                positionID: "0_0",
+                expectedDigest: digest,
+                positionPatch: actionPatch
+            )
+            let actionEnvelope = try XCTUnwrap(
+                try JSONSerialization.jsonObject(with: Data(actionFrame.dropLast())) as? [String: Any]
+            )
+            let actionParams = try XCTUnwrap(actionEnvelope["params"] as? [String: Any])
+            let actionFields = try XCTUnwrap(actionParams["patch"] as? [String: Any])
+            let edit = try XCTUnwrap(actionFields["action"] as? [String: Any])
+            let value = try XCTUnwrap(edit["value"] as? [String: Any])
+            XCTAssertEqual(value["type"] as? String, expectedType)
+        }
+    }
+
+    func testConfigEditorPositionPatchRejectsInvalidValuesAndUnexpectedFields() throws {
+        let requestID = "11111111-1111-4111-8111-111111111111"
+        let instanceID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        let digest = String(repeating: "a", count: 64)
+        let invalidPatches = [
+            ConfigurationPositionPatch(background: .set("#123")),
+            ConfigurationPositionPatch(labelAlignment: .set("top")),
+            ConfigurationPositionPatch(labelSize: .set(33)),
+            ConfigurationPositionPatch(notificationSources: .set([])),
+            ConfigurationPositionPatch(notificationSources: .set(["Calendar", "Calendar"])),
+            ConfigurationPositionPatch(action: .set(.typeText(text: "", gesture: .press))),
+            ConfigurationPositionPatch(action: .set(.execute(
+                executable: "/usr/bin/example",
+                arguments: [],
+                timeoutSeconds: 0,
+                gesture: .press
+            ))),
+            ConfigurationPositionPatch(action: .set(.execute(
+                executable: "/usr/bin/example",
+                arguments: [],
+                timeoutSeconds: 61,
+                gesture: .press
+            ))),
+            ConfigurationPositionPatch(action: .set(.execute(
+                executable: "relative/path",
+                arguments: [],
+                timeoutSeconds: 10,
+                gesture: .release
+            )))
+        ]
+        for patch in invalidPatches {
+            XCTAssertThrowsError(try ProtocolV1.configEditorRequest(
+                method: .configEditorPositionPatch,
+                requestID: requestID,
+                instanceID: instanceID,
+                profileID: "Work.Profile",
+                positionID: "0_0",
+                expectedDigest: digest,
+                positionPatch: patch
+            )) { XCTAssertEqual($0 as? ProtocolRequestValidationError, .invalidPatch) }
+        }
+        XCTAssertThrowsError(try ProtocolV1.configEditorRequest(
+            method: .configEditorPositionPatch,
+            requestID: requestID,
+            instanceID: instanceID,
+            profileID: "Work.Profile",
+            positionID: "0_0",
+            expectedDigest: digest
+        )) { XCTAssertEqual($0 as? ProtocolRequestValidationError, .invalidPatch) }
+
+        let unexpectedPatch = ConfigurationPositionPatch(label: .reset)
+        XCTAssertThrowsError(try ProtocolV1.configEditorRequest(
+            method: .configEditorPositionGet,
+            requestID: requestID,
+            instanceID: instanceID,
+            profileID: "Work.Profile",
+            positionID: "0_0",
+            sourceDigest: digest,
+            positionPatch: unexpectedPatch
+        )) { XCTAssertEqual($0 as? ProtocolRequestValidationError, .invalidFields) }
+    }
+
+    func testPositionPatchValidationCoversFieldAndActionBoundaries() {
+        let sources16 = (0..<16).map { "Source\($0)" }
+        let sources17 = (0..<17).map { "Source\($0)" }
+        let execute: (String, [String], Int) -> ConfiguredAction = { executable, arguments, timeout in
+            .execute(executable: executable, arguments: arguments, timeoutSeconds: timeout, gesture: .press)
+        }
+        let typeText: (String) -> ConfiguredAction = { .typeText(text: $0, gesture: .release) }
+        let keyPress: (String) -> ConfiguredAction = { .keyPress(key: $0, gesture: .release) }
+        let executePatch: (String, [String], Int) -> ConfigurationPositionPatch = {
+            ConfigurationPositionPatch(action: .set(execute($0, $1, $2)))
+        }
+        let typeTextPatch: (String) -> ConfigurationPositionPatch = {
+            ConfigurationPositionPatch(action: .set(typeText($0)))
+        }
+        let keyPressPatch: (String) -> ConfigurationPositionPatch = {
+            ConfigurationPositionPatch(action: .set(keyPress($0)))
+        }
+        let arguments32 = Array(repeating: "arg", count: 32)
+        let arguments33 = Array(repeating: "arg", count: 33)
+        let argument1024 = String(repeating: "x", count: 1_024)
+        let argument1025 = String(repeating: "x", count: 1_025)
+        let arguments8192 = Array(repeating: argument1024, count: 8)
+        let arguments8193 = arguments8192 + ["x"]
+        let text64 = String(repeating: "😀", count: 32)
+        let cases: [(String, ConfigurationPositionPatch, Bool)] = [
+            ("blank position label", ConfigurationPositionPatch(label: .set("")), true),
+            ("64 visible emoji label", ConfigurationPositionPatch(label: .set(String(repeating: "😀", count: 64))), true),
+            ("65 scalar label", ConfigurationPositionPatch(label: .set(String(repeating: "😀", count: 65))), false),
+            ("whitespace-only label", ConfigurationPositionPatch(label: .set("  ")), false),
+            ("control label", ConfigurationPositionPatch(label: .set("clock\u{0001}")), false),
+            ("RGB background", ConfigurationPositionPatch(background: .set("#aBc012")), true),
+            ("RGBA background", ConfigurationPositionPatch(background: .set("#aBc012ef")), true),
+            ("short background", ConfigurationPositionPatch(background: .set("#abcde")), false),
+            ("wrong alpha length", ConfigurationPositionPatch(background: .set("#123456789")), false),
+            ("non-hex background", ConfigurationPositionPatch(background: .set("#12345g")), false),
+            ("bottom alignment", ConfigurationPositionPatch(labelAlignment: .set("bottom")), true),
+            ("center alignment", ConfigurationPositionPatch(labelAlignment: .set("center")), true),
+            ("unsupported alignment", ConfigurationPositionPatch(labelAlignment: .set("top")), false),
+            ("minimum label size", ConfigurationPositionPatch(labelSize: .set(8)), true),
+            ("maximum label size", ConfigurationPositionPatch(labelSize: .set(32)), true),
+            ("label size below range", ConfigurationPositionPatch(labelSize: .set(7)), false),
+            ("label size above range", ConfigurationPositionPatch(labelSize: .set(33)), false),
+            ("one source", ConfigurationPositionPatch(notificationSources: .set(["Calendar"])), true),
+            ("16 sources", ConfigurationPositionPatch(notificationSources: .set(sources16)), true),
+            ("empty source set", ConfigurationPositionPatch(notificationSources: .set([])), false),
+            ("17 sources", ConfigurationPositionPatch(notificationSources: .set(sources17)), false),
+            ("invalid source ID", ConfigurationPositionPatch(notificationSources: .set(["bad source"])), false),
+            ("duplicate source IDs", ConfigurationPositionPatch(notificationSources: .set(["Calendar", "Calendar"])), false),
+            ("execute with no arguments", executePatch("/usr/bin/example", [], 10), true),
+            ("execute with 32 arguments", executePatch("/usr/bin/example", arguments32, 10), true),
+            ("execute with 33 arguments", executePatch("/usr/bin/example", arguments33, 10), false),
+            ("1024-byte argument", executePatch("/usr/bin/example", [argument1024], 10), true),
+            ("1025-byte argument", executePatch("/usr/bin/example", [argument1025], 10), false),
+            ("8192 aggregate argument bytes", executePatch("/usr/bin/example", arguments8192, 10), true),
+            ("8193 aggregate argument bytes", executePatch("/usr/bin/example", arguments8193, 10), false),
+            ("NUL argument", executePatch("/usr/bin/example", ["bad\0arg"], 10), false),
+            ("NUL executable", executePatch("/usr/bin/\0example", [], 10), false),
+            ("absolute path with slash-leading combining mark", executePatch("/\u{0301}tool", [], 10), true),
+            ("minimum execute timeout", executePatch("/usr/bin/example", [], 1), true),
+            ("maximum execute timeout", executePatch("/usr/bin/example", [], 60), true),
+            ("zero execute timeout", executePatch("/usr/bin/example", [], 0), false),
+            ("execute timeout above range", executePatch("/usr/bin/example", [], 61), false),
+            ("64 UTF-16-unit text", typeTextPatch(text64), true),
+            ("65 UTF-16-unit text", typeTextPatch(text64 + "a"), false),
+            ("empty text", typeTextPatch(""), false),
+            ("NUL text", typeTextPatch("bad\0text"), false),
+            ("supported key", keyPressPatch("enter"), true),
+            ("unsupported key", keyPressPatch("escape"), false)
+        ]
+
+        for (name, patch, expected) in cases {
+            XCTAssertEqual(ProfileValidation.isValidPositionPatch(patch), expected, name)
+        }
+    }
+
     func testConfigEditorResponsesAreTypedBoundAndStrict() throws {
         let requestID = "11111111-1111-4111-8111-111111111111"
         let instanceID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -641,7 +873,7 @@ final class ProtocolFixtureTests: XCTestCase {
                 "profile_id": "Work.Profile",
                 "position_id": "0_0",
                 "label": "Ready",
-                "background": "#1020a0",
+                "background": "#1020a080",
                 "label_alignment": "center",
                 "label_size": 18,
                 "notification_sources": ["Calendar"],
@@ -653,7 +885,7 @@ final class ProtocolFixtureTests: XCTestCase {
             expectedProfileID: "Work.Profile",
             expectedPositionID: "0_0"
         )
-        XCTAssertEqual(configuredPosition.background, "#1020a0")
+        XCTAssertEqual(configuredPosition.background, "#1020a080")
         XCTAssertEqual(configuredPosition.labelAlignment, "center")
         XCTAssertEqual(configuredPosition.labelSize, 18)
         XCTAssertEqual(configuredPosition.notificationSources, ["Calendar"])
@@ -704,6 +936,86 @@ final class ProtocolFixtureTests: XCTestCase {
             expectedInstanceID: instanceID,
             method: .configEditorPositionLabelSet
         ))
+        XCTAssertNoThrow(try ResponseValidator.validateConfigEditorMutation(
+            frame: configEditorSuccessFrame(requestID: requestID, result: mutationResult),
+            expectedRequestID: requestID,
+            expectedInstanceID: instanceID,
+            method: .configEditorPositionPatch
+        ))
+    }
+
+    func testConfigEditorPositionResponsesDecodeEachClosedActionVariant() throws {
+        let requestID = "11111111-1111-4111-8111-111111111111"
+        let instanceID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        let digest = String(repeating: "a", count: 64)
+        let cases: [(ConfiguredAction, [String: Any])] = [
+            (.activateProfile(profileID: "Work.Profile", gesture: .press), [
+                "type": "activate_profile", "profile_id": "Work.Profile", "gesture": "press"
+            ]),
+            (.execute(executable: "/usr/bin/example", arguments: ["first", "second"], timeoutSeconds: 60, gesture: .release), [
+                "type": "execute", "executable": "/usr/bin/example", "arguments": ["first", "second"],
+                "timeout_seconds": 60, "gesture": "release"
+            ]),
+            (.typeText(text: "Ready", gesture: .press), [
+                "type": "type_text", "text": "Ready", "gesture": "press"
+            ]),
+            (.keyPress(key: "enter", gesture: .release), [
+                "type": "key_press", "key": "enter", "gesture": "release"
+            ])
+        ]
+        for (expectedAction, actionFields) in cases {
+            let result: [String: Any] = [
+                "instance_id": instanceID,
+                "source_digest": digest,
+                "profile_id": "Work.Profile",
+                "position_id": "0_0",
+                "label": "Clock",
+                "background": "#12345678",
+                "label_alignment": "center",
+                "label_size": 18,
+                "notification_sources": ["Calendar"],
+                "action": actionFields
+            ]
+            let response = try ResponseValidator.validateConfigEditorPosition(
+                frame: configEditorSuccessFrame(requestID: requestID, result: result),
+                expectedRequestID: requestID,
+                expectedInstanceID: instanceID,
+                expectedSourceDigest: digest,
+                expectedProfileID: "Work.Profile",
+                expectedPositionID: "0_0"
+            )
+            XCTAssertEqual(response.action, expectedAction)
+            XCTAssertEqual(response.background, "#12345678")
+        }
+
+        let invalidActions: [[String: Any]] = [
+            ["type": "type_text", "text": ""],
+            ["type": "execute", "executable": "/usr/bin/example", "arguments": [], "timeout_seconds": 0],
+            ["type": "execute", "executable": "relative/path", "arguments": [], "timeout_seconds": 10],
+            ["type": "key_press", "key": "escape"]
+        ]
+        for action in invalidActions {
+            let result: [String: Any] = [
+                "instance_id": instanceID,
+                "source_digest": digest,
+                "profile_id": "Work.Profile",
+                "position_id": "0_0",
+                "label": "Clock",
+                "background": "#12345678",
+                "label_alignment": "center",
+                "label_size": 18,
+                "notification_sources": ["Calendar"],
+                "action": action
+            ]
+            XCTAssertThrowsError(try ResponseValidator.validateConfigEditorPosition(
+                frame: configEditorSuccessFrame(requestID: requestID, result: result),
+                expectedRequestID: requestID,
+                expectedInstanceID: instanceID,
+                expectedSourceDigest: digest,
+                expectedProfileID: "Work.Profile",
+                expectedPositionID: "0_0"
+            ))
+        }
     }
 
     private func configEditorSuccessFrame(requestID: String, result: [String: Any]) throws -> Data {

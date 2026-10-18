@@ -15,6 +15,7 @@ public enum RuntimeMethod: String, Sendable {
     case configEditorPositionsList = "config.editor.positions.list"
     case configEditorPositionGet = "config.editor.position.get"
     case configEditorPositionLabelSet = "config.editor.position_label.set"
+    case configEditorPositionPatch = "config.editor.position.patch"
 }
 
 public struct RuntimeError: Error, Equatable, Sendable {
@@ -416,7 +417,8 @@ public enum ProtocolV1 {
         sourceDigest: String? = nil,
         expectedDigest: String? = nil,
         label: String? = nil,
-        sourceProfileID: String? = nil
+        sourceProfileID: String? = nil,
+        positionPatch: ConfigurationPositionPatch? = nil
     ) throws -> Data {
         guard UUIDValidation.isCanonical(requestID) else {
             throw ProtocolRequestValidationError.invalidRequestID
@@ -425,10 +427,10 @@ public enum ProtocolV1 {
             throw ProtocolRequestValidationError.invalidInstanceID
         }
 
-        var params = ["instance_id": instanceID]
+        var params: [String: Any] = ["instance_id": instanceID]
         switch method {
         case .configEditorSnapshot:
-            guard profileID == nil, positionID == nil, sourceDigest == nil, expectedDigest == nil, label == nil, sourceProfileID == nil else {
+            guard profileID == nil, positionID == nil, sourceDigest == nil, expectedDigest == nil, label == nil, sourceProfileID == nil, positionPatch == nil else {
                 throw ProtocolRequestValidationError.invalidFields
             }
         case .configEditorProfileGet:
@@ -438,7 +440,7 @@ public enum ProtocolV1 {
             guard let sourceDigest, ProfileValidation.isValidSourceDigest(sourceDigest) else {
                 throw ProtocolRequestValidationError.invalidSourceDigest
             }
-            guard positionID == nil, expectedDigest == nil, label == nil, sourceProfileID == nil else {
+            guard positionID == nil, expectedDigest == nil, label == nil, sourceProfileID == nil, positionPatch == nil else {
                 throw ProtocolRequestValidationError.invalidFields
             }
             params["source_digest"] = sourceDigest
@@ -453,7 +455,7 @@ public enum ProtocolV1 {
             guard let label, ProfileValidation.isValidLabel(label) else {
                 throw ProtocolRequestValidationError.invalidLabel
             }
-            guard positionID == nil, sourceDigest == nil, sourceProfileID == nil else {
+            guard positionID == nil, sourceDigest == nil, sourceProfileID == nil, positionPatch == nil else {
                 throw ProtocolRequestValidationError.invalidFields
             }
             params["expected_digest"] = expectedDigest
@@ -469,7 +471,7 @@ public enum ProtocolV1 {
             guard let label, ProfileValidation.isValidLabel(label) else {
                 throw ProtocolRequestValidationError.invalidLabel
             }
-            guard positionID == nil, sourceDigest == nil else {
+            guard positionID == nil, sourceDigest == nil, positionPatch == nil else {
                 throw ProtocolRequestValidationError.invalidFields
             }
             if let sourceProfileID {
@@ -488,7 +490,7 @@ public enum ProtocolV1 {
             guard let profileID, ProfileValidation.isValidID(profileID) else {
                 throw ProtocolRequestValidationError.invalidProfileID
             }
-            guard positionID == nil, sourceDigest == nil, label == nil, sourceProfileID == nil else {
+            guard positionID == nil, sourceDigest == nil, label == nil, sourceProfileID == nil, positionPatch == nil else {
                 throw ProtocolRequestValidationError.invalidFields
             }
             params["expected_digest"] = expectedDigest
@@ -500,7 +502,7 @@ public enum ProtocolV1 {
             guard let sourceDigest, ProfileValidation.isValidSourceDigest(sourceDigest) else {
                 throw ProtocolRequestValidationError.invalidSourceDigest
             }
-            guard positionID == nil, expectedDigest == nil, label == nil, sourceProfileID == nil else {
+            guard positionID == nil, expectedDigest == nil, label == nil, sourceProfileID == nil, positionPatch == nil else {
                 throw ProtocolRequestValidationError.invalidFields
             }
             params["source_digest"] = sourceDigest
@@ -515,7 +517,7 @@ public enum ProtocolV1 {
             guard let sourceDigest, ProfileValidation.isValidSourceDigest(sourceDigest) else {
                 throw ProtocolRequestValidationError.invalidSourceDigest
             }
-            guard expectedDigest == nil, label == nil, sourceProfileID == nil else {
+            guard expectedDigest == nil, label == nil, sourceProfileID == nil, positionPatch == nil else {
                 throw ProtocolRequestValidationError.invalidFields
             }
             params["source_digest"] = sourceDigest
@@ -534,13 +536,34 @@ public enum ProtocolV1 {
             guard let label, ProfileValidation.isValidPositionLabel(label) else {
                 throw ProtocolRequestValidationError.invalidLabel
             }
-            guard sourceDigest == nil, sourceProfileID == nil else {
+            guard sourceDigest == nil, sourceProfileID == nil, positionPatch == nil else {
                 throw ProtocolRequestValidationError.invalidFields
             }
             params["expected_digest"] = expectedDigest
             params["profile_id"] = profileID
             params["position_id"] = positionID
             params["label"] = label
+        case .configEditorPositionPatch:
+            guard let expectedDigest, ProfileValidation.isValidSourceDigest(expectedDigest) else {
+                throw ProtocolRequestValidationError.invalidSourceDigest
+            }
+            guard let profileID, ProfileValidation.isValidID(profileID) else {
+                throw ProtocolRequestValidationError.invalidProfileID
+            }
+            guard let positionID, ProfileValidation.isValidPositionCoordinate(positionID) else {
+                throw ProtocolRequestValidationError.invalidPositionID
+            }
+            guard let positionPatch,
+                  ProfileValidation.isValidPositionPatch(positionPatch) else {
+                throw ProtocolRequestValidationError.invalidPatch
+            }
+            guard sourceDigest == nil, label == nil, sourceProfileID == nil else {
+                throw ProtocolRequestValidationError.invalidFields
+            }
+            params["expected_digest"] = expectedDigest
+            params["profile_id"] = profileID
+            params["position_id"] = positionID
+            params["patch"] = try Self.positionPatchObject(positionPatch)
         default:
             throw ProtocolRequestValidationError.invalidMethod
         }
@@ -564,6 +587,52 @@ public enum ProtocolV1 {
             throw ProtocolRequestValidationError.encodingFailed
         }
     }
+
+    private static func positionPatchObject(_ patch: ConfigurationPositionPatch) throws -> [String: Any] {
+        var result = [String: Any]()
+        try addEdit(patch.label, to: &result, key: "label") { $0 }
+        try addEdit(patch.background, to: &result, key: "background") { $0 }
+        try addEdit(patch.labelAlignment, to: &result, key: "label_alignment") { $0 }
+        try addEdit(patch.labelSize, to: &result, key: "label_size") { $0 }
+        try addEdit(patch.notificationSources, to: &result, key: "notification_sources") { $0 }
+        try addEdit(patch.action, to: &result, key: "action", transform: Self.configuredActionObject)
+        return result
+    }
+
+    private static func addEdit<Value: Sendable>(
+        _ edit: ConfigurationFieldEdit<Value>,
+        to object: inout [String: Any],
+        key: String,
+        transform: (Value) throws -> Any
+    ) throws {
+        switch edit {
+        case .keep:
+            return
+        case .reset:
+            object[key] = ["op": "reset"]
+        case .set(let value):
+            object[key] = ["op": "set", "value": try transform(value)]
+        }
+    }
+
+    private static func configuredActionObject(_ action: ConfiguredAction) -> [String: Any] {
+        switch action {
+        case .activateProfile(let profileID, let gesture):
+            return ["type": "activate_profile", "profile_id": profileID, "gesture": gesture.rawValue]
+        case .execute(let executable, let arguments, let timeoutSeconds, let gesture):
+            return [
+                "type": "execute",
+                "executable": executable,
+                "arguments": arguments,
+                "timeout_seconds": timeoutSeconds,
+                "gesture": gesture.rawValue
+            ]
+        case .typeText(let text, let gesture):
+            return ["type": "type_text", "text": text, "gesture": gesture.rawValue]
+        case .keyPress(let key, let gesture):
+            return ["type": "key_press", "key": key, "gesture": gesture.rawValue]
+        }
+    }
 }
 
 public enum ProtocolRequestValidationError: Error, Equatable, Sendable {
@@ -574,6 +643,7 @@ public enum ProtocolRequestValidationError: Error, Equatable, Sendable {
     case invalidPositionID
     case invalidSourceDigest
     case invalidLabel
+    case invalidPatch
     case invalidFields
     case frameTooLarge
     case encodingFailed
@@ -611,6 +681,57 @@ public enum ProfileValidation {
 
     public static func isValidPositionLabel(_ value: String) -> Bool {
         value.isEmpty || isValidLabel(value)
+    }
+
+    public static func isValidPositionBackground(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        guard (7...9).contains(bytes.count), bytes.first == 0x23,
+              bytes.count == 7 || bytes.count == 9 else { return false }
+        return bytes.dropFirst().allSatisfy {
+            ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x41 && $0 <= 0x46) || ($0 >= 0x61 && $0 <= 0x66)
+        }
+    }
+
+    public static func isValidPositionPatch(_ patch: ConfigurationPositionPatch) -> Bool {
+        isValid(patch.label, value: isValidPositionLabel) &&
+            isValid(patch.background, value: isValidPositionBackground) &&
+            isValid(patch.labelAlignment, value: { $0 == "bottom" || $0 == "center" }) &&
+            isValid(patch.labelSize, value: { (8...32).contains($0) }) &&
+            isValid(patch.notificationSources, value: { sources in
+                (1...16).contains(sources.count) &&
+                    sources.allSatisfy(isValidID) &&
+                    Set(sources).count == sources.count
+            }) &&
+            isValid(patch.action, value: isValidConfiguredAction)
+    }
+
+    private static func isValid<Value: Sendable>(
+        _ edit: ConfigurationFieldEdit<Value>,
+        value: (Value) -> Bool
+    ) -> Bool {
+        guard case .set(let candidate) = edit else { return true }
+        return value(candidate)
+    }
+
+    private static func isValidConfiguredAction(_ action: ConfiguredAction) -> Bool {
+        switch action {
+        case .activateProfile(let profileID, _):
+            return isValidID(profileID)
+        case .execute(let executable, let arguments, let timeoutSeconds, _):
+            return isValidExecutable(executable) &&
+                (1...60).contains(timeoutSeconds) &&
+                arguments.count <= 32 &&
+                arguments.allSatisfy { $0.utf8.count <= 1024 && !$0.utf8.contains(0) } &&
+                arguments.reduce(0) { $0 + $1.utf8.count } <= 8192
+        case .typeText(let text, _):
+            return !text.isEmpty && text.utf16.count <= 64 && !text.utf8.contains(0)
+        case .keyPress(let key, _):
+            return key == "enter"
+        }
+    }
+
+    fileprivate static func isValidExecutable(_ value: String) -> Bool {
+        value.utf8.first == 0x2f && !value.unicodeScalars.contains(where: { $0.value == 0 })
     }
 
     public static func isValidLabel(_ value: String) -> Bool {
@@ -1011,7 +1132,7 @@ public enum ResponseValidator {
 
     private static func isHexColor(_ value: String) -> Bool {
         let bytes = Array(value.utf8)
-        return bytes.count == 7 && bytes[0] == 0x23 && bytes.dropFirst().allSatisfy {
+        return (bytes.count == 7 || bytes.count == 9) && bytes[0] == 0x23 && bytes.dropFirst().allSatisfy {
             ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x41 && $0 <= 0x46) || ($0 >= 0x61 && $0 <= 0x66)
         }
     }
@@ -1051,7 +1172,7 @@ public enum ResponseValidator {
             guard fieldNames == ["type", "executable", "arguments", "timeout_seconds"]
                     || fieldNames == ["type", "executable", "arguments", "timeout_seconds", "gesture"],
                   case .string(let executable) = values["executable"],
-                  AppPreferences.validConfigurationPath(executable) != nil,
+                  ProfileValidation.isValidExecutable(executable),
                   case .array(let argumentValues) = values["arguments"],
                   argumentValues.allSatisfy({ if case .string = $0 { true } else { false } }),
                   case .number(let rawTimeout) = values["timeout_seconds"],
@@ -1063,11 +1184,16 @@ public enum ResponseValidator {
                 guard case .string(let argument) = value else { return nil }
                 return argument
             }
+            guard arguments.count <= 32,
+                  arguments.allSatisfy({ $0.utf8.count <= 1024 && !$0.utf8.contains(0) }),
+                  arguments.reduce(0, { $0 + $1.utf8.count }) <= 8192 else {
+                throw ResponseValidationError.invalidResult
+            }
             return .execute(executable: executable, arguments: arguments, timeoutSeconds: timeout, gesture: gesture)
         case "type_text":
             guard fieldNames == ["type", "text"] || fieldNames == ["type", "text", "gesture"],
                   case .string(let text) = values["text"],
-                  text.utf16.count <= 64 else {
+                  !text.isEmpty, text.utf16.count <= 64, !text.utf8.contains(0) else {
                 throw ResponseValidationError.invalidResult
             }
             return .typeText(text: text, gesture: gesture)
@@ -1091,7 +1217,8 @@ public enum ResponseValidator {
         guard method == .configEditorProfileLabelSet ||
                 method == .configEditorProfileCreate ||
                 method == .configEditorProfileDelete ||
-                method == .configEditorPositionLabelSet else {
+                method == .configEditorPositionLabelSet ||
+                method == .configEditorPositionPatch else {
             throw ResponseValidationError.invalidResult
         }
         let root = try parseFrame(frame)

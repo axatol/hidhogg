@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import HidhoggCore
 
 struct SettingsConfigEditorClientFactory: RuntimeConfigEditorClientCreating, Sendable {
     static let phaseTimeoutNanoseconds: UInt64 = 10_000_000_000
@@ -37,6 +38,181 @@ final class SettingsViewModel: ObservableObject {
 
         var id: String {
             "\(bundleIdentifier)\u{0}\(profileID)"
+        }
+    }
+
+    enum PositionField: CaseIterable, Equatable {
+        case label
+        case background
+        case alignment
+        case size
+        case notificationSources
+        case action
+    }
+
+    enum PositionActionKind: String, CaseIterable, Identifiable, Equatable {
+        case none
+        case activateProfile
+        case execute
+        case typeText
+        case keyPress
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .none: "None"
+            case .activateProfile: "Activate profile"
+            case .execute: "Execute"
+            case .typeText: "Type text"
+            case .keyPress: "Press Enter"
+            }
+        }
+    }
+
+    private struct DraftField<Value: Equatable & Sendable>: Equatable {
+        let originalValue: Value
+        var value: Value
+        private(set) var resetRequested = false
+
+        init(_ value: Value) {
+            originalValue = value
+            self.value = value
+        }
+
+        var edit: ConfigurationFieldEdit<Value> {
+            if resetRequested { return .reset }
+            return value == originalValue ? .keep : .set(value)
+        }
+
+        mutating func set(_ value: Value) {
+            self.value = value
+            resetRequested = false
+        }
+
+        mutating func reset(to defaultValue: Value) {
+            value = defaultValue
+            resetRequested = true
+        }
+    }
+
+    private struct PositionDraft: Equatable {
+        let profileID: String
+        let positionID: String
+        let sourceDigest: String
+        var label: DraftField<String>
+        var background: DraftField<String>
+        var alignment: DraftField<String>
+        var size: DraftField<Int>
+        var notificationSources: DraftField<[String]>
+        let originalAction: ConfiguredAction?
+        var actionKind: PositionActionKind
+        var actionGesture: ButtonGesture
+        var actionProfileID: String?
+        var actionExecutable: String
+        var actionArguments: [String]
+        var actionTimeoutSeconds: Int
+        var actionText: String
+        var actionResetRequested = false
+        var newNotificationSourceID = ""
+        var newActionArgument = ""
+
+        init(_ response: ConfigEditorPositionResponse) {
+            profileID = response.profileID
+            positionID = response.positionID
+            sourceDigest = response.sourceDigest
+            label = DraftField(response.label)
+            background = DraftField(response.background)
+            alignment = DraftField(response.labelAlignment)
+            size = DraftField(response.labelSize)
+            notificationSources = DraftField(response.notificationSources)
+            originalAction = response.action
+            actionKind = .none
+            actionGesture = .release
+            actionProfileID = nil
+            actionExecutable = ""
+            actionArguments = []
+            actionTimeoutSeconds = 10
+            actionText = ""
+
+            switch response.action {
+            case .activateProfile(let profileID, let gesture):
+                actionKind = .activateProfile
+                actionGesture = gesture
+                actionProfileID = profileID
+            case .execute(let executable, let arguments, let timeoutSeconds, let gesture):
+                actionKind = .execute
+                actionGesture = gesture
+                actionExecutable = executable
+                actionArguments = arguments
+                actionTimeoutSeconds = timeoutSeconds
+            case .typeText(let text, let gesture):
+                actionKind = .typeText
+                actionGesture = gesture
+                actionText = text
+            case .keyPress(_, let gesture):
+                actionKind = .keyPress
+                actionGesture = gesture
+            case nil:
+                break
+            }
+        }
+
+        var actionEdit: ConfigurationFieldEdit<ConfiguredAction>? {
+            if actionResetRequested { return .reset }
+            if actionKind == .none {
+                return originalAction == nil ? .keep : .reset
+            }
+            guard let action = configuredAction else { return nil }
+            return action == originalAction ? .keep : .set(action)
+        }
+
+        var patch: ConfigurationPositionPatch? {
+            guard let actionEdit else { return nil }
+            return ConfigurationPositionPatch(
+                label: label.edit,
+                background: background.edit,
+                labelAlignment: alignment.edit,
+                labelSize: size.edit,
+                notificationSources: notificationSources.edit,
+                action: actionEdit
+            )
+        }
+
+        var hasChanges: Bool {
+            guard let patch else { return actionKind != .none || actionResetRequested }
+            return Self.hasChange(patch.label) ||
+                Self.hasChange(patch.background) ||
+                Self.hasChange(patch.labelAlignment) ||
+                Self.hasChange(patch.labelSize) ||
+                Self.hasChange(patch.notificationSources) ||
+                Self.hasChange(patch.action)
+        }
+
+        private var configuredAction: ConfiguredAction? {
+            switch actionKind {
+            case .none:
+                return nil
+            case .activateProfile:
+                guard let actionProfileID else { return nil }
+                return .activateProfile(profileID: actionProfileID, gesture: actionGesture)
+            case .execute:
+                return .execute(
+                    executable: actionExecutable,
+                    arguments: actionArguments,
+                    timeoutSeconds: actionTimeoutSeconds,
+                    gesture: actionGesture
+                )
+            case .typeText:
+                return .typeText(text: actionText, gesture: actionGesture)
+            case .keyPress:
+                return .keyPress(key: "enter", gesture: actionGesture)
+            }
+        }
+
+        private static func hasChange<Value: Sendable>(_ edit: ConfigurationFieldEdit<Value>) -> Bool {
+            if case .keep = edit { return false }
+            return true
         }
     }
 
@@ -79,7 +255,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var newProfileLabel = ""
     @Published var newProfileSourceID: String?
     @Published var editedProfileLabel = ""
-    @Published var editedPositionLabel = ""
+    @Published private var positionDraft: PositionDraft?
 
     private let model: HidhoggAppModel
     private let applicationSelector: ApplicationSelector
@@ -158,7 +334,7 @@ final class SettingsViewModel: ObservableObject {
         return editedProfileLabel != editedProfile.label
     }
 
-    var canSavePositionLabel: Bool {
+    var canSavePosition: Bool {
         guard !isEditorBusy,
               !requiresSnapshotRefresh,
               let editorSnapshot,
@@ -166,10 +342,140 @@ final class SettingsViewModel: ObservableObject {
               editedPosition.sourceDigest == editorSnapshot.sourceDigest,
               editedPosition.profileID == selectedEditorProfileID,
               editedPosition.positionID == selectedEditorPositionID,
-              ProfileValidation.isValidPositionLabel(editedPositionLabel) else {
+              let positionDraft,
+              positionDraft.profileID == editedPosition.profileID,
+              positionDraft.positionID == editedPosition.positionID,
+              positionDraft.sourceDigest == editorSnapshot.sourceDigest,
+              positionDraft.hasChanges,
+              let patch = positionDraft.patch,
+              ProfileValidation.isValidPositionPatch(patch) else {
             return false
         }
-        return editedPositionLabel != editedPosition.label
+        return true
+    }
+
+    var canEditPosition: Bool {
+        !isEditorBusy && !requiresSnapshotRefresh && editedPosition != nil
+    }
+
+    var positionDraftErrorMessage: String? {
+        guard let positionDraft, positionDraft.hasChanges else { return nil }
+        guard let patch = positionDraft.patch else { return "Complete the selected action fields." }
+        return ProfileValidation.isValidPositionPatch(patch)
+            ? nil
+            : "Check the label, color, source IDs, and action values."
+    }
+
+    var editedPositionLabel: String {
+        get { positionDraft?.label.value ?? "" }
+        set { updatePositionDraft { $0.label.set(newValue) } }
+    }
+
+    var editedPositionBackground: String {
+        get { positionDraft?.background.value ?? "#000000" }
+        set { updatePositionDraft { $0.background.set(newValue) } }
+    }
+
+    var editedPositionAlignment: String {
+        get { positionDraft?.alignment.value ?? "bottom" }
+        set { updatePositionDraft { $0.alignment.set(newValue) } }
+    }
+
+    var editedPositionSize: Int {
+        get { positionDraft?.size.value ?? 10 }
+        set { updatePositionDraft { $0.size.set(newValue) } }
+    }
+
+    var editedPositionNotificationSources: [String] {
+        get { positionDraft?.notificationSources.value ?? [] }
+        set {
+            updatePositionDraft { draft in
+                if !draft.notificationSources.value.isEmpty && newValue.isEmpty {
+                    draft.notificationSources.reset(to: [])
+                } else {
+                    draft.notificationSources.set(newValue)
+                }
+            }
+        }
+    }
+
+    var newPositionNotificationSourceID: String {
+        get { positionDraft?.newNotificationSourceID ?? "" }
+        set { updatePositionDraft { $0.newNotificationSourceID = newValue } }
+    }
+
+    var canAddPositionNotificationSource: Bool {
+        guard let positionDraft,
+              !isEditorBusy,
+              !requiresSnapshotRefresh,
+              positionDraft.notificationSources.value.count < 16,
+              ProfileValidation.isValidID(positionDraft.newNotificationSourceID) else {
+            return false
+        }
+        return !positionDraft.notificationSources.value.contains(positionDraft.newNotificationSourceID)
+    }
+
+    var editedPositionActionKind: PositionActionKind {
+        get { positionDraft?.actionKind ?? .none }
+        set {
+            updatePositionDraft { draft in
+                draft.actionKind = newValue
+                draft.actionResetRequested = false
+            }
+        }
+    }
+
+    var editedPositionActionGesture: ButtonGesture {
+        get { positionDraft?.actionGesture ?? .release }
+        set { updateActionDraft { $0.actionGesture = newValue } }
+    }
+
+    var editedPositionActionProfileID: String? {
+        get { positionDraft?.actionProfileID }
+        set { updateActionDraft { $0.actionProfileID = newValue } }
+    }
+
+    var editedPositionActionExecutable: String {
+        get { positionDraft?.actionExecutable ?? "" }
+        set { updateActionDraft { $0.actionExecutable = newValue } }
+    }
+
+    var editedPositionActionArguments: [String] {
+        get { positionDraft?.actionArguments ?? [] }
+        set { updateActionDraft { $0.actionArguments = newValue } }
+    }
+
+    var editedPositionActionTimeoutSeconds: Int {
+        get { positionDraft?.actionTimeoutSeconds ?? 10 }
+        set { updateActionDraft { $0.actionTimeoutSeconds = newValue } }
+    }
+
+    var editedPositionActionText: String {
+        get { positionDraft?.actionText ?? "" }
+        set { updateActionDraft { $0.actionText = newValue } }
+    }
+
+    var newPositionActionArgument: String {
+        get { positionDraft?.newActionArgument ?? "" }
+        set { updatePositionDraft { $0.newActionArgument = newValue } }
+    }
+
+    var canAddPositionActionArgument: Bool {
+        !isEditorBusy && !requiresSnapshotRefresh && (positionDraft?.actionArguments.count ?? 32) < 32
+    }
+
+    var editedPositionPreviewColor: Color? {
+        let value = editedPositionBackground
+        guard ProfileValidation.isValidPositionBackground(value),
+              let components = UInt64(value.dropFirst(), radix: 16) else {
+            return nil
+        }
+        let hasAlpha = value.utf8.count == 9
+        let red = Double((components >> (hasAlpha ? 24 : 16)) & 0xff) / 255
+        let green = Double((components >> (hasAlpha ? 16 : 8)) & 0xff) / 255
+        let blue = Double((components >> (hasAlpha ? 8 : 0)) & 0xff) / 255
+        let alpha = hasAlpha ? Double(components & 0xff) / 255 : 1
+        return Color(.sRGB, red: red, green: green, blue: blue, opacity: alpha)
     }
 
     var editorSnapshotDigest: String? {
@@ -207,7 +513,70 @@ final class SettingsViewModel: ObservableObject {
         positionSelectionGeneration &+= 1
         selectedEditorPositionID = nil
         editedPosition = nil
-        editedPositionLabel = ""
+        positionDraft = nil
+    }
+
+    private func updatePositionDraft(_ update: (inout PositionDraft) -> Void) {
+        guard var positionDraft else { return }
+        update(&positionDraft)
+        self.positionDraft = positionDraft
+    }
+
+    private func updateActionDraft(_ update: (inout PositionDraft) -> Void) {
+        updatePositionDraft { draft in
+            draft.actionResetRequested = false
+            update(&draft)
+        }
+    }
+
+    func resetPositionField(_ field: PositionField) {
+        updatePositionDraft { draft in
+            switch field {
+            case .label:
+                draft.label.reset(to: "")
+            case .background:
+                draft.background.reset(to: "#000000")
+            case .alignment:
+                draft.alignment.reset(to: "bottom")
+            case .size:
+                draft.size.reset(to: 10)
+            case .notificationSources:
+                draft.notificationSources.reset(to: [])
+            case .action:
+                draft.actionKind = .none
+                draft.actionResetRequested = true
+            }
+        }
+    }
+
+    func addPositionNotificationSource() {
+        guard canAddPositionNotificationSource else { return }
+        var sources = editedPositionNotificationSources
+        sources.append(newPositionNotificationSourceID)
+        editedPositionNotificationSources = sources
+        newPositionNotificationSourceID = ""
+    }
+
+    func removePositionNotificationSource(_ sourceID: String) {
+        var sources = editedPositionNotificationSources
+        guard sources.contains(sourceID) else { return }
+        sources.removeAll { $0 == sourceID }
+        editedPositionNotificationSources = sources
+    }
+
+    func addPositionActionArgument() {
+        guard canAddPositionActionArgument else { return }
+        var arguments = editedPositionActionArguments
+        arguments.append(newPositionActionArgument)
+        editedPositionActionArguments = arguments
+        newPositionActionArgument = ""
+    }
+
+    func removePositionActionArgument(at index: Int) {
+        var arguments = editedPositionActionArguments
+        guard arguments.indices.contains(index) else { return }
+        arguments.remove(at: index)
+        editedPositionActionArguments = arguments
     }
 
     func setEditorEndpoint(_ endpoint: RuntimeSessionController.RuntimeEndpoint?) {
@@ -441,7 +810,7 @@ final class SettingsViewModel: ObservableObject {
         let profileGeneration = profileSelectionGeneration
         selectedEditorPositionID = positionID
         editedPosition = nil
-        editedPositionLabel = ""
+        positionDraft = nil
         editorErrorMessage = nil
         isEditorBusy = true
         let client = session.client
@@ -478,15 +847,15 @@ final class SettingsViewModel: ObservableObject {
                       response.sourceDigest == sourceDigest,
                       response.profileID == profileID,
                       response.positionID == positionID else {
-                    self.editorErrorMessage = "The position label did not match the current profile snapshot."
+                    self.editorErrorMessage = "The position details did not match the current profile snapshot."
                     return
                 }
                 self.editedPosition = response
-                self.editedPositionLabel = response.label
+                self.positionDraft = PositionDraft(response)
             case .failure(let error):
                 self.handleReadFailure(
                     error,
-                    message: "The position label could not be loaded from the current runtime."
+                    message: "The position details could not be loaded from the current runtime."
                 )
             }
         }
@@ -593,23 +962,24 @@ final class SettingsViewModel: ObservableObject {
         }
     }
 
-    func saveEditedPositionLabel() {
-        guard canSavePositionLabel,
+    func saveEditedPosition() {
+        guard canSavePosition,
               let session = currentEditorSession(),
               let editedPosition,
-              let snapshot = editorSnapshot else {
-            editorErrorMessage = "Choose a position and enter a valid label before saving."
+              let snapshot = editorSnapshot,
+              let draft = positionDraft,
+              let patch = draft.patch else {
+            editorErrorMessage = "Choose a position and enter valid changes before saving."
             return
         }
         let profileID = editedPosition.profileID
         let positionID = editedPosition.positionID
-        let label = editedPositionLabel
         let expectedDigest = snapshot.sourceDigest
         performMutation(session: session) { client in
-            try client.setConfigEditorPositionLabel(
+            try client.patchConfigEditorPosition(
                 profileID: profileID,
                 positionID: positionID,
-                label: label,
+                patch: patch,
                 expectedDigest: expectedDigest,
                 requestID: UUID().uuidString.lowercased()
             )
@@ -684,7 +1054,7 @@ final class SettingsViewModel: ObservableObject {
                     self.requiresSnapshotRefresh = true
                     self.editorErrorMessage = "Outcome unknown: the runtime may have committed this edit. Refresh the snapshot before editing again."
                 } else {
-                    self.editorErrorMessage = "The runtime rejected the profile edit. Review the snapshot and try again."
+                    self.editorErrorMessage = "The runtime rejected the configuration edit. Review the snapshot and try again."
                 }
             }
         }
@@ -1037,40 +1407,10 @@ struct SettingsView: View {
                         }
 
                         Divider()
-                        Text("Edit position label")
-                            .font(.headline)
-                        Picker(
-                            "Position",
-                            selection: Binding(
-                                get: { viewModel.selectedEditorPositionID },
-                                set: { viewModel.selectPositionForEditing($0) }
-                            )
-                        ) {
-                            Text("Choose a position").tag(nil as String?)
-                            ForEach(viewModel.editorPositions, id: \.positionID) { position in
-                                Text(position.position)
-                                    .tag(position.positionID as String?)
-                            }
-                        }
-                        .disabled(
-                            viewModel.isEditorBusy ||
-                                viewModel.requiresSnapshotRefresh ||
-                                viewModel.editorPositions.count != 14
+                        SettingsPositionEditorView(
+                            viewModel: viewModel,
+                            profileIDs: snapshot.profileIDs
                         )
-                        if viewModel.editorPositions.count != 14 {
-                            Text(viewModel.isEditorBusy
-                                 ? "Loading position choices…"
-                                 : "Position choices are unavailable for this snapshot.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        if viewModel.editedPosition != nil {
-                            TextField("Position label", text: $viewModel.editedPositionLabel)
-                            Button("Save position label") {
-                                viewModel.saveEditedPositionLabel()
-                            }
-                            .disabled(!viewModel.canSavePositionLabel)
-                        }
                     }
 
                     Divider()
@@ -1124,7 +1464,7 @@ struct SettingsView: View {
                 Text(model.profileStatusText)
                     .foregroundStyle(.secondary)
                 if viewModel.availableProfiles.isEmpty {
-                    Text("Profile choices appear when the Go runtime is ready.")
+                    Text("Profile choices appear when the runtime is ready.")
                         .foregroundStyle(.secondary)
                         .font(.caption)
                 }
@@ -1172,10 +1512,221 @@ struct SettingsView: View {
                 let source = request.sourceProfileID ?? "the current profile when the change is committed"
                 Text("Clone \(source) as \(request.profileID) with label “\(request.label)”?")
             case .delete(let request):
-                Text("Delete \(request.profileID)? Go will also refuse deletion if the profile is referenced by a TOML action.")
+                Text("Delete \(request.profileID)? The runtime will also refuse deletion if the profile is referenced by a TOML action.")
             case nil:
                 EmptyView()
             }
+        }
+    }
+}
+
+@MainActor
+private struct SettingsPositionEditorView: View {
+    @ObservedObject var viewModel: SettingsViewModel
+    let profileIDs: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Edit button position")
+                .font(.headline)
+
+            Picker(
+                "Position",
+                selection: Binding(
+                    get: { viewModel.selectedEditorPositionID },
+                    set: { viewModel.selectPositionForEditing($0) }
+                )
+            ) {
+                Text("Choose a position").tag(nil as String?)
+                ForEach(viewModel.editorPositions, id: \.positionID) { position in
+                    Text(position.position)
+                        .tag(position.positionID as String?)
+                }
+            }
+            .disabled(
+                viewModel.isEditorBusy ||
+                    viewModel.requiresSnapshotRefresh ||
+                    viewModel.editorPositions.count != 14
+            )
+
+            if viewModel.editorPositions.count != 14 {
+                Text(viewModel.isEditorBusy
+                     ? "Loading position choices…"
+                     : "Position choices are unavailable for this snapshot.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if viewModel.editedPosition != nil {
+                positionFields
+                    .disabled(!viewModel.canEditPosition)
+
+                if let message = viewModel.positionDraftErrorMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                Button("Save changes") {
+                    viewModel.saveEditedPosition()
+                }
+                .disabled(!viewModel.canSavePosition)
+            }
+        }
+    }
+
+    private var positionFields: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                TextField("Position label", text: $viewModel.editedPositionLabel)
+                Button("Use default") {
+                    viewModel.resetPositionField(.label)
+                }
+            }
+
+            HStack(spacing: 8) {
+                TextField("Background (#RRGGBB or #RRGGBBAA)", text: $viewModel.editedPositionBackground)
+                if let preview = viewModel.editedPositionPreviewColor {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(preview)
+                        .frame(width: 36, height: 22)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(.secondary, lineWidth: 1)
+                        }
+                        .accessibilityLabel("Background color preview")
+                }
+                Button("Use default") {
+                    viewModel.resetPositionField(.background)
+                }
+            }
+
+            HStack {
+                Picker("Label alignment", selection: $viewModel.editedPositionAlignment) {
+                    Text("Bottom").tag("bottom")
+                    Text("Center").tag("center")
+                }
+                Button("Use default") {
+                    viewModel.resetPositionField(.alignment)
+                }
+            }
+
+            HStack {
+                Stepper(value: $viewModel.editedPositionSize, in: 8...32) {
+                    Text("Label size: \(viewModel.editedPositionSize)")
+                }
+                Button("Use default") {
+                    viewModel.resetPositionField(.size)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Notification sources")
+                    Spacer()
+                    Button("Use default") {
+                        viewModel.resetPositionField(.notificationSources)
+                    }
+                }
+                ForEach(viewModel.editedPositionNotificationSources, id: \.self) { sourceID in
+                    HStack {
+                        Text(sourceID)
+                            .textSelection(.enabled)
+                        Spacer()
+                        Button("Remove", systemImage: "minus.circle") {
+                            viewModel.removePositionNotificationSource(sourceID)
+                        }
+                        .labelStyle(.iconOnly)
+                        .accessibilityLabel("Remove source \(sourceID)")
+                    }
+                }
+                HStack {
+                    TextField("Stable notification source ID", text: $viewModel.newPositionNotificationSourceID)
+                    Button("Add source") {
+                        viewModel.addPositionNotificationSource()
+                    }
+                    .disabled(!viewModel.canAddPositionNotificationSource)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Picker("Button action", selection: $viewModel.editedPositionActionKind) {
+                        ForEach(SettingsViewModel.PositionActionKind.allCases) { kind in
+                            Text(kind.title).tag(kind)
+                        }
+                    }
+                    Button("Use default") {
+                        viewModel.resetPositionField(.action)
+                    }
+                }
+
+                actionFields
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var actionFields: some View {
+        switch viewModel.editedPositionActionKind {
+        case .none:
+            EmptyView()
+        case .activateProfile:
+            Picker("Profile to activate", selection: $viewModel.editedPositionActionProfileID) {
+                Text("Choose a profile").tag(nil as String?)
+                ForEach(profileIDs, id: \.self) { profileID in
+                    Text(profileID).tag(profileID as String?)
+                }
+            }
+            gesturePicker
+        case .execute:
+            TextField("Absolute executable path", text: $viewModel.editedPositionActionExecutable)
+            ForEach(Array(viewModel.editedPositionActionArguments.indices), id: \.self) { index in
+                HStack {
+                    TextField(
+                        "Argument \(index + 1)",
+                        text: Binding(
+                            get: { viewModel.editedPositionActionArguments[index] },
+                            set: { value in
+                                var arguments = viewModel.editedPositionActionArguments
+                                guard arguments.indices.contains(index) else { return }
+                                arguments[index] = value
+                                viewModel.editedPositionActionArguments = arguments
+                            }
+                        )
+                    )
+                    Button("Remove", systemImage: "minus.circle") {
+                        viewModel.removePositionActionArgument(at: index)
+                    }
+                    .labelStyle(.iconOnly)
+                    .accessibilityLabel("Remove argument \(index + 1)")
+                }
+            }
+            HStack {
+                TextField("New argument", text: $viewModel.newPositionActionArgument)
+                Button("Add argument") {
+                    viewModel.addPositionActionArgument()
+                }
+                .disabled(!viewModel.canAddPositionActionArgument)
+            }
+            Stepper(value: $viewModel.editedPositionActionTimeoutSeconds, in: 1...60) {
+                Text("Timeout: \(viewModel.editedPositionActionTimeoutSeconds) seconds")
+            }
+            gesturePicker
+        case .typeText:
+            TextField("Text to type", text: $viewModel.editedPositionActionText)
+            gesturePicker
+        case .keyPress:
+            Text("Press Enter")
+                .foregroundStyle(.secondary)
+            gesturePicker
+        }
+    }
+
+    private var gesturePicker: some View {
+        Picker("Trigger", selection: $viewModel.editedPositionActionGesture) {
+            Text("On press").tag(ButtonGesture.press)
+            Text("On release").tag(ButtonGesture.release)
         }
     }
 }

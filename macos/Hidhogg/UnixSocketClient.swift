@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import HidhoggCore
 
 public enum UnixSocketClientError: Error, Equatable, Sendable {
     case invalidRequest
@@ -91,6 +92,13 @@ public protocol RuntimeConfigEditorChecking: Sendable {
         expectedDigest: String,
         requestID: String
     ) throws -> ConfigEditorMutationResponse
+    func patchConfigEditorPosition(
+        profileID: String,
+        positionID: String,
+        patch: ConfigurationPositionPatch,
+        expectedDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse
 }
 
 public extension RuntimeConfigEditorChecking {
@@ -115,6 +123,16 @@ public extension RuntimeConfigEditorChecking {
         profileID: String,
         positionID: String,
         label: String,
+        expectedDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse {
+        throw UnixSocketClientError.invalidRequest
+    }
+
+    func patchConfigEditorPosition(
+        profileID: String,
+        positionID: String,
+        patch: ConfigurationPositionPatch,
         expectedDigest: String,
         requestID: String
     ) throws -> ConfigEditorMutationResponse {
@@ -584,6 +602,28 @@ public final class UnixSocketClient: @unchecked Sendable, RuntimeHealthChecking,
         )
     }
 
+    public func patchConfigEditorPosition(
+        profileID: String,
+        positionID: String,
+        patch: ConfigurationPositionPatch,
+        expectedDigest: String,
+        requestID: String
+    ) throws -> ConfigEditorMutationResponse {
+        let responseFrame = try configEditorExchange(
+            method: .configEditorPositionPatch,
+            requestID: requestID,
+            profileID: profileID,
+            positionID: positionID,
+            expectedDigest: expectedDigest,
+            positionPatch: patch
+        )
+        return try validateConfigEditorMutation(
+            responseFrame,
+            method: .configEditorPositionPatch,
+            requestID: requestID
+        )
+    }
+
     private func validateConfigEditorMutation(
         _ responseFrame: Data,
         method: RuntimeMethod,
@@ -609,7 +649,8 @@ public final class UnixSocketClient: @unchecked Sendable, RuntimeHealthChecking,
         sourceDigest: String? = nil,
         expectedDigest: String? = nil,
         label: String? = nil,
-        sourceProfileID: String? = nil
+        sourceProfileID: String? = nil,
+        positionPatch: ConfigurationPositionPatch? = nil
     ) throws -> Data {
         guard UUIDValidation.isCanonical(requestID) else {
             throw UnixSocketClientError.invalidRequest
@@ -625,7 +666,8 @@ public final class UnixSocketClient: @unchecked Sendable, RuntimeHealthChecking,
                 sourceDigest: sourceDigest,
                 expectedDigest: expectedDigest,
                 label: label,
-                sourceProfileID: sourceProfileID
+                sourceProfileID: sourceProfileID,
+                positionPatch: positionPatch
             )
         } catch let error as ProtocolRequestValidationError {
             if error == .frameTooLarge {

@@ -1,4 +1,5 @@
 import Foundation
+import HidhoggCore
 
 public final class ConfigEditorClient: @unchecked Sendable, RuntimeConfigEditorChecking {
     public let socketPath: String
@@ -122,6 +123,22 @@ public final class ConfigEditorClient: @unchecked Sendable, RuntimeConfigEditorC
             profileID: profileID,
             positionID: positionID,
             label: label,
+            expectedDigest: expectedDigest,
+            requestID: requestID
+        )
+    }
+
+    public func patchConfigEditorPosition(
+        profileID: String,
+        positionID: String,
+        patch: ConfigurationPositionPatch,
+        expectedDigest: String,
+        requestID: String = UUID().uuidString.lowercased()
+    ) throws -> ConfigEditorMutationResponse {
+        try socketClient.patchConfigEditorPosition(
+            profileID: profileID,
+            positionID: positionID,
+            patch: patch,
             expectedDigest: expectedDigest,
             requestID: requestID
         )
