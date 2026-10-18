@@ -8,6 +8,115 @@ import HidhoggCore
 
 @MainActor
 final class SettingsViewModelTests: XCTestCase {
+    func testPermissionStatusRefreshReadsTheCurrentKeyboardInputAccess() {
+        var status = false
+        var refreshCount = 0
+        let viewModel = PermissionSettingsViewModel(
+            checkKeyboardInputAccess: {
+                refreshCount += 1
+                return status
+            }
+        )
+
+        XCTAssertEqual(viewModel.keyboardInputStatusText, "Checking…")
+
+        viewModel.refresh()
+        XCTAssertEqual(viewModel.keyboardInputAllowed, false)
+        XCTAssertEqual(viewModel.keyboardInputStatusText, "Not allowed")
+
+        status = true
+        viewModel.refresh()
+        XCTAssertEqual(viewModel.keyboardInputAllowed, true)
+        XCTAssertEqual(viewModel.keyboardInputStatusText, "Allowed")
+        XCTAssertEqual(refreshCount, 2)
+    }
+
+    func testPermissionSettingsOpenTargetsAccessibilityAndReportsFailure() {
+        var openedURL: URL?
+        var openingSucceeds = false
+        let viewModel = PermissionSettingsViewModel(
+            openURL: { url in
+                openedURL = url
+                return openingSucceeds
+            }
+        )
+
+        viewModel.openAccessibilitySettings()
+
+        XCTAssertEqual(
+            openedURL?.absoluteString,
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        )
+        XCTAssertEqual(
+            viewModel.openSettingsErrorMessage,
+            "Could not open Permission Settings. Open System Settings > Privacy & Security > Device Control and Data Access (Accessibility on earlier macOS versions) and enable Hidhogg."
+        )
+
+        openingSucceeds = true
+        viewModel.openAccessibilitySettings()
+        XCTAssertNil(viewModel.openSettingsErrorMessage)
+    }
+
+    func testShowApplicationInFinderUsesTheExactRunningBundleURL() {
+        let bundleURL = URL(fileURLWithPath: "/tmp/permission-test/Hidhogg.app", isDirectory: true)
+        var revealedURL: URL?
+        let viewModel = PermissionSettingsViewModel(
+            applicationBundleURL: bundleURL,
+            showInFinder: { url in revealedURL = url }
+        )
+
+        viewModel.showApplicationInFinder()
+
+        XCTAssertEqual(viewModel.applicationBundleURL, bundleURL)
+        XCTAssertEqual(revealedURL, bundleURL)
+    }
+
+    func testPermissionSettingsDefaultsToTheRunningApplicationBundle() {
+        let viewModel = PermissionSettingsViewModel()
+
+        XCTAssertEqual(viewModel.applicationBundleURL, Bundle.main.bundleURL)
+    }
+
+    func testApplicationBundleDragProviderOffersURLRepresentation() {
+        let bundleURL = URL(fileURLWithPath: "/tmp/permission-test/Hidhogg.app", isDirectory: true)
+        let viewModel = PermissionSettingsViewModel(applicationBundleURL: bundleURL)
+
+        let provider = viewModel.applicationBundleItemProvider()
+
+        XCTAssertTrue(provider.hasItemConformingToTypeIdentifier(UTType.url.identifier))
+        XCTAssertTrue(provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier))
+        XCTAssertEqual(UTType.url.identifier, "public.url")
+        XCTAssertEqual(UTType.fileURL.identifier, "public.file-url")
+    }
+
+    func testApplicationBundleDragProviderLoadsTheExactBundleURL() async throws {
+        let fixtureRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("permission-test-\(UUID().uuidString)", isDirectory: true)
+        let bundleURL = fixtureRoot.appendingPathComponent("Hidhogg.app", isDirectory: true)
+        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+
+        let provider = PermissionSettingsViewModel(
+            applicationBundleURL: bundleURL
+        ).applicationBundleItemProvider()
+
+        let loadedURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+            provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let data, let url = URL(dataRepresentation: data, relativeTo: nil) else {
+                    continuation.resume(throwing: CocoaError(.fileReadUnknown))
+                    return
+                }
+                continuation.resume(returning: url)
+            }
+        }
+
+        XCTAssertEqual(loadedURL, bundleURL)
+    }
+
     func testProfileStatusPrioritizesStateOverCachedCurrentProfile() {
         let cases: [(ProfileSwitchCoordinatorState, String)] = [
             (.invalidMapping(bundleIdentifier: "com.example.editor", profileID: "Missing.Profile"), "Profile: stale mapping (Missing.Profile)"),

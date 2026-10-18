@@ -1,7 +1,9 @@
 import AppKit
 import Combine
+import CoreGraphics
 import SwiftUI
 import HidhoggCore
+import UniformTypeIdentifiers
 
 struct PositionActionArgumentDraft: Identifiable, Equatable {
     let id: UUID
@@ -1318,6 +1320,75 @@ final class SettingsViewModel: ObservableObject {
 }
 
 @MainActor
+final class PermissionSettingsViewModel: ObservableObject {
+    static let accessibilityManualPath = "System Settings > Privacy & Security > Device Control and Data Access (Accessibility on earlier macOS versions)"
+    static let accessibilitySettingsURL = URL(
+        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+    )!
+
+    @Published private(set) var keyboardInputAllowed: Bool?
+    @Published private(set) var openSettingsErrorMessage: String?
+
+    let applicationBundleURL: URL
+
+    private let checkKeyboardInputAccess: @MainActor () -> Bool
+    private let openURL: @MainActor (URL) -> Bool
+    private let showInFinder: @MainActor (URL) -> Void
+
+    init(
+        applicationBundleURL: URL = Bundle.main.bundleURL,
+        checkKeyboardInputAccess: @escaping @MainActor () -> Bool = {
+            CGPreflightPostEventAccess()
+        },
+        openURL: @escaping @MainActor (URL) -> Bool = { url in
+            NSWorkspace.shared.open(url)
+        },
+        showInFinder: @escaping @MainActor (URL) -> Void = { bundleURL in
+            NSWorkspace.shared.activateFileViewerSelecting([bundleURL])
+        }
+    ) {
+        self.applicationBundleURL = applicationBundleURL
+        self.checkKeyboardInputAccess = checkKeyboardInputAccess
+        self.openURL = openURL
+        self.showInFinder = showInFinder
+    }
+
+    var keyboardInputStatusText: String {
+        guard let keyboardInputAllowed else { return "Checking…" }
+        return keyboardInputAllowed ? "Allowed" : "Not allowed"
+    }
+
+    func refresh() {
+        keyboardInputAllowed = checkKeyboardInputAccess()
+    }
+
+    func openAccessibilitySettings() {
+        guard openURL(Self.accessibilitySettingsURL) else {
+            openSettingsErrorMessage = "Could not open Permission Settings. Open \(Self.accessibilityManualPath) and enable Hidhogg."
+            return
+        }
+        openSettingsErrorMessage = nil
+    }
+
+    func showApplicationInFinder() {
+        showInFinder(applicationBundleURL)
+    }
+
+    func applicationBundleItemProvider() -> NSItemProvider {
+        let bundleURL = applicationBundleURL
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(
+            forTypeIdentifier: UTType.fileURL.identifier,
+            visibility: .all
+        ) { completionHandler in
+            completionHandler(bundleURL.dataRepresentation, nil)
+            return nil
+        }
+        return provider
+    }
+}
+
+@MainActor
 struct SettingsView: View {
     @ObservedObject private var model: HidhoggAppModel
     @StateObject private var viewModel: SettingsViewModel
@@ -1506,6 +1577,8 @@ struct SettingsView: View {
                         .font(.caption)
                 }
             }
+
+            SettingsPermissionSection(model: model)
         }
         .formStyle(.grouped)
         .frame(minWidth: 540, minHeight: 420)
@@ -1553,6 +1626,89 @@ struct SettingsView: View {
             case nil:
                 EmptyView()
             }
+        }
+    }
+}
+
+@MainActor
+private struct SettingsPermissionSection: View {
+    @ObservedObject private var model: HidhoggAppModel
+    @StateObject private var viewModel: PermissionSettingsViewModel
+
+    init(
+        model: HidhoggAppModel,
+        viewModel: PermissionSettingsViewModel = PermissionSettingsViewModel()
+    ) {
+        self.model = model
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
+
+    var body: some View {
+        Section("Permissions") {
+            LabeledContent("Device Control and Data Access", value: "Accessibility")
+            LabeledContent("Keyboard input", value: viewModel.keyboardInputStatusText)
+                .accessibilityIdentifier("keyboard-input-permission-status")
+            Text("Required for typing text and pressing keys.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(PermissionSettingsViewModel.accessibilityManualPath)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("Permission changes may require restarting Hidhogg.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Button("Refresh") {
+                    viewModel.refresh()
+                }
+                Button("Open Permission Settings") {
+                    viewModel.openAccessibilitySettings()
+                }
+                Button(model.isRestartingApplication ? "Restarting Hidhogg…" : "Restart Hidhogg") {
+                    Task { await model.restartApplication() }
+                }
+                .disabled(!model.canRestartApplication)
+            }
+
+            if let unavailableMessage = model.restartUnavailableMessage {
+                Text(unavailableMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let restartErrorText = model.applicationRestartErrorText {
+                Text(restartErrorText)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+            if let errorMessage = viewModel.openSettingsErrorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            HStack {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: viewModel.applicationBundleURL.path))
+                    .resizable()
+                    .frame(width: 32, height: 32)
+                    .onDrag {
+                        viewModel.applicationBundleItemProvider()
+                    }
+                    .accessibilityLabel("Drag to Device Control and Data Access or Accessibility permissions")
+                Text("Drag \(viewModel.applicationBundleURL.lastPathComponent) to the permission list.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Show in Finder") {
+                    viewModel.showApplicationInFinder()
+                }
+            }
+        }
+        .onAppear {
+            viewModel.refresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            viewModel.refresh()
         }
     }
 }

@@ -1564,3 +1564,37 @@ The initial final-run Core206 suite recorded exactly one failed XCTAssertTrue at
 ## 2026-10-18 — X01 complete, source checkpoint95d0942
 
 Committed199 curated source/docs paths as95d0942 after unit/build/native gates and independent source/preservation audits. Final app/CLI Debug+Release products are arm64. Core final206/206 and app139/139 passed; retained the initial intermittent fake-clock assertion232 failure, focused11/11 and full-context pass with no claimed diagnosis or repair. Hg08 finalnative gate passed exit0, same-PID Settings reopen and ReleaseCLIstatus, root removal and no watchdog escalation. Final report SHA77127708a382f1ff664773cbc32fee1d8623787b0a2319d8980216609c513fa4. Research/runbook bodies, staticspike evidence, protocol fixtures, font resources and LLDB helpers preserved. Final review found a stale pending sentence in roadmap; owner changed it to dependency-only TaskView wording and main verified the refreshed four-doc manifest. Task138 marked complete; all other eleven V2 task completion flags reverified. No approved migration task remains; hardware/nativeinput/optionalchild/coldlaunch limits and the unconfirmed intermittent test remain explicit qualifications. Existing untracked files untouched. No app is running and no remote publication occurred.
+
+
+## 2026-10-18 — Owner action failure report, V2-B01 #411
+
+Owner reports profile switching works but actions do not. Created high-priority TaskView411 in existing project5/list49. No cause is confirmed and no code was changed. Shared explorer verified production/native action wiring and simulated disabled adapters; native text/Enter uses event-posting preflight permission. Prior acceptance explicitly excluded actual OS action delivery. Requested action type, exact build/launch context and one harmless failing example. No owner config/environment/history payload was read, and no real child or keyboard/HID action was run. Next step is an exact reproducible example and approved source/integration plan, not another fake-only action test.
+
+
+## 2026-10-18 — Numpad/VS Code example
+
+Owner narrowed B01: numpad profile in VS Code, all number buttons fail to type numbers. This is expected keyboard-input behavior; actual action definitions and current build/mode are not yet verified. Source input.status response is restricted to backend, permission, readiness and queue metadata. Requested permission for that narrow live query; no live query, owner-config read or keystroke posting has occurred.
+
+## 2026-10-18 — Input permission diagnosis and approved UI follow-up
+
+Approved live read-only input.status returned not_granted with backend ready. Owner enabled access, restarted Hidhogg and confirmed VS Code numpad typing works. Task411 resolved without a code repair. Owner approved task412 (V2-U03): Settings permission status/refresh, permission-pane shortcut, draggable actual running bundle and Finder reveal. Implementation delegated to swift_v2_executor; focused tests/build and manual navigation/drag checks pending.
+
+## 2026-10-18 — V2-U03 focused verification
+
+Permission UI implemented in SettingsView.swift with six new focused tests. Two earlier provider roundtrip runs failed with CocoaError256; changed NSURL/public.url export to explicit public.file-url URL data. Independent final SettingsViewModelTests passed 42/42; static review found no source blockers. Test log: /Volumes/Data/tmp/hidhogg-permissions-20261018/settings-viewmodel-tests-final.log. Production arm64 Debug build pending; permission-pane destination and real drag acceptance remain manual checks.
+
+V2-U03 production Debug build passed, arm64 confirmed and no HIDHOGG_TEST_HOST define. Artifact: /Volumes/Data/tmp/hidhogg-permissions-20261018/ProductionDerivedData/Build/Products/Debug/Hidhogg.app. Task412 remains open for actual Settings navigation/drag acceptance; source changes uncommitted.
+
+## 2026-10-18 — V2-U04 approved restart
+
+Owner confirms app drag into permission list works; permission refresh only reflected grant after restart. Approved Restart Hidhogg UI using existing shutdown then exact-bundle NSWorkspace relaunch, no overlapping runtimes. Task413 in progress; implementation delegated, focused tests/build and live restart pending.
+
+V2-U04 implementation and static review complete: app-model restart awaits existing quit and stopped runtime before exact-bundle new-instance launch; old termination follows launch success. Duplicate guard, visible failures and simulation disablement added. Active gated fake-runtime test ensures no launch before stop completes. Independent focused tests/build running; real relaunch still unverified.
+
+V2-U04 independent focused Test-config gate passed 48/48 with no skips. Earlier commands stopped before XCTest (sandbox dependency resolution and private test-fixture compile errors); corrected to test-local fakes. Final test log SHA256 2625ccf4ab6872a7fa554f02dde4edbfa8673f8f032a2c6a4720fb55aec53098 under /Volumes/Data/tmp/hidhogg-restart-20261018. Production build pending; no live restart or native effects.
+
+V2-U04 production Debug build passed, arm64 and no TestHost define confirmed. App: /Volumes/Data/tmp/hidhogg-restart-20261018/ProductionDerivedData/Build/Products/Debug/Hidhogg.app; executable SHA256 496bde9a11fc354f867671a079fbfd93e61c255641fcd9bbf1fb8350f1762e00. Task413 manual restart acceptance pending; source/test/docs changes uncommitted.
+
+## 2026-10-18 — Permissions and restart accepted
+
+Owner confirmed actual drag and restart work and requested feature closeout. Tasks412/413 marked complete. Final source hashes match independently verified48/48 tests and arm64 Debug build; closeout static audit found no unrelated source changes or blockers, so no redundant rerun. Exact undocumented Settings destination not independently observed; best-effort shortcut/manual fallback remains. Queued V2-A01 task414: direct in-process app/runtime interfaces retaining external CLI endpoint and runtime engine/lifecycle; no next-feature implementation started. Scoped commit and milestone notification follow.

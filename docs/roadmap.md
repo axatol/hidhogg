@@ -28,3 +28,14 @@ The target is a pure Swift macOS application that owns the runtime and device, p
 TaskView project 5 list 49 owns the V2 tasks and dependency graph. V2-X01 follows V2-V01 in that dependency graph; TaskView remains the authority for task status. See [v2-plan.md](v2-plan.md) for the task map, dependencies, constraints and verification evidence.
 
 Custom assets, the proposed Go log tail and split profile files are deferred. Historical requirements remain in [v1-roadmap.md](v1-roadmap.md).
+
+## Post-migration usability
+
+| Functional slice | TaskView code and ID |
+|---|---|
+| Diagnose numpad action failure caused by missing input permission | V2-B01 #411 |
+| Show keyboard permission status and provide Settings/app-bundle shortcuts | V2-U03 #412 |
+| Restart Hidhogg after permission changes | V2-U04 #413 |
+| Simplify internal app/runtime interfaces; retain external CLI endpoint | V2-A01 #414 |
+
+TaskView records current status and verification gates for these follow-ups.

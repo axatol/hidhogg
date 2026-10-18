@@ -3,6 +3,9 @@ import Darwin
 import SwiftUI
 import HidhoggCore
 
+typealias HidhoggApplicationLaunching = @MainActor (URL, NSWorkspace.OpenConfiguration) async -> Bool
+typealias HidhoggApplicationTerminating = @MainActor () -> Void
+
 @main
 struct HidhoggApp: App {
     @NSApplicationDelegateAdaptor(HidhoggApplicationDelegate.self)
@@ -216,6 +219,8 @@ final class HidhoggAppModel: ObservableObject {
     @Published private(set) var profileState: ProfileSwitchCoordinatorState = .idle
     @Published private(set) var mappings: ProfileMappingPreferences
     @Published private(set) var resolvedConfigurationPath: String?
+    @Published private(set) var isRestartingApplication = false
+    @Published private(set) var applicationRestartErrorText: String?
 
     let allowsConfigurationSelection: Bool
     let runtimeSession: RuntimeSessionController
@@ -225,6 +230,8 @@ final class HidhoggAppModel: ObservableObject {
     private let profileMappingStore: any ProfileMappingPreferencesStore
     private let foregroundObserver: any ForegroundApplicationObserving
     private let configurationBootstrapFactory: @Sendable () -> DefaultConfigurationBootstrap
+    private let launchApplication: HidhoggApplicationLaunching
+    private let terminateApplication: HidhoggApplicationTerminating
     private var preferences: AppPreferences
     private var configurationBootstrap: DefaultConfigurationBootstrap?
     private var configurationBootstrapErrorText: String?
@@ -238,8 +245,19 @@ final class HidhoggAppModel: ObservableObject {
 
     var canStartRuntime: Bool {
         !hasQuit
+            && !isRestartingApplication
             && configurationBootstrapErrorText == nil
             && runtimeSession.canStartManually
+    }
+
+    var canRestartApplication: Bool {
+        !runtimeSession.usesSimulatedBackend && !isRestartingApplication
+    }
+
+    var restartUnavailableMessage: String? {
+        runtimeSession.usesSimulatedBackend
+            ? "Restart is unavailable in simulated and test runs."
+            : nil
     }
 
     private var simulationDiagnostics: HidhoggSimulationDiagnostics? {
@@ -257,6 +275,8 @@ final class HidhoggAppModel: ObservableObject {
         foregroundObserver: (any ForegroundApplicationObserving)? = nil,
         allowsConfigurationSelection: Bool = true,
         initialConfigurationError: String? = nil,
+        launchApplication: HidhoggApplicationLaunching? = nil,
+        terminateApplication: HidhoggApplicationTerminating? = nil,
         configurationBootstrapFactory: @escaping @Sendable () -> DefaultConfigurationBootstrap = {
             let environment = ProcessInfo.processInfo.environment
             let templateURL = Bundle.main.url(forResource: "DefaultConfig", withExtension: "toml")
@@ -274,6 +294,12 @@ final class HidhoggAppModel: ObservableObject {
         self.preferences = AppPreferences(store: preferencesStore)
         self.allowsConfigurationSelection = allowsConfigurationSelection
         self.configurationBootstrapErrorText = initialConfigurationError
+        self.launchApplication = launchApplication ?? { bundleURL, configuration in
+            await Self.openApplication(at: bundleURL, configuration: configuration)
+        }
+        self.terminateApplication = terminateApplication ?? {
+            NSApplication.shared.terminate(nil)
+        }
         if let runtimeSession {
             self.runtimeSession = runtimeSession
         } else {
@@ -352,6 +378,35 @@ final class HidhoggAppModel: ObservableObject {
         runtimeSession.requestManualStart()
     }
 
+    func restartApplication() async {
+        guard !isRestartingApplication else { return }
+        guard !runtimeSession.usesSimulatedBackend else {
+            applicationRestartErrorText = restartUnavailableMessage
+            return
+        }
+
+        isRestartingApplication = true
+        applicationRestartErrorText = nil
+        await quit()
+
+        guard runtimeSession.lifecycleState == .stopped else {
+            applicationRestartErrorText = "Hidhogg could not confirm that the runtime stopped. The current application was left open."
+            isRestartingApplication = false
+            return
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        configuration.allowsRunningApplicationSubstitution = false
+        guard await launchApplication(Bundle.main.bundleURL, configuration) else {
+            applicationRestartErrorText = "Could not start a new Hidhogg instance. The current application was left open."
+            isRestartingApplication = false
+            return
+        }
+
+        terminateApplication()
+    }
+
     func refreshProfileCatalog() async {
         profileCoordinator.refreshCatalog()
         await profileCoordinator.waitForIdle()
@@ -405,6 +460,17 @@ final class HidhoggAppModel: ObservableObject {
         quitTask = task
         await task.value
         quitTask = nil
+    }
+
+    private static func openApplication(
+        at bundleURL: URL,
+        configuration: NSWorkspace.OpenConfiguration
+    ) async -> Bool {
+        await withCheckedContinuation { continuation in
+            NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration) { application, error in
+                continuation.resume(returning: application != nil && error == nil)
+            }
+        }
     }
 
     private func observeRuntime() async {

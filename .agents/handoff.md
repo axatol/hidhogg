@@ -2,6 +2,27 @@
 
 Updated: 2026-10-18, Australia/Brisbane.
 
+## Next task — V2-A01 #414
+
+Owner requested internal runtime simplification next, after closing the current feature. Queued in TaskView project5/list49; no next-feature code started. Direction: replace internal app-to-runtime socket calls with direct Swift interfaces, retain RuntimeCoordinator engine/lifecycle and external CLI socket/owner-only endpoint protections, remove obsolete supervisor/process terminology. Existing app already owns runtime in-process. Next: map current boundaries, present a concrete code/test plan for confirmation, then implement. No new process/helper or speculative features. Confirm integration depth separately; protect owner config/env/PII and unrelated untracked files.
+
+## Accepted feature — V2-U03 #412 / V2-U04 #413
+
+Owner confirmed actual app drag works, then confirmed restart feature works and requested closeout on 2026-10-18. Both tasks complete. Earlier V2-B01 #411 resolved after permission grant/restart restored VS Code numpad actions.
+
+Settings Permissions shows CGPreflightPostEventAccess status with appearance/activation/manual refresh, best-effort permission-page shortcut with both-name manual fallback, exact Bundle.main app icon public.file-url drag and Finder reveal. Restart awaits idempotent model.quit(), requires stopped runtime before exact-bundle new-instance launch with substitution disabled, then terminates old app on success. Duplicate requests blocked, failure visible, simulation restart disabled. No helper/shell/runtime IPC added.
+
+Independent focused checks: 48/48 passed (42 SettingsViewModelTests plus five restart tests and existing delegate termination ordering), zero skips. Active gated fake-runtime test proves launch waits for stop. Debug production build passed, arm64 confirmed, no HIDHOGG_TEST_HOST in production log. Final four source/test hashes verified unchanged at closeout; static closeout audit found no unrelated source edits or blockers. No test rerun was needed without source changes.
+
+Evidence root: /Volumes/Data/tmp/hidhogg-restart-20261018/
+- focused-tests-corrected.xcresult and focused-tests-corrected.log; log SHA256 2625ccf4ab6872a7fa554f02dde4edbfa8673f8f032a2c6a4720fb55aec53098.
+- ProductionDerivedData/Build/Products/Debug/Hidhogg.app; executable SHA256 496bde9a11fc354f867671a079fbfd93e61c255641fcd9bbf1fb8350f1762e00.
+- production-debug-build.log records successful arm64 production build.
+
+Earlier permission drag regression runs (two) failed NSURL/public.url loadItem roundtrip with CocoaError256, including an existing fixture; explicit public.file-url data export fixed the regression. Retained in /Volumes/Data/tmp/hidhogg-permissions-20261018/. Final permission class passed42/42 before restart additions. Restart test commands initially stopped before XCTest for sandbox package resolution and inaccessible private helpers; corrected test-local fakes then48/48 passed. No agent-run live native input/HID or owner configuration reads. Owner supplies live drag/restart acceptance. Exact permission deep-link destination was not independently observed; shortcut remains best effort with manual fallback. Simultaneous external Quit cancellation semantics are unspecified; shutdown ordering prevents runtime overlap.
+
+Current feature is closed in the scoped permission/restart checkpoint (see git log). Unrelated untracked files preserved; no push/PR/worktree used.
+
 ## Completion
 
 The approved offline Swift migration is complete. Branch `v2`; source cleanup checkpoint `95d0942`, Settings activation checkpoint `08a44f8`. All twelve V2 tasks in TaskView Personal project 5 / list 49 were verified complete: P01 121, C01 122, C02 123, D01 124, D02 125, R01 126, R02 128, I01 130, U01 132, U02 134, V01 136, X01 138. TaskView is authoritative; docs/roadmap.md remains a stable ID/dependency map. No push, PR, tag, deployment or worktree was used.

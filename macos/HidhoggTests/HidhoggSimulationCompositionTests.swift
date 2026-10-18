@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import XCTest
 @testable import Hidhogg
@@ -106,6 +107,206 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
                 .displayPowerShutdownCompleted,
                 .applicationQuitCompleted,
             ]
+        )
+    }
+
+    func testRestartStopsRuntimeBeforeLaunchingExactBundleAndTerminatesAfterSuccess() async {
+        let stopGate = RestartTestStopGate()
+        let runtimeSession = RuntimeSessionController(
+            backendSelection: .native,
+            generationFactory: { _, _ in
+                RestartTestRuntimeGeneration(stopOutcome: .closed, stopGate: stopGate)
+            },
+            configurationWatcherFactory: { _, _ in RestartTestConfigurationWatcher() }
+        )
+        runtimeSession.start(configurationPath: "/synthetic/config.toml")
+        await runtimeSession.waitForTransition()
+        XCTAssertEqual(runtimeSession.lifecycleState, .ready)
+
+        var model: HidhoggAppModel!
+        var events = [String]()
+        var launchedBundleURL: URL?
+        var lifecycleAtLaunch: LifecycleState?
+        var createsNewInstance = false
+        var allowsSubstitution = true
+        model = makeRestartModel(
+            runtimeSession: runtimeSession,
+            launchApplication: { bundleURL, configuration in
+                events.append("launch")
+                launchedBundleURL = bundleURL
+                lifecycleAtLaunch = model.runtimeSession.lifecycleState
+                createsNewInstance = configuration.createsNewApplicationInstance
+                allowsSubstitution = configuration.allowsRunningApplicationSubstitution
+                return true
+            },
+            terminateApplication: {
+                events.append("terminate")
+            }
+        )
+
+        let restartRequest = Task { await model.restartApplication() }
+        await stopGate.waitUntilEntered()
+
+        XCTAssertEqual(events, [])
+        XCTAssertTrue(model.isRestartingApplication)
+        XCTAssertFalse(model.canStartRuntime)
+        await model.restartApplication()
+        XCTAssertEqual(events, [])
+
+        await stopGate.open()
+        await restartRequest.value
+
+        XCTAssertEqual(events, ["launch", "terminate"])
+        XCTAssertEqual(launchedBundleURL, Bundle.main.bundleURL)
+        XCTAssertEqual(lifecycleAtLaunch, .stopped)
+        XCTAssertTrue(createsNewInstance)
+        XCTAssertFalse(allowsSubstitution)
+        XCTAssertTrue(model.isRestartingApplication)
+        XCTAssertFalse(model.canStartRuntime)
+        XCTAssertNil(model.applicationRestartErrorText)
+    }
+
+    func testRestartDoesNotLaunchWhenRuntimeCleanupIsUncertain() async {
+        let runtimeSession = RuntimeSessionController(
+            backendSelection: .native,
+            generationFactory: { _, _ in
+                RestartTestRuntimeGeneration(stopOutcome: .cleanupUncertain)
+            },
+            configurationWatcherFactory: { _, _ in RestartTestConfigurationWatcher() }
+        )
+        runtimeSession.start(configurationPath: "/synthetic/config.toml")
+        await runtimeSession.waitForTransition()
+        XCTAssertEqual(runtimeSession.lifecycleState, .ready)
+
+        var launchCount = 0
+        var terminateCount = 0
+        let model = makeRestartModel(
+            runtimeSession: runtimeSession,
+            launchApplication: { _, _ in
+                launchCount += 1
+                return true
+            },
+            terminateApplication: {
+                terminateCount += 1
+            }
+        )
+
+        await model.restartApplication()
+
+        guard case .failed = runtimeSession.lifecycleState else {
+            XCTFail("uncertain runtime cleanup was not preserved")
+            return
+        }
+        XCTAssertEqual(launchCount, 0)
+        XCTAssertEqual(terminateCount, 0)
+        XCTAssertFalse(model.isRestartingApplication)
+        XCTAssertFalse(model.canStartRuntime)
+        XCTAssertEqual(
+            model.applicationRestartErrorText,
+            "Hidhogg could not confirm that the runtime stopped. The current application was left open."
+        )
+    }
+
+    func testRestartLaunchFailureLeavesCurrentApplicationOpen() async {
+        var terminateCount = 0
+        let model = makeRestartModel(
+            launchApplication: { _, _ in false },
+            terminateApplication: {
+                terminateCount += 1
+            }
+        )
+
+        await model.restartApplication()
+
+        XCTAssertEqual(model.runtimeSession.lifecycleState, .stopped)
+        XCTAssertEqual(terminateCount, 0)
+        XCTAssertFalse(model.isRestartingApplication)
+        XCTAssertEqual(
+            model.applicationRestartErrorText,
+            "Could not start a new Hidhogg instance. The current application was left open."
+        )
+    }
+
+    func testRestartIgnoresDuplicateRequestsWhileLaunchIsPending() async {
+        let launchStarted = expectation(description: "fresh application launch started")
+        var resumeLaunch: CheckedContinuation<Bool, Never>?
+        var launchCount = 0
+        var terminateCount = 0
+        let model = makeRestartModel(
+            launchApplication: { _, _ in
+                launchCount += 1
+                launchStarted.fulfill()
+                return await withCheckedContinuation { continuation in
+                    resumeLaunch = continuation
+                }
+            },
+            terminateApplication: {
+                terminateCount += 1
+            }
+        )
+
+        let firstRequest = Task { await model.restartApplication() }
+        await fulfillment(of: [launchStarted], timeout: 2)
+        await model.restartApplication()
+
+        XCTAssertEqual(launchCount, 1)
+        XCTAssertEqual(terminateCount, 0)
+        XCTAssertTrue(model.isRestartingApplication)
+        XCTAssertFalse(model.canStartRuntime)
+
+        resumeLaunch?.resume(returning: true)
+        await firstRequest.value
+
+        XCTAssertEqual(terminateCount, 1)
+    }
+
+    func testSimulatedRestartIsDisabledAndDoesNotLaunch() async {
+        let runtimeSession = RuntimeSessionController(backendSelection: .simulated)
+        var launchCount = 0
+        var terminateCount = 0
+        let model = makeRestartModel(
+            runtimeSession: runtimeSession,
+            launchApplication: { _, _ in
+                launchCount += 1
+                return true
+            },
+            terminateApplication: {
+                terminateCount += 1
+            }
+        )
+
+        XCTAssertFalse(model.canRestartApplication)
+        XCTAssertEqual(model.restartUnavailableMessage, "Restart is unavailable in simulated and test runs.")
+        await model.restartApplication()
+
+        XCTAssertEqual(launchCount, 0)
+        XCTAssertEqual(terminateCount, 0)
+        XCTAssertEqual(runtimeSession.lifecycleState, .configurationRequired)
+    }
+
+    private func makeRestartModel(
+        runtimeSession: RuntimeSessionController = RuntimeSessionController(backendSelection: .native),
+        launchApplication: @escaping HidhoggApplicationLaunching,
+        terminateApplication: @escaping HidhoggApplicationTerminating
+    ) -> HidhoggAppModel {
+        HidhoggAppModel(
+            preferencesStore: RestartTestAppPreferencesStore(),
+            runtimeSession: runtimeSession,
+            profileMappingStore: RestartTestProfileMappingPreferencesStore(),
+            displayPowerCoordinator: HostDisplayPowerCoordinator(
+                observer: RestartTestHostDisplayPowerObserver()
+            ),
+            foregroundObserver: RestartTestForegroundApplicationObserver(),
+            allowsConfigurationSelection: false,
+            launchApplication: launchApplication,
+            terminateApplication: terminateApplication,
+            configurationBootstrapFactory: {
+                DefaultConfigurationBootstrap(
+                    xdgConfigHome: nil,
+                    homeDirectory: URL(fileURLWithPath: "/private/tmp", isDirectory: true),
+                    templateData: Data()
+                )
+            }
         )
     }
 
@@ -541,6 +742,91 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
     label = "Synthetic"
     positions = { "0_0" = { label = "Ready" } }
     """
+}
+
+private actor RestartTestRuntimeGeneration: RuntimeSessionGeneration {
+    private let stopOutcome: RuntimeGenerationStopOutcome
+    private let stopGate: RestartTestStopGate?
+    private var running = false
+
+    init(stopOutcome: RuntimeGenerationStopOutcome, stopGate: RestartTestStopGate? = nil) {
+        self.stopOutcome = stopOutcome
+        self.stopGate = stopGate
+    }
+
+    func start() async throws -> RuntimeSessionController.RuntimeEndpoint {
+        running = true
+        return RuntimeSessionController.RuntimeEndpoint(
+            instanceID: "restart-test",
+            socketPath: "/private/tmp/restart-test.sock"
+        )
+    }
+
+    func isRunning() async -> Bool { running }
+    func reloadConfiguration() async {}
+
+    func stop() async -> RuntimeGenerationStopOutcome {
+        await stopGate?.suspendStop()
+        running = false
+        return stopOutcome
+    }
+}
+
+private actor RestartTestStopGate {
+    private var didEnter = false
+    private var entryWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+    func suspendStop() async {
+        didEnter = true
+        entryWaiter?.resume()
+        entryWaiter = nil
+        await withCheckedContinuation { releaseWaiter = $0 }
+    }
+
+    func waitUntilEntered() async {
+        guard !didEnter else { return }
+        await withCheckedContinuation { entryWaiter = $0 }
+    }
+
+    func open() {
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+    }
+}
+
+private final class RestartTestConfigurationWatcher: RuntimeConfigurationWatching {
+    func start() throws {}
+    func stop() {}
+}
+
+private struct RestartTestAppPreferencesStore: AppPreferencesStore {
+    func string(forKey key: String) -> String? { nil }
+    func set(_ value: String?, forKey key: String) {}
+}
+
+private struct RestartTestProfileMappingPreferencesStore: ProfileMappingPreferencesStore {
+    func dictionary(forKey key: String) -> [String: String]? { nil }
+    func set(_ value: [String: String]?, forKey key: String) {}
+}
+
+@MainActor
+private final class RestartTestHostDisplayPowerObserver: HostDisplayPowerObserving {
+    var lastKnownDisplayAwake: Bool? { nil }
+
+    func start(
+        stateHandler: @escaping HostDisplayPowerStateHandler,
+        errorHandler: @escaping HostDisplayPowerErrorHandler
+    ) {}
+
+    func reconcileIfUnknown() {}
+    func stop() {}
+}
+
+@MainActor
+private final class RestartTestForegroundApplicationObserver: ForegroundApplicationObserving {
+    func start(handler: @escaping ForegroundApplicationHandler) {}
+    func stop() {}
 }
 
 private final class HidhoggSimulationDiagnosticRecorder: @unchecked Sendable {
