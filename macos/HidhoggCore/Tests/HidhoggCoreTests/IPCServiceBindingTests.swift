@@ -94,6 +94,47 @@ final class IPCServiceBindingTests: XCTestCase {
         XCTAssertEqual(stale.failure?.code, "stale_source")
     }
 
+    func testStalePositionPatchMatchesCoreErrorFixtureWithoutOverwritingExternalEdit() async throws {
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let configURL = temporary.appendingPathComponent("config.toml")
+        let originalSource = Self.configurationSource
+        let originalBytes = Data(originalSource.utf8)
+        let expectedDigest = ConfigurationStore.digest(originalBytes).description
+        let externalSource = originalSource.replacingOccurrences(of: "brightness = 80", with: "brightness = 81")
+        XCTAssertNotEqual(externalSource, originalSource)
+        try Data(externalSource.utf8).write(to: configURL)
+
+        let configuration = try HidhoggConfigurationDecoder.decode(originalBytes)
+        let coordinator = try RuntimeCoordinator(configuration: configuration, selection: .simulated)
+        let binding = try IPCServiceBinding(coordinator: coordinator, configurationPath: configURL.path)
+        let request = try Self.request(.editorPatchPosition(
+            expectedDigest: expectedDigest,
+            profileID: "default",
+            positionID: "0_0",
+            patch: ConfigurationPositionPatch(label: .set("Draft"))
+        ))
+        let fixtureURL = try XCTUnwrap(Bundle.module.url(
+            forResource: "StaleSourcePositionPatch",
+            withExtension: "jsonl"
+        ))
+        let expectedFrame = try Data(contentsOf: fixtureURL)
+
+        let actualFrame: Data
+        do {
+            try await coordinator.start()
+            actualFrame = try IPCProtocol.encodeResponse(await binding.handle(request))
+        } catch {
+            _ = await coordinator.stop()
+            throw error
+        }
+        _ = await coordinator.stop()
+
+        XCTAssertEqual(actualFrame, expectedFrame)
+        XCTAssertEqual(try Data(contentsOf: configURL), Data(externalSource.utf8))
+    }
+
     func testConfigurationReloadDoesNotFollowSymlinkAndRetainsSafeStatus() async throws {
         let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)

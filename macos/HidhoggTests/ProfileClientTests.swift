@@ -480,6 +480,40 @@ final class ProfileClientTests: XCTestCase {
         XCTAssertTrue(transport.requests.isEmpty)
     }
 
+    func testConfigEditorClientMapsCoreStaleSourceFixture() throws {
+        let coreFrameURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("HidhoggCore/Tests/HidhoggCoreTests/Resources/StaleSourcePositionPatch.jsonl")
+        let coreFrame = try Data(contentsOf: coreFrameURL)
+        let endpoint = try makeSocketEndpoint()
+        defer { endpoint.cleanup() }
+        let transport = RecordingProfileTransport(responses: [coreFrame])
+        let client = try ConfigEditorClient(
+            socketPath: endpoint.socket.path,
+            instanceID: instanceID,
+            transport: transport
+        )
+
+        let requestID = listRequestID
+        XCTAssertThrowsError(try client.patchConfigEditorPosition(
+            profileID: "default",
+            positionID: "0_0",
+            patch: ConfigurationPositionPatch(label: .set("Draft")),
+            expectedDigest: String(repeating: "a", count: 64),
+            requestID: requestID
+        )) { error in
+            XCTAssertEqual(
+                error as? UnixSocketClientError,
+                .response(.serverError(RuntimeError(
+                    code: "stale_source",
+                    message: "configuration source changed; refresh and retry"
+                )))
+            )
+        }
+        XCTAssertEqual(transport.requests.count, 1)
+    }
+
     private func configEditorFrame(
         requestID: String,
         instanceID: String,

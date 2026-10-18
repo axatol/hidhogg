@@ -710,9 +710,90 @@ final class ProtocolFixtureTests: XCTestCase {
                 .serverError(RuntimeError(code: "stale_source", message: "configuration source changed; refresh and retry"))
             )
         }
-        let unsafeErrorFrame = Data("{\"protocol_version\":1,\"request_id\":\"\(requestID)\",\"result\":null,\"error\":{\"code\":\"stale_source\",\"message\":\"/private/config.toml changed\"}}\n".utf8)
+        let pathBearingErrorFrame = Data("{\"protocol_version\":1,\"request_id\":\"\(requestID)\",\"result\":null,\"error\":{\"code\":\"stale_source\",\"message\":\"/private/config.toml changed\"}}\n".utf8)
         XCTAssertThrowsError(try ResponseValidator.validateConfigEditorSnapshot(
-            frame: unsafeErrorFrame,
+            frame: pathBearingErrorFrame,
+            expectedRequestID: requestID,
+            expectedInstanceID: instanceID
+        )) { error in
+            XCTAssertEqual(
+                error as? ResponseValidationError,
+                .serverError(RuntimeError(code: "stale_source", message: "configuration source changed; refresh and retry"))
+            )
+        }
+    }
+
+    func testConfigEditorErrorsNormalizeByCodeAndEnforceMessageBounds() throws {
+        let requestID = "11111111-1111-4111-8111-111111111111"
+        let instanceID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        let makeFrame: (String, String) -> Data = { code, message in
+            Data("{\"protocol_version\":1,\"request_id\":\"\(requestID)\",\"result\":null,\"error\":{\"code\":\"\(code)\",\"message\":\"\(message)\"}}\n".utf8)
+        }
+        let coreErrors: [(code: String, message: String, safeMessage: String)] = [
+            ("stale_source", "configuration source changed", "configuration source changed; refresh and retry"),
+            ("stale_source", "/private/config.toml changed", "configuration source changed; refresh and retry"),
+            ("profile_not_found", "profile was not found", "profile or position was not found"),
+            ("profile_not_found", "profile or position was not found", "profile or position was not found"),
+            ("reload_rejected", "configuration is unavailable", "configuration reload was rejected"),
+            ("reload_rejected", "configuration reload was rejected", "configuration reload was rejected"),
+            ("device_write_failed", "device update failed", "device update failed"),
+            ("file_commit_failed", "configuration file could not be committed", "configuration edit could not be committed"),
+            ("edit_invalid", "configuration edit is invalid", "configuration edit is invalid"),
+            ("busy", "runtime is busy", "runtime is busy"),
+            ("shutting_down", "runtime is not ready", "runtime is shutting down"),
+        ]
+
+        for item in coreErrors {
+            XCTAssertThrowsError(try ResponseValidator.validateConfigEditorSnapshot(
+                frame: makeFrame(item.code, item.message),
+                expectedRequestID: requestID,
+                expectedInstanceID: instanceID
+            )) { error in
+                XCTAssertEqual(
+                    error as? ResponseValidationError,
+                    .serverError(RuntimeError(code: item.code, message: item.safeMessage))
+                )
+            }
+        }
+
+        XCTAssertThrowsError(try ResponseValidator.validateConfigEditorSnapshot(
+            frame: makeFrame("stale_source", String(repeating: "x", count: 256)),
+            expectedRequestID: requestID,
+            expectedInstanceID: instanceID
+        )) { error in
+            XCTAssertEqual(
+                error as? ResponseValidationError,
+                .serverError(RuntimeError(code: "stale_source", message: "configuration source changed; refresh and retry"))
+            )
+        }
+        XCTAssertThrowsError(try ResponseValidator.validateConfigEditorSnapshot(
+            frame: makeFrame("stale_source", String(repeating: "é", count: 128)),
+            expectedRequestID: requestID,
+            expectedInstanceID: instanceID
+        )) { error in
+            XCTAssertEqual(
+                error as? ResponseValidationError,
+                .serverError(RuntimeError(code: "stale_source", message: "configuration source changed; refresh and retry"))
+            )
+        }
+        XCTAssertThrowsError(try ResponseValidator.validateConfigEditorSnapshot(
+            frame: makeFrame("stale_source", String(repeating: "x", count: 257)),
+            expectedRequestID: requestID,
+            expectedInstanceID: instanceID
+        )) { XCTAssertEqual($0 as? ResponseValidationError, .invalidError) }
+        XCTAssertThrowsError(try ResponseValidator.validateConfigEditorSnapshot(
+            frame: makeFrame("stale_source", String(repeating: "é", count: 129)),
+            expectedRequestID: requestID,
+            expectedInstanceID: instanceID
+        )) { XCTAssertEqual($0 as? ResponseValidationError, .invalidError) }
+        XCTAssertThrowsError(try ResponseValidator.validateConfigEditorSnapshot(
+            frame: makeFrame("unknown_error", "bounded message"),
+            expectedRequestID: requestID,
+            expectedInstanceID: instanceID
+        )) { XCTAssertEqual($0 as? ResponseValidationError, .invalidError) }
+        let invalidMessageType = Data("{\"protocol_version\":1,\"request_id\":\"\(requestID)\",\"result\":null,\"error\":{\"code\":\"stale_source\",\"message\":1}}\n".utf8)
+        XCTAssertThrowsError(try ResponseValidator.validateConfigEditorSnapshot(
+            frame: invalidMessageType,
             expectedRequestID: requestID,
             expectedInstanceID: instanceID
         )) { XCTAssertEqual($0 as? ResponseValidationError, .invalidError) }

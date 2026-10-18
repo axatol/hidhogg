@@ -331,6 +331,9 @@ public enum ProtocolV1 {
         "instance_mismatch": "runtime instance does not match",
         "message_too_large": "request message is too large",
         "internal": "internal server error",
+        "profile_not_found": "profile or position was not found",
+        "reload_rejected": "configuration reload was rejected",
+        "device_write_failed": "device update failed",
         "stale_source": "configuration source changed; refresh and retry",
         "edit_invalid": "configuration edit is invalid",
         "file_commit_failed": "configuration edit could not be committed",
@@ -1306,7 +1309,7 @@ public enum ResponseValidator {
         guard case .string(let code) = errorMap["code"],
               let safeMessage = ProtocolV1.configEditorErrorMessages[code],
               case .string(let message) = errorMap["message"],
-              message == safeMessage else {
+              message.utf8.count <= 256 else {
             throw ResponseValidationError.invalidError
         }
         throw ResponseValidationError.serverError(RuntimeError(code: code, message: safeMessage))
