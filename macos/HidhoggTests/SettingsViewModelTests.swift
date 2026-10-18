@@ -645,6 +645,88 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.lastMutationSummary, "File committed; runtime reloaded (display)")
     }
 
+    func testExecuteArgumentRowsKeepStableIdentityThroughRemovalAndSerializeInOrder() async throws {
+        let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        let client = SettingsConfigEditorTestClient(
+            instanceID: endpoint.instanceID,
+            action: .execute(
+                executable: "/usr/bin/printf",
+                arguments: ["first", "middle", "last"],
+                timeoutSeconds: 10,
+                gesture: .release
+            )
+        )
+        let viewModel = await makeSelectedPositionEditor(client: client, endpoint: endpoint)
+        let originalRows = viewModel.editedPositionActionArgumentRows
+        let firstID = try XCTUnwrap(originalRows.first?.id)
+        let middleID = try XCTUnwrap(originalRows.dropFirst().first?.id)
+        let lastID = try XCTUnwrap(originalRows.last?.id)
+
+        XCTAssertEqual(viewModel.positionActionArgumentValue(id: middleID), "middle")
+        viewModel.setPositionActionArgument(id: middleID, value: "edited middle")
+        viewModel.removePositionActionArgument(id: firstID)
+        viewModel.setPositionActionArgument(id: lastID, value: "edited last")
+
+        XCTAssertEqual(viewModel.editedPositionActionArgumentRows.map(\.id), [middleID, lastID])
+        XCTAssertEqual(viewModel.editedPositionActionArguments, ["edited middle", "edited last"])
+        XCTAssertNil(viewModel.positionActionArgumentValue(id: firstID))
+
+        viewModel.setPositionActionArgument(id: firstID, value: "stale edit")
+        viewModel.removePositionActionArgument(id: firstID)
+        XCTAssertEqual(viewModel.editedPositionActionArguments, ["edited middle", "edited last"])
+
+        XCTAssertTrue(viewModel.canSavePosition)
+        viewModel.saveEditedPosition()
+        await viewModel.waitForEditorIdle()
+
+        guard let patch = client.lastPositionPatch else {
+            return XCTFail("Expected the position patch to be recorded")
+        }
+        assertSet(
+            patch.action,
+            .execute(
+                executable: "/usr/bin/printf",
+                arguments: ["edited middle", "edited last"],
+                timeoutSeconds: 10,
+                gesture: .release
+            )
+        )
+    }
+
+    func testExecuteArgumentIDsExpireWhenActionOrPositionChanges() async throws {
+        let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        let client = SettingsConfigEditorTestClient(
+            instanceID: endpoint.instanceID,
+            action: .execute(
+                executable: "/usr/bin/printf",
+                arguments: ["first", "second"],
+                timeoutSeconds: 10,
+                gesture: .release
+            )
+        )
+        let viewModel = await makeSelectedPositionEditor(client: client, endpoint: endpoint)
+        let firstID = try XCTUnwrap(viewModel.editedPositionActionArgumentRows.first?.id)
+
+        viewModel.setPositionActionArgument(id: firstID, value: "kept edit")
+        viewModel.editedPositionActionKind = .typeText
+        XCTAssertNil(viewModel.positionActionArgumentValue(id: firstID))
+        viewModel.setPositionActionArgument(id: firstID, value: "stale action edit")
+
+        viewModel.editedPositionActionKind = .execute
+        let afterActionSwitch = viewModel.editedPositionActionArgumentRows
+        XCTAssertFalse(afterActionSwitch.contains { $0.id == firstID })
+        XCTAssertEqual(viewModel.editedPositionActionArguments, ["kept edit", "second"])
+        viewModel.setPositionActionArgument(id: firstID, value: "stale action edit")
+        XCTAssertEqual(viewModel.editedPositionActionArguments, ["kept edit", "second"])
+
+        viewModel.selectPositionForEditing("0_1")
+        await viewModel.waitForEditorIdle()
+        XCTAssertEqual(viewModel.selectedEditorPositionID, "0_1")
+        XCTAssertFalse(viewModel.editedPositionActionArgumentRows.contains { $0.id == afterActionSwitch[0].id })
+        viewModel.setPositionActionArgument(id: afterActionSwitch[0].id, value: "stale position edit")
+        XCTAssertEqual(viewModel.editedPositionActionArguments, ["first", "second"])
+    }
+
     func testPositionDraftBuildsProfileTextAndEnterActions() async throws {
         let scenarios: [(String, SettingsViewModel.PositionActionKind, ButtonGesture)] = [
             ("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", .activateProfile, .press),

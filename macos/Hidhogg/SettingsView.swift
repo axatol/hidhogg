@@ -3,6 +3,16 @@ import Combine
 import SwiftUI
 import HidhoggCore
 
+struct PositionActionArgumentDraft: Identifiable, Equatable {
+    let id: UUID
+    var value: String
+
+    init(value: String) {
+        id = UUID()
+        self.value = value
+    }
+}
+
 struct SettingsConfigEditorClientFactory: RuntimeConfigEditorClientCreating, Sendable {
     static let phaseTimeoutNanoseconds: UInt64 = 10_000_000_000
 
@@ -110,7 +120,7 @@ final class SettingsViewModel: ObservableObject {
         var actionGesture: ButtonGesture
         var actionProfileID: String?
         var actionExecutable: String
-        var actionArguments: [String]
+        var actionArguments: [PositionActionArgumentDraft]
         var actionTimeoutSeconds: Int
         var actionText: String
         var actionResetRequested = false
@@ -144,7 +154,7 @@ final class SettingsViewModel: ObservableObject {
                 actionKind = .execute
                 actionGesture = gesture
                 actionExecutable = executable
-                actionArguments = arguments
+                actionArguments = arguments.map { PositionActionArgumentDraft(value: $0) }
                 actionTimeoutSeconds = timeoutSeconds
             case .typeText(let text, let gesture):
                 actionKind = .typeText
@@ -199,7 +209,7 @@ final class SettingsViewModel: ObservableObject {
             case .execute:
                 return .execute(
                     executable: actionExecutable,
-                    arguments: actionArguments,
+                    arguments: actionArguments.map(\.value),
                     timeoutSeconds: actionTimeoutSeconds,
                     gesture: actionGesture
                 )
@@ -419,7 +429,11 @@ final class SettingsViewModel: ObservableObject {
         get { positionDraft?.actionKind ?? .none }
         set {
             updatePositionDraft { draft in
+                guard draft.actionKind != newValue else { return }
                 draft.actionKind = newValue
+                draft.actionArguments = draft.actionArguments.map {
+                    PositionActionArgumentDraft(value: $0.value)
+                }
                 draft.actionResetRequested = false
             }
         }
@@ -440,9 +454,28 @@ final class SettingsViewModel: ObservableObject {
         set { updateActionDraft { $0.actionExecutable = newValue } }
     }
 
+    var editedPositionActionArgumentRows: [PositionActionArgumentDraft] {
+        positionDraft?.actionArguments ?? []
+    }
+
     var editedPositionActionArguments: [String] {
-        get { positionDraft?.actionArguments ?? [] }
-        set { updateActionDraft { $0.actionArguments = newValue } }
+        positionDraft?.actionArguments.map(\.value) ?? []
+    }
+
+    func positionActionArgumentValue(id: UUID) -> String? {
+        guard let positionDraft, positionDraft.actionKind == .execute else { return nil }
+        return positionDraft.actionArguments.first { $0.id == id }?.value
+    }
+
+    func setPositionActionArgument(id: UUID, value: String) {
+        guard var draft = positionDraft,
+              draft.actionKind == .execute,
+              let index = draft.actionArguments.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        draft.actionResetRequested = false
+        draft.actionArguments[index].value = value
+        positionDraft = draft
     }
 
     var editedPositionActionTimeoutSeconds: Int {
@@ -566,17 +599,21 @@ final class SettingsViewModel: ObservableObject {
 
     func addPositionActionArgument() {
         guard canAddPositionActionArgument else { return }
-        var arguments = editedPositionActionArguments
-        arguments.append(newPositionActionArgument)
-        editedPositionActionArguments = arguments
-        newPositionActionArgument = ""
+        updateActionDraft { draft in
+            draft.actionArguments.append(PositionActionArgumentDraft(value: draft.newActionArgument))
+            draft.newActionArgument = ""
+        }
     }
 
-    func removePositionActionArgument(at index: Int) {
-        var arguments = editedPositionActionArguments
-        guard arguments.indices.contains(index) else { return }
-        arguments.remove(at: index)
-        editedPositionActionArguments = arguments
+    func removePositionActionArgument(id: UUID) {
+        guard var draft = positionDraft,
+              draft.actionKind == .execute,
+              let index = draft.actionArguments.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        draft.actionResetRequested = false
+        draft.actionArguments.remove(at: index)
+        positionDraft = draft
     }
 
     func setEditorEndpoint(_ endpoint: RuntimeSessionController.RuntimeEndpoint?) {
@@ -1681,25 +1718,20 @@ private struct SettingsPositionEditorView: View {
             gesturePicker
         case .execute:
             TextField("Absolute executable path", text: $viewModel.editedPositionActionExecutable)
-            ForEach(Array(viewModel.editedPositionActionArguments.indices), id: \.self) { index in
+            ForEach(Array(viewModel.editedPositionActionArgumentRows.enumerated()), id: \.element.id) { row in
                 HStack {
                     TextField(
-                        "Argument \(index + 1)",
+                        "Argument \(row.offset + 1)",
                         text: Binding(
-                            get: { viewModel.editedPositionActionArguments[index] },
-                            set: { value in
-                                var arguments = viewModel.editedPositionActionArguments
-                                guard arguments.indices.contains(index) else { return }
-                                arguments[index] = value
-                                viewModel.editedPositionActionArguments = arguments
-                            }
+                            get: { viewModel.positionActionArgumentValue(id: row.element.id) ?? "" },
+                            set: { viewModel.setPositionActionArgument(id: row.element.id, value: $0) }
                         )
                     )
                     Button("Remove", systemImage: "minus.circle") {
-                        viewModel.removePositionActionArgument(at: index)
+                        viewModel.removePositionActionArgument(id: row.element.id)
                     }
                     .labelStyle(.iconOnly)
-                    .accessibilityLabel("Remove argument \(index + 1)")
+                    .accessibilityLabel("Remove argument \(row.offset + 1)")
                 }
             }
             HStack {
