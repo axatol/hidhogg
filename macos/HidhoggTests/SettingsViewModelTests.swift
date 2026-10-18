@@ -99,7 +99,6 @@ final class SettingsViewModelTests: XCTestCase {
     func testModelMappingEditsPersistTheCompleteSnapshot() throws {
         let store = TestSettingsMappingStore()
         let model = HidhoggAppModel(
-            executablePath: "/tmp/hidhogg-runtime",
             preferencesStore: TestAppPreferencesStore(),
             profileMappingStore: store
         )
@@ -761,7 +760,6 @@ final class SettingsViewModelTests: XCTestCase {
         await coordinator.waitForIdle()
 
         let model = HidhoggAppModel(
-            executablePath: "/tmp/hidhogg-runtime",
             preferencesStore: TestAppPreferencesStore(),
             profileMappingStore: store,
             profileCoordinator: coordinator
@@ -794,7 +792,6 @@ final class SettingsViewModelTests: XCTestCase {
 
     private func makeSettingsModel() -> HidhoggAppModel {
         HidhoggAppModel(
-            executablePath: "/tmp/hidhogg-runtime",
             preferencesStore: TestAppPreferencesStore(),
             profileMappingStore: TestSettingsMappingStore()
         )

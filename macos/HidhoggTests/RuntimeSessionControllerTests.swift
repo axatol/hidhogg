@@ -1,910 +1,393 @@
 import Darwin
 import Foundation
 import XCTest
+import HidhoggCore
 @testable import Hidhogg
 
 @MainActor
 final class RuntimeSessionControllerTests: XCTestCase {
-    func testValidAbsolutePathPersistsThroughInjectableStore() {
-        let store = TestPreferencesStore()
-        let path = "/private/tmp/hidhogg-config.toml"
-
-        let preferences = AppPreferences(configurationPath: path)
-        preferences.save(to: store)
-
-        XCTAssertEqual(store.string(forKey: AppPreferences.configurationPathKey), path)
-        XCTAssertEqual(AppPreferences(store: store).configurationPath, path)
-    }
-
-    func testInvalidStoredPathDoesNotCreateSupervisor() async {
-        let store = TestPreferencesStore(configurationPath: "relative.toml")
-        let preferences = AppPreferences(store: store)
-        let recorder = RuntimeFactoryRecorder()
+    func testInvalidPathNeverCreatesRuntimeGeneration() async {
+        let recorder = RuntimeGenerationRecorder()
         let controller = makeController(recorder: recorder)
 
-        XCTAssertEqual(preferences.persistedConfigurationPath, "relative.toml")
-        XCTAssertNil(preferences.configurationPath)
-
-        controller.start(configurationPath: preferences.configurationPath)
+        controller.start(configurationPath: "relative.toml")
         await controller.waitForTransition()
 
-        XCTAssertEqual(recorder.factoryPaths, [])
+        XCTAssertEqual(recorder.paths, [])
         XCTAssertEqual(controller.lifecycleState, .configurationRequired)
         XCTAssertFalse(controller.canStartManually)
         await controller.quit()
     }
 
-    func testManualStartWaitsForRestartExhaustionAndRestartsSamePathToReady() async throws {
-        let root = try makeTemporaryRoot()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let retryClock = GatedRestartClock()
-        let harness = ManualStartSupervisorFactory(root: root, retryClock: retryClock)
-        let controller = makeController(harness: harness)
-        let model = makeModel(controller: controller)
-        let firstPath = "/private/tmp/profile-a.toml"
-
-        XCTAssertFalse(model.canStartRuntime)
-        controller.start(configurationPath: firstPath)
-        await controller.waitForTransition()
-        await retryClock.waitUntilWaiting()
-        try await waitUntilLifecycle(controller) { state in
-            if case .failed(.launch) = state { return true }
-            return false
-        }
-
-        XCTAssertFalse(controller.canStartManually)
-        XCTAssertFalse(model.canStartRuntime)
-        model.startRuntime()
-        await controller.waitForTransition()
-        XCTAssertEqual(harness.factoryPaths, [firstPath])
-
-        await retryClock.release()
-        try await waitUntilLifecycle(controller) { $0 == .failed(.restartExhausted) }
-        XCTAssertNil(controller.endpoint)
-        XCTAssertTrue(model.canStartRuntime)
-        let failureDetail = "D200X_HID_OPEN_PATH_FAILED: attempt failed"
-        XCTAssertEqual(controller.lastFailureDetail, failureDetail)
-        XCTAssertEqual(
-            HidhoggAppModel.runtimeFailureHealthText(
-                failure: .restartExhausted,
-                lastFailureDetail: controller.lastFailureDetail
-            ),
-            "runtime failed after one restart\nLast failure: \(failureDetail)"
+    func testReadinessWaitsForRuntimeStartupAndPublishesEndpointAfterWatcherStarts() async throws {
+        let startGate = AsyncGate()
+        let recorder = RuntimeGenerationRecorder(startGate: startGate)
+        let watcher = TestConfigurationWatcher()
+        let controller = makeController(
+            recorder: recorder,
+            watcherFactory: { _, _ in watcher }
         )
 
-        model.startRuntime()
-        XCTAssertFalse(controller.canStartManually)
-        model.startRuntime()
-        await controller.waitForTransition()
-        XCTAssertNil(controller.lastFailureDetail)
-        try await waitUntilReady(controller)
+        controller.start(configurationPath: "/synthetic/config.toml")
+        await waitUntil { recorder.count == 1 }
+        let generation = try XCTUnwrap(recorder.generation(at: 0))
+        await generation.waitForStart()
 
-        XCTAssertEqual(harness.factoryPaths, [firstPath, firstPath])
-        XCTAssertEqual(controller.configurationPath, firstPath)
-        XCTAssertNotNil(controller.endpoint)
-        XCTAssertFalse(controller.canStartManually)
-        XCTAssertFalse(model.canStartRuntime)
-
-        await model.quit()
-        XCTAssertFalse(model.canStartRuntime)
-        XCTAssertEqual(controller.lifecycleState, .stopped)
+        XCTAssertEqual(controller.lifecycleState, .starting)
         XCTAssertNil(controller.endpoint)
+
+        await startGate.open()
+        await controller.waitForTransition()
+
+        XCTAssertEqual(controller.lifecycleState, .ready)
+        XCTAssertNotNil(controller.endpoint)
+        XCTAssertEqual(watcher.startCount, 1)
+        let reloadCount = await generation.reloadCount()
+        XCTAssertEqual(reloadCount, 1)
+        await controller.quit()
+        XCTAssertEqual(watcher.stopCount, 1)
     }
 
-    func testConfigurationPathChangedWhileManualStartIsQueuedUsesLatestPath() async throws {
-        let root = try makeTemporaryRoot()
+    func testPathReplacementWaitsForConfirmedRetirement() async throws {
+        let stopGate = AsyncGate()
+        let recorder = RuntimeGenerationRecorder(stopGate: stopGate)
+        let controller = makeController(recorder: recorder)
+
+        controller.start(configurationPath: "/synthetic/first.toml")
+        await controller.waitForTransition()
+        let firstGeneration = try XCTUnwrap(recorder.generation(at: 0))
+
+        controller.setConfigurationPath("/synthetic/second.toml")
+        await firstGeneration.waitForStop()
+
+        XCTAssertEqual(controller.lifecycleState, .stopping)
+        XCTAssertNil(controller.endpoint)
+        XCTAssertEqual(recorder.paths, ["/synthetic/first.toml"])
+
+        await stopGate.open()
+        await controller.waitForTransition()
+
+        XCTAssertEqual(recorder.paths, ["/synthetic/first.toml", "/synthetic/second.toml"])
+        XCTAssertEqual(controller.lifecycleState, .ready)
+        await controller.quit()
+    }
+
+    func testUncertainRetirementKeepsGenerationAndPermanentlyRefusesReplacement() async {
+        let recorder = RuntimeGenerationRecorder(stopOutcome: .cleanupUncertain)
+        let controller = makeController(recorder: recorder)
+
+        controller.start(configurationPath: "/synthetic/first.toml")
+        await controller.waitForTransition()
+        controller.setConfigurationPath("/synthetic/second.toml")
+        await controller.waitForTransition()
+
+        guard case .failed(.cleanup) = controller.lifecycleState else {
+            XCTFail("uncertain retirement did not remain visible")
+            return
+        }
+        XCTAssertNil(controller.endpoint)
+        XCTAssertEqual(recorder.paths, ["/synthetic/first.toml"])
+        XCTAssertFalse(controller.canStartManually)
+
+        controller.setConfigurationPath("/synthetic/third.toml")
+        await controller.waitForTransition()
+        await controller.quit()
+
+        XCTAssertEqual(recorder.paths, ["/synthetic/first.toml"])
+        XCTAssertEqual(controller.lifecycleState, .failed(.cleanup("Core runtime or IPC cleanup is uncertain")))
+    }
+
+    func testConcurrentQuitWaitsForRetirementAndStopsOnlyOnce() async throws {
+        let stopGate = AsyncGate()
+        let recorder = RuntimeGenerationRecorder(stopGate: stopGate)
+        let controller = makeController(recorder: recorder)
+
+        controller.start(configurationPath: "/synthetic/config.toml")
+        await controller.waitForTransition()
+        let generation = try XCTUnwrap(recorder.generation(at: 0))
+        let firstQuit = Task { await controller.quit() }
+        let secondQuit = Task { await controller.quit() }
+
+        await generation.waitForStop()
+        XCTAssertEqual(controller.lifecycleState, .stopping)
+        XCTAssertNotEqual(controller.lifecycleState, .stopped)
+
+        await stopGate.open()
+        await firstQuit.value
+        await secondQuit.value
+
+        XCTAssertEqual(controller.lifecycleState, .stopped)
+        XCTAssertNil(controller.endpoint)
+        let stopCount = await generation.stopCount()
+        XCTAssertEqual(stopCount, 1)
+    }
+
+    func testParentAndFileWatchersReloadDirectAndAtomicConfigurationSaves() async throws {
+        let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let retryClock = GatedRestartClock()
-        let harness = ManualStartSupervisorFactory(root: root, retryClock: retryClock)
-        let controller = makeController(harness: harness)
-        let firstPath = "/private/tmp/profile-a.toml"
-        let selectedPath = "/private/tmp/profile-b.toml"
+        let configurationURL = root.appendingPathComponent("config.toml")
+        try Data("initial".utf8).write(to: configurationURL)
+        let recorder = RuntimeGenerationRecorder()
+        let controller = makeController(
+            recorder: recorder,
+            watcherFactory: { path, onChange in
+                ConfigurationFileWatcher(path: path, onChange: onChange)
+            }
+        )
 
-        controller.start(configurationPath: firstPath)
+        controller.start(configurationPath: configurationURL.path)
         await controller.waitForTransition()
-        await retryClock.waitUntilWaiting()
-        await retryClock.release()
-        try await waitUntilLifecycle(controller) { $0 == .failed(.restartExhausted) }
+        let generation = try XCTUnwrap(recorder.generation(at: 0))
+        let initialReloadCount = await generation.reloadCount()
 
-        controller.requestManualStart()
-        controller.setConfigurationPath(selectedPath)
-        await controller.waitForTransition()
-        try await waitUntilReady(controller)
+        let file = try FileHandle(forWritingTo: configurationURL)
+        try file.truncate(atOffset: 0)
+        try file.write(contentsOf: Data("direct save".utf8))
+        try file.close()
+        await waitUntil { await generation.reloadCount() > initialReloadCount }
+        let directReloadCount = await generation.reloadCount()
 
-        XCTAssertEqual(harness.factoryPaths, [firstPath, selectedPath])
-        XCTAssertEqual(controller.configurationPath, selectedPath)
-        XCTAssertNotNil(controller.endpoint)
+        let replacementURL = root.appendingPathComponent("config.toml.next")
+        try Data("atomic save".utf8).write(to: replacementURL)
+        let renameResult = replacementURL.path.withCString { source in
+            configurationURL.path.withCString { destination in Darwin.rename(source, destination) }
+        }
+        XCTAssertEqual(renameResult, 0)
+        await waitUntil { await generation.reloadCount() > directReloadCount }
 
         await controller.quit()
     }
 
-    func testConfigurationChangeDoesNotStartReplacementWhenCleanupFails() async throws {
-        let root = try makeTemporaryRoot()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let recorder = RuntimeFactoryRecorder()
-        let factory: RuntimeSessionController.SupervisorFactory = { configuration in
-            recorder.recordFactory(configuration.configurationPath)
-            let process = RecordingManagedProcess {
-                recorder.record("terminate:\(configuration.configurationPath)")
-            }
-            let launcher = ContaminatingRecordingLauncher(process: process) { request in
-                recorder.record("launch:\(configuration.configurationPath)")
-                let generation = URL(fileURLWithPath: request.arguments[1]).deletingLastPathComponent()
-                try Data([0x01]).write(to: generation.appendingPathComponent("unexpected"))
-            }
-            return ProcessSupervisor(
-                configuration: ProcessSupervisorConfiguration(
-                    executablePath: configuration.executablePath,
-                    configurationPath: configuration.configurationPath,
-                    readinessTimeoutNanoseconds: 20_000_000,
-                    readinessPollNanoseconds: 1_000_000,
-                    terminateGraceNanoseconds: 1_000_000,
-                    killGraceNanoseconds: 1_000_000
-                ),
-                directoryFactory: DefaultGenerationDirectoryFactory(root: root, rootPolicy: .injected),
-                launcher: launcher,
-                clock: SystemHidhoggClock(),
-                requestIDProvider: FixedRequestIDProvider(),
-                healthClientFactory: ReadyHealthFactory(),
-                socketIdentityValidator: FixedSocketIdentityValidator()
+    func testSimulationArgumentsRequireExplicitAbsoluteSyntheticPaths() {
+        XCTAssertEqual(
+            HidhoggSimulationArguments.parse(["Hidhogg"]),
+            .production
+        )
+        XCTAssertEqual(
+            HidhoggSimulationArguments.parse([
+                "Hidhogg",
+                "--hidhogg-simulated",
+                "--hidhogg-config",
+                "/Volumes/Data/tmp/synthetic/config.toml",
+                "--hidhogg-runtime-root",
+                "/Volumes/Data/tmp/synthetic/runtime"
+            ]),
+            .simulated(
+                configurationPath: "/Volumes/Data/tmp/synthetic/config.toml",
+                runtimeRoot: "/Volumes/Data/tmp/synthetic/runtime"
             )
-        }
-        let controller = RuntimeSessionController(
-            executablePath: "/private/tmp/hidhogg-runtime",
-            supervisorFactory: factory,
-            snapshotPollNanoseconds: 1_000_000
         )
-        let oldPath = "/private/tmp/profile-a.toml"
-
-        controller.start(configurationPath: oldPath)
-        await controller.waitForTransition()
-        try await waitUntilReady(controller)
-        let oldEndpoint = try XCTUnwrap(controller.endpoint)
-
-        controller.setConfigurationPath("/private/tmp/profile-b.toml")
-        await controller.waitForTransition()
-
-        guard case .failed(.cleanup(let message)) = controller.lifecycleState else {
-            XCTFail("cleanup failure was replaced by a new runtime: \(controller.lifecycleState)")
+        guard case .invalid = HidhoggSimulationArguments.parse([
+            "Hidhogg",
+            "--hidhogg-simulated",
+            "--hidhogg-config",
+            "relative.toml",
+            "--hidhogg-runtime-root",
+            "/Volumes/Data/tmp/synthetic/runtime"
+        ]) else {
+            XCTFail("relative simulator paths were accepted")
             return
         }
-        XCTAssertTrue(message.contains("notEmpty"))
-        XCTAssertNotNil(oldEndpoint)
-        XCTAssertNil(controller.endpoint)
-        XCTAssertEqual(recorder.factoryPaths, [oldPath])
-        XCTAssertTrue(recorder.events.contains("terminate:\(oldPath)"))
-
-        controller.setConfigurationPath("/private/tmp/profile-c.toml")
-        await controller.waitForTransition()
-
-        guard case .failed(.cleanup(let subsequentMessage)) = controller.lifecycleState else {
-            XCTFail("a later configuration change discarded the retirement failure: \(controller.lifecycleState)")
-            return
-        }
-        XCTAssertEqual(subsequentMessage, message)
-        XCTAssertNil(controller.endpoint)
-        XCTAssertEqual(recorder.factoryPaths, [oldPath])
-
-        await controller.quit()
-    }
-
-    func testQuitBeforeQueuedManualStartDoesNotCreateAnotherSupervisor() async throws {
-        let root = try makeTemporaryRoot()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let retryClock = GatedRestartClock()
-        let harness = ManualStartSupervisorFactory(root: root, retryClock: retryClock)
-        let controller = makeController(harness: harness)
-        let path = "/private/tmp/profile-a.toml"
-
-        controller.start(configurationPath: path)
-        await controller.waitForTransition()
-        await retryClock.waitUntilWaiting()
-        await retryClock.release()
-        try await waitUntilLifecycle(controller) { $0 == .failed(.restartExhausted) }
-
-        controller.requestManualStart()
-        XCTAssertFalse(controller.canStartManually)
-        await controller.quit()
-
-        XCTAssertEqual(harness.factoryPaths, [path])
-        XCTAssertEqual(controller.lifecycleState, .stopped)
-        XCTAssertNil(controller.endpoint)
-        XCTAssertFalse(controller.canStartManually)
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
-    }
-
-    func testBootstrapErrorHidesManualStartForRestartExhaustedController() async throws {
-        let root = try makeTemporaryRoot()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let retryClock = GatedRestartClock()
-        let harness = ManualStartSupervisorFactory(root: root, retryClock: retryClock)
-        let controller = makeController(harness: harness)
-        let path = "/private/tmp/profile-a.toml"
-        controller.start(configurationPath: path)
-        await controller.waitForTransition()
-        await retryClock.waitUntilWaiting()
-        await retryClock.release()
-        try await waitUntilLifecycle(controller) { $0 == .failed(.restartExhausted) }
-
-        let homeBlocker = root.appendingPathComponent("home-is-a-file")
-        try Data("blocking file".utf8).write(to: homeBlocker)
-        let bootstrap = DefaultConfigurationBootstrap(
-            xdgConfigHome: nil,
-            homeDirectory: homeBlocker,
-            templateData: Data()
-        )
-        let model = makeModel(controller: controller) { bootstrap }
-
-        XCTAssertTrue(controller.canStartManually)
-        model.start()
-
-        XCTAssertTrue(model.healthText.contains("Configuration error"))
-        XCTAssertTrue(controller.canStartManually)
-        XCTAssertFalse(model.canStartRuntime)
-
-        await model.quit()
-    }
-
-    func testRestartExhaustionHealthTextFallsBackWithoutStderrAndOnlyShowsDetailForExhaustion() {
-        let detail = "D200X_HID_OPEN_PATH_FAILED: device unavailable"
-
-        XCTAssertEqual(
-            HidhoggAppModel.runtimeFailureHealthText(
-                failure: .restartExhausted,
-                lastFailureDetail: nil
-            ),
-            "runtime failed after one restart"
-        )
-        XCTAssertEqual(
-            HidhoggAppModel.runtimeFailureHealthText(
-                failure: .restartExhausted,
-                lastFailureDetail: detail
-            ),
-            "runtime failed after one restart\nLast failure: \(detail)"
-        )
-        XCTAssertEqual(
-            HidhoggAppModel.runtimeFailureHealthText(
-                failure: .readinessTimedOut,
-                lastFailureDetail: detail
-            ),
-            "runtime did not become ready"
-        )
-    }
-
-    func testRapidPreStartPathChangesConvergeOnLatestPath() async throws {
-        let root = try makeTemporaryRoot()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let recorder = RuntimeFactoryRecorder()
-        let controller = makeController(recorder: recorder, root: root)
-
-        controller.start(configurationPath: "/private/tmp/profile-a.toml")
-        controller.setConfigurationPath("/private/tmp/profile-b.toml")
-        await controller.waitForTransition()
-        try await waitUntilReady(controller)
-
-        XCTAssertEqual(recorder.factoryPaths, ["/private/tmp/profile-b.toml"])
-        await controller.quit()
-    }
-
-    func testActivePathChangeStopsAndCleansPreviousGenerationBeforeStartingNewOne() async throws {
-        let root = try makeTemporaryRoot()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let recorder = RuntimeFactoryRecorder()
-        let controller = makeController(recorder: recorder, root: root)
-
-        controller.start(configurationPath: "/private/tmp/profile-a.toml")
-        await controller.waitForTransition()
-        try await waitUntilReady(controller)
-
-        controller.setConfigurationPath("/private/tmp/profile-b.toml")
-        await controller.waitForTransition()
-        try await waitUntilReady(controller)
-
-        XCTAssertEqual(recorder.factoryPaths, [
-            "/private/tmp/profile-a.toml",
-            "/private/tmp/profile-b.toml"
-        ])
-        let events = recorder.events
-        let stopIndex = try XCTUnwrap(events.firstIndex(of: "terminate:/private/tmp/profile-a.toml"))
-        let replacementIndex = try XCTUnwrap(events.firstIndex(of: "factory:/private/tmp/profile-b.toml"))
-        XCTAssertLessThan(stopIndex, replacementIndex)
-
-        await controller.quit()
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
-    }
-
-    func testReplacementWithdrawsReadyEndpointBeforeDelayedTerminationCompletes() async throws {
-        let root = try makeTemporaryRoot()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let harness = DelayedSupervisorFactory(root: root)
-        let controller = makeController(harness: harness)
-
-        controller.start(configurationPath: "/private/tmp/profile-a.toml")
-        await controller.waitForTransition()
-        try await waitUntilReady(controller)
-        let oldEndpoint = try XCTUnwrap(controller.endpoint)
-
-        controller.setConfigurationPath("/private/tmp/profile-b.toml")
-        var observedStopping = false
-        for _ in 0..<200 {
-            if controller.lifecycleState == .stopping,
-               controller.endpoint == nil,
-               harness.firstProcess.terminationRequested {
-                observedStopping = true
-                break
-            }
-            try await Task.sleep(nanoseconds: 1_000_000)
-        }
-
-        XCTAssertTrue(observedStopping)
-        XCTAssertEqual(controller.lifecycleState, .stopping)
-        XCTAssertNil(controller.endpoint)
-        XCTAssertNotNil(oldEndpoint)
-        XCTAssertEqual(harness.recorder.factoryPaths, ["/private/tmp/profile-a.toml"])
-
-        try await Task.sleep(nanoseconds: 5_000_000)
-        XCTAssertEqual(controller.lifecycleState, .stopping)
-        XCTAssertNil(controller.endpoint)
-
-        harness.firstProcess.allowTermination()
-        await controller.waitForTransition()
-        try await waitUntilReady(controller)
-        XCTAssertNotNil(controller.endpoint)
-
-        await controller.quit()
-        XCTAssertEqual(controller.lifecycleState, .stopped)
-        XCTAssertNil(controller.endpoint)
-    }
-
-    func testQuitWithdrawsReadyEndpointBeforeDelayedTerminationCompletes() async throws {
-        let root = try makeTemporaryRoot()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let harness = DelayedSupervisorFactory(root: root)
-        let controller = makeController(harness: harness)
-
-        controller.start(configurationPath: "/private/tmp/profile-a.toml")
-        await controller.waitForTransition()
-        try await waitUntilReady(controller)
-
-        let quitTask = Task { @MainActor in
-            await controller.quit()
-        }
-        var observedStopping = false
-        for _ in 0..<200 {
-            if controller.lifecycleState == .stopping,
-               controller.endpoint == nil,
-               harness.firstProcess.terminationRequested {
-                observedStopping = true
-                break
-            }
-            try await Task.sleep(nanoseconds: 1_000_000)
-        }
-
-        XCTAssertTrue(observedStopping)
-        XCTAssertEqual(controller.lifecycleState, .stopping)
-        XCTAssertNil(controller.endpoint)
-
-        harness.firstProcess.allowTermination()
-        await quitTask.value
-        XCTAssertEqual(controller.lifecycleState, .stopped)
-        XCTAssertNil(controller.endpoint)
-    }
-
-    func testQuitDuringPendingReplacementStopsActiveGenerationWithoutStartingReplacement() async throws {
-        let root = try makeTemporaryRoot()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let recorder = RuntimeFactoryRecorder()
-        let controller = makeController(recorder: recorder, root: root)
-
-        controller.start(configurationPath: "/private/tmp/profile-a.toml")
-        await controller.waitForTransition()
-        try await waitUntilReady(controller)
-
-        controller.setConfigurationPath("/private/tmp/profile-b.toml")
-        await controller.quit()
-
-        XCTAssertEqual(recorder.factoryPaths, ["/private/tmp/profile-a.toml"])
-        XCTAssertEqual(controller.lifecycleState, .stopped)
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
     }
 
     private func makeController(
-        recorder: RuntimeFactoryRecorder,
-        root: URL? = nil
+        recorder: RuntimeGenerationRecorder,
+        selection: RuntimeBackendSelection = .native,
+        watcherFactory: @escaping RuntimeConfigurationWatcherFactory = { _, _ in TestConfigurationWatcher() }
     ) -> RuntimeSessionController {
-        let root = root ?? URL(fileURLWithPath: "/private/tmp")
-        let factory: RuntimeSessionController.SupervisorFactory = { configuration in
-            recorder.recordFactory(configuration.configurationPath)
-            let process = RecordingManagedProcess {
-                recorder.record("terminate:\(configuration.configurationPath)")
-            }
-            let launcher = RecordingLauncher(process: process) {
-                recorder.record("launch:\(configuration.configurationPath)")
-            }
-            return ProcessSupervisor(
-                configuration: ProcessSupervisorConfiguration(
-                    executablePath: configuration.executablePath,
-                    configurationPath: configuration.configurationPath,
-                    readinessTimeoutNanoseconds: 20_000_000,
-                    readinessPollNanoseconds: 1_000_000,
-                    terminateGraceNanoseconds: 1_000_000,
-                    killGraceNanoseconds: 1_000_000
-                ),
-                directoryFactory: DefaultGenerationDirectoryFactory(root: root, rootPolicy: .injected),
-                launcher: launcher,
-                clock: SystemHidhoggClock(),
-                requestIDProvider: FixedRequestIDProvider(),
-                healthClientFactory: ReadyHealthFactory(),
-                socketIdentityValidator: FixedSocketIdentityValidator()
-            )
-        }
-        return RuntimeSessionController(
-            executablePath: "/private/tmp/hidhogg-runtime",
-            supervisorFactory: factory,
-            snapshotPollNanoseconds: 1_000_000
-        )
-    }
-
-    private func makeController(harness: DelayedSupervisorFactory) -> RuntimeSessionController {
         RuntimeSessionController(
-            executablePath: "/private/tmp/hidhogg-runtime",
-            supervisorFactory: { configuration in
-                harness.makeSupervisor(configuration)
+            backendSelection: selection,
+            generationFactory: { path, backendSelection in
+                recorder.make(path: path, selection: backendSelection)
             },
+            configurationWatcherFactory: watcherFactory,
             snapshotPollNanoseconds: 1_000_000
         )
     }
 
-    private func makeController(harness: ManualStartSupervisorFactory) -> RuntimeSessionController {
-        RuntimeSessionController(
-            executablePath: "/private/tmp/hidhogg-runtime",
-            supervisorFactory: { configuration in
-                harness.makeSupervisor(configuration)
-            },
-            snapshotPollNanoseconds: 1_000_000
+    private func makeTemporaryDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hidhogg-watch-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
         )
+        return directory
     }
 
-    private func makeModel(
-        controller: RuntimeSessionController,
-        configurationBootstrapFactory: @escaping @Sendable () -> DefaultConfigurationBootstrap = {
-            DefaultConfigurationBootstrap(
-                xdgConfigHome: nil,
-                homeDirectory: URL(fileURLWithPath: "/private/tmp", isDirectory: true),
-                templateData: Data()
-            )
+    private func waitUntil(
+        timeoutNanoseconds: UInt64 = 2_000_000_000,
+        condition: () async -> Bool
+    ) async {
+        let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+        while DispatchTime.now().uptimeNanoseconds < deadline {
+            if await condition() { return }
+            try? await Task.sleep(nanoseconds: 10_000_000)
         }
-    ) -> HidhoggAppModel {
-        HidhoggAppModel(
-            executablePath: "/private/tmp/hidhogg-runtime",
-            preferencesStore: TestPreferencesStore(),
-            runtimeSession: controller,
-            profileMappingStore: EmptyProfileMappingStore(),
-            displayPowerCoordinator: HostDisplayPowerCoordinator(
-                observer: EmptyHostDisplayPowerObserver()
-            ),
-            foregroundObserver: EmptyForegroundApplicationObserver(),
-            configurationBootstrapFactory: configurationBootstrapFactory
-        )
-    }
-
-    private func waitUntilReady(_ controller: RuntimeSessionController) async throws {
-        for _ in 0..<200 {
-            if controller.lifecycleState == .ready { return }
-            try await Task.sleep(nanoseconds: 1_000_000)
-        }
-        XCTFail("runtime did not become ready: \(controller.lifecycleState)")
-    }
-
-    private func waitUntilLifecycle(
-        _ controller: RuntimeSessionController,
-        matches predicate: (LifecycleState) -> Bool
-    ) async throws {
-        for _ in 0..<200 {
-            if predicate(controller.lifecycleState) { return }
-            try await Task.sleep(nanoseconds: 1_000_000)
-        }
-        XCTFail("runtime did not reach the expected lifecycle state: \(controller.lifecycleState)")
-    }
-
-    private func makeTemporaryRoot() throws -> URL {
-        for _ in 0..<32 {
-            let suffix = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8)).lowercased()
-            let root = URL(fileURLWithPath: "/private/tmp/hh-controller-\(suffix)", isDirectory: true)
-            let result = root.path.withCString { Darwin.mkdir($0, 0o700) }
-            if result == 0 { return root }
-            guard errno == EEXIST else {
-                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-            }
-        }
-        throw NSError(domain: "HidhoggTests", code: 1)
+        XCTFail("condition did not become true before timeout")
     }
 }
 
-private final class TestPreferencesStore: @unchecked Sendable, AppPreferencesStore {
+private final class RuntimeGenerationRecorder: @unchecked Sendable {
     private let lock = NSLock()
-    private var values: [String: String]
-
-    init(configurationPath: String? = nil) {
-        values = configurationPath.map { [AppPreferences.configurationPathKey: $0] } ?? [:]
-    }
-
-    func string(forKey key: String) -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return values[key]
-    }
-
-    func set(_ value: String?, forKey key: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        if let value {
-            values[key] = value
-        } else {
-            values.removeValue(forKey: key)
-        }
-    }
-}
-
-private final class RuntimeFactoryRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var recordedEvents: [String] = []
-    private var recordedFactoryPaths: [String] = []
-
-    var events: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return recordedEvents
-    }
-
-    var factoryPaths: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return recordedFactoryPaths
-    }
-
-    func recordFactory(_ path: String) {
-        lock.lock()
-        recordedFactoryPaths.append(path)
-        recordedEvents.append("factory:\(path)")
-        lock.unlock()
-    }
-
-    func record(_ event: String) {
-        lock.lock()
-        recordedEvents.append(event)
-        lock.unlock()
-    }
-}
-
-@MainActor
-private final class EmptyForegroundApplicationObserver: ForegroundApplicationObserving {
-    func start(handler: @escaping ForegroundApplicationHandler) {}
-
-    func stop() {}
-}
-
-@MainActor
-private final class EmptyHostDisplayPowerObserver: HostDisplayPowerObserving {
-    var lastKnownDisplayAwake: Bool? { nil }
-
-    func start(
-        stateHandler: @escaping HostDisplayPowerStateHandler,
-        errorHandler: @escaping HostDisplayPowerErrorHandler
-    ) {}
-
-    func reconcileIfUnknown() {}
-
-    func stop() {}
-}
-
-private final class EmptyProfileMappingStore: @unchecked Sendable, ProfileMappingPreferencesStore {
-    func dictionary(forKey key: String) -> [String: String]? { nil }
-
-    func set(_ value: [String: String]?, forKey key: String) {}
-}
-
-private actor GatedRestartClock: HidhoggClock {
-    private var isReleased = false
-    private var hasWaited = false
-    private var continuation: CheckedContinuation<Void, Error>?
-
-    func sleep(nanoseconds: UInt64) async throws {
-        guard !isReleased else { return }
-        try await withCheckedThrowingContinuation { continuation in
-            self.continuation = continuation
-            hasWaited = true
-        }
-    }
-
-    func waitUntilWaiting() async {
-        while !hasWaited {
-            await Task.yield()
-        }
-    }
-
-    func release() {
-        isReleased = true
-        continuation?.resume()
-        continuation = nil
-    }
-}
-
-private struct ExpectedLaunchFailure: Error, CustomStringConvertible {
-    var description: String { "expected launch failure" }
-}
-
-private final class FailingLauncher: @unchecked Sendable, ProcessLaunching {
-    private let onLaunch: () -> Void
-    private let stderrOutput: String?
-
-    init(stderrOutput: String? = nil, onLaunch: @escaping () -> Void) {
-        self.onLaunch = onLaunch
-        self.stderrOutput = stderrOutput
-    }
-
-    func launch(
-        request: LaunchRequest,
-        standardOutputTail: OutputTail,
-        standardErrorTail: OutputTail
-    ) throws -> any ManagedProcess {
-        onLaunch()
-        if let stderrOutput {
-            standardErrorTail.append(Data(stderrOutput.utf8))
-        }
-        throw ExpectedLaunchFailure()
-    }
-}
-
-private final class ContaminatingRecordingLauncher: @unchecked Sendable, ProcessLaunching {
-    private let process: any ManagedProcess
-    private let onLaunch: (LaunchRequest) throws -> Void
+    private var generations = [TestRuntimeSessionGeneration]()
+    private var recordedPaths = [String]()
+    private var simulatedSelections = [Bool]()
+    private let startGate: AsyncGate?
+    private let stopGate: AsyncGate?
+    private let stopOutcome: RuntimeGenerationStopOutcome
 
     init(
-        process: any ManagedProcess,
-        onLaunch: @escaping (LaunchRequest) throws -> Void
+        startGate: AsyncGate? = nil,
+        stopGate: AsyncGate? = nil,
+        stopOutcome: RuntimeGenerationStopOutcome = .closed
     ) {
-        self.process = process
-        self.onLaunch = onLaunch
+        self.startGate = startGate
+        self.stopGate = stopGate
+        self.stopOutcome = stopOutcome
     }
 
-    func launch(
-        request: LaunchRequest,
-        standardOutputTail: OutputTail,
-        standardErrorTail: OutputTail
-    ) throws -> any ManagedProcess {
-        try onLaunch(request)
-        return process
-    }
-}
-
-private final class ManualStartSupervisorFactory: @unchecked Sendable {
-    private let root: URL
-    private let retryClock: GatedRestartClock
-    private let recorder = RuntimeFactoryRecorder()
-    private let lock = NSLock()
-    private var nextSupervisorIndex = 0
-
-    var factoryPaths: [String] { recorder.factoryPaths }
-
-    init(root: URL, retryClock: GatedRestartClock) {
-        self.root = root
-        self.retryClock = retryClock
-    }
-
-    func makeSupervisor(_ configuration: ProcessSupervisorConfiguration) -> ProcessSupervisor {
+    var paths: [String] {
         lock.lock()
-        let index = nextSupervisorIndex
-        nextSupervisorIndex += 1
-        lock.unlock()
+        defer { lock.unlock() }
+        return recordedPaths
+    }
 
-        recorder.recordFactory(configuration.configurationPath)
-        let launcher: any ProcessLaunching
-        let clock: any HidhoggClock
-        if index == 0 {
-            launcher = FailingLauncher(stderrOutput: "D200X_HID_OPEN_PATH_FAILED: attempt failed\n") {
-                self.recorder.record("launch:\(configuration.configurationPath)")
-            }
-            clock = retryClock
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return generations.count
+    }
+
+    var receivedSimulatedSelection: [Bool] {
+        lock.lock()
+        defer { lock.unlock() }
+        return simulatedSelections
+    }
+
+    func generation(at index: Int) -> TestRuntimeSessionGeneration? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard generations.indices.contains(index) else { return nil }
+        return generations[index]
+    }
+
+    func make(path: String, selection: RuntimeBackendSelection) -> any RuntimeSessionGeneration {
+        lock.lock()
+        defer { lock.unlock() }
+        let generation = TestRuntimeSessionGeneration(
+            endpoint: RuntimeSessionController.RuntimeEndpoint(
+                instanceID: UUID().uuidString.lowercased(),
+                socketPath: "/private/tmp/hidhogg-test-\(generations.count).sock"
+            ),
+            startGate: startGate,
+            stopGate: stopGate,
+            stopOutcome: stopOutcome
+        )
+        generations.append(generation)
+        recordedPaths.append(path)
+        if case .simulated = selection {
+            simulatedSelections.append(true)
         } else {
-            let process = RecordingManagedProcess {
-                self.recorder.record("terminate:\(configuration.configurationPath)")
-            }
-            launcher = RecordingLauncher(process: process) {
-                self.recorder.record("launch:\(configuration.configurationPath)")
-            }
-            clock = SystemHidhoggClock()
+            simulatedSelections.append(false)
         }
-
-        return ProcessSupervisor(
-            configuration: ProcessSupervisorConfiguration(
-                executablePath: configuration.executablePath,
-                configurationPath: configuration.configurationPath,
-                readinessTimeoutNanoseconds: 20_000_000,
-                readinessPollNanoseconds: 1_000_000,
-                restartDelayNanoseconds: 1_000_000_000,
-                terminateGraceNanoseconds: 1_000_000,
-                killGraceNanoseconds: 1_000_000
-            ),
-            directoryFactory: DefaultGenerationDirectoryFactory(root: root, rootPolicy: .injected),
-            launcher: launcher,
-            clock: clock,
-            requestIDProvider: FixedRequestIDProvider(),
-            healthClientFactory: ReadyHealthFactory(),
-            socketIdentityValidator: FixedSocketIdentityValidator()
-        )
+        return generation
     }
 }
 
-private final class RecordingManagedProcess: @unchecked Sendable, ManagedProcess {
+private actor AsyncGate {
+    private var openState = false
+    private var waiters = [CheckedContinuation<Void, Never>]()
+
+    func wait() async {
+        guard !openState else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        guard !openState else { return }
+        openState = true
+        let pending = waiters
+        waiters.removeAll()
+        pending.forEach { $0.resume() }
+    }
+}
+
+private actor TestRuntimeSessionGeneration: RuntimeSessionGeneration {
+    private let endpoint: RuntimeSessionController.RuntimeEndpoint
+    private let startGate: AsyncGate?
+    private let stopGate: AsyncGate?
+    private let stopOutcome: RuntimeGenerationStopOutcome
+    private let startCalled = AsyncGate()
+    private let stopCalled = AsyncGate()
+    private var running = false
+    private var reloads = 0
+    private var stops = 0
+
+    init(
+        endpoint: RuntimeSessionController.RuntimeEndpoint,
+        startGate: AsyncGate?,
+        stopGate: AsyncGate?,
+        stopOutcome: RuntimeGenerationStopOutcome
+    ) {
+        self.endpoint = endpoint
+        self.startGate = startGate
+        self.stopGate = stopGate
+        self.stopOutcome = stopOutcome
+    }
+
+    func start() async throws -> RuntimeSessionController.RuntimeEndpoint {
+        await startCalled.open()
+        await startGate?.wait()
+        running = true
+        return endpoint
+    }
+
+    func isRunning() async -> Bool { running }
+
+    func reloadConfiguration() async { reloads += 1 }
+
+    func stop() async -> RuntimeGenerationStopOutcome {
+        stops += 1
+        await stopCalled.open()
+        await stopGate?.wait()
+        running = false
+        return stopOutcome
+    }
+
+    func waitForStart() async { await startCalled.wait() }
+    func waitForStop() async { await stopCalled.wait() }
+    func reloadCount() -> Int { reloads }
+    func stopCount() -> Int { stops }
+}
+
+private final class TestConfigurationWatcher: RuntimeConfigurationWatching, @unchecked Sendable {
     private let lock = NSLock()
-    private let onTerminate: () -> Void
-    private var runningStorage = true
+    private var starts = 0
+    private var stops = 0
 
-    init(onTerminate: @escaping () -> Void) {
-        self.onTerminate = onTerminate
-    }
-
-    var processIdentifier: Int32 { 42 }
-
-    var isRunning: Bool {
+    var startCount: Int {
         lock.lock()
         defer { lock.unlock() }
-        return runningStorage
+        return starts
     }
 
-    var exit: ProcessExit? {
+    var stopCount: Int {
         lock.lock()
         defer { lock.unlock() }
-        return runningStorage ? nil : .exit(status: 0)
+        return stops
     }
 
-    func terminate() {
+    func start() throws {
         lock.lock()
-        let wasRunning = runningStorage
-        runningStorage = false
-        lock.unlock()
-        if wasRunning { onTerminate() }
-    }
-
-    func forceTerminate() {
-        lock.lock()
-        runningStorage = false
-        lock.unlock()
-    }
-}
-
-private final class RecordingLauncher: @unchecked Sendable, ProcessLaunching {
-    private let process: any ManagedProcess
-    private let onLaunch: () -> Void
-
-    init(process: any ManagedProcess, onLaunch: @escaping () -> Void) {
-        self.process = process
-        self.onLaunch = onLaunch
-    }
-
-    func launch(
-        request: LaunchRequest,
-        standardOutputTail: OutputTail,
-        standardErrorTail: OutputTail
-    ) throws -> any ManagedProcess {
-        onLaunch()
-        return process
-    }
-}
-
-private final class DelayedTerminationManagedProcess: @unchecked Sendable, ManagedProcess {
-    private let lock = NSLock()
-    private var runningStorage = true
-    private var terminationRequestedStorage = false
-
-    var processIdentifier: Int32 { 42 }
-
-    var isRunning: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return runningStorage
-    }
-
-    var exit: ProcessExit? {
-        lock.lock()
-        defer { lock.unlock() }
-        return runningStorage ? nil : .exit(status: 0)
-    }
-
-    var terminationRequested: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return terminationRequestedStorage
-    }
-
-    func terminate() {
-        lock.lock()
-        terminationRequestedStorage = true
+        starts += 1
         lock.unlock()
     }
 
-    func forceTerminate() {
+    func stop() {
         lock.lock()
-        runningStorage = false
+        stops += 1
         lock.unlock()
-    }
-
-    func allowTermination() {
-        lock.lock()
-        runningStorage = false
-        lock.unlock()
-    }
-}
-
-private final class DelayedSupervisorFactory: @unchecked Sendable {
-    let firstProcess = DelayedTerminationManagedProcess()
-    let recorder = RuntimeFactoryRecorder()
-    private let root: URL
-    private let processes: [any ManagedProcess]
-    private let lock = NSLock()
-    private var nextProcess = 0
-
-    init(root: URL) {
-        self.root = root
-        processes = [firstProcess, RecordingManagedProcess {}]
-    }
-
-    func makeSupervisor(_ configuration: ProcessSupervisorConfiguration) -> ProcessSupervisor {
-        lock.lock()
-        let process = processes[min(nextProcess, processes.count - 1)]
-        nextProcess += 1
-        lock.unlock()
-
-        recorder.recordFactory(configuration.configurationPath)
-        let launcher = RecordingLauncher(process: process) {
-            self.recorder.record("launch:\(configuration.configurationPath)")
-        }
-        return ProcessSupervisor(
-            configuration: ProcessSupervisorConfiguration(
-                executablePath: configuration.executablePath,
-                configurationPath: configuration.configurationPath,
-                readinessTimeoutNanoseconds: 20_000_000,
-                readinessPollNanoseconds: 1_000_000,
-                terminateGraceNanoseconds: 5_000_000_000,
-                killGraceNanoseconds: 1_000_000
-            ),
-            directoryFactory: DefaultGenerationDirectoryFactory(root: root, rootPolicy: .injected),
-            launcher: launcher,
-            clock: SystemHidhoggClock(),
-            requestIDProvider: FixedRequestIDProvider(),
-            healthClientFactory: ReadyHealthFactory(),
-            socketIdentityValidator: FixedSocketIdentityValidator()
-        )
-    }
-}
-
-private struct ReadyHealthFactory: RuntimeHealthClientCreating, Sendable {
-    func make(socketPath: String, instanceID: String) throws -> any RuntimeHealthChecking {
-        ReadyHealthClient(instanceID: instanceID)
-    }
-}
-
-private struct ReadyHealthClient: RuntimeHealthChecking, Sendable {
-    let instanceID: String
-
-    func health(requestID: String) throws -> RuntimeResponse {
-        RuntimeResponse(
-            requestID: requestID,
-            instanceID: instanceID,
-            state: "ready",
-            protocolVersion: nil,
-            error: nil
-        )
-    }
-}
-
-private struct FixedRequestIDProvider: RequestIDProviding, Sendable {
-    func makeRequestID() -> String { "11111111-1111-4111-8111-111111111111" }
-}
-
-private struct FixedSocketIdentityValidator: SocketIdentityValidating, Sendable {
-    func validateSocket(_ socket: URL) throws -> FileIdentity {
-        FileIdentity(device: 1, inode: 1)
     }
 }

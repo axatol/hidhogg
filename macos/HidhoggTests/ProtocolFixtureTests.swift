@@ -634,6 +634,30 @@ final class ProtocolFixtureTests: XCTestCase {
         )
         XCTAssertEqual(position.positionID, "0_0")
         XCTAssertEqual(position.label, #"Welcome "Now" \ Slot"#)
+        let configuredPosition = try ResponseValidator.validateConfigEditorPosition(
+            frame: configEditorSuccessFrame(requestID: requestID, result: [
+                "instance_id": instanceID,
+                "source_digest": digest,
+                "profile_id": "Work.Profile",
+                "position_id": "0_0",
+                "label": "Ready",
+                "background": "#1020a0",
+                "label_alignment": "center",
+                "label_size": 18,
+                "notification_sources": ["Calendar"],
+                "action": ["type": "key_press", "key": "enter", "gesture": "press"]
+            ]),
+            expectedRequestID: requestID,
+            expectedInstanceID: instanceID,
+            expectedSourceDigest: digest,
+            expectedProfileID: "Work.Profile",
+            expectedPositionID: "0_0"
+        )
+        XCTAssertEqual(configuredPosition.background, "#1020a0")
+        XCTAssertEqual(configuredPosition.labelAlignment, "center")
+        XCTAssertEqual(configuredPosition.labelSize, 18)
+        XCTAssertEqual(configuredPosition.notificationSources, ["Calendar"])
+        XCTAssertEqual(configuredPosition.action, .keyPress(key: "enter", gesture: .press))
         XCTAssertThrowsError(try ResponseValidator.validateConfigEditorPosition(
             frame: configEditorSuccessFrame(requestID: requestID, result: positionResult),
             expectedRequestID: requestID,

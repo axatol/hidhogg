@@ -1,4 +1,5 @@
 import Foundation
+import HidhoggCore
 
 public enum RuntimeMethod: String, Sendable {
     case health
@@ -185,6 +186,11 @@ public struct ConfigEditorPositionResponse: Equatable, Sendable {
     public let profileID: String
     public let positionID: String
     public let label: String
+    public let background: String
+    public let labelAlignment: String
+    public let labelSize: Int
+    public let notificationSources: [String]
+    public let action: ConfiguredAction?
 
     public init(
         requestID: String,
@@ -192,7 +198,12 @@ public struct ConfigEditorPositionResponse: Equatable, Sendable {
         sourceDigest: String,
         profileID: String,
         positionID: String,
-        label: String
+        label: String,
+        background: String = "#000000",
+        labelAlignment: String = "bottom",
+        labelSize: Int = 10,
+        notificationSources: [String] = [],
+        action: ConfiguredAction? = nil
     ) {
         self.requestID = requestID
         self.instanceID = instanceID
@@ -200,6 +211,11 @@ public struct ConfigEditorPositionResponse: Equatable, Sendable {
         self.profileID = profileID
         self.positionID = positionID
         self.label = label
+        self.background = background
+        self.labelAlignment = labelAlignment
+        self.labelSize = labelSize
+        self.notificationSources = notificationSources
+        self.action = action
     }
 }
 
@@ -911,10 +927,20 @@ public enum ResponseValidator {
         guard case .object(let fields) = envelope.result else {
             throw ResponseValidationError.invalidResult
         }
-        let resultMap = try exactMap(
-            fields,
-            keys: ["instance_id", "source_digest", "profile_id", "position_id", "label"]
-        )
+        let baseKeys: Set<String> = [
+            "instance_id", "source_digest", "profile_id", "position_id", "label"
+        ]
+        let presentationKeys = baseKeys.union([
+            "background", "label_alignment", "label_size", "notification_sources"
+        ])
+        let actualKeys = Set(fields.map(\.0))
+        guard actualKeys.count == fields.count,
+              actualKeys == baseKeys
+                || actualKeys == presentationKeys
+                || actualKeys == presentationKeys.union(["action"]) else {
+            throw ResponseValidationError.invalidResult
+        }
+        let resultMap = Dictionary(uniqueKeysWithValues: fields)
         guard case .string(let instanceID) = resultMap["instance_id"],
               UUIDValidation.isCanonical(instanceID),
               instanceID == expectedInstanceID,
@@ -931,14 +957,129 @@ public enum ResponseValidator {
               ProfileValidation.isValidPositionLabel(label) else {
             throw ResponseValidationError.invalidResult
         }
+        let background: String
+        let labelAlignment: String
+        let labelSize: Int
+        let notificationSources: [String]
+        if actualKeys == baseKeys {
+            background = "#000000"
+            labelAlignment = "bottom"
+            labelSize = 10
+            notificationSources = []
+        } else {
+            guard case .string(let configuredBackground) = resultMap["background"],
+                  Self.isHexColor(configuredBackground),
+                  case .string(let configuredAlignment) = resultMap["label_alignment"],
+                  configuredAlignment == "bottom" || configuredAlignment == "center",
+                  case .number(let configuredSize) = resultMap["label_size"],
+                  let size = Int(configuredSize.rawValue),
+                  (8...32).contains(size),
+                  case .array(let sourcesValue) = resultMap["notification_sources"],
+                  sourcesValue.count <= 16 else {
+                throw ResponseValidationError.invalidResult
+            }
+            var sources = [String]()
+            var seenSources = Set<String>()
+            for value in sourcesValue {
+                guard case .string(let source) = value,
+                      ProfileValidation.isValidID(source),
+                      seenSources.insert(source).inserted else {
+                    throw ResponseValidationError.invalidResult
+                }
+                sources.append(source)
+            }
+            background = configuredBackground
+            labelAlignment = configuredAlignment
+            labelSize = size
+            notificationSources = sources
+        }
+        let action = try Self.decodeConfiguredAction(resultMap["action"])
         return ConfigEditorPositionResponse(
             requestID: envelope.requestID,
             instanceID: instanceID,
             sourceDigest: sourceDigest,
             profileID: profileID,
             positionID: positionID,
-            label: label
+            label: label,
+            background: background,
+            labelAlignment: labelAlignment,
+            labelSize: labelSize,
+            notificationSources: notificationSources,
+            action: action
         )
+    }
+
+    private static func isHexColor(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        return bytes.count == 7 && bytes[0] == 0x23 && bytes.dropFirst().allSatisfy {
+            ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x41 && $0 <= 0x46) || ($0 >= 0x61 && $0 <= 0x66)
+        }
+    }
+
+    private static func decodeConfiguredAction(_ value: JSONValue?) throws -> ConfiguredAction? {
+        guard let value else { return nil }
+        guard case .object(let actionFields) = value else {
+            throw ResponseValidationError.invalidResult
+        }
+        let values = Dictionary(uniqueKeysWithValues: actionFields)
+        guard case .string(let type) = values["type"] else {
+            throw ResponseValidationError.invalidResult
+        }
+        let gesture: ButtonGesture
+        if let gestureValue = values["gesture"] {
+            guard case .string(let configuredGesture) = gestureValue else {
+                throw ResponseValidationError.invalidResult
+            }
+            guard let value = ButtonGesture(rawValue: configuredGesture) else {
+                throw ResponseValidationError.invalidResult
+            }
+            gesture = value
+        } else {
+            gesture = .release
+        }
+        let fieldNames = Set(values.keys)
+        switch type {
+        case "activate_profile":
+            guard fieldNames == ["type", "profile_id"]
+                    || fieldNames == ["type", "profile_id", "gesture"],
+                  case .string(let profileID) = values["profile_id"],
+                  ProfileValidation.isValidID(profileID) else {
+                throw ResponseValidationError.invalidResult
+            }
+            return .activateProfile(profileID: profileID, gesture: gesture)
+        case "execute":
+            guard fieldNames == ["type", "executable", "arguments", "timeout_seconds"]
+                    || fieldNames == ["type", "executable", "arguments", "timeout_seconds", "gesture"],
+                  case .string(let executable) = values["executable"],
+                  AppPreferences.validConfigurationPath(executable) != nil,
+                  case .array(let argumentValues) = values["arguments"],
+                  argumentValues.allSatisfy({ if case .string = $0 { true } else { false } }),
+                  case .number(let rawTimeout) = values["timeout_seconds"],
+                  let timeout = Int(rawTimeout.rawValue),
+                  (1...60).contains(timeout) else {
+                throw ResponseValidationError.invalidResult
+            }
+            let arguments = argumentValues.compactMap { value -> String? in
+                guard case .string(let argument) = value else { return nil }
+                return argument
+            }
+            return .execute(executable: executable, arguments: arguments, timeoutSeconds: timeout, gesture: gesture)
+        case "type_text":
+            guard fieldNames == ["type", "text"] || fieldNames == ["type", "text", "gesture"],
+                  case .string(let text) = values["text"],
+                  text.utf16.count <= 64 else {
+                throw ResponseValidationError.invalidResult
+            }
+            return .typeText(text: text, gesture: gesture)
+        case "key_press":
+            guard fieldNames == ["type", "key"] || fieldNames == ["type", "key", "gesture"],
+                  case .some(.string("enter")) = values["key"] else {
+                throw ResponseValidationError.invalidResult
+            }
+            return .keyPress(key: "enter", gesture: gesture)
+        default:
+            throw ResponseValidationError.invalidResult
+        }
     }
 
     public static func validateConfigEditorMutation(

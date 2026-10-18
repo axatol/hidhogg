@@ -220,27 +220,8 @@ final class DefaultConfigurationBootstrapTests: XCTestCase {
             templateData: templateData
         )
         let target = bootstrap.resolve(persistedSelectedPath: nil)
-        let recorder = RuntimeFactoryRecorder()
-        let runtimeRoot = root.appendingPathComponent("runtime", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: runtimeRoot,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        let runtimeSession = RuntimeSessionController(
-            executablePath: "/not-launched/hidhogg-runtime",
-            supervisorFactory: { configuration in
-                recorder.record(configuration.configurationPath)
-                return ProcessSupervisor(
-                    configuration: configuration,
-                    directoryFactory: DefaultGenerationDirectoryFactory(root: runtimeRoot),
-                    launcher: RefusingProcessLauncher()
-                )
-            },
-            snapshotPollNanoseconds: 1_000_000
-        )
+        let runtimeSession = RuntimeSessionController()
         let model = HidhoggAppModel(
-            executablePath: "/not-launched/hidhogg-runtime",
             preferencesStore: TestPreferencesStore(),
             runtimeSession: runtimeSession,
             profileMappingStore: TestProfileMappingStore(),
@@ -251,7 +232,7 @@ final class DefaultConfigurationBootstrapTests: XCTestCase {
         model.start()
         await runtimeSession.waitForTransition()
 
-        XCTAssertEqual(recorder.paths, [])
+        XCTAssertNil(runtimeSession.configurationPath)
         XCTAssertEqual(model.selectedConfigurationPath, target.path)
         XCTAssertTrue(model.healthText.contains(target.path))
         XCTAssertEqual(runtimeSession.lifecycleState, .configurationRequired)
@@ -308,31 +289,4 @@ private final class TestProfileMappingStore: @unchecked Sendable, ProfileMapping
     func dictionary(forKey key: String) -> [String: String]? { nil }
 
     func set(_ value: [String: String]?, forKey key: String) {}
-}
-
-private final class RuntimeFactoryRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var recordedPaths: [String] = []
-
-    var paths: [String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return recordedPaths
-    }
-
-    func record(_ path: String) {
-        lock.lock()
-        recordedPaths.append(path)
-        lock.unlock()
-    }
-}
-
-private struct RefusingProcessLauncher: ProcessLaunching {
-    func launch(
-        request: LaunchRequest,
-        standardOutputTail: OutputTail,
-        standardErrorTail: OutputTail
-    ) throws -> any ManagedProcess {
-        throw NSError(domain: "DefaultConfigurationBootstrapTests", code: 1)
-    }
 }
