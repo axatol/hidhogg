@@ -1519,3 +1519,8 @@ Reviewed gate session11210 terminal0: readyPID85551,135second postreadyhold, own
 ### 2026-10-18 — full bounded app unit gate passed
 
 Independent Test/ARM64 build and148exactserialunitselectors passed148/148,0failures/skips, terminal0. Inert bootstrapdisplayobserverinjection verified;13testsourcehashesmatchbefore/after. UnitlogSHAa8e5d883427a809be152b658802e851ec332a08f3074f404426abdbfcdba9722, buildSHAce8824ec92dc035dd8106e18551de8ada26c2523451aad2274825c7b735999dc. Fouractualintegration/childselectors explicitlyexcluded; no GUIacceptanceclaim. Default sandboxfailurepretestsretained. Delayedstoprepair185bf34 and native135secondgatealreadygreen.
+
+
+### 2026-10-18 — GUI retry and final boundary audit
+
+NativeCUAinventoryresponds42apps but isolatedreadyHidhoggisabsent; exacttempbundleattachstilltimeout9.16s. Freshhg03gate reachedreadyPID88279; ownedstopendedappnormally0/rootempty, session7127terminal, exacttemppgrepnoPIDs. NoGUIinteraction, nootherapp/reset. Source-removalboundaryaudit separatesactiveSwiftgeneration/failuretypesfromdeadGosupervisor; noGodeletion. Remainingacceptanceaudit confirmsCLIcoversservergate, but activeprocessadapterfourcasegate remainsunrun/pendingexplicitdepthapproval. Fullgoalunproven; nofinalacceptanceclaimed.
