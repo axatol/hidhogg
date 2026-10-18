@@ -2,6 +2,8 @@
 
 Updated: 2026-09-18
 
+Historical v1 implementation decisions. They do not establish native-input acceptance for the current Swift app; V2-V01 used simulation and did not inject native input. See [v2-plan.md](v2-plan.md) for current acceptance limits.
+
 Scope: M-05-F02. The owner approved native actions, a bounded native-only FIFO, explicit permission requesting, status, and doctor. This file separates accepted design decisions from unverified physical behaviour.
 
 | ID | Decision | Basis / limit |

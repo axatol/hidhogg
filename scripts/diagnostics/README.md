@@ -1,3 +1,5 @@
+Retired Go diagnostics (2026-10-18): the Go diagnostic wrappers and helper commands described below are archived history, not current procedures. The separate `ulanzi-lldb/` static evidence tools remain out of scope. Current Swift architecture and verification limits are in [v2-plan.md](../../docs/v2-plan.md).
+
 # Owner-run D200X diagnostics
 
 The separate `ulanzi-lldb/` subtree contains static preflight and temporary evidence helpers for the not-yet-authorized Ulanzi Studio LLDB interoperability phase. Those utilities do not launch or attach to the application; follow `docs/ulanzi-studio-lldb-runbook.md` and its explicit authorization gate.

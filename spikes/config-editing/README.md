@@ -1,5 +1,8 @@
 # Configuration-editing feasibility spike
 
+> Historical Go spike retained as research evidence (2026-10-18). Its examples describe the retired implementation and are not current product commands. The current Swift architecture is documented in [docs/v2-plan.md](../../docs/v2-plan.md).
+
+
 This is an isolated, non-production measurement harness for the provisional configuration direction in `docs/overview.md`. It does not define a stable configuration schema or compatibility contract.
 
 Run the complete suite from this directory:

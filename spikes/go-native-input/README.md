@@ -1,5 +1,8 @@
 # cgo-free macOS keyboard input spike
 
+> Historical Go spike retained as research evidence (2026-10-18). Its examples describe the retired implementation and are not current product commands. The current Swift architecture is documented in [docs/v2-plan.md](../../docs/v2-plan.md).
+
+
 This isolated Go module probes Core Graphics keyboard and Unicode event
 injection through `github.com/ebitengine/purego` v0.10.2. It is not integrated
 with Hidhogg and does not use cgo, a native shim, a helper process, or a

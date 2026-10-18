@@ -1,7 +1,0 @@
-schema_version = 4
-adapter = "ulanzi.d200x"
-brightness = 80
-
-[profiles.default]
-label = "Default"
-unknown = true

@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		A10000010000000000000001 /* HidhoggApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000010000000000000001 /* HidhoggApp.swift */; };
 		A10000020000000000000001 /* PathSecurity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000020000000000000001 /* PathSecurity.swift */; };
-		A10000030000000000000001 /* ProcessSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000030000000000000001 /* ProcessSupport.swift */; };
 		A10000040000000000000001 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000040000000000000001 /* Protocol.swift */; };
 		A10000050000000000000001 /* Supervisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000050000000000000001 /* Supervisor.swift */; };
 		A10000060000000000000001 /* UnixSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000060000000000000001 /* UnixSocketClient.swift */; };
@@ -26,8 +25,6 @@
 		A10000270000000000000001 /* DefaultConfigurationBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000280000000000000001 /* DefaultConfigurationBootstrap.swift */; };
 		A10000290000000000000001 /* ConfigEditorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000300000000000000001 /* ConfigEditorClient.swift */; };
 		A10000100000000000000001 /* ProtocolFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000100000000000000001 /* ProtocolFixtureTests.swift */; };
-		A10000110000000000000001 /* SupervisorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000120000000000000001 /* SupervisorTests.swift */; };
-		A10000120000000000000001 /* LiveIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000130000000000000001 /* LiveIntegrationTests.swift */; };
 		A10000130000000000000001 /* RuntimeSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000140000000000000001 /* RuntimeSessionControllerTests.swift */; };
 		A10000150000000000000001 /* ProfileClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000160000000000000001 /* ProfileClientTests.swift */; };
 		A10000170000000000000001 /* ForegroundApplicationObserverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000180000000000000001 /* ForegroundApplicationObserverTests.swift */; };
@@ -57,7 +54,6 @@
 		A20000000000000000000001 /* Hidhogg.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Hidhogg.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A20000010000000000000001 /* HidhoggApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HidhoggApp.swift; sourceTree = "<group>"; };
 		A20000020000000000000001 /* PathSecurity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PathSecurity.swift; sourceTree = "<group>"; };
-		A20000030000000000000001 /* ProcessSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessSupport.swift; sourceTree = "<group>"; };
 		A20000040000000000000001 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
 		A20000050000000000000001 /* Supervisor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Supervisor.swift; sourceTree = "<group>"; };
 		A20000060000000000000001 /* UnixSocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnixSocketClient.swift; sourceTree = "<group>"; };
@@ -73,8 +69,6 @@
 		A20000280000000000000001 /* DefaultConfigurationBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultConfigurationBootstrap.swift; sourceTree = "<group>"; };
 		A20000300000000000000001 /* ConfigEditorClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigEditorClient.swift; sourceTree = "<group>"; };
 		A20000100000000000000001 /* ProtocolFixtureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolFixtureTests.swift; sourceTree = "<group>"; };
-		A20000120000000000000001 /* SupervisorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupervisorTests.swift; sourceTree = "<group>"; };
-		A20000130000000000000001 /* LiveIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveIntegrationTests.swift; sourceTree = "<group>"; };
 		A20000140000000000000001 /* RuntimeSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeSessionControllerTests.swift; sourceTree = "<group>"; };
 		A20000160000000000000001 /* ProfileClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileClientTests.swift; sourceTree = "<group>"; };
 		A20000180000000000000001 /* ForegroundApplicationObserverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForegroundApplicationObserverTests.swift; sourceTree = "<group>"; };
@@ -124,7 +118,6 @@
 			children = (
 				A20000010000000000000001 /* HidhoggApp.swift */,
 				A20000020000000000000001 /* PathSecurity.swift */,
-				A20000030000000000000001 /* ProcessSupport.swift */,
 				A20000040000000000000001 /* Protocol.swift */,
 				A20000050000000000000001 /* Supervisor.swift */,
 				A20000060000000000000001 /* UnixSocketClient.swift */,
@@ -150,8 +143,6 @@
 			isa = PBXGroup;
 			children = (
 				A20000100000000000000001 /* ProtocolFixtureTests.swift */,
-				A20000120000000000000001 /* SupervisorTests.swift */,
-				A20000130000000000000001 /* LiveIntegrationTests.swift */,
 				A20000140000000000000001 /* RuntimeSessionControllerTests.swift */,
 				A20000160000000000000001 /* ProfileClientTests.swift */,
 				A20000180000000000000001 /* ForegroundApplicationObserverTests.swift */,
@@ -292,7 +283,6 @@
 			files = (
 				A10000010000000000000001 /* HidhoggApp.swift in Sources */,
 				A10000020000000000000001 /* PathSecurity.swift in Sources */,
-				A10000030000000000000001 /* ProcessSupport.swift in Sources */,
 				A10000040000000000000001 /* Protocol.swift in Sources */,
 				A10000050000000000000001 /* Supervisor.swift in Sources */,
 				A10000060000000000000001 /* UnixSocketClient.swift in Sources */,
@@ -316,8 +306,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000100000000000000001 /* ProtocolFixtureTests.swift in Sources */,
-				A10000110000000000000001 /* SupervisorTests.swift in Sources */,
-				A10000120000000000000001 /* LiveIntegrationTests.swift in Sources */,
 				A10000130000000000000001 /* RuntimeSessionControllerTests.swift in Sources */,
 				A10000150000000000000001 /* ProfileClientTests.swift in Sources */,
 				A10000170000000000000001 /* ForegroundApplicationObserverTests.swift in Sources */,

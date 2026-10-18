@@ -2,6 +2,8 @@
 
 Updated: 2026-08-24
 
+Historical v1 decision register. Go embedding, supervision, and implementation references record the original scaffold and do not describe the accepted Swift-owned runtime. See [v2-plan.md](v2-plan.md) for the current architecture.
+
 This file collects consequential `M-01` decisions for later owner review. They were implemented and independently verified on 2026-08-24; changing a decision later may require migration or rework.
 
 | ID | Status | Decision | Basis | Rejected alternatives | Residual uncertainty |

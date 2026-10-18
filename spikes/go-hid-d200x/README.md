@@ -1,5 +1,8 @@
 # cgo-free Go D200X HID spike
 
+> Historical Go spike retained as research evidence (2026-10-18). Its examples describe the retired implementation and are not current product commands. The current Swift architecture is documented in [docs/v2-plan.md](../../docs/v2-plan.md).
+
+
 This isolated module tests whether the Ulanzi D200X can be driven through
 `github.com/go-ctap/hid` without cgo. It is a feasibility spike, not the
 production runtime.

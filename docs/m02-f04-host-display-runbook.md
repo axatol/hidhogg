@@ -1,5 +1,8 @@
 # M-02-F04 owner verification: Mac display power
 
+> Retired v1 runbook (2026-10-18): the procedure below describes the Go runtime. The V2-V01 gate used a simulated D200X and did not verify physical host sleep/wake. Preserve these steps as historical evidence, not current Swift acceptance instructions. Current verification limits are in [v2-plan.md](v2-plan.md).
+
+
 Status: offline implementation tests and independent source review passed on 2026-09-26; physical D200X behavior remains unverified.
 
 This checks macOS **display power-off/on**, not Lock Screen by itself. Locking the Mac is sufficient only if its displays subsequently sleep. Do not run a separate Go-only instance against the same D200X while testing the bundled Swift app.

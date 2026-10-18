@@ -6,6 +6,10 @@ import HidhoggCore
 
 @MainActor
 final class RuntimeSessionControllerTests: XCTestCase {
+    func testRestartExhaustedFailureHasStableDescription() {
+        XCTAssertEqual(SupervisorFailure.restartExhausted.description, "runtime failed after one restart")
+    }
+
     func testInvalidPathNeverCreatesRuntimeGeneration() async {
         let recorder = RuntimeGenerationRecorder()
         let controller = makeController(recorder: recorder)

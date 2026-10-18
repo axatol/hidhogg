@@ -1483,67 +1483,6 @@ private struct ResponseMutationVariant {
     let frame: String
 }
 
-final class OutputTailTests: XCTestCase {
-    func testTailRetainsOnlyTheNewestBytes() {
-        let tail = OutputTail(capacity: 4)
-        tail.append(Data("abcd".utf8))
-        tail.append(Data("ef".utf8))
-        XCTAssertEqual(tail.data, Data("cdef".utf8))
-    }
-
-    func testOutputDrainerKeepsStdoutAndStderrSeparate() throws {
-        let standardOutput = Pipe()
-        let standardError = Pipe()
-        let stdoutTail = OutputTail()
-        let stderrTail = OutputTail()
-        let drainer = OutputDrainer(
-            standardOutput: standardOutput.fileHandleForReading,
-            standardError: standardError.fileHandleForReading,
-            standardOutputTail: stdoutTail,
-            standardErrorTail: stderrTail
-        )
-        drainer.start()
-        defer { drainer.stop() }
-
-        try standardOutput.fileHandleForWriting.write(contentsOf: Data("stdout".utf8))
-        try standardError.fileHandleForWriting.write(contentsOf: Data("stderr".utf8))
-        for _ in 0..<100 where stdoutTail.data.isEmpty || stderrTail.data.isEmpty {
-            Thread.sleep(forTimeInterval: 0.001)
-        }
-
-        XCTAssertEqual(stdoutTail.text, "stdout")
-        XCTAssertEqual(stderrTail.text, "stderr")
-        XCTAssertEqual(OutputTail().capacity, 65_536)
-    }
-
-    func testFoundationLauncherDrainsBothPipesPastPipeCapacity() throws {
-        let stdoutTail = OutputTail()
-        let stderrTail = OutputTail()
-        let script = #"/usr/bin/awk 'BEGIN { for (i = 0; i < 70000; i++) printf "o" }'; /usr/bin/awk 'BEGIN { for (i = 0; i < 70000; i++) printf "e" }' >&2"#
-        let process = try FoundationProcessLauncher().launch(
-            request: LaunchRequest(executablePath: "/bin/sh", arguments: ["-c", script]),
-            standardOutputTail: stdoutTail,
-            standardErrorTail: stderrTail
-        )
-
-        for _ in 0..<500 {
-            if !process.isRunning,
-               stdoutTail.data.count == 65_536,
-               stderrTail.data.count == 65_536 {
-                break
-            }
-            Thread.sleep(forTimeInterval: 0.01)
-        }
-        if process.isRunning {
-            process.forceTerminate()
-        }
-
-        XCTAssertFalse(process.isRunning)
-        XCTAssertEqual(stdoutTail.data, Data(repeating: 0x6f, count: 65_536))
-        XCTAssertEqual(stderrTail.data, Data(repeating: 0x65, count: 65_536))
-    }
-}
-
 final class PathSecurityTests: XCTestCase {
     func testSocketPathLimitIncludesTerminatingNul() {
         XCTAssertNoThrow(try PathSecurity.validateEncodedSocketPath(String(repeating: "a", count: 103)))

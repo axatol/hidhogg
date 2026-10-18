@@ -1,6 +1,6 @@
 # Hidhogg overview
 
-Status (2026-10-18): V2-I01 is accepted at `d714dfefae7c0bae7d1592018ab857b0793c59f1` and V2-U01 at `2418f54c6c70782936f72c23e26b8e19f00326fc`. The native Swift app owns runtime/device lifecycle, with the Swift status/notification CLI. Go sources remain as the v1 parity reference until V01/X01. U02 editor work is in progress; V01 and X01 remain pending. See [v2-plan.md](v2-plan.md) for acceptance evidence. TaskView remains the authority for task status.
+Status (2026-10-18): V2-V01 passed independent unit and simulated-app acceptance on commit `08a44f8`. The V2-X01 candidate removed the Go implementation and diagnostics; its source audit, Core rerun (206/206), safe app tests (139/139), four ARM64 production builds, and controlled simulated-app smoke passed. The first full Core run reported one assertion failure whose cause remains unconfirmed; focused repeats and a later full run passed. Details and unverified limits are in [v2-plan.md](v2-plan.md). TaskView remains the authority for task status.
 Updated: 2026-10-18
 Platform: macOS 26+ on Apple Silicon (`arm64`) only. Intel is unsupported in Debug, Test, and Release configurations.
 
@@ -8,7 +8,7 @@ Platform: macOS 26+ on Apple Silicon (`arm64`) only. Intel is unsupported in Deb
 
 Hidhogg is a personal-use macOS 26+ utility for local HID integrations. Version 1 targets one Ulanzi D200X and one configured page. A future adapter may support Lofree Flow Lite key mapping, macros, and lighting; that device is not part of version 1.
 
-Hidhogg is configuration-driven. The runtime watches for external edits and retains the last-known-good state after invalid or conflicting changes. The GUI currently supports typed profile creation, label editing, and conservative deletion; broader position/action editing remains M-10 work.
+Hidhogg is configuration-driven. The Swift runtime watches for external edits and retains the last-known-good state after invalid or conflicting changes. The GUI supports profile management and a typed six-field button editor for label, background, alignment, label size, notification sources, and action.
 
 ## Product model
 
@@ -16,10 +16,10 @@ Hidhogg is configuration-driven. The runtime watches for external edits and reta
 - The local Swift CLI emits display-only notifications containing a source, text, and optional lifetime.
 - Tiles filter notifications by source and retain the newest match until expiry, CLI clearing, or physical selection.
 - Selecting a notification dismisses it and runs the tile's statically configured action.
-- A shared library provides stable references to source artwork and executable-plus-argument actions.
-- Inbound events cannot provide or invoke executable commands.
+- Configured execute actions use an absolute executable path and argument vector; IPC events cannot submit arbitrary commands.
+- Custom assets and shared artwork libraries are deferred.
 
-## Committed v1 architecture
+## Committed v1 architecture (historical)
 
 The owner selected a Go runtime authority with a SwiftUI menu-bar client and Unix-socket CLI API on 2026-08-24:
 
@@ -39,9 +39,24 @@ For the `M-01` scaffold, the SwiftUI app launches and supervises the Go runtime.
 
 The SwiftUI app uses strict, bounded IPC over an owner-only per-generation Unix socket. The supervisor attributes readiness to its launched runtime, drains bounded output tails, permits one restart, and applies deterministic TERM-to-KILL shutdown escalation. Go owns the production D200X runtime, strict TOML schema, discovery, profiles, executable press actions, execution history, transactional reload, local notification overlays, and typed source mutations. Swift owns foreground-app mappings and the profile editor UI. M-09-B lifecycle and M-10-A1 tile-label owner verification passed on 2026-10-01.
 
-## Approved v2 target
+## Current Swift architecture
 
-The historical committed v1 baseline is distinct from the accepted v2 implementation. The approved v2 target moves runtime, strict TOML v4 configuration, source editing, D200X handling, profiles, actions, notifications, IPC, and device lifecycle into Swift. It retains the requested user-facing feature set and strict v4 contract while permitting owner-authorized improvements to implementation behavior; this does not promise wholesale byte-level compatibility with v1. The accepted I01/U01 implementation is committed as `d714dfefae7c0bae7d1592018ab857b0793c59f1` and `2418f54c6c70782936f72c23e26b8e19f00326fc`; it composes the Swift runtime and device in the native app and provides a Swift CLI for status and notifications. Its MVP lifecycle assumes one app-owned process per private UUID-generation directory; owner-only permissions and identity-guarded cleanup remain, while shared explicit-directory multiprocess operation is unsupported and singleton use is not enforced. The implementation contains no C bridge or runtime-file lock. Go sources remain as the v1 behavior reference until V01/X01. The v2 plan and TaskView direct-ID map are in [v2-plan.md](v2-plan.md); the exact v1 roadmap is preserved in [v1-roadmap.md](v1-roadmap.md).
+The v2 implementation moves runtime, strict TOML v4 configuration, source editing, D200X handling, profiles, actions, notifications, IPC, and device lifecycle into Swift. It retains the requested user-facing feature set and strict v4 contract while permitting owner-authorized implementation improvements; wholesale byte-level compatibility with v1 is not promised. The accepted I01/U01 implementation is committed as `d714dfefae7c0bae7d1592018ab857b0793c59f1` and `2418f54c6c70782936f72c23e26b8e19f00326fc`. V01 acceptance passed on `08a44f8`; its Core, app, and native simulated-app evidence is summarized in [v2-plan.md](v2-plan.md). The X01 candidate removes the Go runtime, Go CLI, and Go diagnostic wrappers. Historical v1 documents, protocol fixtures, the renderer font, and the listed spike evidence remain. The app process model assumes one app-owned process per private UUID-generation directory; owner-only permissions and identity-guarded cleanup remain, while shared explicit-directory multiprocess operation is unsupported and singleton use is not enforced. The exact v1 roadmap is preserved in [v1-roadmap.md](v1-roadmap.md).
+
+## Current use
+
+Build the Swift CLI with `swift build --package-path macos/HidhoggCore --product hidhoggctl`. Each command takes `--runtime-dir <current-app-generation-directory>` before the command:
+
+```sh
+hidhoggctl --runtime-dir <runtime-dir> status
+hidhoggctl --runtime-dir <runtime-dir> profiles list
+hidhoggctl --runtime-dir <runtime-dir> notifications emit --source <id> --text <text> [--ttl-seconds N]
+hidhoggctl --runtime-dir <runtime-dir> notifications clear <uuid>
+```
+
+Replace placeholders with real values; the directory must identify the running app's current private generation. The MVP assumes one app-owned process and does not enforce singleton use or support shared-directory multiprocess operation.
+
+The controlled V01 gate reopened Settings with `open -a /absolute/path/to/the/temporary/Hidhogg.app`. It passed the exact temporary bundle path to avoid LaunchServices selecting another Hidhogg instance. This verified reopening an already running app, not isolated cold-launch behavior.
 
 The first v2 configuration foundation is the standalone, dependency-free SwiftPM library at `macos/HidhoggCore`, targeting macOS 26. It strictly decodes schema v4 into immutable normalized profiles and the deterministic 14-position layout. Its vendored strict TOML engine is extended locally for TOML 1.1; the decoder preserves explicit-field presence during validation and reports safe diagnostics with complete field paths. Syntax/type and unknown-key locations use UTF-8 byte columns; semantic, missing-key, and schema-version diagnostics use `0:0`. The independent C01 unit suite passed 30/30, and the pinned current-source TOML 1.1 corpus passed with no failures or skips; detailed counts and provenance are in [v2-plan.md](v2-plan.md).
 
@@ -53,13 +68,15 @@ V2-D02 adds native D200X selection/session and a protocol-faithful simulated bac
 
 V2-R01 adds a standalone profile, reload, idle, and host-display coordinator to HidhoggCore. It serializes operations across awaited session writes and publishes profile/catalog state only after required device writes succeed. Invalid reloads retain the last-known-good state; reload compares rendered archive bytes so metadata-only changes update the catalog without a HID write. Committed source edits continue through reload after caller cancellation. Input receipts are stamped before actor enqueue, the 64-event mailbox fail-stops once on overflow, and the matching release of an already-dimmed wake gesture is consumed. The absolute 50-second keepalive continues while the host display is off and skips missed intervals using the post-write monotonic time, avoiding catch-up bursts. On 2026-10-02, the independent D02-base package gate passed 125/125 tests with zero failures; its seven-path overlay hashes matched before and after testing. The gate used synthetic/fake session seams and did not open live HID, inject native input, launch the owner app, or run native app simulation. The full log is `/Volumes/Data/tmp/hidhogg-v2-r01-closure-20261002/R01-full-suite-escalated.log`.
 
-The editor scope includes existing button appearance, actions, and notification sources. Custom assets, the proposed Go log tail, and split profile files are deferred. Offline acceptance uses synthetic configuration and a simulated D200X; it does not use a real device, selected configuration, existing owner app, or native input injection. Accepted U01 composes the Swift runtime and device in the app. Go source remains as the v1 parity reference until V01/X01. TaskView remains the status authority for task states.
+The editor covers button appearance, actions, and notification sources. Custom assets, the proposed Go log tail, and split profile files remain deferred. V01 used synthetic configuration and a simulated D200X; it did not use a real device, selected configuration, the existing owner app, or native input injection. TaskView remains the status authority for task states.
 
 In the committed v1 baseline, every Xcode-built app embeds the Go runtime as `Contents/MacOS/hidhogg-runtime`; it does not search `PATH` or depend on `/usr/local/bin`. That baseline's application delegate starts the runtime eagerly and coordinates asynchronous cleanup before normal termination. Accepted U01 removes the Go-child launch phase and composes the Swift runtime instead.
 
 Device adapters expose capabilities rather than assuming every HID has displays. The D200X adapter exposes inputs, displays, and brightness. A future Flow Lite adapter would expose inputs, lighting, and on-device key mapping.
 
-## Configuration direction
+## Configuration direction (historical v1 planning)
+
+The material below records v1 implementation and research. The current product uses the Swift schema-v4 configuration and app-owned runtime described above; historical Go commands and paths are not current operating instructions.
 
 TOML passed the bounded `S-02` fixture suite and was selected by the owner on 2026-08-24. Required GUI edits must preserve untouched comments, whitespace, ordering, and unknown fields byte-for-byte. The tested JSONC/HuJSON fallback did not satisfy that preservation contract. No public configuration schema has been declared.
 
@@ -77,7 +94,7 @@ The root file owns application settings and shared library metadata. Each device
 
 `M-10-F01` implements compact schema v4: keyed profiles and coordinates, omitted blank tiles, strict explicit values, and a complete deterministic runtime layout. Existing selected files are preserved and require explicit conversion; earlier schema versions are deliberately rejected. Offline Go/Swift gates and independent review pass; owner physical acceptance remains pending. See [the contract and migration guide](compact-config-v4.md).
 
-The retained Go v1 reference runtime loads strict TOML, owns D200X display/input/brightness policy, exposes profiles and bounded executable-action history, and transactionally reloads external edits through an immutable effective snapshot. A private lossless adapter and exact-digest store support typed profile label/clone/delete edits; the v1 SwiftUI editor invokes those operations without owning TOML writes. Opt-in verbose diagnostics record decoded input events and outbound D200X packets, but never raw HID paths, serial numbers, or unrelated device identities.
+The retired Go v1 reference runtime loaded strict TOML, owned D200X display/input/brightness policy, exposed profiles and bounded executable-action history, and transactionally reloaded external edits through an immutable effective snapshot. A private lossless adapter and exact-digest store supported typed profile label/clone/delete edits; the v1 SwiftUI editor invoked those operations without owning TOML writes. Opt-in verbose diagnostics recorded decoded input events and outbound D200X packets, but never raw HID paths, serial numbers, or unrelated device identities.
 
 `M-03` adds direct-Go discovery through one caller-owned, owner-only runtime directory. A persistent advisory lock coordinates cooperating runtimes; strict generation metadata becomes visible only after IPC binding, device initialization, and serving readiness. The controller revalidates directory, lock, metadata, socket, peer UID, and generation attribution around each discovered call. Explicit socket and instance arguments mode remains temporarily available for Swift supervision and deterministic tests.
 

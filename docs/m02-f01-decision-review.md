@@ -2,6 +2,8 @@
 
 Updated: 2026-08-31
 
+Historical Go-runtime and diagnostic decisions. The Go diagnostic entry points have been retired; these measurements and policy choices are evidence from their dated v1 experiments, not current runnable procedures. See [v2-plan.md](v2-plan.md) for the current Swift verification boundary.
+
 This file records consequential idle-policy decisions for later owner review. It separates measured facts, approved experiments, and unresolved production choices.
 
 ## Verified evidence

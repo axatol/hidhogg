@@ -2,6 +2,8 @@
 
 Updated: 2026-08-30
 
+Historical v1 research only. The Go commands and probes below document retired feasibility work; they are not current build, test, or operational instructions. The exact v1 roadmap is preserved separately in [v1-roadmap.md](v1-roadmap.md), and current Swift acceptance is in [v2-plan.md](v2-plan.md).
+
 This record separates automatic evidence, one-device observations, upstream claims, and unresolved hypotheses.
 
 ## S-01 — cgo-free Go HID

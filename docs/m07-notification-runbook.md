@@ -1,3 +1,5 @@
+Retired v1 procedure (2026-10-18): the Go runtime and CLI instructions below are archived history, not current operating steps. Current Swift architecture and verification limits are in [v2-plan.md](v2-plan.md).
+
 # M-07 owner verification
 
 Status on 2026-09-19: completed. Implementation, independent automatic gates, final architecture review, and owner-run physical acceptance pass.

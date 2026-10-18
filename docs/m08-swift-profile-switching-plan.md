@@ -2,6 +2,8 @@
 
 Status: implementation-ready draft on 2026-09-23; production changes require owner contract confirmation.
 
+Historical v1 plan, superseded by the accepted Swift-owned runtime and app composition. Go-runtime and supervisor references below describe the retired implementation, not current operations. See [v2-plan.md](v2-plan.md).
+
 ## Outcome
 
 Restore compatibility between the bundled Swift menu app and the current Go runtime, then switch Go-owned profiles when the foreground macOS application's bundle identifier matches a Swift-owned mapping.

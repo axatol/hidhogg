@@ -1,6 +1,6 @@
 # Hidhogg roadmap
 
-Updated: 2026-10-02
+Updated: 2026-10-18
 
 TaskView is the authoritative source for task status. This file records scope and stable TaskView identifiers; it does not maintain a parallel status checklist.
 
@@ -25,6 +25,6 @@ The target is a pure Swift macOS application that owns the runtime and device, p
 | Comprehensive unit, edge and simulator acceptance | V2-V01 #136 |
 | Remove Go dependencies and audit final build/docs | V2-X01 #138 |
 
-TaskView project 5 list 49 owns the V2 tasks and dependency graph. See [v2-plan.md](v2-plan.md) for the task map, dependencies, constraints and verification gates. V2-X01 follows V2-V01; Go removal waits until Swift parity is accepted.
+TaskView project 5 list 49 owns the V2 tasks and dependency graph. V2-X01 follows V2-V01 in that dependency graph; TaskView remains the authority for task status. See [v2-plan.md](v2-plan.md) for the task map, dependencies, constraints and verification evidence.
 
 Custom assets, the proposed Go log tail and split profile files are deferred. Historical requirements remain in [v1-roadmap.md](v1-roadmap.md).

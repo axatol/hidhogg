@@ -4,6 +4,8 @@ Status: approved for staged implementation on 2026-09-23; the owner authorized t
 
 Update, 2026-10-01: owner verification passed for M-09-B and M-10-A1. [M-10-F01](m10-f01-compact-schema-plan.md) replaces the source representation with keyed schema v4; its blank/default/identity rules supersede the historical v3 layout below. The typed mutation, authority, exact-digest and file/reload contracts remain unchanged.
 
+Historical Go-implementation plan. The source-mutation owner described here was retired; the current typed editor and source store are implemented in HidhoggCore. See [v2-plan.md](v2-plan.md) for current acceptance.
+
 ## Outcome
 
 Add profile lifecycle and a visual configuration editor without moving configuration authority into Swift or silently overwriting detected external edits.

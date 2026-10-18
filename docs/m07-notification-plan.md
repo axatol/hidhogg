@@ -2,6 +2,8 @@
 
 Date: 2026-09-19. Status: complete; P01/C01/R01/I01/A01 and V01 automatic, architecture, and owner physical gates pass.
 
+Historical v1 plan. The Go runtime and CLI described below were retired in the V2-X01 candidate; its commands and architecture are not current instructions. Current Swift acceptance and feature boundaries are in [v2-plan.md](v2-plan.md).
+
 ## Outcome
 
 A local CLI publishes text for a configured source. Matching tiles in the active profile display that text. Replacement, expiry, explicit clearing, or physical selection restores the current configured label. Selection may run the tile's static configured action; notification data never supplies executable instructions.

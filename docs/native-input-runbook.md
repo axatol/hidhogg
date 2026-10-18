@@ -1,3 +1,5 @@
+Retired v1 procedure (2026-10-18): the Go runtime and CLI instructions below are archived history, not current operating steps. The current Swift implementation has not been physically tested for native input; see [v2-plan.md](v2-plan.md).
+
 # Native input acceptance
 
 Updated: 2026-09-18. Owner-run only; use an empty TextEdit document, then an empty VS Code editor. Do not use a terminal, password field, or production document.

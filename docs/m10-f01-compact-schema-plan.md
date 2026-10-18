@@ -3,6 +3,8 @@
 Status: implemented and independently verified offline; selected-file migration complete, owner device acceptance pending
 Updated: 2026-10-01
 
+Historical milestone record. Its Go implementation details and owner-device status reflect the 2026-10-01 checkpoint; V2-V01 later accepted the Swift implementation using simulated D200X. See [v2-plan.md](v2-plan.md) for current architecture and limits.
+
 ## Confirmed contract
 
 The goal is compact, readable configuration with strict validation. Schema v4 is the sole accepted production format; predecessor versions are rejected, not silently migrated. Offline implementation does not automatically change user-selected configuration files. A separately owner-authorized one-time selected-file conversion was completed on 2026-10-01; no compatibility path ships.
