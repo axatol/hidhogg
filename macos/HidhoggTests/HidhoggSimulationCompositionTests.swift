@@ -270,9 +270,143 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
         )
     }
 
+    func testSimulationLaunchControlKeepsWatchingStopAfterReadinessDeadline() async {
+        let endpoint = RuntimeSessionController.RuntimeEndpoint(
+            instanceID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            socketPath: "/tmp/runtime/generation-3/runtime.sock"
+        )
+        var publishedEndpoint: RuntimeSessionController.RuntimeEndpoint?
+        var stopRequested = false
+        var pauseCount = 0
+        var terminationCount = 0
+        let diagnostics = HidhoggSimulationDiagnosticRecorder()
+        let control = HidhoggSimulationLaunchControl(
+            readyMarkerPath: "/tmp/ready",
+            stopMarkerPath: "/tmp/stop",
+            diagnostics: diagnostics.sink,
+            maximumPollCount: 2,
+            pollIntervalNanoseconds: 1,
+            readiness: { endpoint },
+            publishReady: { readyEndpoint in
+                publishedEndpoint = readyEndpoint
+                return true
+            },
+            stopRequested: { stopRequested },
+            pause: { _ in
+                pauseCount += 1
+                await Task.yield()
+                if pauseCount == 2, publishedEndpoint != nil {
+                    stopRequested = true
+                }
+            },
+            terminate: { terminationCount += 1 }
+        )
+
+        control.start()
+        await control.waitForMonitoring()
+
+        XCTAssertEqual(pauseCount, 2)
+        XCTAssertEqual(publishedEndpoint, endpoint)
+        XCTAssertEqual(terminationCount, 1)
+        XCTAssertEqual(control.state, .completed)
+        XCTAssertEqual(
+            diagnostics.events,
+            [.launchControlStarted, .readyMarkerPublished, .stopMarkerDetected]
+        )
+    }
+
+    func testSimulationLaunchControlTimesOutUnresolvedReadinessAndRejectsLateResult() async {
+        let endpoint = RuntimeSessionController.RuntimeEndpoint(
+            instanceID: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            socketPath: "/tmp/runtime/generation-4/runtime.sock"
+        )
+        let timeoutReached = expectation(description: "readiness deadline is reached")
+        let readinessReturned = expectation(description: "late readiness result returns")
+        var resumeReadiness: ((RuntimeSessionController.RuntimeEndpoint?) -> Void)?
+        var publicationCount = 0
+        var didSignalTimeout = false
+        let diagnostics = HidhoggSimulationDiagnosticRecorder()
+        let control = HidhoggSimulationLaunchControl(
+            readyMarkerPath: "/tmp/ready",
+            stopMarkerPath: "/tmp/stop",
+            diagnostics: diagnostics.sink,
+            maximumPollCount: 2,
+            pollIntervalNanoseconds: 1,
+            readiness: {
+                let result = await withCheckedContinuation {
+                    (continuation: CheckedContinuation<RuntimeSessionController.RuntimeEndpoint?, Never>) in
+                    resumeReadiness = { continuation.resume(returning: $0) }
+                }
+                readinessReturned.fulfill()
+                return result
+            },
+            publishReady: { _ in
+                publicationCount += 1
+                return true
+            },
+            stopRequested: { false },
+            pause: { _ in
+                if !didSignalTimeout, diagnostics.events.contains(.readinessTimedOut) {
+                    didSignalTimeout = true
+                    timeoutReached.fulfill()
+                }
+                await Task.yield()
+            }
+        )
+
+        control.start()
+        await fulfillment(of: [timeoutReached], timeout: 2)
+
+        XCTAssertEqual(control.state, .timedOut)
+        XCTAssertEqual(diagnostics.events, [.launchControlStarted, .readinessTimedOut])
+        resumeReadiness?(endpoint)
+        await fulfillment(of: [readinessReturned], timeout: 2)
+        await Task.yield()
+        XCTAssertEqual(publicationCount, 0)
+        XCTAssertEqual(control.state, .timedOut)
+
+        control.cancel()
+        await control.waitForMonitoring()
+        XCTAssertEqual(control.state, .cancelled)
+    }
+
+    func testSimulationLaunchControlStopsBeforePublishingReadyAndIgnoresDuplicateStarts() async {
+        let endpoint = RuntimeSessionController.RuntimeEndpoint(
+            instanceID: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            socketPath: "/tmp/runtime/generation-5/runtime.sock"
+        )
+        var publicationCount = 0
+        var terminationCount = 0
+        let diagnostics = HidhoggSimulationDiagnosticRecorder()
+        let control = HidhoggSimulationLaunchControl(
+            readyMarkerPath: "/tmp/ready",
+            stopMarkerPath: "/tmp/stop",
+            diagnostics: diagnostics.sink,
+            readiness: { endpoint },
+            publishReady: { _ in
+                publicationCount += 1
+                return true
+            },
+            stopRequested: { true },
+            terminate: { terminationCount += 1 }
+        )
+
+        control.start()
+        control.start()
+        await control.waitForMonitoring()
+        control.start()
+
+        XCTAssertEqual(publicationCount, 0)
+        XCTAssertEqual(terminationCount, 1)
+        XCTAssertEqual(control.state, .completed)
+        XCTAssertEqual(diagnostics.events, [.launchControlStarted, .stopMarkerDetected])
+    }
+
     func testSimulationLaunchControlLeavesReadinessFailureUnpublishedAndCanBeCancelled() async {
         var publicationCount = 0
         var terminationCount = 0
+        let failureHandled = expectation(description: "readiness failure is recorded")
+        var didSignalFailure = false
         let diagnostics = HidhoggSimulationDiagnosticRecorder()
         let failedControl = HidhoggSimulationLaunchControl(
             readyMarkerPath: "/tmp/ready",
@@ -286,15 +420,24 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
                 return true
             },
             stopRequested: { false },
-            pause: { _ in await Task.yield() },
+            pause: { _ in
+                if !didSignalFailure, diagnostics.events.contains(.readinessFailed) {
+                    didSignalFailure = true
+                    failureHandled.fulfill()
+                }
+                await Task.yield()
+            },
             terminate: { terminationCount += 1 }
         )
         failedControl.start()
-        await failedControl.waitForMonitoring()
+        await fulfillment(of: [failureHandled], timeout: 2)
         XCTAssertEqual(failedControl.state, .readinessFailed)
         XCTAssertEqual(publicationCount, 0)
         XCTAssertEqual(terminationCount, 0)
         XCTAssertEqual(diagnostics.events, [.launchControlStarted, .readinessFailed])
+        failedControl.cancel()
+        await failedControl.waitForMonitoring()
+        XCTAssertEqual(failedControl.state, .cancelled)
 
         let cancelledControl = HidhoggSimulationLaunchControl(
             readyMarkerPath: "/tmp/ready",

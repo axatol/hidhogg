@@ -746,6 +746,7 @@ final class HidhoggSimulationLaunchControl {
     private var readinessTask: Task<Void, Never>?
     private var readinessOutcome: RuntimeSessionController.RuntimeEndpoint??
     private var didHandleReadiness = false
+    private var readinessPollCount = 0
     private(set) var state: State = .idle
 
     init(
@@ -784,10 +785,14 @@ final class HidhoggSimulationLaunchControl {
         guard monitorTask == nil, state == .idle else { return }
         state = .waitingForReadiness
         diagnostics?.emit(.launchControlStarted)
+        let readiness = self.readiness
         readinessTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            let endpoint = await self.readiness()
-            guard !Task.isCancelled, self.state != .cancelled else { return }
+            guard !Task.isCancelled else { return }
+            let endpoint = await readiness()
+            guard !Task.isCancelled,
+                  let self,
+                  self.state == .waitingForReadiness,
+                  !self.didHandleReadiness else { return }
             self.readinessOutcome = .some(endpoint)
         }
         monitorTask = Task { @MainActor [weak self] in
@@ -807,7 +812,7 @@ final class HidhoggSimulationLaunchControl {
     }
 
     private func monitor() async {
-        for _ in 0..<maximumPollCount {
+        while !Task.isCancelled {
             guard !Task.isCancelled, state != .cancelled else { return }
             if stopRequested() {
                 state = .stopping
@@ -817,22 +822,27 @@ final class HidhoggSimulationLaunchControl {
                 state = .completed
                 return
             }
-            if !didHandleReadiness, let readinessOutcome {
-                didHandleReadiness = true
-                if let endpoint = readinessOutcome, publishReady(endpoint) {
-                    state = .readyPublished
-                    diagnostics?.emit(.readyMarkerPublished)
-                } else {
-                    state = .readinessFailed
-                    diagnostics?.emit(.readinessFailed)
+            if !didHandleReadiness {
+                if let readinessOutcome {
+                    didHandleReadiness = true
+                    if let endpoint = readinessOutcome, publishReady(endpoint) {
+                        state = .readyPublished
+                        diagnostics?.emit(.readyMarkerPublished)
+                    } else {
+                        state = .readinessFailed
+                        diagnostics?.emit(.readinessFailed)
+                    }
+                } else if state == .waitingForReadiness {
+                    readinessPollCount += 1
+                    if readinessPollCount >= maximumPollCount {
+                        didHandleReadiness = true
+                        readinessTask?.cancel()
+                        state = .timedOut
+                        diagnostics?.emit(.readinessTimedOut)
+                    }
                 }
             }
             await pause(pollIntervalNanoseconds)
-        }
-        readinessTask?.cancel()
-        if state == .waitingForReadiness || state == .readyPublished {
-            state = .timedOut
-            diagnostics?.emit(.readinessTimedOut)
         }
     }
 

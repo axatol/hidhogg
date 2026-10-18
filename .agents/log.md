@@ -1499,3 +1499,18 @@ The same unanswered CLI integration execution-depth confirmation persisted throu
 The user reactivated after exact CLI gate scope clarification; main treated this as approval for that bounded synthetic test. Initial gate failed at a harness-only active-field expectation; status actually returns ready/protocol_version/instance_id. One assertion correction (no production change) followed by one corrected gate passed exit0 and all status/profiles/notification/shutdown/full-current-temp-cleanup assertions. Corrected report SHA36e65eb39d14fc217b5e0fc955f21f90d0e441ffcf2664a766eef6784cd46ab9; logSHA3b1130a99e0131ee1d760f70ea1c337bd1390921a022c57256909976703721ed. Earlier failed run retained; runtime subdir empty. Refreshed26sourcehashes verified, sole oldmanifestdelta exactlynineapprovedARM64settings.
 
 Committed I01 d714dfefae7c0bae7d1592018ab857b0793c59f1 (17paths), then U01 2418f54c6c70782936f72c23e26b8e19f00326fc (9paths); stageddiffchecks passed. TaskView130/132 markedcomplete;134 inprogress. Discordmilestonenotificationsexit0. U02 source delegated to existingSwift executor; appowner consolidatingthree shared docs; tester preparingboundedunit/GUIgateplan. .agents/handoff.md condensed to currentverifiedcheckpoint; fullhistory remainsinthislog. Overall9/12accepted, finaleditor/V01/X01unfinished.
+
+
+### 2026-10-18 — U02 checkpoint and failed extended GUI gate
+
+U02 sevenpathimplementation committed fc0a9c52ab6b0a8d0daa61aea7774cd5e9bb27b9 after24focusedtests, zero failures/skips, independentreview andARM64Test/Debugbuilds. NativeGUI gate reachedreadiness butCUAattachmenttimedouttwice. Delayedstop exposed existing simulationmonitor120sdeadline afterready; watchdogTERM143, harness1, noGUIinteraction. Exacttemporaryexecutable processqueryreturnednoPIDs; stalegenerationpreserved. Failedreport SHA65f5dfa317662a2f3118b46a75ef960c3e73c5d7abd3758a5b49a1d1bea2cee8. Task134stillincomplete,136inprogress,Go retained. Userasked toreconnectComputerUse. Ownerwritingdeterministicredregressionbeforeboundedreadiness-vs-stopmonitorfix; sourceownership/handlesinlatesthandoff. Lesson: verify fullvalidationchain (explicit timeout0 rejected at raw/IPCboundary despite downstreamsentinelcheck); longinteractivegates mustnotreuse readinessdeadline as stopmonitorlifetime.
+
+
+### 2026-10-18 — delayed-stop repair local gates
+
+Regression first failed as expected; repaired readiness-only budget/ongoingstopmonitor passed eight fake/inert tests, zero failures/skips, Test build0. Separate ARM64 production Debug build0, binary SHA114857b6965eca9c2faf758a5d3dcffc45b4579c7afea35df02dedcec43b8b30. Fresh native135second delayed-stop gate launched under approved simulation boundary, session11210, hg02 and freshlogs preserving failedhg01. No native/GUI verdict yet. Test-only observer injection prevents startupfailure unit from attaching OSdisplay observers; awaiting bounded fullunitgate. Computer Use contention remains unproven; no globalreset/other-sessioninterference.
+
+
+### 2026-10-18 — extended native simulation shutdown passed
+
+Reviewed gate session11210 terminal0: readyPID85551,135second postreadyhold, ownedstopmarker, gracefulexit0 and runtimegeneration/socket/metadatagone, rootempty. Appdiagnostics confirmstop and cleanupclosed; noGUIinteraction. TerminalSHAa8428e61b6ad5e6e9bbf74696ca39b6b1ed18f4dbd1b157c1a6d6d1b173c6c4f, appSHA7f297bdf2470ea32323dc8dc5d518216f6d9426afe905b46cced4fbea2f6b1d3. This closesdelayedstopregression, noteditorGUIacceptance. Full148safeAppunitgateapprovedafter nativeended; fourintegrationselectorsremainqualified.
