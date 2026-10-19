@@ -1,6 +1,6 @@
 # Hidhogg roadmap
 
-Updated: 2026-10-18
+Updated: 2026-10-19
 
 TaskView is the authoritative source for task status. This file records scope and stable TaskView identifiers; it does not maintain a parallel status checklist.
 
@@ -37,5 +37,11 @@ Custom assets, the proposed Go log tail and split profile files are deferred. Hi
 | Show keyboard permission status and provide Settings/app-bundle shortcuts | V2-U03 #412 |
 | Restart Hidhogg after permission changes | V2-U04 #413 |
 | Simplify internal app/runtime interfaces; retain external CLI endpoint | V2-A01 #414 |
+| Restore editor availability when the runtime becomes ready | V2-B02 #415 |
+| Diagnose excessive app memory growth | V2-B03 #416 |
 
 TaskView records current status and verification gates for these follow-ups.
+
+V2-B02 is selected for repair on 2026-10-19: reproduce the actual runtime-handle publisher binding, retain stale-session protection, and verify focused app tests plus an arm64 build. Notification text sizing is excluded.
+
+V2-B03 covers aggregate memory diagnosis and the approved changed-value UI publication repair. Verification compares isolated simulated-app Settings closed/open/reopen phases with synthetic configuration. Preserve the editor repair; no owner configuration, raw heap contents, physical device/input or owner app restart. TaskView records the remaining owner acceptance gate.

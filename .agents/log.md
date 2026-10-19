@@ -1622,3 +1622,147 @@ Independent final gates passed: Core212, safe app125, arm64 Debugapp and Release
 ## Owner follow-up — V2-A01
 
 Owner confirmed the new build still works and reported an earlier screen lock. Record the lock as contextual evidence only: its timing relative to the fixture mkdir stall and causal relationship were not established. No source change or additional test needed.
+
+# 2026-10-19 — V2-B02 editor readiness repair in progress
+
+Owner approved repairing Settings editor unavailability while health is ready. Notification text sizing excluded. Real RuntimeSessionController.$operationsHandle delivery to SettingsViewModel.setRuntimeOperations reproduces the symptom in a synthetic inert test: runtime ready and expected handle stored, editor unavailable, zero snapshot calls. During synchronous delivery the new handle arrives while the provider still reports nil. Apple documents @Published willSet delivery (https://developer.apple.com/documentation/combine/published).
+
+Decision: initial snapshot scheduling will use the just-installed captured EditorSession, with currency checks at asynchronous task entry and completion. Explicit refresh/actions retain synchronous provider checks. Alternatives: defer the whole publisher callback or switch SwiftUI observation; these widen delivery/lifetime behavior unnecessarily. Do not add sleeps or weaken stale-generation checks. Executor owns the scoped repair; independent tester/review remain pending. First sandbox build failed before tests at package resolution; scoped retry reached deterministic symptom assertions.
+
+Checkpoint: regression red repeated identically; final executor Settings tests passed 43/43. Independent review found and prevented a draft strong-self lifetime change across the awaited snapshot; final code retains weak self until completion. Independent inert arm64 tests passed 51/51 (Settings 43, runtime session 8), with no failures. Evidence root /Volumes/Data/tmp/hidhogg-settings-editor-verify-20261019; settings-runtime-tests-escalated.log SHA256 bceff82729f00f46ffdb9ac29b884802ccd44a49f437ac3a9f871a1efb7dc40d. Production build pending; GUI owner acceptance pending. Test uses actual controller publisher and matching callback, not a hosted SwiftUI view.
+
+Final automated gates: production Debug build passed, arm64 Mach-O, no HIDHOGG_TEST_HOST in production log. Executable SHA256 1addff70b699e786b5abe6b636f7bc55255e6fa7a65f2484be09a56a8b3b8aa6; debug-arm64-build.log SHA256 62817fd4e8015de2b4e56f9f076c00f6a7ca18df6bf7f872e32b826469774d3f. Source hashes unchanged across independent gates. Final audit confirms exactly five tracked files in scope, no Core/protocol/notification sizing changes or temporary diagnostics. Existing untracked files preserved. Owner GUI check pending; no installation/launch or source commit yet.
+
+## 2026-10-19 — V2-B03 memory diagnosis in progress
+
+Owner screenshot shows Hidhogg at 2.09GB and approved aggregate live statistics plus separate simulated-app reproduction with synthetic configuration. Live PID92451 vmmap summary confirms physical footprint2.1G and DefaultMallocZone about2.0G allocated across12.44million allocations, largely swapped MallocSmall. Initial RSS168→139MiB did not establish low total footprint; swapped memory explains the difference. Aggregate counters only retained at /Volumes/Data/tmp/hidhogg-memory-20261019/owner-aggregate-summary.txt, no raw heap contents. A second main-zone count12,451,269 exceeds the first12,437,848; exact sampling interval not recorded, so no precise slope claimed. Cause unconfirmed. Executor memory_growth_repro is preparing bounded idle simulation baseline with owned PID and marker cleanup. No owner config/environment/PII reads or owner app lifecycle changes; preserve uncommitted B02 editor repair.
+
+Idle baseline: current B02 Debug simulated app PID51595,60.003372seconds/five samples, heap11.64→11.53MB/count46322→44673, footprint24.0→20.8MB. Exit0/no escalation, PIDreaped/runtimeempty/workrootremoved. No idle growth reproduced; Settings visibility unverified. Failed first sandbox launch PID51294 aborted before readiness; sampler timingunits corrected before valid run. Evidence idle-baseline-ef1e048a29eb.json.
+
+Live aggregate heap types (contents/addresses disabled): ObservationTracking.Id dictionaries708,235,968bytes/345841instances; AnyKeyPath sets414,981,584bytes/5187265instances; ObservationRegistrar observation dictionary315,803,040bytes/21instances; ObservationTracking.Entry dictionaries309,851,776bytes/345821instances; closure contexts265,899,600bytes/5536357instances. No causal call site proved. Owner mostlyidle>8hours, now reports2.11GB. Ranked hypotheses shown: UI refresh with Settings open, native-specific observer path, olderbuild. Next selected probe: unique bundle-ID copied/ad-hoc-signed diagnostic app with Settingsvisible and synthetic simulation, exactPID/bundle verification. Alternative reuse originalbundle activation rejected because it might target ownerapp. Copy signature differs; no machinepermission/entitlement changes allowed. No production fix yet.
+
+Diagnostic checkpoint independently reviewed: live allocation count+5352 in17.423570417s (~307/sec), confirming ongoing accumulation. Current copied simulated Settingsvisible app exactPID54482/uniquebundle verified, visible syntheticready Settingsconfirmed through scopedCUA. Tracking.Entry329→772, keypathsets8142→19217, closures14155→26112. These are valid typecount increases, but not a precise60s heaprate: RSSinterval60.003607s, heapstart12.51s later, heapend timestampmissing; vmmapparser failed. No closedwindowAB, no precisecause/fix established. Stopmarker timedout10s; SIGTERM exactPIDnowabsent. Preserve syntheticresidual /Volumes/Data/tmp/hmp-r416c8a2/r; cleanup incomplete. Finalartifact settings-probe-r416c8a2/settings-visible-aggregate.json SHA25696da896aee37f51cf86067b72a06a152c94e7e0493ad4db2bf934c376ac65bf0 under memoryevidenceroot. No ownerapp lifecycle/config/rawheap changes or newsourcefix. Proposed repair experiment: timestampalignedsamebinarySettingsvisible/closedbaseline, then publishUIvaluesonlywhenchanged and compareallocations/footprint; focusedmodeltests, boundedgracefulcleanup. Broaderobserverrewrite deferred. Await owner approval before productioncodewrites.
+
+Owner approved repair experiment and asked whether currentapp canquit; yes, diagnostic evidence retained. Delegated corrected lifecycleprobe and minimalpublicationguards/focusedredgreen tests with separateownership. Newownerobservation: openingSettings dropped ActivityMonitor2.11GB→~400MB, so Settingsvisibilityalone doesnotexplaingrowth. Record as ownerreport, not measuredclassrelease. Diagnosticprobe now includesclose/reopen transitions; sourcechange remainscandidate untilcomparativeverification. PreserveB02 scope and nofurtherownerprocessaccess.
+
+V2-B03 implementation/decision: preserve100ms polling, publish each runtime/profile/display UI projection only if its derived Equatable value changes. Added internal refreshObservedState shared by poll/test, no publicAPI/genericframework. Alternatives: lowerpollfrequency onlyslowsredundancy; forceregularmemorypurge/reopen masksaccumulation; broadObservationrewrite expandsrisk. Rejected. Redallninefields3emissionsvs1 aftertwounchangedrefreshes; threefocusedtests green preservingrealstate/health/bootstrapchanges. No unitmemoryclaim. Ownerexplicit400MBunacceptable; acceptanceboundedidlefootprintnearfreshlaunch plusnoongoingtrackinggrowth.
+
+Corrected frozenB02 baselinePID62474: closed60.005059s mainalloc216283→246463,heap43.3→50.8M,footprint61.4→66.9M; visible60.002510s alloc266404→298203,heap53.9→58.9M,footprint70.0→74.9M. Freshvisiblefootprint53.0M. Reopenboundary20.8686s showedgrowth,nodrop; owner2.11GB→400MB behaviornotreproduced. phase-summary.json under /Volumes/Data/tmp/hidhogg-memory-20261019/settings-phase-r416b03. Stopmarker0600 exitedownedPIDwithin0.264s/runtimeempty; exitcodeunobservableviaNSWorkspace, noforcedkill. Prior0644markerharnessbug corrected, notproductshutdownfix.
+
+Independent frozen-source gates passed:75/75(Settings43/runtime8/composition24), explicitrealservercompositionselectorexcluded. InertTestarm64 confirmed; productionDebugarm64buildpassed, noTestHostdefine. Verificationroot /Volumes/Data/tmp/hidhogg-memory-repair-verify-20261019. TestlogSHA2562b7ceefbd9ca52dc073f4b558266ce83786345cdd5cf45d107416b1719405d9f; productionbuildlog3e7ea430c952383e6c2d12f29ff84204b0d28634d759142ec09b1666b6c29144; binary96cd5448bb6ec4acf5df18a3c053d572ade4f6620ef93b96d852f7a14747efeb. Sourcehashesunchanged. Independentsourcereview no blocker; nonblockingtestgapchangedcurrentProfileIDnotdriven(guardstaticallycorrect). Matchedcandidatememoryprobe nowdelegated; nofinalmemoryfixclaimyet.
+
+### V2-B03 final automated verification — ready for owner check
+
+The matched candidate probe passed independent evidence review. With Settings closed for 60.0014 seconds, main-zone allocation count decreased by 435 and footprint was 39.5→39.4M. With Settings visible for 60.0029 seconds, count increased by only 40, allocated bytes remained unchanged, footprint held at39.5M, and grouped Observation/key-path/tracking-entry/closure counts and bytes were unchanged. Compare the old build's +30,180/+31,799 allocations and rising footprint in equivalent phases. A same-PID close/reopen boundary held footprint near40M while tracking aggregates decreased. These short probes support the publication repair; they do not prove overnight stability or the original owner process's exact2.1GB cause. Owner's400MB remains unacceptable; this controlled fresh-GUI result is around40M.
+
+Evidence: /Volumes/Data/tmp/hidhogg-memory-20261019/settings-candidate-r416b03/candidate-gate-summary.json, SHA25637849f6a65875f17f13e9ae624f868ca724d5f6602f24bfedd134935bb6de76b. Exclusive0600 stop marker shut down candidatePID67775; main independently verified exactPID absence through numeric ps, runtime root empty, no force kill. NSWorkspace exit code is unobservable. Earlier exploratory0644 marker failure and preserved residuals remain qualified in handoff/artifacts.
+
+Candidate CUA attachment hung261.1seconds; main interrupted the worker and required a bounded exact-PID AX/NSWorkspace helper, which completed all window transitions with no TCC changes. Default sandbox process metadata was misleading; scoped checks were necessary. This was tooling work, not a product activation or shutdown feature. All diagnostics stayed under temp roots. Frozen B03 and B02 source hashes unchanged after gates; no Core/protocol, owner configuration, real HID/input/action or notification-sizing changes. Existing untracked files preserved. No source commit, installation, push or deployment yet. Owner rebuild/relaunch and normal-use acceptance remain before committing each accepted scope.
+
+Final independent closeout audit confirms exactly the expected seven tracked paths, no temporary production diagnostics, no Core/protocol/notification-sizing edits, and no misleading overnight or owner-acceptance claims. Untracked contents were not opened or changed. TaskView #416 remains incomplete solely for owner confirmation; B02 #415 is separately awaiting UI acceptance.
+
+## 2026-10-19 — Fixed-path standalone app
+
+Owner selected dist/Hidhogg.app and authorised signing-metadata inspection (redacted owners; no private-key export). Built Release arm64/macOS26+ with bundled resources and no external DerivedData dependency/Test-host define; source unchanged. Found one valid Apple Development identity and signed the local bundle through Keychain; no trust/ACL changes or key export. Deep/strict signature verification passed; bundle ID com.hidhogg.app and designated requirement without cdhash pin retained. dist/build-info.json records redacted provenance. Signed executable SHA2564579b8a8ed0b87bb2b96a353c666d3d901832c150d6cf86c541d7702a9117eb6. Added /dist/ to .gitignore to keep generated bundles out of source commits.
+
+Decision: keep the same local signing certificate, bundle ID and checkout dist path on future updates. Rejected path-only ad-hoc signing because its build identity changes; no need to create a new local certificate because an existing development identity is available. No /Applications install (owner chose dist), notarisation/distribution flow or build script added. The bundle was not launched; owner must quit older instances before running it and may need one new permission grant for the initial identity change. Release build log/artifacts retained under /Volumes/Data/tmp/hidhogg-standalone-20261019. Owner acceptance of B02/B03 remains pending.
+
+## 2026-10-19 — Mock-up-first product redesign
+
+Owner re-centred the goal on a single app managing multiple HID devices and requested a fresh design informed by research. Included Flow Lite alongside D200X and MX Master 3S after explicit clarification. Existing V2 naming refers to the Swift migration, so new artifacts live under docs/product-redesign rather than overwriting that history. Current executable/source fixes remain intact; no replacement or interactive prototype code approved.
+
+Reviewed authored Options+/Ulanzi investigation summaries, not raw captures or private state. Static action catalogs and SDK/controller declarations inform UI concepts but do not prove live support, persistence or connection-specific behavior. Flow Lite has no investigation folder in the provided inventory; vendor remapping/macro claims are not a native adapter specification. Snapshot date matters because parallel research is still progressing.
+
+Generated one three-variant comparison board with built-in imagegen, persisted at docs/product-redesign/mockups/01-navigation-concepts.png. A prioritises device/control selection, B application context across devices, C a searchable bindings table. Recommend A initially while retaining shared actions and app overrides. Illustrations and all statuses are synthetic; thumbnails are not hardware-layout evidence. Brief and prompt/limitations retained alongside. Next is owner navigation review and detailed workflow mock-ups, before code. No new TaskView project, production edits, hardware interaction or sensitive-data access.
+
+## 2026-10-19 — Device workspace expansion
+
+Owner selected A and approved static expansion. Generated and inspected three boards/six screens (02–04). Local save, connection and permission remain separate states. Shared-action mutation, profile ownership and unsaved changes remain open. Visual limitations recorded in mockups/README.md. No source or signed bundle changes.
+
+## 2026-10-19 — Application selector revision
+
+Owner approved searchable application dropdown in place of segmented controls. Board 05 generated, inspected and saved with prompt. Shows explicit override and inherited default; supersedes application selectors in boards 02–04. Tabs deferred. No source or bundle changes.
+
+## 2026-10-19 — Remaining top-level mock-ups
+
+Owner requested outlined bindable controls, blue selected outlines, sidebar connection status and device detail status; board 06 demonstrates these. Follow-up requested remaining pages, especially notifications/actions. Boards 07–09 add local notification routing, shared action library/editor, app-rule overview and settings. Images inspected; corrected offline banner and duplicate selection. Every named top-level page has a concept, not exhaustive edge states. Shared action propagation, route scope/history and save behavior remain proposals; limitations indexed in mockups/README.md. No source or bundle changes.
+
+## 2026-10-19 — Notification history correction and MCP
+
+Owner clarified Notifications is received-message history with device/binding outcome or unhandled; management belongs at device level. Owner requested MCP bindings, notification listing and settings; Permissions merged into Settings. Boards 10/11 generated, inspected and saved with prompts, superseding global routes and standalone Permissions. Additional MCP capabilities are proposals, transport/auth and retention unresolved. Preserve one app-owned runtime. No app source/bundle changes.
+
+## 2026-10-19 — Logo exploration and connection placement
+
+Owner accepted UI look with dot directly beside connection status text. Recorded canonical convention; old board pixels unchanged. Generated dragon and flat hedgehog concepts, then owner specified mouse/keyboard references, faux 3D/clay, no gaming aesthetic and no integrated letters. Board logos/03-clay-device-concepts.png is current direction: three device-referencing hedgehog concepts, visually inspected and saved with prompt. Earlier flat/monogram boards superseded. No icon selected or installed; no source/bundle changes.
+
+## 2026-10-19 — Near-flat hedgehog and Nidhogg icons
+
+Owner supplied shallow-shaded blue icon reference and requested nearly 2D illustration; chose Mouse keeper, Companion and Curled connection shapes for refinement, no integrated lettering. Boards logos/04–06 saved with prompts: intermediate, refined hedgehogs, then requested two Nidhogg alternatives (mouse curl and three heads/keyboard). Outputs inspected; no selection installed. Near-flat style supersedes clay. No source/bundle changes.
+
+## 2026-10-19 — Mascot variations and wildcards
+
+Owner requested reference-based semi-flat 3D hedgehog/Nidhogg variants and two name/purpose-based wildcards. Saved logos/07 (mascot pair), 08 (paper Common thread), 09 (abstract Orbit), inspected with prompts indexed. Mascot output remains more sculptural than prior near-flat board; owner preference unresolved. No source/bundle or installed icon changes.
+
+## 2026-10-19 — Small-icon simplification
+
+Owner requested flatter, simpler, cuter characters behind oversized mouse/keyboard and emphasized small app-icon use. Rejected wildcard 08/09; new wildcards include mascot context. Saved/inspected logos/10-small-icon-companions.png and 11-mascot-wildcards.png with prompts. Preview thumbnails are illustrative, not actual size exports or Dock verification. No final selection or app changes.
+
+## 2026-10-19 — Dimensional companions
+
+Owner liked board 10 setup, requested more 3D. Board logos/12-dimensional-companions.png preserves oversized-device peeking compositions with rounded volume/bevel/shadows. Inspected, saved with prompt. Small-size verification pending; no installed icon or source changes.
+
+## 2026-10-19 — Postie rendering reference
+
+Owner clarified flat 3D with Postie packaging/Postie.png. Inspected exact supplied file; generated/inspected logos/13-postie-style-companions.png using it as rendering reference, preserving peeking device poses. Board/prompt saved. No installed icon or source change.
+
+## 2026-10-19 — Devices, padding and palettes
+
+Owner found Postie-style board closer, requested more padding, MX Master and Stream Deck substitutions plus palettes. logos/14-device-palette-studies.png shows six concepts: hedgehog/MX Master and Nidhogg/Stream Deck in Ocean/Sage/Dusk. Follow-up generation widened internal padding. Visually inspected, saved with prompt; illustrative hardware and no small-size metric claim. No source or installed-icon change.
+
+## 2026-10-19 — Simplified devices and flipped mouse
+
+Owner requested fewer larger deck keys, smooth mouse detail and opposite thumb-rest orientation. Generated/inspected logos/15-simplified-device-palettes.png: six 2x3 keys, simplified mouse with thumb rest viewer right; palettes/padding retained. Saved prompt/index. No source or installed-icon changes.
+
+## 2026-10-19 — Alternate dragon matrix
+
+Owner requested more palettes and dragon designs. Saved/inspected logos/16-dragon-palette-matrix.png: Round wyrm/Long snout/Three friends columns; Apricot/Glacier/Midnight gold rows. Six-button deck and peeking composition retained. Prompt/index saved; no installed icon. Actual small-size evaluation remains pending.
+
+## 2026-10-19 — Distinct folklore-inspired guardians
+
+Owner prefers gold/black and requested materially different dragon anatomies, mentioning Kiryan/Chinese styles. Interpreted Kiryan as qilin/kirin, uncertainty stated. Saved/inspected logos/17-distinct-gold-guardians.png: long dragon, qilin-inspired, wyvern, feathered serpent. Museum context linked in index; stylized not authentic reproductions. Qilin variant unicornlike and fine features need future small-size refinement. No source/icon installation changes.
+
+## 2026-10-19 — Caricatured selected guardians
+
+Owner selected long dragon/feathered motifs for caricature and varied button symbols. Saved/inspected logos/18-playful-gold-guardians.png with prompt: larger expressive heads, smiles and six pictograms. Black/gold retained; final padding and actual small-size testing pending. No source or installed icon changes.
+
+## 2026-10-19 — Simplified long dragon and smooth serpent
+
+Owner prefers long dragon, requested less detail/less squished and serpent alternative. Saved/inspected logos/19-simple-dragon-and-serpent.png with prompt. Main variants meet distinction; generated thumbnail inconsistent (serpent paws), not actual resize proof. Padding/actual small-size tests pending. No app changes.
+
+## 2026-10-19 — Bold heads, blank button colors
+
+Owner requested larger pronounced heads/fewer details, removed button pictograms, color-only keys and dragonlike serpent head. Saved/inspected logos/20-bold-heads-simple-keys.png with Amber/Jewel/Pastel columns, long/serpentine rows. Prompt saved; small-size/padding verification pending. No app changes.
+
+## 2026-10-19 — Square keys and expressive faces
+
+Owner requested square keys/taller deck, pronounced eyes/larger heads, long-dragon whiskers and black top-left key. Saved/inspected logos/21-square-keys-expressive-faces.png after targeted geometry correction. Squareness visually assessed, not measured; actual small-size checks pending. No app changes.
+
+## 2026-10-19 — Blue flatter relief and overlap shadows
+
+Owner requested blue long dragon, shadow-based separation, flatter body surfaces and narrow steep shadows. Saved/inspected logos/22-blue-flatter-relief.png: Azure/Blue-green, pale whiskers, contact shadows, flatter body. Exact key squareness still unmeasured; do not claim resolved. No source/installed icon changes.
+
+## 2026-10-19 — Gold scales and draconic serpent return
+
+Owner clarified tight shadows/smooth edges, preferred darker gold/ivory horns, suggested scales and upper-snout whiskers. Board 23 explored smooth/scales; owner found whisker placement overcorrected and requested serpent return. Saved/inspected logos/24-long-dragon-draconic-serpent.png: sideways muzzle whiskers, gold scale patches, draconic horned limb-free serpent. Near whisker root remains imperfect; actual geometry/small-size verification pending. No app changes.
+
+## 2026-10-19 — Loose ridged-serpent cues
+
+Owner liked both variants, supplied dark spined dragon as loose serpent anatomy reference. Saved/inspected logos/25-ridged-serpent.png: long dragon concept retained, serpent longer wedge snout/brow/jaw/swept ridges, warm gold friendly icon finish. No final asset selection or app change.
+
+## 2026-10-19 — Selected serpent caricature
+
+Owner selected serpent direction and requested caricature. Saved/inspected logos/26-caricatured-serpent.png: larger head/eyes, chunkier snout/short neck, gold/ivory ridges and six blank keys. Single square concept, transparent outer corners requested. Exact geometry/alpha/small-size tests pending; no production icon installation.
+
+## 2026-10-19 — Accepted icon, gold accents and native components
+
+Owner accepted padded serpent logos/27-selected-serpent-padded.png. Saved selected visual/prompt. Requested gold/black app accents and Swift native mockups. Clarified raster images cannot guarantee native components; proposed isolated synthetic SwiftUI prototype (editor/history/Settings), approval pending. No code or installed icon change.

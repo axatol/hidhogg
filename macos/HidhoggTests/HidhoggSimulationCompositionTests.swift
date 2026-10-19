@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Darwin
 import Foundation
 import XCTest
@@ -42,6 +43,108 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
         )
 
         XCTAssertNil(model.runtimeSession.simulationDiagnostics)
+    }
+
+    func testObservedStateRefreshDoesNotRepublishUnchangedValues() {
+        let model = makePublicationModel()
+        let counts = PublishedValueCounts()
+        let cancellables = observePublishedValues(on: model, counts: counts)
+
+        model.refreshObservedState()
+        model.refreshObservedState()
+
+        XCTAssertEqual(counts.lifecycleText, 1)
+        XCTAssertEqual(counts.healthText, 1)
+        XCTAssertEqual(counts.displayPowerErrorText, 1)
+        XCTAssertEqual(counts.profileStatusText, 1)
+        XCTAssertEqual(counts.currentProfileID, 1)
+        XCTAssertEqual(counts.currentBundleIdentifier, 1)
+        XCTAssertEqual(counts.profileCatalog, 1)
+        XCTAssertEqual(counts.profileState, 1)
+        XCTAssertEqual(counts.mappings, 1)
+        withExtendedLifetime(cancellables) {}
+    }
+
+    func testObservedStateRefreshPublishesChangedHealthProfileCatalogMappingsAndDisplayError() async throws {
+        let displayObserver = PublicationDisplayPowerObserver()
+        let foregroundObserver = PublicationForegroundObserver()
+        let model = makePublicationModel(
+            initialConfigurationError: "Configuration error at synthetic path: invalid TOML",
+            displayPowerObserver: displayObserver,
+            foregroundObserver: foregroundObserver
+        )
+        let counts = PublishedValueCounts()
+        let cancellables = observePublishedValues(on: model, counts: counts)
+
+        model.refreshObservedState()
+
+        XCTAssertEqual(model.healthText, "Configuration error at synthetic path: invalid TOML")
+        XCTAssertEqual(counts.healthText, 2)
+
+        try model.setMapping(profileID: "Work.Profile", forBundleIdentifier: "com.example.editor")
+
+        XCTAssertEqual(model.mappingProfileID(for: "com.example.editor"), "Work.Profile")
+        XCTAssertEqual(counts.mappings, 2)
+
+        let operations = TestAppRuntimeOperations()
+        await model.profileCoordinator.setRuntimeOperations(
+            RuntimeOperationsHandle(identity: "publication-test", operations: operations)
+        )
+        model.profileCoordinator.refreshCatalog()
+        await model.profileCoordinator.waitForIdle()
+        model.refreshObservedState()
+
+        XCTAssertEqual(model.profileCatalog, [])
+        XCTAssertEqual(model.profileState, .unavailable)
+        XCTAssertEqual(model.profileStatusText, "Profile: runtime unavailable")
+        XCTAssertEqual(counts.profileCatalog, 2)
+        XCTAssertEqual(counts.profileState, 2)
+        XCTAssertEqual(counts.profileStatusText, 2)
+
+        model.profileCoordinator.startObserving(foregroundObserver)
+        foregroundObserver.emit("com.example.editor")
+        await model.profileCoordinator.waitForIdle()
+        model.refreshObservedState()
+
+        XCTAssertEqual(model.currentBundleIdentifier, "com.example.editor")
+        XCTAssertEqual(counts.currentBundleIdentifier, 2)
+        XCTAssertEqual(counts.profileState, 2)
+        XCTAssertEqual(counts.profileCatalog, 2)
+
+        model.displayPowerCoordinator.start()
+        displayObserver.emitError("Synthetic display query failure")
+        model.refreshObservedState()
+
+        XCTAssertEqual(model.displayPowerErrorText, "Synthetic display query failure")
+        XCTAssertEqual(counts.displayPowerErrorText, 2)
+
+        await model.profileCoordinator.shutdown()
+        await model.displayPowerCoordinator.shutdown()
+        withExtendedLifetime(cancellables) {}
+    }
+
+    func testObservedStateRefreshPublishesRuntimeAndHealthDetailTransitions() async {
+        let runtimeSession = RuntimeSessionController(
+            backendSelection: .simulated,
+            generationFactory: { _, _ in PublicationRuntimeGeneration() },
+            configurationWatcherFactory: { _, _ in RestartTestConfigurationWatcher() },
+            snapshotPollNanoseconds: 1_000_000_000
+        )
+        let model = makePublicationModel(runtimeSession: runtimeSession)
+        let counts = PublishedValueCounts()
+        let cancellables = observePublishedValues(on: model, counts: counts)
+
+        runtimeSession.start(configurationPath: "/Volumes/Data/tmp/hidhogg-publication/config.toml")
+        await runtimeSession.waitForTransition()
+        model.refreshObservedState()
+
+        XCTAssertEqual(model.lifecycleText, LifecycleState.ready.description)
+        XCTAssertEqual(model.healthText, "Health: ready\nSynthetic CLI connectivity failure")
+        XCTAssertEqual(counts.lifecycleText, 2)
+        XCTAssertEqual(counts.healthText, 2)
+
+        await runtimeSession.quit()
+        withExtendedLifetime(cancellables) {}
     }
 
     func testSimulatedModelQuitReportsOrderedShutdownStagesWithoutStartingRuntime() async {
@@ -310,6 +413,49 @@ final class HidhoggSimulationCompositionTests: XCTestCase {
                 )
             }
         )
+    }
+
+    private func makePublicationModel(
+        initialConfigurationError: String? = nil,
+        displayPowerObserver: PublicationDisplayPowerObserver? = nil,
+        foregroundObserver: PublicationForegroundObserver? = nil,
+        runtimeSession: RuntimeSessionController? = nil
+    ) -> HidhoggAppModel {
+        HidhoggAppModel(
+            preferencesStore: RestartTestAppPreferencesStore(),
+            runtimeSession: runtimeSession ?? RuntimeSessionController(backendSelection: .simulated),
+            profileMappingStore: RestartTestProfileMappingPreferencesStore(),
+            displayPowerCoordinator: HostDisplayPowerCoordinator(
+                observer: displayPowerObserver ?? PublicationDisplayPowerObserver()
+            ),
+            foregroundObserver: foregroundObserver ?? PublicationForegroundObserver(),
+            allowsConfigurationSelection: false,
+            initialConfigurationError: initialConfigurationError,
+            configurationBootstrapFactory: {
+                DefaultConfigurationBootstrap(
+                    xdgConfigHome: nil,
+                    homeDirectory: URL(fileURLWithPath: "/Volumes/Data/tmp/hidhogg-memory-repair-test", isDirectory: true),
+                    templateData: Data()
+                )
+            }
+        )
+    }
+
+    private func observePublishedValues(
+        on model: HidhoggAppModel,
+        counts: PublishedValueCounts
+    ) -> Set<AnyCancellable> {
+        var cancellables = Set<AnyCancellable>()
+        model.$lifecycleText.sink { _ in counts.lifecycleText += 1 }.store(in: &cancellables)
+        model.$healthText.sink { _ in counts.healthText += 1 }.store(in: &cancellables)
+        model.$displayPowerErrorText.sink { _ in counts.displayPowerErrorText += 1 }.store(in: &cancellables)
+        model.$profileStatusText.sink { _ in counts.profileStatusText += 1 }.store(in: &cancellables)
+        model.$currentProfileID.sink { _ in counts.currentProfileID += 1 }.store(in: &cancellables)
+        model.$currentBundleIdentifier.sink { _ in counts.currentBundleIdentifier += 1 }.store(in: &cancellables)
+        model.$profileCatalog.sink { _ in counts.profileCatalog += 1 }.store(in: &cancellables)
+        model.$profileState.sink { _ in counts.profileState += 1 }.store(in: &cancellables)
+        model.$mappings.sink { _ in counts.mappings += 1 }.store(in: &cancellables)
+        return cancellables
     }
 
     func testSimulationControlArgumentsRequireFreshDistinctNormalizedMarkerPair() throws {
@@ -1082,6 +1228,42 @@ private final class RestartTestConfigurationWatcher: RuntimeConfigurationWatchin
     func stop() {}
 }
 
+private actor PublicationRuntimeGeneration: RuntimeSessionGeneration {
+    private var running = false
+
+    func start() async throws -> RuntimeGenerationStart {
+        running = true
+        return RuntimeGenerationStart(
+            operationsHandle: RuntimeOperationsHandle(
+                identity: "publication-runtime",
+                operations: TestAppRuntimeOperations()
+            ),
+            endpoint: nil,
+            cliConnectivityError: "Synthetic CLI connectivity failure"
+        )
+    }
+
+    func isRunning() async -> Bool { running }
+    func reloadConfiguration() async {}
+
+    func stop() async -> RuntimeGenerationStopOutcome {
+        running = false
+        return .closed
+    }
+}
+
+private final class PublishedValueCounts {
+    var lifecycleText = 0
+    var healthText = 0
+    var displayPowerErrorText = 0
+    var profileStatusText = 0
+    var currentProfileID = 0
+    var currentBundleIdentifier = 0
+    var profileCatalog = 0
+    var profileState = 0
+    var mappings = 0
+}
+
 private struct RestartTestAppPreferencesStore: AppPreferencesStore {
     func string(forKey key: String) -> String? { nil }
     func set(_ value: String?, forKey key: String) {}
@@ -1109,6 +1291,46 @@ private final class RestartTestHostDisplayPowerObserver: HostDisplayPowerObservi
 private final class RestartTestForegroundApplicationObserver: ForegroundApplicationObserving {
     func start(handler: @escaping ForegroundApplicationHandler) {}
     func stop() {}
+}
+
+@MainActor
+private final class PublicationDisplayPowerObserver: HostDisplayPowerObserving {
+    var lastKnownDisplayAwake: Bool? { nil }
+    private var errorHandler: HostDisplayPowerErrorHandler?
+
+    func start(
+        stateHandler: @escaping HostDisplayPowerStateHandler,
+        errorHandler: @escaping HostDisplayPowerErrorHandler
+    ) {
+        self.errorHandler = errorHandler
+    }
+
+    func reconcileIfUnknown() {}
+
+    func stop() {
+        errorHandler = nil
+    }
+
+    func emitError(_ message: String?) {
+        errorHandler?(message)
+    }
+}
+
+@MainActor
+private final class PublicationForegroundObserver: ForegroundApplicationObserving {
+    private var handler: ForegroundApplicationHandler?
+
+    func start(handler: @escaping ForegroundApplicationHandler) {
+        self.handler = handler
+    }
+
+    func stop() {
+        handler = nil
+    }
+
+    func emit(_ bundleIdentifier: String?) {
+        handler?(bundleIdentifier)
+    }
 }
 
 private final class HidhoggSimulationDiagnosticRecorder: @unchecked Sendable {

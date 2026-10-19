@@ -470,9 +470,7 @@ final class HidhoggAppModel: ObservableObject {
                 await profileCoordinator.setRuntimeOperations(operationsHandle)
                 displayPowerCoordinator.setRuntimeOperations(operationsHandle)
             }
-            publishRuntimeState()
-            publishProfileState()
-            publishDisplayPowerState()
+            refreshObservedState()
             do {
                 try await Task.sleep(nanoseconds: 100_000_000)
             } catch {
@@ -481,20 +479,49 @@ final class HidhoggAppModel: ObservableObject {
         }
     }
 
+    func refreshObservedState() {
+        publishRuntimeState()
+        publishProfileState()
+        publishDisplayPowerState()
+    }
+
     private func publishProfileState() {
-        profileState = profileCoordinator.state
-        profileCatalog = profileCoordinator.catalog
-        currentProfileID = profileCoordinator.currentProfileID
-        currentBundleIdentifier = profileCoordinator.currentBundleIdentifier
-        mappings = profileCoordinator.mappings
-        profileStatusText = Self.profileStatusText(
-            state: profileState,
-            currentProfileID: currentProfileID
+        let nextProfileState = profileCoordinator.state
+        let nextProfileCatalog = profileCoordinator.catalog
+        let nextCurrentProfileID = profileCoordinator.currentProfileID
+        let nextBundleIdentifier = profileCoordinator.currentBundleIdentifier
+        let nextMappings = profileCoordinator.mappings
+
+        if profileState != nextProfileState {
+            profileState = nextProfileState
+        }
+        if profileCatalog != nextProfileCatalog {
+            profileCatalog = nextProfileCatalog
+        }
+        if currentProfileID != nextCurrentProfileID {
+            currentProfileID = nextCurrentProfileID
+        }
+        if currentBundleIdentifier != nextBundleIdentifier {
+            currentBundleIdentifier = nextBundleIdentifier
+        }
+        if mappings != nextMappings {
+            mappings = nextMappings
+        }
+
+        let nextProfileStatusText = Self.profileStatusText(
+            state: nextProfileState,
+            currentProfileID: nextCurrentProfileID
         )
+        if profileStatusText != nextProfileStatusText {
+            profileStatusText = nextProfileStatusText
+        }
     }
 
     private func publishDisplayPowerState() {
-        displayPowerErrorText = displayPowerCoordinator.errorText
+        let nextErrorText = displayPowerCoordinator.errorText
+        if displayPowerErrorText != nextErrorText {
+            displayPowerErrorText = nextErrorText
+        }
     }
 
     static func profileStatusText(
@@ -539,27 +566,35 @@ final class HidhoggAppModel: ObservableObject {
 
     private func publishRuntimeState() {
         let state = runtimeSession.lifecycleState
-        lifecycleText = state.description
+        let nextLifecycleText = state.description
+        let nextHealthText: String
         if let configurationBootstrapErrorText {
-            healthText = configurationBootstrapErrorText
-            return
-        }
-        healthText = switch state {
-        case .ready:
-            if let cliConnectivityError = runtimeSession.cliConnectivityError {
-                "Health: ready\n\(cliConnectivityError)"
-            } else {
-                "Health: ready"
+            nextHealthText = configurationBootstrapErrorText
+        } else {
+            nextHealthText = switch state {
+            case .ready:
+                if let cliConnectivityError = runtimeSession.cliConnectivityError {
+                    "Health: ready\n\(cliConnectivityError)"
+                } else {
+                    "Health: ready"
+                }
+            case .configurationRequired:
+                "Configuration required"
+            case .failed(let failure):
+                Self.runtimeFailureHealthText(
+                    failure: failure,
+                    lastFailureDetail: runtimeSession.lastFailureDetail
+                )
+            default:
+                "Health: waiting for runtime"
             }
-        case .configurationRequired:
-            "Configuration required"
-        case .failed(let failure):
-            Self.runtimeFailureHealthText(
-                failure: failure,
-                lastFailureDetail: runtimeSession.lastFailureDetail
-            )
-        default:
-            "Health: waiting for runtime"
+        }
+
+        if lifecycleText != nextLifecycleText {
+            lifecycleText = nextLifecycleText
+        }
+        if healthText != nextHealthText {
+            healthText = nextHealthText
         }
     }
 

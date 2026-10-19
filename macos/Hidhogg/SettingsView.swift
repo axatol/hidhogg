@@ -617,22 +617,35 @@ final class SettingsViewModel: ObservableObject {
         newProfileSourceID = nil
 
         guard let handle else { return }
-        editorSession = EditorSession(
+        let session = EditorSession(
             identity: handle.identity,
             generation: editorRequestGeneration,
             operations: handle.operations as any HidhoggEditorOperations
         )
-        refreshEditorSnapshot()
+        editorSession = session
+        refreshEditorSnapshot(for: session)
     }
 
     func refreshEditorSnapshot() {
         guard let session = currentEditorSession() else { return }
+        refreshEditorSnapshot(for: session)
+    }
+
+    private func refreshEditorSnapshot(for session: EditorSession) {
         guard !isEditorBusy else { return }
 
         clearProfileEditingState()
         editorErrorMessage = nil
         isEditorBusy = true
         editorRequestTask = Task { @MainActor [weak self] in
+            guard let requestGeneration = self?.editorRequestGeneration,
+                  requestGeneration == session.generation else { return }
+            guard self?.isCurrent(session) == true else {
+                let currentOperations = self?.runtimeOperationsProvider()
+                self?.setRuntimeOperations(currentOperations)
+                return
+            }
+
             let result = await Self.capture { try await session.operations.editorSnapshot() }
             guard let self else { return }
             guard self.editorRequestGeneration == session.generation else { return }

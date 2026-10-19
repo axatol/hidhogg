@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import XCTest
 import UniformTypeIdentifiers
@@ -421,6 +422,74 @@ final class SettingsViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.selectedEditorProfileID)
         XCTAssertNil(viewModel.lastMutationSummary)
         XCTAssertFalse(viewModel.hasEditorRuntime)
+    }
+
+    func testPublishedRuntimeOperationsHandleKeepsSettingsEditorAvailable() async {
+        let instanceID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        let endpoint = editorEndpoint(instanceID: instanceID)
+        let client = SettingsEditorOperationsFake(instanceID: instanceID)
+        let generation = SettingsPublishedRuntimeGeneration(endpoint: endpoint, operations: client)
+        let runtime = RuntimeSessionController(
+            backendSelection: .native,
+            generationFactory: { _, _ in generation },
+            configurationWatcherFactory: { _, _ in SettingsRuntimeConfigurationWatcher() },
+            snapshotPollNanoseconds: 1_000_000
+        )
+        let model = HidhoggAppModel(
+            preferencesStore: TestAppPreferencesStore(),
+            runtimeSession: runtime,
+            profileMappingStore: TestSettingsMappingStore()
+        )
+        let viewModel = SettingsViewModel(model: model, applicationSelector: { .cancelled })
+        var readinessDelivery: (deliveredIdentity: String, providerIdentity: String?)?
+        let subscription = runtime.$operationsHandle.sink { handle in
+            if let handle {
+                readinessDelivery = (handle.identity, runtime.operationsHandle?.identity)
+            }
+            viewModel.setRuntimeOperations(handle)
+        }
+
+        runtime.start(configurationPath: "/synthetic/settings-publisher.toml")
+        await runtime.waitForTransition()
+        await viewModel.waitForEditorIdle()
+
+        XCTAssertEqual(runtime.lifecycleState, .ready)
+        XCTAssertEqual(runtime.operationsHandle?.identity, instanceID)
+        XCTAssertEqual(readinessDelivery?.deliveredIdentity, instanceID)
+        XCTAssertNil(readinessDelivery?.providerIdentity)
+        XCTAssertTrue(viewModel.hasEditorRuntime)
+        XCTAssertTrue(viewModel.canRefreshEditorSnapshot)
+        XCTAssertEqual(client.snapshotCallCount, 1)
+        XCTAssertEqual(viewModel.editorSnapshot?.sourceDigest, client.sourceDigest)
+
+        await runtime.quit()
+        XCTAssertNil(runtime.operationsHandle)
+        XCTAssertNil(viewModel.editorSnapshot)
+        XCTAssertFalse(viewModel.hasEditorRuntime)
+        XCTAssertFalse(viewModel.canRefreshEditorSnapshot)
+        subscription.cancel()
+    }
+
+    func testEditorSnapshotIsSkippedWhenRuntimeDisappearsBeforeRequestStarts() async {
+        let endpoint = editorEndpoint(instanceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        let client = SettingsEditorOperationsFake(instanceID: endpoint.instanceID)
+        let handle = RuntimeOperationsHandle(identity: endpoint.instanceID, operations: client)
+        let runtimeBox = SettingsEditorOperationsBox(handle: nil)
+        let viewModel = SettingsViewModel(
+            model: makeSettingsModel(),
+            applicationSelector: { .cancelled },
+            runtimeOperationsProvider: { runtimeBox.handle }
+        )
+
+        runtimeBox.handle = handle
+        viewModel.setRuntimeOperations(handle)
+        runtimeBox.handle = nil
+        await viewModel.waitForEditorIdle()
+
+        XCTAssertEqual(client.snapshotCallCount, 0)
+        XCTAssertNil(viewModel.editorSnapshot)
+        XCTAssertFalse(viewModel.hasEditorRuntime)
+        XCTAssertFalse(viewModel.isEditorBusy)
     }
 
     func testLateDeleteMutationResultIsDiscardedAfterRuntimeReplacement() async throws {
@@ -1349,6 +1418,36 @@ final class SettingsViewModelTests: XCTestCase {
 
 private enum SettingsViewModelTestError: Error {
     case missingInitialMapping
+}
+
+private final class SettingsPublishedRuntimeGeneration: RuntimeSessionGeneration, @unchecked Sendable {
+    private let endpoint: RuntimeSessionController.RuntimeEndpoint
+    private let operations: any HidhoggAppRuntimeOperations
+
+    init(endpoint: RuntimeSessionController.RuntimeEndpoint, operations: any HidhoggAppRuntimeOperations) {
+        self.endpoint = endpoint
+        self.operations = operations
+    }
+
+    func start() async throws -> RuntimeGenerationStart {
+        RuntimeGenerationStart(
+            operationsHandle: RuntimeOperationsHandle(identity: endpoint.instanceID, operations: operations),
+            endpoint: endpoint,
+            cliConnectivityError: nil
+        )
+    }
+
+    func isRunning() async -> Bool { true }
+
+    func reloadConfiguration() async {}
+
+    func stop() async -> RuntimeGenerationStopOutcome { .closed }
+}
+
+private final class SettingsRuntimeConfigurationWatcher: RuntimeConfigurationWatching {
+    func start() throws {}
+
+    func stop() {}
 }
 
 private final class TestAppPreferencesStore: @unchecked Sendable, AppPreferencesStore {
