@@ -1,5 +1,7 @@
 # Hidhogg product redesign — first mock-ups
 
+Current authority, 2026-10-19: owner approved the new-branch Logitech-first implementation reset. The earlier prototype-only approval notes below are historical. See [current overview](../overview.md) and [rebuild decisions](../rebuild-decisions.md). Preserve the broader product design while first delivering MX Master 3S/Bolt Back and Forward bindings.
+
 Date: 2026-10-19. Planning and visual exploration only; no replacement implementation approved. This is separate from the existing documents named V2, which describe the Swift migration.
 
 ## Question

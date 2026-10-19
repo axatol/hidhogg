@@ -1,0 +1,15 @@
+# Rebuild decisions
+
+2026-10-19; owner-authorised fresh branch reset. Decisions are reviewable and alternatives retained here.
+
+1. **New branch, one replacement app:** `next/logitech-slice` from v2 checkpoint `4b3248d`. Alternative: a second application target alongside the D200X app. Owner chose reset; removes pressure to generalize the old device-specific coordinator.
+2. **Historical evidence stays:** old root docs/specs/examples moved unchanged to `docs/archive/v2/`; spikes/designs/research tooling preserved. Old source remains in Git. Alternative: delete all history or keep old docs canonical; both risk losing context or confusing current scope.
+3. **Fixed dist output:** delete retired bundle and stale build metadata, package new version at `dist/Hidhogg.app`. Preserve identifier and established signing identity; do not claim permission continuity guaranteed.
+4. **Swift package foundation:** minimal new native SwiftUI executable, arm64/macOS26+. Alternative: carry over Xcode target/build settings or add a generator dependency. Start with the smallest reproducible Apple-toolchain build; add an Xcode project only if required.
+5. **No false device state:** foundation shows hardware integration unavailable rather than a fake connected mouse. No HID enumeration, device setting changes or CGEvent posting in reset gate. Alternative: simulated connection in default app; misleading for owner acceptance.
+6. **Back and Forward:** both are product scope. Prior Back evidence cannot validate Forward. Discover eligible controls afresh; never hard-code a prior receiver slot or feature index. Physical testing remains a separately bounded owner gate.
+7. **No legacy configuration compatibility:** new bindings will use a device-neutral model; old TOML/schema/protocol are archived evidence. User permits improvement without backwards compatibility. Storage details deferred to next task, not invented for bootstrap.
+8. **Retain excluded local material:** no blanket `git clean` or recursive source-tree purge. Unknown local files and generated Xcode metadata remain untouched; they are not active build inputs.
+9. **Foundation before device integration:** reset acceptance is a compilable native app and audited preservation, not a claim of Back/Forward function. Full functional slice remains NX-M1.
+10. **Build verification boundaries:** independent dependency-free Release compilation and packaging checks passed; controlled shell fixtures verified old-output preservation on build/sign failure and rollback after install failure. No live app launch or hardware operation was required for NX-01. Remaining physical acceptance belongs to NX-03/04.
+11. **Managed execution environment:** Swift tools 6.2 is the minimum manifest API version for macOS26; actual verification used the installed toolchain. Nested SwiftPM sandbox and XCBuild writes required explicitly scoped execution escalation. Normal build script keeps sandboxing enabled unless the caller requests `--disable-build-sandbox`.

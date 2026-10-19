@@ -1766,3 +1766,11 @@ Owner selected serpent direction and requested caricature. Saved/inspected logos
 ## 2026-10-19 — Accepted icon, gold accents and native components
 
 Owner accepted padded serpent logos/27-selected-serpent-padded.png. Saved selected visual/prompt. Requested gold/black app accents and Swift native mockups. Clarified raster images cannot guarantee native components; proposed isolated synthetic SwiftUI prototype (editor/history/Settings), approval pending. No code or installed icon change.
+
+## 2026-10-19 — NX-01 recoverable Logitech reset and native foundation
+
+Owner approved Bolt-only MX Master 3S Back/Forward slice and new-branch reset, explicitly authorizing old compiled app deletion/replacement at dist/Hidhogg.app. Checkpoint4b3248d preserves v2 fixes and accepted design; branch next/logitech-slice created. Reset deleted103 tracked old app paths and moved historical docs/protocol/schema/examples/legal unchanged to docs/archive/v2. Explorer SHA256 audit147/147 passed. Unknown local files and frozen spikes untouched.
+
+Delegated native_app_foundation implemented dependency-free SwiftUI package and explicit-signing staged packaging. Main reviewed code, supervised Swift6.2/platform API fix and managed build sandbox boundary. Tester independently compiled and audited source/package, verified failure-preservation fixtures and final bundle. Tests did not launch app or access devices. Main signed fixed dist app using known certificate fingerprint, verified signature/DER identity, recorded redacted provenance. Selected icon converted via native tools; ten expected ICNS sizes verified. No private-key export or trust changes.
+
+TaskView existing project5/list65: NX-01#417 foundation complete; NX-02#418 config, NX-03#419 transport/actions and NX-04#420 integration/acceptance TODO with dependencies. Old v2 acceptance tasks untouched. Decisions/alternatives and verification limits in current docs. Full vertical slice NOT complete: Forward unvalidated, app honestly reports integration unavailable, performance not yet measured. No Discord milestone notice because NX-M1 remains incomplete.

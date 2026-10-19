@@ -1,3 +1,41 @@
+# HIDHogg rebuild — current handoff
+
+Updated 2026-10-19, Australia/Brisbane. Current branch: next/logitech-slice.
+
+## Approved scope and reset
+
+Owner approved native Swift/efficient implementation, MX Master 3S over Bolt only, Back and Forward bindings, new branch with old production implementation retired, preserved research/specs/spikes/designs, and deletion/replacement of dist/Hidhogg.app at the same fixed path. Prior visual prototypes are no longer the active approval boundary.
+
+Recoverable v2 checkpoint: 4b3248d, on v2. It includes the previously uncommitted B02/B03 source and design records as a preservation snapshot, not a claim of their physical acceptance. Existing v2 TaskView acceptance records remain unchanged. New TaskView list65 in existing Personal/HIDhogg project5 tracks NX-01–04 (#417–420).
+
+NX-01 completed: 103 old tracked macos paths removed; old docs/protocol/schema/examples/legal artifacts archived under docs/archive/v2. Explorer independently verified 147/147 preserved files byte-identical to checkpoint. Product redesign, spikes, diagnostics and LICENSE retained. Unknown local files/generated metadata left untouched; no git clean, environment/config/PII reads or external repository edits.
+
+## Current new application
+
+app/ is a dependency-free Swift tools6.2 package, one native SwiftUI arm64/macOS26+ executable. Sidebar/List, native forms/buttons, gold tint; explicit unavailable-device message and disabled discovery. No HID/IOKit/Bluetooth/CGEvent/permission APIs, timers/polling or fake connected data. This is the application foundation, not completed Back/Forward functionality.
+
+scripts/build-app.sh builds, stages icon resources, signs/verifies then replaces dist/Hidhogg.app. Explicit signing identity required, ad-hoc '-' rejected. Output and scratch overrides supported; --disable-build-sandbox is opt-in for nested sandbox restrictions. Prior output is preserved on build/sign failures and restored on install failure; replacement uses two moves with brief path gap. Do not run concurrent builds into same destination.
+
+Accepted selected icon docs/product-redesign/logos/27-selected-serpent-padded.png is converted with native sips/iconutil into all ten standard ICNS sizes; original preserved. Current fixed bundle com.hidhogg.app is signed with prior certificate SHA1 BD088C6A3D3855EA8F47857A604894BF98E3CF98. Main independently verified extracted certificate DER hash without printing owner metadata. No private key export/trust/ACL changes. Bundle executable SHA25683011afbf378bf6c1b75cfd8cebdf0b4d9dc1aeffe8d37b6778adf6bfd0f7cd0. Redacted dist/build-info.json records provenance; app not launched.
+
+## Verification and limits
+
+Independent tester Release compile passed (arm64, minOS26.0); syntax/help/refusal gates pass. Controlled temporary shell harness confirms old bundle unchanged after simulated build exit41/sign exit45 and restored after install mv failure. Final codesign deep/strict verify passed; no LC_RPATH, only system/SwiftUI/Swift libraries; icon has all expected16–1024 sizes. Test log /Volumes/Data/tmp/nx01-taskview417-build-escalated.log; failure logs sibling build-failure/sign-failure/rollback. Compilation required scoped sandbox escalation; no hardware or GUI/e2e run.
+
+Source SHA256: Package5570b8bcf7e83a94b78c45f7ccc038772065654953a1078e41520190430cae73; Appdc786912874b2c0380aef87cf3091369de8877d1ef926e6b29c0b35b0222cb14; Devices7807c5f6d3cec2562c47d34e0497ad5217f0d765e58e62830c0f7ba35d0de7f7; Workspace4536241bc20ae2656ea4c058d85601cf83b2462e32c6152ae1e3455022d8087c; Settingscf686cf61c6a37f817ddec7f99fc8e7baf887d3ea753f240115392109ae2158f; build-scripte42483ee7d7db2337910f3520f6c9e5a55c0eedd7217f5dbfdc81cb0161fff1c.
+
+## Next work
+
+NX-02 #418: decide/store device-neutral defaults and app overrides, typed shortcuts and save semantics. NX-03 #419: serialized Bolt transport/control/action integration; Back has bounded external LogiBridge evidence, Forward unvalidated. NX-04 #420: native editor, permission/reconnect/physical acceptance and measured CPU/memory gates. Dependencies recorded. No pairing, Bluetooth, gestures, advanced scrolling, other device, MCP or notification expansion in first slice.
+
+External LogiBridge frozen spikes remain at /Users/axatol/Workspace/hans-m-song/logibridge. Read current handoff before reuse; never import diagnostic helpers into production or run shared-receiver experiments concurrently. No repetition of passed physical tests without a new question. New physical tests require explicit scoped owner gate. IOKit is candidate based on current evidence, CoreHID locally unproven. Do not hard-code old slot/feature indices.
+
+Current canonical docs: docs/overview.md, structure.md, roadmap.md, rebuild-decisions.md, build.md. The earlier handoff below is historical; its old source paths and next actions are superseded.
+
+---
+
+# Historical handoff retained at reset
+
 # Hidhogg v2 handoff
 
 Updated: 2026-10-19, Australia/Brisbane.

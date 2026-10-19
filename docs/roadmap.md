@@ -1,47 +1,26 @@
-# Hidhogg roadmap
+# Milestone index
 
-Updated: 2026-10-19
+Updated 2026-10-19. TaskView Personal / HIDhogg project 5, list 65 **Next — Logitech vertical slice** owns task status, criteria and dependencies. Historical list 49 and its pending v2 acceptance records are not closed by this reset. No new project created.
 
-TaskView is the authoritative source for task status. This file records scope and stable TaskView identifiers; it does not maintain a parallel status checklist.
+## NX-M1 — MX Master 3S Back and Forward bindings
 
-## Legacy v1
+User deliverable: discover already-paired mouse over Bolt, configure Back and Forward shortcut bindings using native UI, save defaults/one application override, execute once per press, recover saved configuration after reopen and stop cleanly.
 
-The original roadmap and its detailed contracts are preserved in [v1-roadmap.md](v1-roadmap.md). The verified legacy records are in TaskView project 5, list 48. TaskView task #120 is the single historical migration manifest; its completion means the archive was imported, not that every underlying gate passed. The exact stable-code map and status qualifications are in [v2-plan.md](v2-plan.md) and the manifest note.
+| Stable ID | TaskView | Deliverable | Status |
+|---|---|---|---|
+| NX-01 | 417 | Recoverable reset, native app/build foundation at dist/Hidhogg.app | Complete — compile/package/audit gates; no GUI/hardware claim |
+| NX-02 | 418 | Device-neutral Back/Forward configuration and persistence | TODO |
+| NX-03 | 419 | Bolt session, control discovery and action integration | TODO |
+| NX-04 | 420 | Native editor, owner acceptance and resource gate | TODO |
 
-TaskView's list endpoint omits known records. Use the direct task IDs in the plan and manifest rather than treating list results as a complete inventory.
+NX-01 blocks NX-02, which blocks NX-03; NX-02 and NX-03 block NX-04. Detailed roles, boundaries and gates are in TaskView. The foundation does not establish a completed vertical slice. Existing LogiBridge research tasks remain separate and are not closed or duplicated by these production tasks.
 
-## Approved v2 migration
+## Checklist
 
-The target is a pure Swift macOS application that owns the runtime and device, plus a Swift CLI for status and notifications. Preserve strict TOML v4 and current product behavior. Acceptance runs the native macOS app with a simulated D200X; no Apple Simulator target is assumed.
-
-| Functional slice | TaskView code and ID |
-|---|---|
-| Review, v1 checkpoint, v2 branch | V2-P01 #121 |
-| Strict configuration and lossless transactional editing | V2-C01 #122, V2-C02 #123 |
-| D200X protocol and simulated/native transport | V2-D01 #124, V2-D02 #125 |
-| Profiles, reload, idle/display policy, actions, input, notifications and history | V2-R01 #126, V2-R02 #128 |
-| Swift IPC, discovery and CLI parity | V2-I01 #130 |
-| Swift app ownership and full button editor | V2-U01 #132, V2-U02 #134 |
-| Comprehensive unit, edge and simulator acceptance | V2-V01 #136 |
-| Remove Go dependencies and audit final build/docs | V2-X01 #138 |
-
-TaskView project 5 list 49 owns the V2 tasks and dependency graph. V2-X01 follows V2-V01 in that dependency graph; TaskView remains the authority for task status. See [v2-plan.md](v2-plan.md) for the task map, dependencies, constraints and verification evidence.
-
-Custom assets, the proposed Go log tail and split profile files are deferred. Historical requirements remain in [v1-roadmap.md](v1-roadmap.md).
-
-## Post-migration usability
-
-| Functional slice | TaskView code and ID |
-|---|---|
-| Diagnose numpad action failure caused by missing input permission | V2-B01 #411 |
-| Show keyboard permission status and provide Settings/app-bundle shortcuts | V2-U03 #412 |
-| Restart Hidhogg after permission changes | V2-U04 #413 |
-| Simplify internal app/runtime interfaces; retain external CLI endpoint | V2-A01 #414 |
-| Restore editor availability when the runtime becomes ready | V2-B02 #415 |
-| Diagnose excessive app memory growth | V2-B03 #416 |
-
-TaskView records current status and verification gates for these follow-ups.
-
-V2-B02 is selected for repair on 2026-10-19: reproduce the actual runtime-handle publisher binding, retain stale-session protection, and verify focused app tests plus an arm64 build. Notification text sizing is excluded.
-
-V2-B03 covers aggregate memory diagnosis and the approved changed-value UI publication repair. Verification compares isolated simulated-app Settings closed/open/reopen phases with synthetic configuration. Preserve the editor repair; no owner configuration, raw heap contents, physical device/input or owner app restart. TaskView records the remaining owner acceptance gate.
+- [x] Owner approved Bolt-only scope and Back plus Forward.
+- [x] Owner approved new branch and old production-source retirement.
+- [x] Recoverable v2 checkpoint `4b3248d` and `next/logitech-slice` branch.
+- [x] Old compiled dist app removed with owner approval.
+- [x] Native app and fixed-path signed packaging independently verified.
+- [x] Preservation/reset audit complete: 147 preserved files match checkpoint.
+- [ ] NX-M1 physical user deliverable accepted.
