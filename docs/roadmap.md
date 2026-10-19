@@ -9,9 +9,9 @@ User deliverable: discover already-paired mouse over Bolt, configure Back and Fo
 | Stable ID | TaskView | Deliverable | Status |
 |---|---|---|---|
 | NX-01 | 417 | Recoverable reset, native app/build foundation at dist/Hidhogg.app | Complete — compile/package/audit gates; no GUI/hardware claim |
-| NX-02 | 418 | Device-neutral Back/Forward configuration and persistence | TODO |
-| NX-03 | 419 | Bolt session, control discovery and action integration | TODO |
-| NX-04 | 420 | Native editor, owner acceptance and resource gate | TODO |
+| NX-02 | 418 | Device-neutral Back/Forward configuration and persistence | Complete — isolated codec/store/path gates |
+| NX-03 | 419 | Bolt session, control discovery and action integration | Implemented and fixture-tested — physical acceptance pending |
+| NX-04 | 420 | Native editor, owner acceptance and resource gate | Implemented and packaged — owner/resource acceptance pending |
 
 NX-01 blocks NX-02, which blocks NX-03; NX-02 and NX-03 block NX-04. Detailed roles, boundaries and gates are in TaskView. The foundation does not establish a completed vertical slice. Existing LogiBridge research tasks remain separate and are not closed or duplicated by these production tasks.
 
@@ -23,4 +23,8 @@ NX-01 blocks NX-02, which blocks NX-03; NX-02 and NX-03 block NX-04. Detailed ro
 - [x] Old compiled dist app removed with owner approval.
 - [x] Native app and fixed-path signed packaging independently verified.
 - [x] Preservation/reset audit complete: 147 preserved files match checkpoint.
+- [x] TOML configuration, native editor/history and Bolt/action integration implemented.
+- [x] Signed arm64 Release app packaged at the fixed path.
 - [ ] NX-M1 physical user deliverable accepted.
+
+Current implementation decisions: [contract](logitech-slice-contract.md). Verification evidence: [report](logitech-verification.md). Remaining owner checks: [short checklist](logitech-acceptance.md).

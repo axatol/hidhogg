@@ -151,6 +151,7 @@ icon_source="$repository_root/docs/product-redesign/logos/27-selected-serpent-pa
 iconset="$stage_root/Hidhogg.iconset"
 mkdir -p "$stage_app/Contents/MacOS" "$stage_app/Contents/Resources"
 cp "$binary_path" "$stage_app/Contents/MacOS/Hidhogg"
+cp "$repository_root/docs/third-party-notices.txt" "$stage_app/Contents/Resources/ThirdPartyNotices.txt"
 
 mkdir "$iconset"
 icon_sizes=(

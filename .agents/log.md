@@ -1774,3 +1774,33 @@ Owner approved Bolt-only MX Master 3S Back/Forward slice and new-branch reset, e
 Delegated native_app_foundation implemented dependency-free SwiftUI package and explicit-signing staged packaging. Main reviewed code, supervised Swift6.2/platform API fix and managed build sandbox boundary. Tester independently compiled and audited source/package, verified failure-preservation fixtures and final bundle. Tests did not launch app or access devices. Main signed fixed dist app using known certificate fingerprint, verified signature/DER identity, recorded redacted provenance. Selected icon converted via native tools; ten expected ICNS sizes verified. No private-key export or trust changes.
 
 TaskView existing project5/list65: NX-01#417 foundation complete; NX-02#418 config, NX-03#419 transport/actions and NX-04#420 integration/acceptance TODO with dependencies. Old v2 acceptance tasks untouched. Decisions/alternatives and verification limits in current docs. Full vertical slice NOT complete: Forward unvalidated, app honestly reports integration unavailable, performance not yet measured. No Discord milestone notice because NX-M1 remains incomplete.
+
+## 2026-10-19 — In-app back/forward navigation
+
+Owner requested in-app history. Added to overview/decisions and NX-04#420: native toolbar controls, restore route context, preserve drafts and bound history. Requirement only; no source or bundle changes.
+
+## 2026-10-19 — XDG configuration requirement
+
+Owner requested XDG config location as prior iteration, no hot reload or TOML requirement. Recorded NX-02#418 and current docs: absolute nonempty XDG_CONFIG_HOME/hidhogg else ~/.config/hidhogg; recommend versioned JSON/Codable, atomic save, startup load/UI in-memory update, invalid file preservation. No owner config/env inspected; no source changes.
+
+## 2026-10-19 — Manual reload and TOML preference
+
+Owner prefers TOML if easy and explicit refresh without relaunch. Supersedes JSON/relaunch-only proposal; updated overview/decisions/NX-02#418. Assess maintained Swift parser before implementation. Validate reload, retain last good state, resolve drafts, detect external-save conflicts. No source/config access.
+
+
+## 2026-10-19 — NX-M1 implementation checkpoint
+
+Owner authorized maximum practical NX-02–04 implementation with supervised workers. Exact swift-toml2.0.0 chosen after manifest/API assessment; parser/store, fresh Bolt discovery/diversion, native editor/history and permission-checked sender implemented. No real HID, owner configuration, permission prompt or input injection executed. Decisions15–24 and alternatives are in docs/logitech-slice-contract.md.
+
+Independent review found save-baseline and queued-reload draft races; editor worker corrected them and tester is adding composed AppModel regressions with injected sessions/paths/actions. Focused configuration15, Bolt16 and sender4 tests passed so far; final integrated suite and signed packaging pending. Native lifecycle follow-up examines worker reference cleanup and stop during discovery. Physical Back/Forward, real permission delivery and resource acceptance remain owner gates.
+
+
+## 2026-10-19 — NX-M1 verified implementation handoff
+
+Implemented configuration, native editor/history, app-owned Bolt session and permission-checked shortcut delivery. Independent final suite53/53 passed (configuration15, app13, actions4, Bolt21), including synchronous sleep/quit intent invalidation and save/reload enablement races. Release rebuilt and strict signature/arm64/macOS26/identifier/certificate/notices checks passed. Final executable SHA256be6a3123751def44edf513377b678a9dddf41798c9ba2bcae7f006a455caf6b9 at dist/Hidhogg.app. No production app launch, owner config/env inspection, HID operation or native key posting occurred.
+
+NX-02#418 complete; NX-03#419 and NX-04#420 remain In Progress for owner hardware/UI/resource gates. No milestone-complete notification. Review docs/logitech-slice-contract.md decisions15–26, docs/logitech-verification.md, docs/logitech-acceptance.md. Next: owner checks both controls/defaults/app override, Save/Reload/reopen, stop/native restoration, unplug/sleep/quit and actual idle resources. Abrupt crash recovery and competing diversion clients not claimed. No resource threshold/duration assumed.
+
+Frozen spikes/archive/designs untouched. Unrelated .codex/, .envrc, macos/ metadata, diagnostics cache and spike binary remain untracked/unopened and excluded. Explorer final audit reactivation hit agent thread limit; independent tester explicitly assigned the bounded final audit instead. Main supervised changes and recorded critical alternatives.
+
+Final independent audit complete: no production blocker, no tracked frozen-spike changes; explicit staged diff passes whitespace checks. Final test file and package hashes match tester evidence.

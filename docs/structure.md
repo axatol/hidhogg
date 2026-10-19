@@ -4,6 +4,12 @@ Updated 2026-10-19. Current implementation boundaries:
 
 ```text
 app/                     new Swift package and native SwiftUI application
+  Sources/HidhoggDomain/          configuration and binding value types
+  Sources/HidhoggConfiguration/   bounded TOML codec and revision-aware file store
+  Sources/LogitechBolt/           HID++ protocol, IOKit transport and session
+  Sources/MacOSActions/           permissions, recording and shortcut posting
+  Sources/HidhoggApp/             native editor, drafts, history and lifecycle
+  Tests/                         injected configuration/session/action fixtures
 scripts/build-app.sh     fixed-path arm64 Release packaging and signing
 dist/Hidhogg.app          ignored local build product
 docs/                    current overview, decisions and milestone index

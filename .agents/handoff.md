@@ -290,3 +290,33 @@ Owner chose serpent and requested more caricature. logos/26-caricatured-serpent.
 ### Current design decision and pending approval — 2026-10-19
 
 Owner accepted logos/27-selected-serpent-padded.png; use gold/charcoal accents. Requests Swift native components. Existing raster concepts are not native implementation. Async approval pending for separate synthetic SwiftUI prototype covering device editor/history/Settings with standard macOS controls and custom device canvas only. No working app/bundle changes authorized by that pending question yet. Exact palette tokens and production icon packaging checks remain.
+
+### Navigation requirement addition — 2026-10-19
+
+Owner wants in-app Back/Forward navigation. Recorded under NX-04#420 and current docs; restore page/device/app/control, preserve drafts, bound history. Not implemented; separate from mouse bindings.
+
+### Configuration requirement addition — 2026-10-19
+
+NX-02#418 must use XDG_CONFIG_HOME/hidhogg with ~/.config/hidhogg fallback, no watcher/hot reload. JSON/Codable recommended, versioned/atomic validated saves; startup load and UI saves apply in memory. External edits next launch; preserve invalid/unsupported config. Do not inspect owner .config/environment in development; test path resolver with injected values. No legacy migration implied. Requirement only, no code yet.
+
+### Latest configuration preference — 2026-10-19
+
+Manual Reload configuration button required; no watcher. TOML preferred if straightforward; JSON proposal superseded pending parser assessment. NX-02#418/current docs updated. Preserve last valid active config on reload errors, resolve unsaved drafts, detect external changes before save. No code/config reads.
+
+
+## 2026-10-19 — NX-M1 implementation checkpoint
+
+Owner authorized maximum practical NX-02–04 implementation with supervised workers. Exact swift-toml2.0.0 chosen after manifest/API assessment; parser/store, fresh Bolt discovery/diversion, native editor/history and permission-checked sender implemented. No real HID, owner configuration, permission prompt or input injection executed. Decisions15–24 and alternatives are in docs/logitech-slice-contract.md.
+
+Independent review found save-baseline and queued-reload draft races; editor worker corrected them and tester is adding composed AppModel regressions with injected sessions/paths/actions. Focused configuration15, Bolt16 and sender4 tests passed so far; final integrated suite and signed packaging pending. Native lifecycle follow-up examines worker reference cleanup and stop during discovery. Physical Back/Forward, real permission delivery and resource acceptance remain owner gates.
+
+
+## 2026-10-19 — NX-M1 verified implementation handoff
+
+Implemented configuration, native editor/history, app-owned Bolt session and permission-checked shortcut delivery. Independent final suite53/53 passed (configuration15, app13, actions4, Bolt21), including synchronous sleep/quit intent invalidation and save/reload enablement races. Release rebuilt and strict signature/arm64/macOS26/identifier/certificate/notices checks passed. Final executable SHA256be6a3123751def44edf513377b678a9dddf41798c9ba2bcae7f006a455caf6b9 at dist/Hidhogg.app. No production app launch, owner config/env inspection, HID operation or native key posting occurred.
+
+NX-02#418 complete; NX-03#419 and NX-04#420 remain In Progress for owner hardware/UI/resource gates. No milestone-complete notification. Review docs/logitech-slice-contract.md decisions15–26, docs/logitech-verification.md, docs/logitech-acceptance.md. Next: owner checks both controls/defaults/app override, Save/Reload/reopen, stop/native restoration, unplug/sleep/quit and actual idle resources. Abrupt crash recovery and competing diversion clients not claimed. No resource threshold/duration assumed.
+
+Frozen spikes/archive/designs untouched. Unrelated .codex/, .envrc, macos/ metadata, diagnostics cache and spike binary remain untracked/unopened and excluded. Explorer final audit reactivation hit agent thread limit; independent tester explicitly assigned the bounded final audit instead. Main supervised changes and recorded critical alternatives.
+
+Final independent audit complete: no production blocker, no tracked frozen-spike changes; explicit staged diff passes whitespace checks. Final test file and package hashes match tester evidence.
