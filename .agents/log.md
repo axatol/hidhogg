@@ -2104,3 +2104,9 @@ Future order: UIalignment NX-M2Task439/list67 UI01–03 Tasks440–442, then D20
 ## Owner acceptance / check-in requested — 2026-10-21
 
 Owner says latest build looks good and requests check-in then roadmap review. NX21#437 and NX22#438 marked accepted/Done. Current82 tested sourceinputs byte-match final316-test/releasegate; no sourcechanges sinceverification. Check-in includes tested app sources/tests, nativeaccent assets, buildscript, known project reports/designassets and ledgers; exclude .envrc, .codex, localmacos metadata, Pythoncache and diagnosticspikebinary without readingthem. No nativeoperations or push requested. FutureUIbeforeD200X remainsplanned.
+
+## Checkpoint and roadmap reconciliation — 2026-10-21
+
+Committed accepted application scope as6ce6b23 on next/logitech-slice;107files, with explicitpath staging. Local environment/IDE/cache/diagnostic artifacts excluded untouched.82testedinputs match final316-test build; required2accentJSON and source/evidence/art included. Corrected ignored build-info scalar manifest_count78→82 to match actualmaps; no source/bundle change. No push.
+
+Roadmap now separates owner-accepted functionalbaseline, residualverification and plannedwork. NX21/22 and acceptedRestart/navigation/wake Done; oldicontrials closedas superseded, not accepted. UIalignment milestone439/list67 precedes D200X443/list66 via actualdependencyedges. Nextaction UI01planning; no newimplementation authorized. Rewrote handoff/currentacceptance index to remove stale noDock/pendingappearance/registrationdiagnosis instructions; historicalreports/log preserved. Documentation-only review checkpoint follows applicationcommit.

@@ -1,23 +1,27 @@
-# NX-M1 owner check
+# Current acceptance and remaining limits
 
-Updated 2026-10-20. Start with the three [current diagnostics/ownership/navigation checks](workspace-verification.md); previous [ownership/login checks](ownership-verification.md) remain open. Use the signed `dist/Hidhogg.app`; match its build to [the verification report](logitech-verification.md). Close older copies and competing mouse software first. Launch is menu-bar-only: click the monochrome serpent, then Open Hidhogg. There should be no Dock icon, including while the workspace is open. Closing its window should leave bindings/scroll settings active in the same process; Open Hidhogg should raise one workspace again. Use Quit Hidhogg from the menu to exit. Automated fixtures do not establish physical mouse behavior or native app termination.
+Updated 2026-10-21. The owner accepted the latest signed build **9e322504174b** and requested check-in; source checkpoint is **6ce6b23**. The final frozen suite passed **316 tests**, zero failures. [Verification](workspace-presentation-verification.md).
 
-1. **Immediate changes:** Connect the intended MX Master 3S over Bolt once. Configure Back and Forward using Record Shortcut or Choose Manually. There should be no Save, Enable or Apply step. Release both buttons, then check each shortcut in a disposable document; edits and an application override should take effect without disconnecting.
-2. **Scroll:** while connected, change Standard/Natural and Low/High input resolution; confirm both observed values and behavior immediately, including while button bindings are active. Keyboard permission is not needed for wheel inversion. Leave unchanged retains the current wheel direction by default. Disconnect releases button interception and retains the wheel setting. Optional Restore previous device settings on disconnect restores the connection baseline.
-3. **Persistence:** stop editing for about one second; disk status should become Saved. Reopen and check the preferences survived. Startup makes one connection attempt by default; Settings → Startup can disable it. Explicit Connect applies preferences after failure or when disabled. The app retains errors and shows Retry Saving after an attempted save failure.
-4. **Reload:** use Reload from File while connected. The connection should remain open. If local edits are pending, Cancel keeps them and resumes autosave; deliberate discard loads the file. Invalid files retain the last valid active preferences and show an error rather than overwriting the file.
-5. **Restart/Quit:** Settings → Restart should flush pending edits, change the displayed PID and leave one instance, which follows its saved startup connection preference. Ordinary Quit should finish cleanup and exit. The isolated native probe could not launch in the verification environment, so these are essential owner checks.
+## Owner-confirmed behavior
 
-The outlined Back/Forward tiles should respond across their entire area. Choose Manually configures macOS-reserved combinations without pressing them. The receiving app/system still decides whether injected shortcuts are accepted. Settings provides separate Accessibility and event-post checks, the permission-settings link, draggable serpent app icon and bounded recent diagnostics; persistent events use Console subsystem `com.hidhogg.app` with system-managed retention. Recent Activity is left-aligned and exposes matching event ID, stable code, build and source in Details. See [diagnostic codes](diagnostics.md).
+- Back/Forward bindings and native navigation work.
+- Vertical amount, thumb-wheel direction and thumb-wheel amount work.
+- Single-instance Restart works; current sleep/wake recovery is acceptable.
+- Menu status styling and workspace-dependent Dock/native ⌘Tab behavior look good.
+- Launch at login now shows Enabled without error; no actual login launch was observed by the agent.
 
-## Limits
+Startup is menu-only. Opening the workspace supplies Dock/app-switcher presence; minimizing or switching apps retains it. Closing the workspace restores menu-only presence while the same app/device session continues.
 
-- Startup or explicit Connect uses protocol-level candidate association; this slice rejects multiple candidates and unsupported feature versions. Close competing configuration software. No persistent serial-based association or Options+ coexistence claim.
-- All-disabled configuration leaves native buttons alone. Once any shortcut is configured, the active session diverts both controls; Disabled suppresses its action, and missing application overrides inherit All apps. No new native-passthrough binding type.
-- Release arming may consume the first press/release if no initial up snapshot was observed. Holding a button should not repeat the shortcut.
-- Successful requests reuse IDs, so ordinary edits/activation cycles have no lifetime15-request limit. Ambiguous requests retire their IDs; too much uncertainty can still stop the session with cleanup capacity reserved. There is no silent transport renewal.
-- Uncertain cleanup blocks rearming and Restart. Ordinary Quit awaits the cleanup attempt but may exit when an unavailable device cannot verify restoration. Abrupt crash/receiver-removal restoration, other-mouse isolation, contention and overnight CPU/memory remain unverified.
+No repeat acceptance campaign is required before UI planning. The [roadmap](roadmap.md) distinguishes delivered behavior from residual evidence limits.
 
-## Configuration
+## Remaining evidence limits
 
-The app uses `config.toml` under absolute `XDG_CONFIG_HOME/hidhogg/` or the `~/.config/hidhogg/` fallback. Settings displays the path used by that instance. GUI launches inherit their launch context. The schema is unrelated to legacy D200X TOML. Valid editor changes apply in memory immediately and save one second after the last edit; Quit/Restart flush pending changes. A failed flush keeps the app open. No watcher runs. Atomic saves check the last-read byte revision, preserve malformed/conflicting files and rewrite formatting/comments. Reload remains explicit.
+Automated fixtures do not prove hardware or native AppKit behavior. Owner acceptance is recorded separately from agent testing. Low/High physical comparison, optional restoration, abrupt receiver removal/crash cleanup, other-mouse isolation, contention, overnight CPU/memory, exceptional native recovery and actual launch after login are not all established. Keep these explicit; agree any targeted follow-up before testing.
+
+The single candidate/capability gates, release arming and lack of a native-passthrough binding remain deliberate behavior. Once any shortcut is configured, the session diverts both controls; Disabled suppresses its action. First press/release can arm a control when no initial-up state was observed. Successful HID++ requests reuse IDs; ambiguous requests retire IDs and can still stop a session safely.
+
+## Configuration and diagnostics
+
+Configuration uses `config.toml` under absolute `XDG_CONFIG_HOME/hidhogg/`, otherwise `~/.config/hidhogg/`. Valid edits apply immediately and save after one second of inactivity. Quit/Restart flush pending changes; save failure keeps the app open. Manual Reload remains; no hot reload. Atomic saves detect byte-revision conflicts and preserve malformed/conflicting files; rewriting does not preserve comments/formatting.
+
+Settings exposes permission checks, app drag/restart affordances and startup controls. Recent Activity has event IDs/codes/build/source correlation; persistent events use the Console subsystem `com.hidhogg.app`. [Diagnostics](diagnostics.md). Owner configuration was not inspected for checkpoint verification.
