@@ -23,6 +23,19 @@ final class BoltPressAdmission: @unchecked Sendable {
         }
     }
 
+    func suspend() {
+        lock.withLock { enabled = false }
+    }
+
+    func renew(generation: UInt64) -> Bool {
+        lock.withLock {
+            guard !terminal else { return false }
+            self.generation = generation
+            enabled = true
+            return true
+        }
+    }
+
     func invalidate() {
         lock.withLock {
             enabled = false

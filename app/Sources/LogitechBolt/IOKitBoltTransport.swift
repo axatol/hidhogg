@@ -21,6 +21,10 @@ final class IOKitBoltTransport: BoltTransport, @unchecked Sendable {
         }
     }
 
+    func availableRequestIDs(slot: UInt8, feature: UInt8, function: UInt8) -> Int {
+        worker.requestIDs.available(slot: slot, feature: feature, function: function)
+    }
+
     func open() async throws { try await worker.submit { try $0.open() } }
 
     func request(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) async throws -> [UInt8] {
@@ -61,8 +65,8 @@ final class BoltHIDWorker: @unchecked Sendable {
     private var pendingSend = false
     private var sendResult: IOReturn?
     private var reply: Result<[UInt8], BoltFailure>?
-    private var expected: (slot: UInt8, feature: UInt8, functionSoftware: UInt8)?
-    private var tokens: [UInt32: UInt8] = [:]
+    private var expected: BoltRequestTransaction?
+    let requestIDs = BoltRequestIDLedger()
     private var sendDeadline: TimeInterval = 0
     private var sendCompleted: TimeInterval = 0
     private var requestDeadline: TimeInterval = 0
@@ -170,25 +174,16 @@ final class BoltHIDWorker: @unchecked Sendable {
     func request(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) throws -> [UInt8] {
         guard let device, !removed else { throw BoltFailure.disconnected }
         guard !pendingSend, expected == nil, !inputFailed, parameters.count <= 16, function <= 15 else { throw BoltFailure.transport }
-        let key = UInt32(slot) << 16 | UInt32(feature) << 8 | UInt32(function)
-        let token = (tokens[key] ?? 0) + 1
-        guard token <= 15 else { throw BoltFailure.tokenExhausted }
-        tokens[key] = token
-        let functionSoftware = function << 4 | token
-        var output = Array(repeating: UInt8(0), count: 20)
-        output[0] = 0x11
-        output[1] = slot
-        output[2] = feature
-        output[3] = functionSoftware
-        for (offset, value) in parameters.enumerated() { output[4 + offset] = value }
-        expected = (slot, feature, functionSoftware)
+        let transaction = try BoltRequestTransaction(ledger: requestIDs, slot: slot, feature: feature, function: function, parameters: parameters)
+        defer { transaction.retire() }
+        expected = transaction
         reply = nil
         sendResult = nil
         sendCompleted = 0
         sendDeadline = ProcessInfo.processInfo.systemUptime + 0.6
         requestDeadline = sendDeadline + 4
         pendingSend = true
-        let packet = BoltHIDSend(worker: self, frame: output)
+        let packet = BoltHIDSend(worker: self, frame: transaction.frame)
         let packetContext = Unmanaged.passRetained(packet).toOpaque()
         let status = IOHIDDeviceSetReportWithCallback(device, kIOHIDReportTypeOutput, 0x11, packet.bytes, 20, 600, { context, result, _, _, _, _, _ in
             guard let context else { return }
@@ -223,7 +218,7 @@ final class BoltHIDWorker: @unchecked Sendable {
         guard !removed else { throw BoltFailure.disconnected }
         guard !inputFailed else { throw BoltFailure.transport }
         guard let reply else { throw BoltFailure.timeout }
-        return try reply.get()
+        return try transaction.complete(matchedReply: reply, sendSucceeded: true)
     }
 
     private func receive(result: IOReturn, type: IOHIDReportType, reportID: UInt32, bytes: UnsafeMutablePointer<UInt8>, count: CFIndex) {
@@ -237,13 +232,13 @@ final class BoltHIDWorker: @unchecked Sendable {
         let report = Array(UnsafeBufferPointer(start: bytes, count: count))
         guard report[0] == UInt8(reportID) else { return }
         if let expected, reply == nil, ProcessInfo.processInfo.systemUptime <= requestDeadline {
-            if let matched = BoltWire.reply(report, slot: expected.slot, feature: expected.feature, functionSoftware: expected.functionSoftware) {
+            if let matched = expected.reply(report) {
                 reply = matched
                 if case .failure(let error) = matched, error != .unavailable { _ = sink?(.failure(error)) }
                 return
             }
         }
-        if reportID == 0x11, report[2] != 0xFF, report[3] == 0 {
+        if (reportID == 0x10 || reportID == 0x11), report[2] != 0xFF, report[3] == 0 {
             guard !notificationStopped else { return }
             if sink?(.report(report, at: .now)) == false { notificationStopped = true }
             return

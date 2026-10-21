@@ -19,4 +19,13 @@ Some managed execution environments reject SwiftPM's nested sandbox. The explici
 
 The accepted selected PNG is converted with native `sips` and `iconutil` into all standard ICNS sizes during packaging. The original design image is preserved. The icon is a raster design asset; button geometry and visual small-size acceptance are separate from packaging checks.
 
+Packaging also compiles `app/Branding.xcassets` with native `actool` and declares NSAccentColorName. This supplies the app gold for native accent-aware controls in addition to the explicit SwiftUI tint/custom outlines. macOS user appearance overrides remain system-controlled.
+
+HidhoggBuildID records the pre-sign executable digest for startup diagnostics. The diagnostic-only `--permission-diagnostics` argument prints PID/build and Accessibility/post-event booleans, then exits before configuration/runtime construction; it never requests permissions or posts events. Launch attribution affects permission results, so a direct terminal invocation is not proof of the normal GUI process's permissions.
+
 Open `app/Package.swift` in Xcode to inspect the package, or use the build script without opening Xcode. No old Xcode project or D200X source is used.
+
+
+The packaged app declares `LSUIElement=true`: it runs from its native serpent menu-bar item without a Dock or app-switcher entry. Launch does not open or restore the workspace. Choose **Open Hidhogg** to open/raise its single window; closing the window leaves the same process running. **Quit Hidhogg** in the menu uses the existing pending-save/device cleanup path. The menu icon is a cached native vector template; Finder and permission drag retain the full-colour icon. Settings offers optional native main-app login registration. Packaging never registers or launches the app; registration occurs only through the explicit user toggle.
+
+The current custom bootstrap acquires per-user application ownership before SwiftUI/AppModel; diagnostics-only mode exits before that lease or runtime construction. Packaging never launches the app or touches the live ownership path. Close all legacy copies once before testing the new single-owner guard. See [workspace verification](workspace-verification.md).

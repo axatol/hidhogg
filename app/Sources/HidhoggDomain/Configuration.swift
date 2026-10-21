@@ -14,6 +14,15 @@ public enum ShortcutModifier: String, Codable, CaseIterable, Hashable, Sendable 
     case shift
 }
 
+public enum WheelScrollAmount {
+    public static let range = 0.25...10.0
+    public static let defaultSelection = 1.0
+
+    public static func contains(_ amount: Double) -> Bool {
+        amount.isFinite && range.contains(amount)
+    }
+}
+
 public struct KeyboardShortcut: Codable, Equatable, Hashable, Sendable {
     public var keyCode: UInt16
     public var modifiers: [ShortcutModifier]
@@ -44,11 +53,33 @@ public struct DeviceBindings: Codable, Equatable, Sendable {
     public var id: String
     public var defaults: [String: ControlBinding]
     public var applications: [String: [String: ControlBinding]]
+    public var wheelInverted: Bool?
+    public var restorePreviousSettingsOnDisconnect: Bool
+    public var wheelHighResolution: Bool?
+    public var wheelScrollAmount: Double?
+    public var thumbwheelInverted: Bool?
+    public var thumbwheelScrollAmount: Double?
 
-    public init(id: String, defaults: [String: ControlBinding], applications: [String: [String: ControlBinding]] = [:]) {
+    public init(
+        id: String,
+        defaults: [String: ControlBinding],
+        applications: [String: [String: ControlBinding]] = [:],
+        wheelInverted: Bool? = nil,
+        restorePreviousSettingsOnDisconnect: Bool = false,
+        wheelHighResolution: Bool? = nil,
+        wheelScrollAmount: Double? = nil,
+        thumbwheelInverted: Bool? = nil,
+        thumbwheelScrollAmount: Double? = nil
+    ) {
         self.id = id
         self.defaults = defaults
         self.applications = applications
+        self.wheelInverted = wheelInverted
+        self.restorePreviousSettingsOnDisconnect = restorePreviousSettingsOnDisconnect
+        self.wheelHighResolution = wheelHighResolution
+        self.wheelScrollAmount = wheelScrollAmount
+        self.thumbwheelInverted = thumbwheelInverted
+        self.thumbwheelScrollAmount = thumbwheelScrollAmount
     }
 
     public func binding(for control: MouseControl, application: String?) -> ControlBinding {
@@ -64,14 +95,30 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     public static let logitechProfileID = "logitech.mx-master-3s"
     public var schemaVersion: Int
     public var devices: [DeviceBindings]
+    public var connectOnLaunch: Bool
 
-    public init(schemaVersion: Int = currentVersion, devices: [DeviceBindings]) {
+    public init(
+        schemaVersion: Int = currentVersion,
+        devices: [DeviceBindings],
+        connectOnLaunch: Bool = true
+    ) {
         self.schemaVersion = schemaVersion
         self.devices = devices
+        self.connectOnLaunch = connectOnLaunch
     }
 
     public static var empty: Self {
         Self(devices: [DeviceBindings(id: logitechProfileID, defaults: ["back": .disabled, "forward": .disabled])])
+    }
+
+    public static var defaultConfiguration: Self {
+        Self(devices: [DeviceBindings(
+            id: logitechProfileID,
+            defaults: [
+                MouseControl.back.rawValue: .key(NavigationPreset.pageBack.shortcut),
+                MouseControl.forward.rawValue: .key(NavigationPreset.pageForward.shortcut)
+            ]
+        )])
     }
 
     public var mouse: DeviceBindings? { devices.first { $0.id == Self.logitechProfileID } }
@@ -83,6 +130,12 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         }
         let known = Set(MouseControl.allCases.map(\.rawValue))
         for device in devices {
+            guard device.wheelScrollAmount.map(WheelScrollAmount.contains) ?? true else {
+                throw ConfigurationValidationError.invalidWheelScrollAmount
+            }
+            guard device.thumbwheelScrollAmount.map(WheelScrollAmount.contains) ?? true else {
+                throw ConfigurationValidationError.invalidWheelScrollAmount
+            }
             guard Set(device.defaults.keys) == known, device.applications.count <= 128 else {
                 throw ConfigurationValidationError.invalidControls
             }
@@ -112,6 +165,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
 
 public enum ConfigurationValidationError: Error, LocalizedError, Sendable {
     case unsupportedVersion, invalidProfile, invalidControls, invalidApplication, invalidShortcut
+    case invalidWheelScrollAmount
 
     public var errorDescription: String? {
         switch self {
@@ -120,6 +174,7 @@ public enum ConfigurationValidationError: Error, LocalizedError, Sendable {
         case .invalidControls: "Back and Forward defaults are required; unknown controls are not supported."
         case .invalidApplication: "An application override is invalid."
         case .invalidShortcut: "A shortcut has an unsupported key, duplicate modifiers or inconsistent action."
+        case .invalidWheelScrollAmount: "Wheel scroll amount must be a finite value between 0.25 and 10."
         }
     }
 }

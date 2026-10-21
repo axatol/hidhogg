@@ -12,9 +12,22 @@ final class ConfigurationStoreTests: XCTestCase {
 
         let snapshot = try await store.load()
 
-        XCTAssertEqual(snapshot.configuration, .empty)
+        XCTAssertEqual(snapshot.configuration, .defaultConfiguration)
         XCTAssertEqual(snapshot.revision, .missing)
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testLoadExistingFilePreservesCustomBindingsAndApplicationOverrides() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let bytes = try ConfigurationCodec.encode(ConfigurationFixtures.configuration)
+        try bytes.write(to: url)
+
+        let snapshot = try await ConfigurationStore(url: url).load()
+
+        XCTAssertEqual(snapshot.configuration, ConfigurationFixtures.configuration)
+        XCTAssertEqual(try Data(contentsOf: url), bytes)
     }
 
     func testSaveReloadUsesExactRevisionAndPrivatePermissions() async throws {

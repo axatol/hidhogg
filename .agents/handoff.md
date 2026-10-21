@@ -1,3 +1,155 @@
+
+## Owner acceptance / check-in requested — 2026-10-21
+
+Owner says latest build looks good and requests check-in then roadmap review. NX21#437 and NX22#438 marked accepted/Done. Current82 tested sourceinputs byte-match final316-test/releasegate; no sourcechanges sinceverification. Check-in includes tested app sources/tests, nativeaccent assets, buildscript, known project reports/designassets and ledgers; exclude .envrc, .codex, localmacos metadata, Pythoncache and diagnosticspikebinary without readingthem. No nativeoperations or push requested. FutureUIbeforeD200X remainsplanned.
+
+
+## NX22 ready for owner check — 2026-10-21
+
+Fixed signed dist/Hidhogg.app build9e322504174b (full9e322504174bc1fc212a8e96e64d0d13261f51995891d4ad18869f215402bc92), executableSHA256d0b0b0096e61b101cdeedc55724d5d40047a5ec7f77128d72c0c5e73128a911d,3246720bytes. Final independent316 tests pass (182XCTest+134SwiftTesting), five coordinator tests; exactlog/hash in docs/workspace-presentation-verification.md and dist/build-info.json. Initial compile missingreturn failure preserved; fixed beforefinalgate. Parent corrections: appownedobserver survivesbridge teardown, weakwindowcallback; retainedwindowreopen/staleclose tested. Release/signature/approvedcert/arm64/macOS26/headresource/buildidentity/diffcheck verified. Scope3changed+4added0removed versus78baseline, current82-inputmanifest /Volumes/Data/tmp/hidhogg-nx22-source.json; protectedruntime/config/transport/login/permissions/art unchanged. Native Dock/CmdTab/minimize/close/reopen remainsownergate; no app/HID/input/ownerprocess/config/login operation.
+
+Future order: UIalignment NX-M2Task439/list67 UI01–03 Tasks440–442, then D200X NX-M3Task443/list66 DX01–06 Tasks444–449; actualdependencyedgesinstalled. UI03owneracceptanceblocksDX01. Currentinventory latest21Oct17:38 reviewed; researchacceptedcases preserved, SwiftIOHID/desiredpage recovery remaingates. No UIredesign/D200Xcode started. No commit/push; no milestonecompletionnotification becauseownerpending.
+
+
+## Ordered future milestones recorded — 2026-10-21
+
+Owner steering: native UI alignment must precede D200X implementation. Existing project5 now has list67 / NX-M2 Task439 with UI01–03 Tasks440–442; list66 / NX-M3 Task443 with DX01–06 Tasks444–449. UI03 owner acceptance explicitly blocks DX01 and all D200X implementation. docs/d200x-roadmap.md is supporting index; TaskView owns taskcriteria/status. Externalinventory rechecked through21Oct17:38 lifecycleaddendum; preserve acceptedvendorresults and separateSwiftgates. No D200X code/device experiment. NX22 remains currentapprovedcodework; observer lifetime strengthened to remainapp-owned acrossSwiftUIbridge teardown before finaltestgate.
+
+
+## NX22 and D200X roadmap — in progress 2026-10-21
+
+Owner approved workspace-dependent regular activation (Dock/CmdTab) with accessory mode afterclose, and requested D200X implementation added to roadmap based on external ulanzi-studio/inventory.md. Task438 owns NX22; executor bounds windowadapter/coordinator/tests/wiring, explorer readonly researchbrief. D200X remains planning/backlog only; no new transport code/hardware operations authorized. Parent read current inventory including21Oct17:38 lifecycleacceptance; earlier memory remainingcheck flags stale. Source baseline /Volumes/Data/tmp/hidhogg-nx21-midpoint-source.json.
+
+
+### NX21 midpoint dot — 2026-10-21
+
+Owner approved6.9pt dot midway between6 and7.8; slot8pt, gap3pt unchanged. Only MenuBarIcon.swift differs from prior78-input manifest. Signed Release build31ea12d83d22 at dist/Hidhogg.app; compile, strict/deep signature and diffcheck pass. No additional tests for constant-only adjustment; previous311-test gate predates polish. Provenance dist/build-info.json; manifest /Volumes/Data/tmp/hidhogg-nx21-midpoint-source.json. Owner asks about native app switcher; proposed regular activation while workspace open/accessory afterclose, which also entails temporaryDockicon. Not approved or implemented yet. No runtime/nativeapp/device/login changes.
+
+
+## Final polish — 2026-10-21
+
+Owner confirms thumb amount works (prior baseline multiplier was excessive), beside-head styling accepted and login UI now Enabled without error. Actual launch after login remains untested; no live registration diagnosis needed absent recurrence. Approved statusdisc6→7.8pt (+30%) and slot7→9pt;3ptgap/head unchanged. Enabled login detail paragraph omitted; otherstatusdetails/warnings/errors retained.
+
+Signed build883e4b12d0cc at dist/Hidhogg.app; fullID883e4b12d0cc659d0a96b3207160d9dfdcc5fcfbc44806dde4a6377b87fd86c0. ExecutableSHA2566f378e02ecbebfadda439dbcf5bfd1ac03b7491f0f03eaa44a457ccab4e611dd,3172848bytes. Releasecompile, strict/deep signing, approvedcert, headresource/buildidentity and diffcheck pass. ExactlyMenuBarIcon.swift+SettingsView.swift changed versus prior78-input manifest; all others match. The preceding311-test run predates this constants/conditional-only polish; no additional tests added or rerun. Finaldot optical acceptance pending. Log /Volumes/Data/tmp/hidhogg-nx21-polish-release.log; manifest /Volumes/Data/tmp/hidhogg-nx21-polish-source.json. No app/HID/input/loginmutation; no commit/push.
+
+
+## Owner acceptance and approved polish — 2026-10-21
+
+Owner confirms thumb-wheel amount works; previous multiplier was already too large. No amount defect established or fix needed. Beside-head menu styling accepted. Login item now reports Enabled without error; actual launch after login remains untested, prior error cause unknown. Stop planned live registration diagnosis unless it recurs. Owner approves6→7.8pt statusdot,9ptslot retaining3ptgap, and suppressing only Enabled explanatory paragraph. Worker owns MenuBarIcon.swift/SettingsView.swift; parent builds/audits. No runtime/amount/loginregistration behavior changes.
+
+
+## NX21 packaged — owner check pending — 2026-10-21
+
+Signed fixed dist/Hidhogg.app build7d0895c00fff; independent311 tests pass, signature/cert/arm64/macOS26/resources/buildidentity verified. Exactly5changed of78 baseline sourceinputs; runtime/config/transport/wake unchanged. Original head plus6pt beside-dot,3ptgap/7ptslot; incomplete eitherpermission whileconnected yellow, failuresred. Read-only explorers found no sourcecause for thumbamount or login code22; no live attempt/device/config/log access. Native glyph/statusvisual remains ownergate, no rasterproof claimed. Report docs/status-and-registration-followup.md, Task437 InProgress. Scoped login registration diagnostic approval requested asynchronously; do not proceed without answer. No commit/push.
+
+
+## NX21 in progress — 2026-10-21
+
+Owner approved larger beside-head dot and yellow permission-incomplete state, plus bounded thumb-amount/login-registration investigation. Task437. Executor owns menu renderer/status/label/callsite/tests; two explorers investigate amount and public login metadata separately. Main supervises/docs/integration. No sleep/wake/config/runtime changes, no live registration/HID/input or broad private diagnostics. Source baseline /Volumes/Data/tmp/hidhogg-head-eye-source.json.
+
+
+## Owner feedback — 2026-10-21
+
+Thumb-wheel direction confirmed working. Amount remains unaccepted: owner cannot distinguish effect and suspects it is ineffective. Single-instance Restart appears to work. Sleep/wake reconnection accepted for now; leave implementation and latency unchanged. Launch-at-login remains failing: screenshot reports notFound and SMAppServiceErrorDomain code22; cause unproven. Owner requests yellow menu status when permissions are incomplete and better status visibility; choosing shorter-neck/larger-eye versus external dot remains unresolved. No corrective code changes approved in this feedback turn.
+
+
+### NX20 final verification limit — 2026-10-21
+
+Isolated raster helper compiled but direct AppKit drawing aborted and one bounded LaunchServices attempt failed kLSNoExecutableErr. No raster output exists; no further helper launches. Final alpha/color/eye placement remains owner visual gate, not a claimed automated pass. Signed build cc642f05d2f7 and independent311 passing tests remain valid; sources did not change after packaging.
+
+
+## NX20 built — owner appearance check pending (2026-10-21)
+
+Head-only eye status is packaged in fixed dist/Hidhogg.app, build cc642f05d2f7. Disc diameter3.5pt, cleared opening5.5pt, nominal1pt radial transparent gap. Removed external dot and trial selector; historical assets retained. Independent311 tests pass; signature/approved certificate/arm64/macOS26/resource/build identity verified. Source audit: five changed inputs and removed style enum; protected runtime/lifecycle/configuration sources unchanged. Report: docs/head-eye-status-verification.md. Final raster proof pending at this checkpoint; native eye appearance remains owner check. No production app/HID/input operation, no commit, no milestone completion.
+
+# NX20 in progress — final head-only eye status
+
+2026-10-21 ownerselectedHEADONLYsolidstatuscircleovereyewithsmallerdisc/largertransparentgap. Task436InProgress. Parentopticalgeometry3.5ptdiscwithin5.5ptclearopening,1ptradialgap; center13.25,9.25 measuredfromunchangedhead-cleanPNG(eyeclosedholebbox800,465..971,650; nosecondearhole). Maxglyph22x18tightlyfit; removeside-dot/trialpicker/styleenum/tailstagingbutpreservehistoricaltailassets. Workerhead_eye_status_finalizationownsrenderer/UI/script/rasterproof; explorerwake_lifecycle_reviewreadonlyaudit; testerhead_eye_status_verificationindependent; mainpackage/docs. No runtime/lifecycle/discovery/configchanges ornewnativeUIlaunch; singleoriginalimagepathownerconfirmedNX19, finaleyeappearancepending. Preservepriorintermittentthumbwheeltestevidence/broaddirtywork.
+
+# Current checkpoint — NX19 dual icon trial and visible status
+
+2026-10-21 Australia/Brisbane. Signed fixed dist/Hidhogg.app buildef168673f088, fullIDef168673f088f572ac2bb97c0c29d6bb3990ec45134616afc320b325bb795d6b. SignedexeSHA2564a82dc20501333b164f05a7e8e35470d7b2126c30c8897f57c64bb7bb2749d58,3,219,104bytes. Signature/approvedcertificate/arm64/macOS26/menu-onlymetadata/notices/mainicon/bothPNGresources verified; oldMenuBarIcon.pngnotstaged. BuildIDhashespre-signexe+headPNG+tailPNG. Release /Volumes/Data/tmp/hidhogg-dual-icon-release.log; 79entrysource/resource/preservationmanifest /Volumes/Data/tmp/hidhogg-dual-icon-source.json; dist/build-info.json provenance. Source frozen aftergate. Scopevsprior76:5changed(HidhoggApp/MenuBarIcon/Label/MenuBarView/buildscript),3added(styleenum+2PNGs),0removed; otherbaselineinputs/lifecycle/discovery/config/testshashmatch.
+
+OwnerapprovedtryingbothAHead(no falseear/second-eyehole) andBTailswirl. Menu Icon style Picker isinmemorydefaultheadonrelaunch, noUserDefaults/TOMLwrite/schema. Maxglyph22x18pt, tightvariablewidth+3gap+6dotslot(5paintcircle), composites29.5x18Head/25.5x18Tail. Fixed31ptproposalrevisedtoavoidblankpadding/stretch; testerdimensionflagwithdrawn. OneoriginalNSImage replacesfailedNX18HStack2images. Cache16style/status/light-darkimages+2tinyalphamasks; nofullsource retention/timer. Tooltip/a11ystatemapping/workspaceactivationretained. Black/whiteheadexplicitlyresolvedbylabelcolorScheme, dotsemanticcolor. Highcontrast/highlight/allwallpapertransitionsnotclaimed. Decisions77/78; docs/dual-menu-icon-verification.md.
+
+Independent311/311pass(177XCTest+134SwiftTesting), /Volumes/Data/tmp/hidhogg-dual-icon-tests.log SHA25619fa52d287be707e1657ed89bde43b004c070f1beddccf84da69e1079d0945d4. Script/typecheck/fullcompile/raster16combinationspass. PriorNX18intermittentthumbwheelassertionpassedthisrunbutremainsunfixed/retainedhistorically. Nativeproof: approvedstandalone /Volumes/Data/tmp/HidhoggNX19MenuBar.app sharesrendererbutNOAppModel/HID/config/runtime. Parentlaunched; CUAgetAppattachfailedtimeout198seconds. Ownerreplied Dot and dragon both visible foractualtestitemcurrentdesktop. Noautomatednativecapture/allstyles/statuschanges/VoiceOver/highlightproof. ParentgracefullyterminatedONLYexactpathharness, verified0remaining; existingHidhogg/otherappsnotcontrolled. Noownerconfig/env/HID/input/power/permissions/loginoperations.
+
+Nextowner: quit/reopenfixedHidhogg, menu Icon style A·Head/B·Tail tocompareandspecifyfinalpreference. Checksmallerhead,nofalseeye,visiblecoloreddot/status/tooltip. Choice resetsrelaunch. Task435InProgressfinalappvisualacceptance;434missingdotnotaccepted/superseded. Userconfirmedwakefunctionalbut20sdelayseparatelydeferred; no discoverytimingchanges. Otherpreviousmilestonegatesunchanged; broadsourceuncommitted. No blanketcommit/push/prune/fullmilestoneDiscord. Onlymaineditsledgers.
+
+---
+
+# NX19 in progress — two smaller icons and native status rendering correction
+
+2026-10-21 ownerapprovedtryingboth22x18ptstylesAhead(falseearholefilled) andBtailswirl. Owner screenshotconfirmedNX18dotmissing; HStacksecondimagewasnotrendered, isolatedrasterswerenotsufficientproof. Task435InProgress. Workercombined_menu_bar_rendering owns singlecompositedoriginalNSImage/appearancehandling/inmemorypicker/newresourcesstaging/testharness; explorerwake_lifecycle_reviewcontracts/audit; testerdual_icon_status_verificationindependent; mainassets/docs/package. AllowednewstandaloneMenuBarExtra harness ONLY noAppModel/HID/ownerprocesscontrol/config/env/input/permissionprompt. Parentgeneratedhead-clean.png andtail-swirl.png withbuilt-inimagegen, sourcesunchanged. No runtime/lifecycle/discoveryoptimization. Priorintermittentthumbwheeltestfindingretained. Waitnativeharnessproofbeforesayingstatusfixed.
+
+# Current checkpoint — NX18 larger menu-bar status label
+
+2026-10-21. Signed fixed dist/Hidhogg.app buildd57ee9dd3a4a (fullIDdist/build-info.json). SignedexeSHA256c429281d2f7e691597cf9be644048d1187216a81912631c7ab378a553b07bb98,3,158,496bytes. Signature/approvedcertificate/arm64/macOS26/menu-onlymetadata/resources/pre-signbinary+PNGbuildidentity verified. Release /Volumes/Data/tmp/hidhogg-status-icon-release.log; source/resource76manifest /Volumes/Data/tmp/hidhogg-status-icon-source.json. Scopeaudit2changed(HidhoggApp,MenuBarIcon)+3new(MenuBarStatus,MenuBarStatusLabel,MenuBarStatusTests),allotherpriorinputsunchanged; Package/script/PNG/lifecycle/discovery untouched.
+
+NX18#434 implementsowner-approved24x20ptA1 exactvisiblecrop/noaddedartworkmargin,48x40cachedtemplateglyph plusseparate6ptcachedoriginalcolorstatusdot/3ptgap. Greenready/enabled,ambertransition,grayidle,redfailedoruncertainpriority. Samephase-specifichelp/combinedVoiceOvertext; workspaceactivationbackgroundpreserved. IsolatedAppKitrasteralpha>=8boundsx0..47/y0..38; actualMenuBarExtra colors/layout/VoiceOver ownercheck, notprovenbygenericViewAPI. Decision76 anddocs/menu-bar-status-verification.md details. No normalapp/nativeHID/input/process/power/config/env operations.
+
+Independentverificationpartial acrossattempts: firstfull177XCTestpassed+1/134SwiftTestingfailed existingthumbwheelcaptureobserverassertion atBoltThumbwheelTests.swift435; preserved /Volumes/Data/tmp/hidhogg-status-icon-tests-failing-full.log SHA25603d1c0f5b256ffdf76ca5b6a5dd69d36eed90d1819c07954518121170f3a087c. Isolatedtestpassed1/1; onefullrerun311/311passed(177+134), /Volumes/Data/tmp/hidhogg-status-icon-tests-final.log SHA256958f0d36c3f3072510ef79266b7c85870705747798787bd3cd8d979b3e239450. Asyncobserverwaitonlythumbstatebeforeseparatewheelread suggestsobservationrace, rootcauseunconfirmed; no unrelatedcode/testedits. Thisintermittentfindingremainstracked, donotclaimcleanallattempts. Workerprecompilecache/sandboxfailuresnotfeaturefailures; nativebuildflagdeprecated.
+
+Ownernext: quit/reopenfixedapp; checklargericonreadabilityon4Kdisplay, dot/help; Disconnectgray,Connectamber→green. No needrepeatfullsleeporprovokehardwarefault. Task434InProgress; prior433smallglyphnotaccepted/superseded. Ownerconfirmswakeworksbut~20sdelay(firstdiscovery16.1sfailurethen1.2ssuccess); discoveryoptimizationexplicitlydeferred/outofNX18scope. Otherpreviousgatesunchanged. Broadsourceuncommitted; no blanketcommit/push/prune/milestoneDiscord. Sourcefrozenaftertest/build; onlymainupdateshandoff/log.
+
+---
+
+# NX18 in progress — larger menu-bar status label
+
+2026-10-21 owner approved selectedA1 roughly24x20pt tightlycropped/noaddedtransparentmargin plusseparatecoloredstatusdot, tooltip/VoiceOver. TaskView434 InProgress. Discovery timing remains unchanged/unapproved: owner confirmed wakeworks but takes~20s, documentedtiming in docs/overnight-disconnect-investigation.md; firstdiscovery16.1sfailed then1.2ssuccess. Iconprior18pt notacceptedreadability. Worker menu_bar_status_implementation owns icon/status/label/minimalappattachment/tests; explorer wake_lifecycle_review read-onlynativeconstraints/audit; tester menu_bar_status_verification independent; main package/docs. Preservepriorwakeimplementationandbroaduncommitteddirtywork. No nativeapp/input/power/HID/process/config/environment operations.
+
+# Current handoff — NX16/17 wake recovery and selected menu icon
+
+Updated2026-10-21 Australia/Brisbane. Signed fixed dist/Hidhogg.app build3f0364e7af27, signed executable SHA2568f9f6468d8e0f62f2adb8ae45b05e478a3af9eecbe89144b7acd7e849ef19134 (3,131,328bytes). Strict/deep signature, approved certificate, arm64/macOS26/menu-only metadata and byte-identical selected icon/notices verified. Build ID now includes pre-sign executable+menuPNG digests. Full provenance dist/build-info.json; source/resource manifest /Volumes/Data/tmp/hidhogg-wake-icon-source.json (72source/package/script+PNG=73). Release /Volumes/Data/tmp/hidhogg-wake-icon-release.log. No normal app launched.
+
+Independent309/309 passed (175XCTest+134SwiftTesting), /Volumes/Data/tmp/hidhogg-wake-icon-tests.log SHA2563adbb6eb2161ac19fe6b26301b5afd3a2726e925b30f354ca25c39e060152162. Initial default-sandbox compile preparation blocked on output-map permissions; scoped retry passed, native buildflagdeprecation only. Workerfocused53pass; immediateDisconnect→sleep regression red→green logged separately. Source stable; independent tester review no remaining defect. No native power/HID/input/process/ownerlock/permission/login/config/env/PII operations in tests. Prior authorized diagnostic query documented in docs/overnight-disconnect-investigation.md; owner confirmed Mac slept/currentlyDisconnected, source gap established, exact overnight event still unproven.
+
+NX16#432: captures active ready/enabled non-uncertain pre-sleep intent before immediate delivery invalidation, serializes verified cleanup; wake observes native didWake then waits cleanup/status and reuses normal discovery/reconciliation. Four attempts delayed0/1/2/4s, only transient typed discovery failures retry; event waits2s failclosed. Manual actions/new sleep/Restart/Quit cancel stale recovery; explicitConnect waits pendingcleanup. No interface/schema/newconfigsetting/controller changes. Success means connection rediscovered, normal settings reconciliation continues. Explicit sleep/wake/numberedattempt/cancel/exhaust/success diagnostic codes; current process100event history vsConsole persistence documented. Decisions74/75 and docs/wake-icon-verification.md details.
+
+NX17#433: selectedA1 variation1 PNG unchanged, bundled asMenuBarIcon.png; opticalcrop+aspect-preserving fit16pt within18pt, one36px@2x template bitmap, source released. Missingresource fallback separatecomputermouse symbol. Review corrected2x raster scaling and symbolrep retention; isolatedAppKit preview/harness /Volumes/Data/tmp/hidhogg-menu-bar-18pt-preview.png and hidhogg-icon-check.swift. Native menuappearance remainsowner check.
+
+Next owner checks: quit/reopenfixedapp, selectediconreadability; connect then sleep/wake and confirm bindings/settings recover plusnewdiagnostics; manualDisconnect then sleep/wake staysdisconnected. Tasks432/433 InProgress fornativeacceptance. NX15#431 remainsaccepted. Other NX13/14/12/thumb/resource/fullmilestone gates unchanged. No commit/push/prune/Discordfullmilestone notice; preserve broad earlier dirtywork and unopened protectedfiles. Only main edits handoff/log.
+
+---
+
+# In progress — NX16 wake recovery and NX17 menu-bar icon
+
+2026-10-21: owner approved reconnect after sleep only for a previously connected session, bounded retries, manual cancellation and lifecycle diagnostics; selected A1 variation1 icon installation. TaskView432/433 InProgress. Supervised workers wake_reconnection owns AppModel/DiagnosticCode/helper/tests; menu_bar_selected_icon owns MenuBarIcon/resource staging/asset; wake_lifecycle_review read-only hazard brief. Main owns package/docs. No live power/HID/input/process/permission/config operations authorized in verification; use injected adapters/temp paths. Existing last signed build5813939a6fff and all earlier dirty work preserved. Plan tests, independent verification, fixed dist rebuild, owner quick checks; do not claim overnight failure proven (source behavior+owner sleep observation is consistent, logs lack explicit trigger).
+
+Owner acceptance — 2026-10-21: user reports native navigation correction looks to be working in build5813939a6fff. NX15 accepted (TaskView431 complete). Broader milestone/device/resource gates remain open. No commit: tested HidhoggApp scene attachment shares substantial earlier uncommitted lifecycle changes; preserve those rather than commit broader scope or fabricate an untested staged baseline.
+
+# Current native navigation verification
+
+## Native navigation correction — 2026-10-21
+
+Signed fixed bundle rebuilt as `5813939a6fff` (full ID in `dist/build-info.json`); executable SHA256 `dfaf967ecf174b7be7a3bb119e41b77f22666a29ec3b7c1297c19683e84b1d4a`, 3,083,184 bytes. Strict/deep signature and approved certificate verified, arm64/macOS26. Release log `/Volumes/Data/tmp/hidhogg-native-navigation-release.log`. Source manifest `/Volumes/Data/tmp/hidhogg-native-navigation-source.json` contains69 files.
+
+Native SwiftUI Go menu Back/Forward uses Command+[ / Command+] and the existing model history and enabled states. Registered once on the workspace Window scene; toolbar clicks remain. No device, configuration, cross-app navigation or lifecycle change. Owner confirms existing bindings work, including System Settings; earlier connection cause remains unconfirmed. Decision73 records alternatives.
+
+Independent suite291/291 passed (157 XCTest +134 Swift Testing), zero failures. Log `/Volumes/Data/tmp/hidhogg-native-navigation-tests.log`, SHA256 `626ac6a8218b5460159a6f55fbf3503ea81c040f9f04d664b5b2eb13d32965e5`. Initial sandbox attempt could not access SwiftPM output-file-map; scoped escalated retry passed. Native build-system flag deprecation remains. No app launch/native dispatch or device operation was exercised.
+
+Owner check: quit the running copy and reopen `dist/Hidhogg.app`; visit Devices then Settings. Confirm Go → Back and Forward, direct Command+[ / Command+], and the configured mouse buttons traverse the same history. Commands should disable at history boundaries. Source uncommitted pending owner acceptance; other milestone gates below remain open.
+
+---
+
+# Current handoff — NX13/14/15 diagnostics, ownership and navigation
+
+Updated2026-10-20 Australia/Brisbane. Branch next/logitech-slice, baseline234b3c2. Implementation/package complete; owner acceptance next. Broad prior source remains dirty/uncommitted; preserve unrelated files, never blanket-stage. No activeworker/editing work remains.
+
+Signed fixed dist/Hidhogg.app build `33a3a579798d`; executable SHA256 `e11f216db9f877d60498bd39de2707641bc98eac0e14c22f18a699e9fe0dbbe7`, 3,068,016bytes. Strict/deep signature, approved certificate, arm64/macOS26/menu-only metadata/icon/accent/notices verified. All68 hashes match /Volumes/Data/tmp/hidhogg-workspace-final-source.json. Compared prior59:17changed+9new,0removed,package/scriptunchanged; trackedresearch/archive/redesign/designs unchanged. dist/build-info.json provenance; release /Volumes/Data/tmp/hidhogg-workspace-release.log. Independent291/291 passed (157XCTest+134SwiftTesting), /Volumes/Data/tmp/hidhogg-workspace-independent-final.log SHA256 `65b7ceb344a6caa39ba7f45d73f7a0823632d5625fe49df3ffb7e5ab9971d483`. Scopedbuildserviceescalation, nativebuildflagdeprecationonlyfinalwarning. Twoearlierpretestcompilefailuresretainedin *compile-failed.log and *compile-failed-2.log (missingtestreturn, missingmoduleimport), fixedbeforepass. No normalapp/nativeHID/input/permission/login/status/ownerlock/process/config/env/PII operation; filesystemtests newlycreatedtemproots only.
+
+NX13#429: stableDiagnosticCode/DiagnosticEvent catalog; uniqueeventUUID/build/safe modulefile:line matchesUIandConsole. RecentActivity fullwidthleading/wrapping/selectable Details. TypedBoltFailureContext/code andAppModelcontrolledreporters, notmessageparsing. RawUIerrorsretainedwhereappropriatebutConsolemessagescontrolled; unknownLocalizedErrortransporttextnormalizestotypedtransport. Semanticchanneldedupe(mainBoltinclfailcodes,permission,wheel/thumbmessage+blockers), absent/recovery resetspermitfreshrecurrenceID;100bound,no perwheelreportlog/UIchurn. Reviewerfound/fixedper-codeforeversuppressionandrawunknownerrorpubliclogging, plusend-to-endactualmodelpublisher→storecode/source/ID/buildtest. Docs/diagnostics.md catalog/sourceworkflow.
+
+NX14#430: ApplicationInstanceBootstrap @main acquiresvalidateddescriptorflock beforeSwiftUI/AppModel. FoundationApplicationSupport/com.hidhogg.instance/owner.lock, parentowned/no022,private0700dir/0600regularsinglelinkfile,no symlinks; neverunlink/truncate/replace. Kernelreleaseonclose/crash, noPIDstaleheuristics/helper/daemon/processscan/kill. Dup sendsfixedpayloadfreeactivationthenexitsnoruntime; ownerqueueuntilMenuBarExtra labeladaptermounted, normalFinderreopenforwarded. Restartfreezes/cleans→release→bounded10sNSWorkspacelaunch→exit; everyfailureincludingreleaseerrors recoversONLYafterreacquire, elseexitsfrozen. Latecallbacksignored, briefprocessoverlapapproved butonecooperativeowner. Architectfixedprivateparentreplacementrisk andunlock-then-competitor-releaseerrorunfreeze; targetedtests pass. Nativewindow/focus/process-exit andLaunchServiceshandoff ownergates; acknowledgmentnotruntime-readinessproof. Existinglegacycopiesnotretroactivelyguarded; closealloldcopiesonce. Peruserguarantee, notglobalmultiuser.
+
+NX15#431: NavigationPreset PageBack/PageForward Command+[ /Command+] physicalANSIpositions33/30 withcurrentshortcutkind/schema. New AppConfiguration.defaultConfiguration appliedONLYmissingfile; empty staysinertdisabled. Existingfilebytes/disabled/custom/appoverridespreserved. Menuupdatesselectedcontrol/context viaAppModel+Navigation, cancelsrecording, existingvalidatedupdateDraft/instantapplication/autosave. Apps/layoutsmayrequireoverride; no universalsemanticactionclaim. PrimarySafari/Chromecitationsin docs/workspace-verification.md; no actualkeyposting. Navtesthelpermissingreturnfixedbeforeindependentpass.
+
+Nextownerchecks: closelegacycopies/openbuild `33a3a579798d`; RecentActivityleftalignment+DetailsID/codeConsolematch, openupdatedapptwice/close-reopen/Restartoneactiveowner, PageBack/Forwardpreset browsernavigation withsavedoverridespreserved. Current docs/workspace-verification.md threechecks/logs/limits andcontract69–72 decisions/alternatives. Task429/430/431 InProgress fornativeownerchecks; nofullmilestone/commit/push/prune. Prior424/425/428 thumb/requestIDownergatesstillopen; ownerreportsverticalamountworking,currentsetup only. SmartShift423 andunconfirmedinertia426 deferred. OtherNXM1native/resourcegatesremainopen. Onlymaineditsledgers; afteracceptancecommitonlyverifiedacceptedscope.
+
+---
+
+# Historical handoff and checkpoint chronology
+
 # HIDHogg rebuild — current handoff
 
 Updated 2026-10-19, Australia/Brisbane. Current branch: next/logitech-slice.
@@ -320,3 +472,59 @@ NX-02#418 complete; NX-03#419 and NX-04#420 remain In Progress for owner hardwar
 Frozen spikes/archive/designs untouched. Unrelated .codex/, .envrc, macos/ metadata, diagnostics cache and spike binary remain untracked/unopened and excluded. Explorer final audit reactivation hit agent thread limit; independent tester explicitly assigned the bounded final audit instead. Main supervised changes and recorded critical alternatives.
 
 Final independent audit complete: no production blocker, no tracked frozen-spike changes; explicit staged diff passes whitespace checks. Final test file and package hashes match tester evidence.
+
+
+## 2026-10-19 — NX-M1 owner-feedback corrections in progress
+
+Owner approved native accent consistency, explicit Disconnect, retaining ready connections during Save/Reload/recording, and manual shortcut selection for macOS-reserved combinations. Owner clarified physical misses were observed while keyboard permission was not granted and requested visible errors/logging, settings navigation and draggable app. Main added bounded100 diagnostics plus system-managed unified logging without shortcut/config values, initial permission preflight, Settings open/app-file drag, packaged AccentColor. No actual permission/TCC edit or HID/keyboard event posting executed.
+
+Connection worker reproduced ready-state unwanted disconnect with failing tests, changed stop predicate to preserve ready while retaining pending/active cleanup;10 focused model tests pass. Shortcut worker adding manual selector and key-equivalent gate regressions. Independent tester auditing before final full gate. Decisions27–30 record alternatives. Physical delivery not diagnosed as transport failure; permission missing is owner-confirmed. Release-arming can suppress initial press until release is observed; no algorithm change without device evidence.
+
+
+## 2026-10-19 — Owner-feedback corrections ready for acceptance
+
+Supervised connection and shortcut workers completed approved fixes; independent tester reports62/62 pass (config15, app22, sender4, Bolt21), no production blocker; log /Volumes/Data/tmp/NX-FIX-VERIFY.swift-test.log. Main reviewed/seeding/first-responder followups, typed diagnostics actor boundary, packaged and verified native accent Assets.car/NSAccentColorName and approved signing certificate. Corrected signed executable SHA256eb5a86a4aec129df3c729dd55f885a0bbcf989f71c94c1a802eab4c8abfd9198 at dist/Hidhogg.app. Current corrections intentionally uncommitted pending owner GUI acceptance; base checkpoint234b3c2 retained.
+
+Owner next checks: quit/reopen updated fixed-path app, Request Permission opens Accessibility and draggable app can be added/enabled; refresh status then verify both buttons/default/app override and reserved shortcut via Choose Manually. Ready Save/Reload/record should stay connected; Disconnect explicit. Inspect gold and Settings Diagnostics. Real OS URL target, drag acceptance, rendered user-accent override and physical posting unverified. First-release arming limitation remains documented. No app launch/HID/TCC change/native event posting was executed. No unrelated artifacts read/staged.
+
+
+## 2026-10-19 — Permission mismatch and clean restart in progress
+
+Owner reports enabled macOS permission row but Hidhogg event-post preflight denied, and requests Restart plus actual logo on drag item. Source confirms current check is CGPreflightPostEventAccess; exact OS mismatch not reproduced. Owner approved dual AX/post diagnostic checks (post gate retained), activation refresh, PID/build identity, native icon drag, and cleanup-verified native relaunch with brief disconnected process overlap. No TCC database/reset or actual permission/app/HID/input test authorized/executed. Main process lookup returned no exact Hidhogg match at inspection time, so no live same-process API comparison obtained.
+
+Permission worker synthetic mismatch tests6 pass so far; restart worker coordinator tests4 pass (ordered cleanup/launch/terminate, fail closed and duplicate suppression). Main integrating authoritative Bolt cleanup Bool rather than stream lag, real icon and identity. Independent tester assigned final review/gate. Decisions31–32 record alternatives.
+
+
+## 2026-10-19 — Restart/permission correction checkpoint ready
+
+Independent full suite75/75 passes: XCTest46(config15,app31), Swift Testing29(sender6,Bolt23), log /tmp/hidhogg-permission-restart-verify-final.log. Main inspected authoritative cleanup fence, added synchronous delivery invalidation on setRestarting and disabled Restart during file load/save. Restart/permission diagnostics, actual bundled drag icon/preview, and full Back/Forward tile contentShape are implemented. Updated signed dist app verified with known certificate; executable SHA256b280c1f9187f7b61f905b8087c65258315c93c0b5bb91da73cb56e0d7ceb6c77, buildID5aa6f2aef9a9. Changes remain uncommitted pending owner acceptance.
+
+Owner approved diagnostics-only signed app run that exits before config/HID. Two LaunchServices attempts failed-10810/no report (second after precreating output files). Direct signed executable diagnostics exited0 with AX=true/post=true; no prompt/post/config. Direct context attribution may differ from GUI, so root cause remains unproven; next owner check both in-app permission rows after activation/restart and changed PID, drag icon, full hit area. No TCC database/reset, owner configuration or raw stderr read.
+
+Owner proposed scroll reversal as keyboard-independent test. Current LogiBridge handoff/report refreshed: user v6 wheel experiment did pass direction/restoration0→4→0; earlier failed v5 is superseded. No repeat spike/native executable run. Created NX-05#421 planning task in existing Personal HIDhogg project5/list65; code-plan approval pending for device-side native control, saved optional preference, explicit Apply/readback and baseline restoration. No new device write authorized/executed. Existing per-device source preserves frozen experiments.
+
+
+## 2026-10-19 — NX-05 implementation checkpoint
+
+Owner approved device-side reversal slice after current corrections. Main refreshed latest LogiBridge v6 report: native2121 path passed bounded0→4→0/user-observed direction; no repeated experiment. Read-only explorer confirmed mode grammar/cap08/invert04/native only; architect identified openCandidate closes sharedhandle. Main selected explicit ready-only Apply and restoration before Reconnect/Enable, no autoreapply; strict fullmode cleanup comparison chosen over merging foreignresolution. Decisions33–37 record tradeoffs.
+
+Config worker17/17 passed optional wheel_inverted nil/false/true roundtrips/strict rejection; source-compatible defaults. Runtimeworker owns controller/protocol/tests; UIworker owns saved-vs-observed/pending intent and permission independence. Independent tester reviewing; one suspected repeatedtarget defect withdrawn after Boolean/baseline reasoning. Main identified real native15-token mode-read exhaustion risk and required2 cleanup-read reserve before normalwork. Source still inprogress, final package/fullsuite not yet rerun, no physicaldevice writes. Current signed correction build5aa6f2aef9a9 remains until next verified package. NX-05#421 InProgress, ownerphysicalgate required.
+
+
+## 2026-10-19 — NX-05 verified implementation handoff
+
+All source frozen; independent final-source suite111/111 passed (configuration17,app41,sender6,Bolt47), plus queuedApply lifecycle2/2; log /tmp/hidhogg-nx05-wheel-final-source.log. Main reviewed worker boundaries/central controller, supervised native-token cleanup reserve and staleassociation fixes (including changed capability replies). No production hardware operation or frozen experiment rerun. Final signed app buildba856da1f948 at dist/Hidhogg.app; strictsignature/knowncertificate/arm64/macOS26/id/accent/notices verified, executable SHA256ad8c9db52531e6667d98c75d7ebcf62380c7ec05139c8a3c079592a56424ee05. Baseline copy corrected to before-first-change, finalRelease and independentgate include it.
+
+NX-05#421 remains InProgress for owner productionphysicalacceptance, alongside NX-03/04 gates. New code and previous corrections remain uncommitted pending owner check; base234b3c2 preserved. Currentbuild includes Restart, realicon drag, wholeBack/Forward tilehitarea, dualpermissiondiagnostics/activationrefresh and device-side wheelApply. Keyboarddenial doesnotcancelwheelonly work. Reconnect/Enable restores wheel baseline beforehandlereplacement; noautoreapply. Documents: docs/wheel-verification.md quicktest, decisions33–37 globalcontract, docs/logitech-verification.md history.
+
+Next ownercheck: quit/reopen updated signedapp, connect intendedmouse with competingsoftwareclosed, noteobservedwheel direction; chooseopposite Standard/Reversed, Save, Apply, scroll; Disconnect verifyrestored; reconnect noautoreapply. No keyboardpermission needed for wheel. Also check Restart changedPID and two permission rows to investigate earliernormalGUI disagreement; olddirectprobe reportedbothtrue butLaunchServices failed10810 so rootcause unproven. Othermouseisolation, physicaldisconnect/crash/sleepcontention and realidleresources remain unverified. Untrackedunrelated metadata/envfile/cache/spikebinary untouched; trackedfrozen/archive/design diffempty. No milestone-complete notification.
+
+## 2026-10-19 — Active immediate preferences and termination correction
+
+Owner approved revised plan with “ok”: remove manual Save/Enable/Apply, apply connected draft settings immediately, one-second trailing autosave, disconnected edits saved/applied on next explicit Connect, connection-preserving Reload. Runtime worker live_session_reconciliation owns Bolt, immediate_preferences owns AppModel/model tests, termination_correction owns AppKit lifecycle/restart tests. Parent owns UI and durable records. Existing uncommitted corrections remain preserved, no commit/physical acceptance claim.
+
+Read-only samples of existing PIDs78772/78791 from prior turn place parent inside NSApplication.terminate from RestartCoordinator’s MainActor Task, replacement in normal event loop. Do not kill those owner processes automatically. Native regression pending; old fake tests missed the AppKit termination seam. Current dist remains prior ba856da1f948 until final verification/package. Active checklist appended to docs/roadmap.md; TaskView420 updated, still InProgress. Next: integrate workers, independent tester, package with same signing identity, concise owner checks.
+
+## Active update — menu-bar-only interface (2026-10-19)
+
+Owner approved menu icon/no Dock. menu_bar_lifecycle worker owns native MenuBarExtra/singleton window/lifecycle bootstrap; menu_bar_verification tester read-only finalgate. Parent added cached native MenuBarIcon.swift template18pt, viewed offscreen preview /Volumes/Data/tmp/hidhogg-menu-icon-preview.png, and LSUIElement=true in buildscript. No imagegen bitmap required for this vector asset. Source/build still in progress; prior signed49360ba4cc8f remains. Critical seam: menu-only Quit must resolve cleanup before any workspace appears; root-adaptor lookup being replaced by synchronous bootstrap. Same process/model, no autoconnect/login item/polling. Final package and docs/checklist pending; never launch owner config/device or stop running instances automatically.

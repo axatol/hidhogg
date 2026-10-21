@@ -1,7 +1,10 @@
 import SwiftUI
 
 struct WorkspaceView: View {
+    let presentationCoordinator: WorkspacePresentationCoordinator
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var restartCoordinator: RestartCoordinator
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationSplitView {
@@ -28,7 +31,16 @@ struct WorkspaceView: View {
                 }
             }
         }
-        .tint(Color(red: 0.76, green: 0.57, blue: 0.27))
+        .tint(AppAppearance.accent)
+        .disabled(restartCoordinator.inProgress)
+        .background {
+            WorkspaceWindowLifecycleAdapter(presentationCoordinator: presentationCoordinator)
+                .frame(width: 0, height: 0)
+        }
+        .task { _ = model.refreshPermission() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { _ = model.refreshPermission() }
+        }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button("Back", systemImage: "chevron.backward") { model.goBack() }
@@ -39,7 +51,12 @@ struct WorkspaceView: View {
         }
         .confirmationDialog(
             "Discard unsaved changes?",
-            isPresented: $model.isReloadConfirmationPresented,
+            isPresented: Binding(
+                get: { model.isReloadConfirmationPresented },
+                set: { presented in
+                    if !presented && model.isReloadConfirmationPresented { model.cancelReload() }
+                }
+            ),
             titleVisibility: .visible
         ) {
             Button("Discard Changes and Reload", role: .destructive) { model.confirmDiscardAndReload() }

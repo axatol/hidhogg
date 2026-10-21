@@ -1,10 +1,21 @@
 import AppKit
+import ApplicationServices
 import Carbon
 import CoreGraphics
 import HidhoggDomain
 
 public enum InputPermission: String, Equatable, Sendable {
     case granted, denied
+}
+
+public struct PermissionChecks: Equatable, Sendable {
+    public let accessibilityTrusted: Bool
+    public let eventPostingAllowed: Bool
+
+    public init(accessibilityTrusted: Bool, eventPostingAllowed: Bool) {
+        self.accessibilityTrusted = accessibilityTrusted
+        self.eventPostingAllowed = eventPostingAllowed
+    }
 }
 
 public enum ShortcutDeliveryError: Error, LocalizedError {
@@ -21,19 +32,37 @@ public enum ShortcutDeliveryError: Error, LocalizedError {
 
 @MainActor
 public final class ShortcutSender {
-    public private(set) var permission: InputPermission = .denied
+    public private(set) var permissionChecks = PermissionChecks(accessibilityTrusted: false, eventPostingAllowed: false)
+    public var permission: InputPermission { permissionChecks.eventPostingAllowed ? .granted : .denied }
+    private let accessibilityPreflight: () -> Bool
     private let preflight: () -> Bool
     private let request: () -> Bool
     private let postPair: (KeyboardShortcut) throws -> Void
 
-    public init() {
-        preflight = { CGPreflightPostEventAccess() }
-        request = { CGRequestPostEventAccess() }
-        postPair = Self.postNativePair
+    public convenience init() {
+        self.init(
+            accessibilityPreflight: { AXIsProcessTrusted() },
+            preflight: { CGPreflightPostEventAccess() },
+            request: { CGRequestPostEventAccess() },
+            postPair: Self.postNativePair
+        )
     }
 
-    public init(preflight: @escaping () -> Bool, request: @escaping () -> Bool,
+    public convenience init(preflight: @escaping () -> Bool, request: @escaping () -> Bool,
+                            postPair: @escaping (KeyboardShortcut) throws -> Void) {
+        self.init(
+            accessibilityPreflight: { false },
+            preflight: preflight,
+            request: request,
+            postPair: postPair
+        )
+    }
+
+    public init(accessibilityPreflight: @escaping () -> Bool,
+                preflight: @escaping () -> Bool,
+                request: @escaping () -> Bool,
                 postPair: @escaping (KeyboardShortcut) throws -> Void) {
+        self.accessibilityPreflight = accessibilityPreflight
         self.preflight = preflight
         self.request = request
         self.postPair = postPair
@@ -41,7 +70,10 @@ public final class ShortcutSender {
 
     @discardableResult
     public func refreshPermission() -> InputPermission {
-        permission = preflight() ? .granted : .denied
+        permissionChecks = PermissionChecks(
+            accessibilityTrusted: accessibilityPreflight(),
+            eventPostingAllowed: preflight()
+        )
         return permission
     }
 

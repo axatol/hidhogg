@@ -3,7 +3,12 @@ import Testing
 import HidhoggDomain
 @testable import LogitechBolt
 
+private struct SensitiveLocalizedError: LocalizedError, Sendable {
+    var errorDescription: String? { "Sensitive transport failure at /private/secret/config.toml after Command-Option-X." }
+}
+
 private actor FixtureTransport {
+    nonisolated let requestIDs = BoltFixtureRequestIDs()
     var continuation: AsyncStream<BoltTransportEvent>.Continuation?
     var states: [UInt16: UInt8] = [0x53: 0, 0x56: 0]
     var remaps: [UInt16: UInt16] = [:]
@@ -23,6 +28,10 @@ private actor FixtureTransport {
     var pauseOpen = false
     var openPaused = false
     var beforeOpen: CheckedContinuation<Void, Never>?
+    var pauseCapabilities = false
+    var capabilitiesPaused = false
+    var beforeCapabilities: CheckedContinuation<Void, Never>?
+    var failNextRequestWithSensitiveError = false
     var requests = 0
 
 
@@ -42,11 +51,22 @@ private actor FixtureTransport {
 
     func request(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) async throws -> [UInt8] {
         requests += 1
+        if failNextRequestWithSensitiveError {
+            failNextRequestWithSensitiveError = false
+            throw SensitiveLocalizedError()
+        }
         if feature == 0, function == 1 {
             guard slots.contains(slot) else { throw BoltFailure.unavailable }
             return [2, 0, parameters[2]]
         }
-        if feature == 0 { return [9, 0, version] }
+        if feature == 0 {
+            if parameters == [0x21, 0x21] { return [0, 0, 0] }
+            if parameters == [0x1B, 0x04], pauseCapabilities {
+                capabilitiesPaused = true
+                await withCheckedContinuation { beforeCapabilities = $0 }
+            }
+            return [9, 0, version]
+        }
         if function == 0 { return [UInt8(rows.count)] }
         if function == 1 { return rows[Int(parameters[0])] }
         let cid = BoltWire.word(parameters, 0)
@@ -81,6 +101,9 @@ private actor FixtureTransport {
     func resumeForward() { beforeForward?.resume(); beforeForward = nil }
     func pauseNextOpen() { pauseOpen = true }
     func resumeOpen() { pauseOpen = false; beforeOpen?.resume(); beforeOpen = nil }
+    func pauseNextCapabilities() { pauseCapabilities = true }
+    func resumeCapabilities() { pauseCapabilities = false; beforeCapabilities?.resume(); beforeCapabilities = nil }
+    func injectSensitiveRequestError() { failNextRequestWithSensitiveError = true }
     func send(_ controls: [UInt16], at: ContinuousClock.Instant? = nil) {
         let payload = controls.flatMap(BoltWire.bytes) + Array(repeating: UInt8(0), count: 16 - controls.count * 2)
         continuation?.yield(.report([0x11, 2, 9, 0] + payload, at: at ?? .now))
@@ -92,10 +115,12 @@ private actor FixtureTransport {
 private final class FixtureChannel: BoltTransport, Sendable {
     let events: AsyncStream<BoltTransportEvent>
     let continuation: AsyncStream<BoltTransportEvent>.Continuation
+    private let requestIDs: BoltRequestIDLedger
     let state: FixtureTransport
 
     init(_ state: FixtureTransport) {
         self.state = state
+        requestIDs = state.requestIDs.makeTransportLedger()
         let stream = AsyncStream<BoltTransportEvent>.makeStream(bufferingPolicy: .bufferingNewest(64))
         events = stream.stream
         continuation = stream.continuation
@@ -103,8 +128,18 @@ private final class FixtureChannel: BoltTransport, Sendable {
 
     func open() async { await state.open(continuation) }
     func close() async { await state.close(); continuation.finish() }
+    func availableRequestIDs(slot: UInt8, feature: UInt8, function: UInt8) -> Int {
+        requestIDs.available(slot: slot, feature: feature, function: function)
+    }
+
     func request(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) async throws -> [UInt8] {
-        try await state.request(slot: slot, feature: feature, function: function, parameters: parameters)
+        let transaction = try BoltRequestTransaction(ledger: requestIDs, slot: slot, feature: feature, function: function, parameters: parameters)
+        defer { transaction.retire() }
+        let payload = try await state.request(slot: slot, feature: feature, function: function, parameters: parameters)
+        let size = payload.count <= 3 ? 3 : 16
+        let report: [UInt8] = [size == 3 ? 0x10 : 0x11, slot, feature, transaction.lease.functionSoftware]
+            + payload + Array(repeating: 0, count: size - payload.count)
+        return try transaction.complete(matchedReply: transaction.reply(report), sendSucceeded: true)
     }
 }
 
@@ -114,6 +149,8 @@ private actor Recorder {
 
     func append(_ event: BoltEvent) {
         switch event {
+        case .thumbwheel: break
+        case .scroll: break
         case .status(let status): statuses.append(status)
         case .press(let control, let generation, let observedAt): presses.append((control, generation, observedAt))
         }
@@ -147,12 +184,55 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
     #expect(await transport.mutations.isEmpty)
     await controller.enable()
     #expect(await eventually { await recorder.last?.phase == .enabled })
-    #expect(await transport.opens == 2)
+    #expect(await transport.opens == 1)
     #expect(await transport.mutations.map(\.1) == [3, 3])
     await controller.disable()
     #expect(await transport.states.values.allSatisfy { $0 == 0 })
-    #expect(await eventually { await recorder.last?.phase == .idle })
+    #expect(await eventually { await recorder.last?.phase == .ready })
+    #expect(await transport.opens == 1)
+    #expect(await transport.closes == 0)
     #expect(await transport.mutations.map(\.1) == [3, 3, 2, 2])
+    await controller.stop()
+    #expect(await eventually { await recorder.last?.phase == .idle })
+    #expect(await transport.closes == 1)
+}
+
+@Test func unknownLocalizedTransportErrorsAreRedactedFromFailureStatus() async {
+    let transport = FixtureTransport()
+    await transport.injectSensitiveRequestError()
+    let controller = BoltController(makeTransport: { FixtureChannel(transport) })
+    let recorder = Recorder()
+    let reader = recording(controller, recorder)
+    defer { reader.cancel() }
+
+    await controller.discover()
+
+    #expect(await eventually { await recorder.last?.phase == .failed })
+    let failure = await recorder.last
+    #expect(failure?.failure?.code == .transportFailed)
+    #expect(failure?.message.contains("Sensitive transport failure") == false)
+    #expect(failure?.message.contains("/private/secret") == false)
+    #expect(failure?.message.contains("Command-Option-X") == false)
+    #expect(failure?.message.contains("The Bolt transport failed.") == true)
+}
+
+@Test func restartCleanupReturnsVerifiedRestorationDirectly() async {
+    let transport = FixtureTransport()
+    let controller = BoltController(makeTransport: { FixtureChannel(transport) })
+    await controller.discover()
+    await controller.enable()
+    #expect(await controller.stopForRestart())
+    #expect(await transport.states.values.allSatisfy { $0 == 0 })
+}
+
+@Test func restartCleanupRejectsForeignStateDirectly() async {
+    let transport = FixtureTransport()
+    let controller = BoltController(makeTransport: { FixtureChannel(transport) })
+    await controller.discover()
+    await controller.enable()
+    await transport.setState(0x53, 2)
+    #expect(await controller.stopForRestart() == false)
+    #expect(await transport.states[0x53] == 2)
 }
 
 @Test func heldStartReleaseArmingAndDuplicateFiltering() async {
@@ -191,6 +271,10 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
     await controller.discover()
     await controller.enable()
     #expect(await eventually { await recorder.last?.phase == .failed })
+    let failure = await recorder.last?.failure
+    #expect(failure?.code == .requestTimeout)
+    #expect(failure?.sourceFileID.hasPrefix("/") == false)
+    #expect((failure?.sourceLine ?? 0) > 0)
     #expect(await transport.states.values.allSatisfy { $0 == 0 })
     #expect(await transport.mutations.map(\.1) == [3, 3, 2])
     #expect(await recorder.last?.cleanupUncertain == false)
@@ -213,6 +297,56 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
     await controller.discover()
     await controller.enable()
     #expect(await transport.mutations.isEmpty)
+}
+
+@Test func enableRechecksBaselineOnTheDiscoveredHandle() async {
+    let transport = FixtureTransport()
+    let controller = BoltController(makeTransport: { FixtureChannel(transport) })
+    await controller.discover()
+    await transport.setState(0x53, 1)
+    await controller.enable()
+    #expect(await transport.mutations.isEmpty)
+    #expect(await transport.opens == 1)
+    #expect(await transport.closes == 1)
+}
+
+@Test func enableRejectsChangedEligibleCapabilityRowOnTheDiscoveredHandle() async {
+    let transport = FixtureTransport()
+    let controller = BoltController(makeTransport: { FixtureChannel(transport) })
+    await controller.discover()
+    await transport.setRows([
+        FixtureTransport.row(cid: 0x53, task: 0x3C, flags: 0),
+        FixtureTransport.row(cid: 0x56, task: 0x3E)
+    ])
+
+    await controller.enable()
+
+    #expect(await transport.mutations.isEmpty)
+    #expect(await transport.opens == 1)
+    #expect(await transport.closes == 1)
+}
+
+@Test func disableDuringPartialEnableRestoresButtonsAndKeepsTheHandle() async {
+    let transport = FixtureTransport()
+    await transport.configure(pauseForward: true)
+    let controller = BoltController(makeTransport: { FixtureChannel(transport) })
+    let recorder = Recorder()
+    let reader = recording(controller, recorder)
+    defer { reader.cancel() }
+    await controller.discover()
+    let enable = Task { await controller.enable() }
+    #expect(await eventually { await transport.forwardPaused })
+    let disable = Task { await controller.disable() }
+    await transport.resumeForward()
+    await enable.value
+    await disable.value
+    #expect(await transport.states.values.allSatisfy { $0 == 0 })
+    #expect(await eventually { await recorder.last?.phase == .ready })
+    #expect(await recorder.last?.cleanupUncertain == false)
+    #expect(await transport.opens == 1)
+    #expect(await transport.closes == 0)
+    #expect(await transport.mutations.map(\.1) == [3, 3, 2, 2])
+    await controller.stop()
 }
 
 @Test func externalMutationIsNotOverwrittenAndBlocksRearm() async {
@@ -323,12 +457,20 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
     defer { reader.cancel() }
     await controller.discover()
     #expect(await eventually { await recorder.last?.phase == .failed })
+    #expect(await recorder.last?.failure?.code == .endpointAmbiguous)
     #expect(await transport.mutations.isEmpty)
     await transport.setSlots([2])
     await controller.discover()
     await transport.setVersion(4)
     await controller.enable()
     #expect(await transport.mutations.isEmpty)
+    #expect(await transport.opens == 2)
+}
+
+@Test func boltFailureCodesKeepAmbiguousAndExhaustedRequestIDsDistinct() {
+    #expect(BoltFailure.ambiguous.diagnosticCode == .endpointAmbiguous)
+    #expect(BoltFailure.tokenExhausted.diagnosticCode == .requestIDsExhausted)
+    #expect(BoltFailure.ambiguous.diagnosticCode != BoltFailure.tokenExhausted.diagnosticCode)
 }
 
 @Test func wireRejectsDuplicatesVirtualWrongTaskAndMalformedSnapshots() throws {
@@ -354,7 +496,7 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
     }
     let success: [UInt8] = [0x11, 2, 9, 0x21, 0, 0x53] + Array(repeating: 0, count: 14)
     #expect(try BoltWire.reply(success, slot: 2, feature: 9, functionSoftware: 0x21)?.get().count == 16)
-    #expect(throws: BoltFailure.stale) { try BoltWire.reply(success, slot: 2, feature: 9, functionSoftware: 0x22)?.get() }
+    #expect(BoltWire.reply(success, slot: 2, feature: 9, functionSoftware: 0x22) == nil)
     #expect(BoltWire.reply(success, slot: 2, feature: 8, functionSoftware: 0x21) == nil)
     #expect(BoltWire.reply(success, slot: 2, feature: 9, functionSoftware: 0x31) == nil)
     let notification: [UInt8] = [0x11, 2, 9, 0] + Array(repeating: 0, count: 16)
@@ -455,7 +597,7 @@ private func finishOfflineWorker() async throws -> WeakWorker {
     #expect(await recorder.statuses.allSatisfy { $0.phase != .ready && $0.phase != .enabled })
 }
 
-@Test func stopDuringFreshEnableDiscoveryCannotResurrectDiversion() async {
+@Test func stopDuringFreshEnableChecksCannotResurrectDiversion() async {
     let transport = FixtureTransport()
     let controller = BoltController(makeTransport: { FixtureChannel(transport) })
     let recorder = Recorder()
@@ -463,16 +605,17 @@ private func finishOfflineWorker() async throws -> WeakWorker {
     defer { reader.cancel() }
     await controller.discover()
     let requests = await transport.requests
-    await transport.pauseNextOpen()
+    await transport.pauseNextCapabilities()
     let enabling = Task { await controller.enable() }
-    #expect(await eventually { await transport.openPaused })
+    #expect(await eventually { await transport.capabilitiesPaused })
     let stop = Task { await controller.stop() }
     #expect(await eventually { await recorder.last?.phase == .stopping })
-    await transport.resumeOpen()
+    await transport.resumeCapabilities()
     await enabling.value
     await stop.value
     #expect(await eventually { await recorder.last?.phase == .idle })
-    #expect(await transport.requests == requests)
+    #expect(await transport.requests == requests + 1)
+    #expect(await transport.opens == 1)
     #expect(await transport.mutations.isEmpty)
     #expect(await recorder.statuses.allSatisfy { $0.phase != .enabled })
 }

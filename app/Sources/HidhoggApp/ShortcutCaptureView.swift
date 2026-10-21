@@ -23,28 +23,46 @@ struct ShortcutCaptureView: NSViewRepresentable {
 }
 
 @MainActor
-final class ShortcutCaptureNSView: NSView {
+class ShortcutCaptureNSView: NSView {
     var onCapture: ((HidhoggDomain.KeyboardShortcut) -> Void)?
     var onCancel: (() -> Void)?
+    private weak var lastHandledEvent: NSEvent?
 
     override var acceptsFirstResponder: Bool { true }
+    var isCaptureFirstResponder: Bool { window?.firstResponder === self }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.makeFirstResponder(self)
     }
 
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard isCaptureFirstResponder else { return false }
+        return handleKeyDown(event)
+    }
+
     override func keyDown(with event: NSEvent) {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if event.keyCode == 53, flags.isEmpty {
-            onCancel?()
-            return
-        }
-        guard let shortcut = ShortcutSender.from(event: event) else {
+        guard handleKeyDown(event) else {
             NSSound.beep()
             return
         }
+    }
+
+    private func handleKeyDown(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown else { return false }
+        if event.isARepeat || event === lastHandledEvent { return true }
+
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.keyCode == 53, flags.isEmpty {
+            lastHandledEvent = event
+            onCancel?()
+            return true
+        }
+
+        guard let shortcut = ShortcutSender.from(event: event) else { return false }
+        lastHandledEvent = event
         onCapture?(shortcut)
+        return true
     }
 
     override func draw(_ dirtyRect: NSRect) {

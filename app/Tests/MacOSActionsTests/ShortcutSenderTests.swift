@@ -9,12 +9,62 @@ struct ShortcutSenderTests {
         var allowed = true
         var posted = [KeyboardShortcut]()
         let sender = ShortcutSender(preflight: { allowed }, request: { allowed }, postPair: { posted.append($0) })
+        #expect(sender.permissionChecks.accessibilityTrusted == false)
         let shortcut = KeyboardShortcut(keyCode: 0, modifiers: [.command])
         try sender.send(shortcut)
         allowed = false
         #expect(throws: ShortcutDeliveryError.self) { try sender.send(shortcut) }
         #expect(posted == [shortcut])
         #expect(sender.permission == .denied)
+    }
+
+    @Test func permissionSnapshotSeparatesAccessibilityAndEventPosting() throws {
+        let shortcut = KeyboardShortcut(keyCode: 0, modifiers: [.command])
+        var posted = [KeyboardShortcut]()
+        let postingDenied = ShortcutSender(
+            accessibilityPreflight: { true },
+            preflight: { false },
+            request: { false },
+            postPair: { posted.append($0) }
+        )
+
+        #expect(postingDenied.refreshPermission() == .denied)
+        #expect(postingDenied.permissionChecks == PermissionChecks(accessibilityTrusted: true, eventPostingAllowed: false))
+        #expect(throws: ShortcutDeliveryError.self) { try postingDenied.send(shortcut) }
+        #expect(posted.isEmpty)
+
+        let accessibilityUntrusted = ShortcutSender(
+            accessibilityPreflight: { false },
+            preflight: { true },
+            request: { true },
+            postPair: { posted.append($0) }
+        )
+
+        #expect(accessibilityUntrusted.refreshPermission() == .granted)
+        #expect(accessibilityUntrusted.permissionChecks == PermissionChecks(accessibilityTrusted: false, eventPostingAllowed: true))
+        try accessibilityUntrusted.send(shortcut)
+        #expect(posted == [shortcut])
+    }
+
+    @Test func requestAndRefreshUpdateBothPermissionChecks() {
+        var accessibilityTrusted = false
+        var eventPostingAllowed = true
+        var requested = false
+        let sender = ShortcutSender(
+            accessibilityPreflight: { accessibilityTrusted },
+            preflight: { eventPostingAllowed },
+            request: { requested = true; return true },
+            postPair: { _ in }
+        )
+
+        #expect(sender.requestPermission() == .granted)
+        #expect(requested)
+        #expect(sender.permissionChecks == PermissionChecks(accessibilityTrusted: false, eventPostingAllowed: true))
+
+        accessibilityTrusted = true
+        eventPostingAllowed = false
+        #expect(sender.refreshPermission() == .denied)
+        #expect(sender.permissionChecks == PermissionChecks(accessibilityTrusted: true, eventPostingAllowed: false))
     }
 
     @Test func invalidShortcutNeverReachesBackend() {

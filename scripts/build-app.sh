@@ -144,6 +144,12 @@ build_package
 binary_directory="$(build_package --show-bin-path)"
 binary_path="$binary_directory/Hidhogg"
 [ -x "$binary_path" ] || fail "SwiftPM did not produce the Hidhogg executable"
+menu_bar_head_source="$repository_root/docs/product-redesign/logos/menu-bar/head-clean.png"
+[ -f "$menu_bar_head_source" ] || fail "head menu bar icon is missing"
+binary_digest="$(shasum --algorithm 256 "$binary_path")"
+menu_bar_head_digest="$(shasum --algorithm 256 "$menu_bar_head_source")"
+build_identifier="$(printf '%s\n%s\n' "${binary_digest%% *}" "${menu_bar_head_digest%% *}" | shasum --algorithm 256)"
+build_identifier="${build_identifier%% *}"
 
 stage_root="$(mktemp -d "$output_parent/.hidhogg-stage.XXXXXX")"
 stage_app="$stage_root/Hidhogg.app"
@@ -152,6 +158,8 @@ iconset="$stage_root/Hidhogg.iconset"
 mkdir -p "$stage_app/Contents/MacOS" "$stage_app/Contents/Resources"
 cp "$binary_path" "$stage_app/Contents/MacOS/Hidhogg"
 cp "$repository_root/docs/third-party-notices.txt" "$stage_app/Contents/Resources/ThirdPartyNotices.txt"
+xcrun actool --compile "$stage_app/Contents/Resources" --platform macosx --minimum-deployment-target 26.0 "$repository_root/app/Branding.xcassets" >/dev/null
+cp "$menu_bar_head_source" "$stage_app/Contents/Resources/MenuBarIconHead.png"
 
 mkdir "$iconset"
 icon_sizes=(
@@ -198,13 +206,18 @@ cat > "$stage_app/Contents/Info.plist" <<'PLIST'
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>26.0</string>
+    <key>LSUIElement</key>
+    <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSAccentColorName</key>
+    <string>AccentColor</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 </dict>
 </plist>
 PLIST
+plutil -insert HidhoggBuildID -string "$build_identifier" "$stage_app/Contents/Info.plist"
 printf 'APPL????' > "$stage_app/Contents/PkgInfo"
 
 codesign --force --options runtime --timestamp=none --sign "$signing_identity" "$stage_app"

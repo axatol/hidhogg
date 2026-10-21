@@ -5,30 +5,134 @@ public enum BoltPhase: String, Sendable {
     case idle, discovering, ready, enabling, enabled, stopping, failed
 }
 
+public struct BoltWheelStatus: Equatable, Sendable {
+    public enum Support: Equatable, Sendable {
+        case unknown, unsupported, supported
+    }
+
+    public let support: Support
+    public let observedInverted: Bool?
+    public let observedHighResolution: Bool?
+    public let isOwned: Bool
+    public let isApplying: Bool
+    public let message: String?
+    public let captureActive: Bool
+    public let captureBlocker: String?
+    public let effectiveInverted: Bool?
+
+    public init(support: Support = .unknown, observedInverted: Bool? = nil, isOwned: Bool = false, isApplying: Bool = false, message: String? = nil, observedHighResolution: Bool? = nil, captureActive: Bool = false, captureBlocker: String? = nil, effectiveInverted: Bool? = nil) {
+        self.support = support
+        self.observedInverted = observedInverted
+        self.observedHighResolution = observedHighResolution
+        self.isOwned = isOwned
+        self.isApplying = isApplying
+        self.message = message
+        self.captureActive = captureActive
+        self.captureBlocker = captureBlocker
+        self.effectiveInverted = effectiveInverted
+    }
+}
+
+public struct BoltThumbwheelStatus: Equatable, Sendable {
+    public enum Support: Equatable, Sendable { case unknown, unsupported, supported }
+
+    public let support: Support
+    public let observedInverted: Bool?
+    public let isOwned: Bool
+    public let captureActive: Bool
+    public let effectiveInverted: Bool?
+    public let captureBlocker: String?
+    public let message: String?
+
+    public init(support: Support = .unknown, observedInverted: Bool? = nil, isOwned: Bool = false,
+                captureActive: Bool = false, effectiveInverted: Bool? = nil,
+                captureBlocker: String? = nil, message: String? = nil) {
+        self.support = support
+        self.observedInverted = observedInverted
+        self.isOwned = isOwned
+        self.captureActive = captureActive
+        self.effectiveInverted = effectiveInverted
+        self.captureBlocker = captureBlocker
+        self.message = message
+    }
+}
+
 public struct BoltStatus: Equatable, Sendable {
     public let phase: BoltPhase
     public let message: String
     public let availableControls: Set<MouseControl>
     public let generation: UInt64
     public let cleanupUncertain: Bool
+    public let wheel: BoltWheelStatus
+    public let thumbwheel: BoltThumbwheelStatus
+    public let failure: BoltFailureContext?
 
-    public init(phase: BoltPhase, message: String, availableControls: Set<MouseControl>, generation: UInt64, cleanupUncertain: Bool) {
+    public init(phase: BoltPhase, message: String, availableControls: Set<MouseControl>, generation: UInt64, cleanupUncertain: Bool, wheel: BoltWheelStatus = .init(), thumbwheel: BoltThumbwheelStatus = .init(), failure: BoltFailureContext? = nil) {
         self.phase = phase
         self.message = message
         self.availableControls = availableControls
         self.generation = generation
         self.cleanupUncertain = cleanupUncertain
+        self.wheel = wheel
+        self.thumbwheel = thumbwheel
+        self.failure = failure
+    }
+}
+
+public enum BoltFailureCode: String, Equatable, Sendable {
+    case endpointUnavailable = "bolt.endpoint.unavailable"
+    case endpointAmbiguous = "bolt.endpoint.ambiguous"
+    case requestTimeout = "bolt.request.timeout"
+    case disconnected = "bolt.disconnected"
+    case transportFailed = "bolt.transport.failed"
+    case replyMalformed = "bolt.reply.malformed"
+    case controlsUnsupported = "bolt.controls.unsupported"
+    case externalStateChanged = "bolt.state.external-change"
+    case reportStale = "bolt.report.stale"
+    case eventsOverflowed = "bolt.events.overflow"
+    case operationCancelled = "bolt.operation.cancelled"
+    case requestIDsExhausted = "bolt.request-id.exhausted"
+}
+
+public struct BoltFailureContext: Equatable, Sendable {
+    public let code: BoltFailureCode
+    public let sourceFileID: String
+    public let sourceLine: UInt
+
+    public init(code: BoltFailureCode, sourceFileID: String, sourceLine: UInt) {
+        self.code = code
+        self.sourceFileID = sourceFileID
+        self.sourceLine = sourceLine
     }
 }
 
 public enum BoltEvent: Sendable {
     case status(BoltStatus)
     case press(MouseControl, generation: UInt64, observedAt: ContinuousClock.Instant)
+    case scroll(vertical: Double, horizontal: Double, generation: UInt64, observedAt: ContinuousClock.Instant)
+    case thumbwheel(rotation: Double, state: UInt8, generation: UInt64, observedAt: ContinuousClock.Instant)
 }
 
 enum BoltFailure: Error, LocalizedError, Equatable {
     case unavailable, ambiguous, timeout, disconnected, transport, malformed, unsupported
     case foreignState, stale, overflow, cancelled, tokenExhausted
+
+    var diagnosticCode: BoltFailureCode {
+        switch self {
+        case .unavailable: .endpointUnavailable
+        case .ambiguous: .endpointAmbiguous
+        case .timeout: .requestTimeout
+        case .disconnected: .disconnected
+        case .transport: .transportFailed
+        case .malformed: .replyMalformed
+        case .unsupported: .controlsUnsupported
+        case .foreignState: .externalStateChanged
+        case .stale: .reportStale
+        case .overflow: .eventsOverflowed
+        case .cancelled: .operationCancelled
+        case .tokenExhausted: .requestIDsExhausted
+        }
+    }
 
     var errorDescription: String? {
         switch self {
@@ -43,7 +147,7 @@ enum BoltFailure: Error, LocalizedError, Equatable {
         case .stale: "A stale Bolt report stopped the session."
         case .overflow: "The event consumer fell behind; bindings were stopped."
         case .cancelled: "The operation was stopped."
-        case .tokenExhausted: "The bounded request token budget was exhausted. Connect again."
+        case .tokenExhausted: "Too many device requests could not be verified. Reconnect after cleanup."
         }
     }
 }
@@ -56,6 +160,7 @@ enum BoltTransportEvent: Sendable {
 protocol BoltTransport: Sendable {
     var events: AsyncStream<BoltTransportEvent> { get }
     func open() async throws
+    func availableRequestIDs(slot: UInt8, feature: UInt8, function: UInt8) -> Int
     func request(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) async throws -> [UInt8]
     func close() async
 }
@@ -79,7 +184,7 @@ enum BoltWire {
             return .failure(feature == 0 && functionSoftware >> 4 == 1 ? .unavailable : .transport)
         }
         guard report[3] != 0, report[2] == feature, report[3] >> 4 == functionSoftware >> 4 else { return nil }
-        guard report[3] == functionSoftware else { return .failure(.stale) }
+        guard report[3] == functionSoftware else { return nil }
         return .success(Array(report.dropFirst(4)))
     }
 
@@ -104,6 +209,33 @@ enum BoltWire {
         guard remap == 0 || remap == cid else { return .foreign }
         let flags = UInt16(bytes[2]) | UInt16(bytes[5]) << 8
         return flags == 0 ? .baseline : flags == 1 ? .diverted : .foreign
+    }
+
+    struct WheelMovement: Equatable {
+        let highResolution: Bool
+        let period: UInt8
+        let vertical: Int16
+        let horizontal: Int16
+    }
+
+    static func wheelMovement(_ report: [UInt8], slot: UInt8, feature: UInt8) throws -> WheelMovement? {
+        guard report.count >= 4, report[1] == slot, report[2] == feature, report[3] == 0 else { return nil }
+        guard report[0] == 0x11, report.count == 20 else { throw BoltFailure.malformed }
+        return WheelMovement(highResolution: report[4] & 0x10 != 0, period: report[4] & 0x0F,
+                             vertical: Int16(bitPattern: word(report, 5)), horizontal: Int16(bitPattern: word(report, 7)))
+    }
+
+    struct ThumbwheelMovement: Equatable {
+        let rotation: Int16
+        let elapsed: UInt16
+        let state: UInt8
+        let flags: UInt8
+    }
+
+    static func thumbwheelMovement(_ report: [UInt8], slot: UInt8, feature: UInt8) throws -> ThumbwheelMovement? {
+        guard report.count >= 4, report[1] == slot, report[2] == feature, report[3] == 0 else { return nil }
+        guard report[0] == 0x11, report.count == 20, report[8] <= 3 else { throw BoltFailure.malformed }
+        return ThumbwheelMovement(rotation: Int16(bitPattern: word(report, 4)), elapsed: word(report, 6), state: report[8], flags: report[9])
     }
 
     static func snapshot(_ report: [UInt8], slot: UInt8, feature: UInt8) throws -> Set<MouseControl>? {

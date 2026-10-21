@@ -12,7 +12,7 @@ public actor ConfigurationStore {
     public func load() throws -> ConfigurationSnapshot {
         let data = try ConfigurationFileSystem.read(from: url)
         guard let data else {
-            return ConfigurationSnapshot(configuration: .empty, revision: .missing)
+            return ConfigurationSnapshot(configuration: .defaultConfiguration, revision: .missing)
         }
 
         return ConfigurationSnapshot(

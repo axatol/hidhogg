@@ -61,32 +61,41 @@ public enum ConfigurationCodec {
 
 private struct ConfigurationDocument: Codable {
     let schemaVersion: Int
+    let connectOnLaunch: Bool
     let devices: [DeviceDocument]
 
     var configuration: AppConfiguration {
-        AppConfiguration(schemaVersion: schemaVersion, devices: devices.map(\.configuration))
+        AppConfiguration(
+            schemaVersion: schemaVersion,
+            devices: devices.map(\.configuration),
+            connectOnLaunch: connectOnLaunch
+        )
     }
 
     init(configuration: AppConfiguration) {
         self.schemaVersion = configuration.schemaVersion
+        self.connectOnLaunch = configuration.connectOnLaunch
         self.devices = configuration.devices.map(DeviceDocument.init(configuration:))
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
-        try container.rejectUnknownKeys(["schema_version", "devices"])
+        try container.rejectUnknownKeys(["schema_version", "connect_on_launch", "devices"])
         schemaVersion = try container.decode(Int.self, forKey: AnyCodingKey("schema_version"))
+        connectOnLaunch = try container.decodeIfPresent(Bool.self, forKey: AnyCodingKey("connect_on_launch")) ?? true
         devices = try container.decode([DeviceDocument].self, forKey: AnyCodingKey("devices"))
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(connectOnLaunch, forKey: .connectOnLaunch)
         try container.encode(devices, forKey: .devices)
     }
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
+        case connectOnLaunch = "connect_on_launch"
         case devices
     }
 }
@@ -95,12 +104,24 @@ private struct DeviceDocument: Codable {
     let id: String
     let defaults: [String: BindingDocument]
     let applications: [String: [String: BindingDocument]]
+    let wheelInverted: Bool?
+    let restorePreviousSettingsOnDisconnect: Bool
+    let wheelHighResolution: Bool?
+    let wheelScrollAmount: Double?
+    let thumbwheelInverted: Bool?
+    let thumbwheelScrollAmount: Double?
 
     var configuration: DeviceBindings {
         DeviceBindings(
             id: id,
             defaults: defaults.mapValues(\.configuration),
-            applications: applications.mapValues { $0.mapValues(\.configuration) }
+            applications: applications.mapValues { $0.mapValues(\.configuration) },
+            wheelInverted: wheelInverted,
+            restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect,
+            wheelHighResolution: wheelHighResolution,
+            wheelScrollAmount: wheelScrollAmount,
+            thumbwheelInverted: thumbwheelInverted,
+            thumbwheelScrollAmount: thumbwheelScrollAmount
         )
     }
 
@@ -110,17 +131,43 @@ private struct DeviceDocument: Codable {
         self.applications = configuration.applications.mapValues {
             $0.mapValues(BindingDocument.init(configuration:))
         }
+        self.wheelInverted = configuration.wheelInverted
+        self.restorePreviousSettingsOnDisconnect = configuration.restorePreviousSettingsOnDisconnect
+        self.wheelHighResolution = configuration.wheelHighResolution
+        self.wheelScrollAmount = configuration.wheelScrollAmount
+        self.thumbwheelInverted = configuration.thumbwheelInverted
+        self.thumbwheelScrollAmount = configuration.thumbwheelScrollAmount
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
-        try container.rejectUnknownKeys(["id", "defaults", "applications"])
+        try container.rejectUnknownKeys([
+            "id", "defaults", "applications", "wheel_inverted",
+            "restore_previous_settings_on_disconnect", "wheel_high_resolution", "wheel_scroll_amount",
+            "thumbwheel_inverted", "thumbwheel_scroll_amount"
+        ])
         id = try container.decode(String.self, forKey: AnyCodingKey("id"))
         defaults = try container.decode([String: BindingDocument].self, forKey: AnyCodingKey("defaults"))
         applications = try container.decodeIfPresent(
             [String: [String: BindingDocument]].self,
             forKey: AnyCodingKey("applications")
         ) ?? [:]
+        wheelInverted = try container.decodeIfPresent(Bool.self, forKey: AnyCodingKey("wheel_inverted"))
+        restorePreviousSettingsOnDisconnect = try container.decodeIfPresent(
+            Bool.self, forKey: AnyCodingKey("restore_previous_settings_on_disconnect")
+        ) ?? false
+        wheelHighResolution = try container.decodeIfPresent(
+            Bool.self, forKey: AnyCodingKey("wheel_high_resolution")
+        )
+        wheelScrollAmount = try container.decodeIfPresent(
+            Double.self, forKey: AnyCodingKey("wheel_scroll_amount")
+        )
+        thumbwheelInverted = try container.decodeIfPresent(
+            Bool.self, forKey: AnyCodingKey("thumbwheel_inverted")
+        )
+        thumbwheelScrollAmount = try container.decodeIfPresent(
+            Double.self, forKey: AnyCodingKey("thumbwheel_scroll_amount")
+        )
     }
 
     func encode(to encoder: Encoder) throws {
@@ -130,12 +177,24 @@ private struct DeviceDocument: Codable {
         if !applications.isEmpty {
             try container.encode(applications, forKey: .applications)
         }
+        try container.encodeIfPresent(wheelInverted, forKey: .wheelInverted)
+        try container.encode(restorePreviousSettingsOnDisconnect, forKey: .restorePreviousSettingsOnDisconnect)
+        try container.encodeIfPresent(wheelHighResolution, forKey: .wheelHighResolution)
+        try container.encodeIfPresent(wheelScrollAmount, forKey: .wheelScrollAmount)
+        try container.encodeIfPresent(thumbwheelInverted, forKey: .thumbwheelInverted)
+        try container.encodeIfPresent(thumbwheelScrollAmount, forKey: .thumbwheelScrollAmount)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id
         case defaults
         case applications
+        case wheelInverted = "wheel_inverted"
+        case restorePreviousSettingsOnDisconnect = "restore_previous_settings_on_disconnect"
+        case wheelHighResolution = "wheel_high_resolution"
+        case wheelScrollAmount = "wheel_scroll_amount"
+        case thumbwheelInverted = "thumbwheel_inverted"
+        case thumbwheelScrollAmount = "thumbwheel_scroll_amount"
     }
 }
 
