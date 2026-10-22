@@ -227,6 +227,22 @@ private func wheelEventually(_ condition: @escaping @Sendable () async -> Bool) 
     #expect(!status.wheel.isOwned && !status.wheel.isApplying)
 }
 
+@Test func enableFailureIdentifiesVerticalWheelStage() async {
+    let fixture = WheelFixture()
+    let controller = BoltController(makeTransport: { WheelChannel(fixture) })
+    let recorder = WheelRecorder()
+    let reader = watchWheel(controller, recorder)
+    defer { reader.cancel() }
+    await controller.discover()
+    await controller.applyWheelPreference(true, restorePreviousSettingsOnDisconnect: true)
+    await fixture.failRead(await fixture.modeReads + 1)
+
+    await controller.enable()
+
+    #expect(await wheelEventually { await recorder.last?.phase == .failed })
+    #expect(await recorder.last?.failure?.stage == .verticalWheel)
+}
+
 @Test func successfulAlternatingWheelPreferencesAndButtonCyclesContinuePastFifteenRequests() async {
     let fixture = WheelFixture()
     let controller = BoltController(makeTransport: { WheelChannel(fixture) })
@@ -281,7 +297,7 @@ func wheelResolutionComposesOneFullModeAndTracksOwnMixedChanges(restore: Bool) a
     #expect(await fixture.writes == [[6], [2], [6], [4]])
     #expect(await controller.stopForRestart())
     #expect(await fixture.mode == (restore ? 0 : 4))
-    #expect(await fixture.tokenCount(feature: 15, function: 1) <= 15)
+    #expect(await fixture.requestIDs.available(slot: 2, feature: 15, function: 1) == 15)
 }
 
 @Test(arguments: [false, true], [false, true])
@@ -337,7 +353,7 @@ func wheelResolutionPendingWriteRollsBackFullVerifiedModeOrBaseline(restore: Boo
     defer { reader.cancel() }
     await controller.discover()
     await controller.applyWheelPreferences(inverted: true, highResolution: true, restorePreviousSettingsOnDisconnect: restore)
-    await fixture.failRead(7)
+    await fixture.failRead(8)
     await controller.applyWheelPreferences(inverted: false, highResolution: false, restorePreviousSettingsOnDisconnect: restore)
     #expect(await wheelEventually { await recorder.last?.phase == .failed })
     #expect(await recorder.last?.cleanupUncertain == false)
@@ -469,8 +485,8 @@ func wheelRequiresInvertCapability(flags: UInt8) async {
     await controller.stop()
 }
 
-@Test(arguments: [UInt8(1), 8, 0x80])
-func wheelRejectsDivertedOrReservedMode(mode: UInt8) async {
+@Test(arguments: [UInt8(8), 0x80])
+func wheelRejectsReservedModeBeforeConnection(mode: UInt8) async {
     let fixture = WheelFixture()
     await fixture.configure(mode: mode)
     let controller = BoltController(makeTransport: { WheelChannel(fixture) })
@@ -479,8 +495,7 @@ func wheelRejectsDivertedOrReservedMode(mode: UInt8) async {
     defer { reader.cancel() }
     await controller.discover()
     await controller.applyWheelPreference(nil, restorePreviousSettingsOnDisconnect: true)
-    #expect(await wheelEventually { await recorder.last?.wheel.support == .unsupported })
-    #expect(await recorder.last?.phase == .ready)
+    #expect(await wheelEventually { await recorder.last?.phase == .failed })
     #expect(await fixture.writes.isEmpty)
     await controller.stop()
 }
@@ -494,7 +509,7 @@ func wheelRejectsDivertedOrReservedMode(mode: UInt8) async {
     defer { reader.cancel() }
     await controller.discover()
     await controller.applyWheelPreference(nil, restorePreviousSettingsOnDisconnect: true)
-    #expect(await wheelEventually { await recorder.last?.wheel.support == .unsupported })
+    #expect(await wheelEventually { await recorder.last?.phase == .failed })
     #expect(await fixture.writes.isEmpty)
     await controller.stop()
 }
@@ -512,7 +527,7 @@ func wheelRejectsDivertedOrReservedMode(mode: UInt8) async {
     await controller.applyWheelPreference(false)
     #expect(await wheelEventually { await recorder.last?.wheel.observedInverted == false })
     #expect(await recorder.last?.wheel.isOwned == false)
-    #expect(await fixture.wheelRoots == 2)
+    #expect(await fixture.wheelRoots == 4)
     #expect(await fixture.writes.isEmpty)
     await controller.enable()
     #expect(await wheelEventually { await recorder.last?.phase == .enabled })
@@ -555,7 +570,7 @@ func wheelRejectsDivertedOrReservedMode(mode: UInt8) async {
     #expect(await wheelEventually { await recorder.last?.wheel.isOwned == true })
     #expect(await fixture.mode == 6)
     #expect(await fixture.writes == [[6]])
-    #expect(await fixture.modeReads == 4)
+    #expect(await fixture.modeReads == 5)
     await controller.applyWheelPreference(true)
     #expect(await fixture.writes == [[6]])
     await controller.applyWheelPreference(false)
@@ -621,7 +636,7 @@ func wheelRejectsDivertedOrReservedMode(mode: UInt8) async {
 
 @Test func wheelFailedReadbackRestoresPossibleWrite() async {
     let fixture = WheelFixture()
-    await fixture.failRead(4)
+    await fixture.failRead(5)
     let controller = BoltController(makeTransport: { WheelChannel(fixture) })
     let recorder = WheelRecorder()
     let reader = watchWheel(controller, recorder)
@@ -633,7 +648,7 @@ func wheelRejectsDivertedOrReservedMode(mode: UInt8) async {
     #expect(await recorder.last?.cleanupUncertain == false)
     #expect(await fixture.mode == 0)
     #expect(await fixture.writes == [[4], [0]])
-    #expect(await fixture.modeReads == 6)
+    #expect(await fixture.modeReads == 7)
 }
 
 @Test func wheelRetiredRequestIDsPreserveOwnedCleanupCapacity() async throws {
@@ -661,7 +676,7 @@ func wheelRejectsDivertedOrReservedMode(mode: UInt8) async {
 
 @Test func wheelPrewriteRereadRejectsChangedFullModeWithoutWriting() async {
     let fixture = WheelFixture()
-    await fixture.overrideRead(3, mode: 2)
+    await fixture.overrideRead(4, mode: 2)
     let controller = BoltController(makeTransport: { WheelChannel(fixture) })
     let recorder = WheelRecorder()
     let reader = watchWheel(controller, recorder)
@@ -801,7 +816,7 @@ func wheelChangedCapabilityAssociationNeverReadsOrWritesStaleIndex(capabilities:
     #expect(await recorder.last?.wheel.isOwned == true)
     #expect(await fixture.mode == 4)
     #expect(await fixture.writes == [[4], [0]])
-    #expect(await fixture.modeReads == 6)
+    #expect(await fixture.modeReads == 7)
     #expect(await fixture.closes == 1)
 }
 
@@ -843,29 +858,29 @@ func enableReusesValidatedCapabilityTableAndRetiredBudgetStillProtectsCleanup(ca
     await controller.discover()
     await controller.applyWheelPreference(nil, restorePreviousSettingsOnDisconnect: true)
     #expect(await wheelEventually { await recorder.last?.phase == .ready })
-    #expect(await fixture.tokenCount(feature: 9, function: 1) == capabilityRowCount)
+    #expect(await fixture.tokenCount(feature: 9, function: 1) == capabilityRowCount + 2)
 
     await controller.enable()
     #expect(await wheelEventually { await recorder.last?.phase == .enabled })
-    #expect(await fixture.tokenCount(feature: 9, function: 1) == capabilityRowCount + 2)
-    #expect(await fixture.tokenCount(feature: 9, function: 2) == 4)
+    #expect(await fixture.tokenCount(feature: 9, function: 1) == capabilityRowCount + 4)
+    #expect(await fixture.tokenCount(feature: 9, function: 2) == 8)
     #expect(await fixture.tokenCount(feature: 9, function: 3) == 2)
 
     await controller.disable()
     #expect(await wheelEventually { await recorder.last?.phase == .ready })
-    #expect(await fixture.tokenCount(feature: 9, function: 2) == 8)
+    #expect(await fixture.tokenCount(feature: 9, function: 2) == 12)
     #expect(await fixture.tokenCount(feature: 9, function: 3) == 4)
     #expect(await fixture.buttons.values.allSatisfy { $0 == 0 })
 
     await controller.enable()
     #expect(await wheelEventually { await recorder.last?.phase == .enabled })
     await controller.disable()
-    #expect(await fixture.tokenCount(feature: 9, function: 2) == 16)
+    #expect(await fixture.tokenCount(feature: 9, function: 2) == 20)
     #expect(await fixture.tokenCount(feature: 9, function: 3) == 8)
     try fixture.requestIDs.retireForFixture(feature: 9, function: 2, count: 8)
     await controller.enable()
     #expect(await wheelEventually { await recorder.last?.phase == .failed })
-    #expect(await fixture.tokenCount(feature: 9, function: 2) == 16)
+    #expect(await fixture.tokenCount(feature: 9, function: 2) == 20)
     #expect(await fixture.tokenCount(feature: 9, function: 3) == 8)
     #expect(await fixture.opens.count == 1)
     #expect(await fixture.closes == 1)
@@ -1018,7 +1033,7 @@ func wheelLiveRestorationPolicyUsesLatestValueAtStop(restore: Bool) async {
     await controller.discover()
     await controller.applyWheelPreference(nil, restorePreviousSettingsOnDisconnect: true)
     await controller.applyWheelPreference(nil, restorePreviousSettingsOnDisconnect: false)
-    #expect(await fixture.modeReads == 1)
+    #expect(await fixture.modeReads == 2)
     #expect(await fixture.writes.isEmpty)
     #expect(await controller.stopForRestart())
     #expect(await fixture.mode == 6)
@@ -1032,7 +1047,7 @@ func wheelLiveRestorationPolicyUsesLatestValueAtStop(restore: Bool) async {
     defer { reader.cancel() }
     await controller.discover()
     await controller.applyWheelPreference(true)
-    await fixture.failRead(7)
+    await fixture.failRead(8)
     await controller.applyWheelPreference(false)
 
     #expect(await wheelEventually { await recorder.last?.phase == .failed })
@@ -1103,7 +1118,7 @@ func wheelLiveRestorationPolicyUsesLatestValueAtStop(restore: Bool) async {
 
 @Test func wheelDefaultUnverifiedForeignModeBlocksRollbackWithoutWriting() async {
     let fixture = WheelFixture()
-    await fixture.overrideRead(4, mode: 6)
+    await fixture.overrideRead(5, mode: 6)
     let controller = BoltController(makeTransport: { WheelChannel(fixture) })
     let recorder = WheelRecorder()
     let reader = watchWheel(controller, recorder)
@@ -1365,7 +1380,7 @@ private final class WheelPermissionFlag: @unchecked Sendable {
     let reader = watchWheel(controller, recorder)
     defer { reader.cancel() }
     await controller.discover()
-    await fixture.pauseRead(2)
+    await fixture.pauseRead(3)
     let apply = Task {
         await controller.applyWheelPreferences(inverted: nil, highResolution: nil, restorePreviousSettingsOnDisconnect: false,
                                                amount: 1, scrollPostingAllowed: true)
@@ -1385,7 +1400,7 @@ func wheelCapturePendingVerificationReportsCannotBeReplayed(pauseSetter: Bool) a
     let fixture = WheelFixture()
     await fixture.configure(capabilities: [8, 0x08])
     await fixture.configureWrites(pause: pauseSetter)
-    if !pauseSetter { await fixture.pauseRead(3) }
+    if !pauseSetter { await fixture.pauseRead(4) }
     let controller = BoltController(scrollPostingPreflight: { true }, makeTransport: { WheelChannel(fixture) })
     let recorder = WheelRecorder()
     let reader = watchWheel(controller, recorder)
@@ -1512,13 +1527,13 @@ func wheelCaptureEditToNativePreflightsFinalPhysicalRestorationBeforeReleasingCa
     await controller.applyWheelPreferences(inverted: true, highResolution: true, restorePreviousSettingsOnDisconnect: true,
                                            amount: 1, scrollPostingAllowed: true)
     #expect(await fixture.mode == 3)
-    #expect(await fixture.modeReads == 13)
+    #expect(await fixture.modeReads == 14)
     try fixture.requestIDs.retireForFixture(feature: 15, function: 1, count: 13)
     await controller.applyWheelPreferences(inverted: false, highResolution: true, restorePreviousSettingsOnDisconnect: true,
                                            amount: postingDenied ? 1 : nil, scrollPostingAllowed: !postingDenied)
     #expect(await wheelEventually { await recorder.last?.phase == .failed })
     #expect(await fixture.mode == 0)
-    #expect(await fixture.modeReads <= 15)
+    #expect(await fixture.modeReads <= 16)
     #expect(await recorder.last?.cleanupUncertain == false)
     #expect(await fixture.writes.last == [0])
 }
@@ -1537,13 +1552,13 @@ func wheelCaptureAmountOffPreflightsFinalPhysicalRestorationBeforeReleasingCaptu
     await controller.applyWheelPreferences(inverted: true, highResolution: true, restorePreviousSettingsOnDisconnect: true,
                                            amount: 1, scrollPostingAllowed: true)
     #expect(await fixture.mode == 3)
-    #expect(await fixture.modeReads == 13)
+    #expect(await fixture.modeReads == 14)
     try fixture.requestIDs.retireForFixture(feature: 15, function: 1, count: 13)
     await controller.applyWheelPreferences(inverted: true, highResolution: true, restorePreviousSettingsOnDisconnect: true,
                                            amount: postingDenied ? 1 : nil, scrollPostingAllowed: !postingDenied)
     #expect(await wheelEventually { await recorder.last?.phase == .failed })
     #expect(await fixture.mode == 0)
-    #expect(await fixture.modeReads <= 15)
+    #expect(await fixture.modeReads <= 16)
     #expect(await recorder.last?.cleanupUncertain == false)
     #expect(await fixture.writes.last == [0])
 }
@@ -1567,7 +1582,7 @@ func wheelCaptureAmountOffPreflightsFinalPhysicalRestorationBeforeReleasingCaptu
                                            amount: 1, scrollPostingAllowed: true)
     #expect(await wheelEventually { await recorder.last?.phase == .failed })
     #expect(await fixture.mode == 0)
-    #expect(await fixture.modeReads == 15)
+    #expect(await fixture.modeReads == 16)
     #expect(await fixture.writes == [[4], [1], [4], [6], [3], [0]])
     #expect(fixture.requestIDs.available(slot: 2, feature: 15, function: 1) == 2)
     #expect(await recorder.last?.cleanupUncertain == false)

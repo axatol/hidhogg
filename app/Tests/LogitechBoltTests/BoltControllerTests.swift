@@ -18,6 +18,7 @@ private actor FixtureTransport {
     var rows: [[UInt8]] = [FixtureTransport.row(cid: 0x53, task: 0x3C), FixtureTransport.row(cid: 0x56, task: 0x3E)]
     var slots: Set<UInt8> = [2]
     var failForward = false
+    var failForwardReadback = false
     var failReporting = false
     var failAfterMutation = false
     var ignoreOff = false
@@ -72,6 +73,10 @@ private actor FixtureTransport {
         let cid = BoltWire.word(parameters, 0)
         if function == 2 {
             if failReporting { throw BoltFailure.timeout }
+            if cid == 0x56, failForwardReadback, states[cid] == 1 {
+                failForwardReadback = false
+                throw BoltFailure.timeout
+            }
             return BoltWire.bytes(cid) + [states[cid] ?? 0] + BoltWire.bytes(remaps[cid] ?? 0) + Array(repeating: 0, count: 11)
         }
         if cid == 0x56, parameters[2] == 3, pauseForward {
@@ -85,8 +90,9 @@ private actor FixtureTransport {
         return BoltWire.bytes(cid) + Array(repeating: 0, count: 14)
     }
 
-    func configure(failForward: Bool = false, failReporting: Bool = false, failAfterMutation: Bool = false, ignoreOff: Bool = false, pauseForward: Bool = false) {
+    func configure(failForward: Bool = false, failForwardReadback: Bool = false, failReporting: Bool = false, failAfterMutation: Bool = false, ignoreOff: Bool = false, pauseForward: Bool = false) {
         self.failForward = failForward
+        self.failForwardReadback = failForwardReadback
         self.failReporting = failReporting
         self.failAfterMutation = failAfterMutation
         self.ignoreOff = ignoreOff
@@ -273,6 +279,7 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
     #expect(await eventually { await recorder.last?.phase == .failed })
     let failure = await recorder.last?.failure
     #expect(failure?.code == .requestTimeout)
+    #expect(failure?.stage == .buttonWriteForward)
     #expect(failure?.sourceFileID.hasPrefix("/") == false)
     #expect((failure?.sourceLine ?? 0) > 0)
     #expect(await transport.states.values.allSatisfy { $0 == 0 })
@@ -284,10 +291,31 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
     let transport = FixtureTransport()
     await transport.configure(failAfterMutation: true)
     let controller = BoltController(makeTransport: { FixtureChannel(transport) })
+    let recorder = Recorder()
+    let reader = recording(controller, recorder)
+    defer { reader.cancel() }
     await controller.discover()
     await controller.enable()
+    #expect(await eventually { await recorder.last?.phase == .failed })
+    #expect(await recorder.last?.failure?.stage == .buttonWriteBack)
     #expect(await transport.mutations.map(\.1) == [3, 2])
     #expect(await transport.states[0x53] == 0)
+}
+
+@Test func failedButtonReadbackReportsItsStageAndRestores() async {
+    let transport = FixtureTransport()
+    let controller = BoltController(makeTransport: { FixtureChannel(transport) })
+    let recorder = Recorder()
+    let reader = recording(controller, recorder)
+    defer { reader.cancel() }
+    await controller.discover()
+    await transport.configure(failForwardReadback: true)
+
+    await controller.enable()
+
+    #expect(await eventually { await recorder.last?.phase == .failed })
+    #expect(await recorder.last?.failure?.stage == .buttonReadbackForward)
+    #expect(await transport.states.values.allSatisfy { $0 == 0 })
 }
 
 @Test func foreignBaselinePreventsAllWrites() async {
@@ -302,17 +330,26 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
 @Test func enableRechecksBaselineOnTheDiscoveredHandle() async {
     let transport = FixtureTransport()
     let controller = BoltController(makeTransport: { FixtureChannel(transport) })
+    let recorder = Recorder()
+    let reader = recording(controller, recorder)
+    defer { reader.cancel() }
     await controller.discover()
     await transport.setState(0x53, 1)
     await controller.enable()
+    #expect(await eventually { await recorder.last?.phase == .failed })
     #expect(await transport.mutations.isEmpty)
     #expect(await transport.opens == 1)
     #expect(await transport.closes == 1)
+    #expect(await recorder.last?.failure?.stage == .buttonBaselineBack)
+    #expect(await recorder.last?.message.contains("The device state did not match the expected state.") == true)
 }
 
 @Test func enableRejectsChangedEligibleCapabilityRowOnTheDiscoveredHandle() async {
     let transport = FixtureTransport()
     let controller = BoltController(makeTransport: { FixtureChannel(transport) })
+    let recorder = Recorder()
+    let reader = recording(controller, recorder)
+    defer { reader.cancel() }
     await controller.discover()
     await transport.setRows([
         FixtureTransport.row(cid: 0x53, task: 0x3C, flags: 0),
@@ -321,9 +358,11 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
 
     await controller.enable()
 
+    #expect(await eventually { await recorder.last?.phase == .failed })
     #expect(await transport.mutations.isEmpty)
     #expect(await transport.opens == 1)
     #expect(await transport.closes == 1)
+    #expect(await recorder.last?.failure?.stage == .capabilities)
 }
 
 @Test func disableDuringPartialEnableRestoresButtonsAndKeepsTheHandle() async {

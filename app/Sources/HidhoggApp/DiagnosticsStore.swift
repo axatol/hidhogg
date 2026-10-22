@@ -86,9 +86,10 @@ final class DiagnosticsStore: ObservableObject {
             ?? (status.cleanupUncertain ? .boltCleanupUncertain : .boltStatus)
         let source = status.failure.map { DiagnosticSource(fileID: $0.sourceFileID, line: $0.sourceLine) }
             ?? DiagnosticSource()
+        let stageMessage = status.failure?.stage.map { " Failure stage: \($0.rawValue)." } ?? ""
         recordStatus(DiagnosticEvent(
             code: statusCode,
-            message: status.message,
+            message: status.message + stageMessage,
             isError: status.phase == .failed || status.cleanupUncertain,
             fileID: source.fileID,
             line: source.line

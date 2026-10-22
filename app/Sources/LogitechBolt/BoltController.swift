@@ -44,6 +44,16 @@ public actor BoltController {
     private var captureBlocker: String?
     private var physicalWheelRequest: PhysicalWheelRequest?
     private var thumbwheel = ThumbwheelState()
+    private var pendingReclaims: [ConnectReclaim] = []
+
+    private struct ConnectReclaim {
+        enum Control { case button(MouseControl), wheel, thumbwheel }
+        let control: Control
+        let feature: UInt8
+        let root: [UInt8]
+        let original: [UInt8]
+        let native: [UInt8]
+    }
 
     private struct PhysicalWheelRequest: Equatable {
         let inverted: Bool?
@@ -362,7 +372,7 @@ public actor BoltController {
         let restored = await cleanup()
         await closeTransport()
         available.removeAll()
-        publish(restored ? .idle : .failed, restored ? "Disconnected. Temporary diversion is off." : "Cleanup is unverified. Rearming is blocked; resolve receiver state before restarting.")
+        publish(restored ? .idle : .failed, restored ? "Disconnected. Session cleanup verified." : "Cleanup is unverified. Rearming is blocked; resolve receiver state before restarting.")
         shutdownRequested = false
     }
 
@@ -418,18 +428,193 @@ public actor BoltController {
     }
 
     private func performDiscovery(connection current: UInt64) async {
+        let revision = operationRevision
+        var stage: BoltFailureStage?
         do {
             try await openCandidate(connection: current)
+            try checkConnectActive(revision: revision)
             let table = try await readCapabilities()
             capabilityTable = table
             available = table.controls
-            try await discoverWheel()
-            try checkActive()
-            publish(.ready, "Connected Bolt candidate; model identity is unverified. Confirm the intended mouse and close competing mouse software before activating bindings.")
+            stage = .connectPreflight
+            try await reclaimConnectDiversion(table, revision: revision, stage: &stage)
+            try checkConnectActive(revision: revision)
+            publish(.ready, "Connected Bolt candidate; model identity is unverified. Keep competing mouse software closed while Hidhogg manages this device.")
         } catch {
             guard phase != .stopping else { return }
-            await fail(error)
+            await fail(error, stage: (error as? BoltFailure) == .cancelled ? nil : stage)
         }
+    }
+
+    private func checkConnectActive(revision: UInt64) throws {
+        try checkActive()
+        guard operationRevision == revision, !shutdownRequested, !disableRequested else { throw BoltFailure.cancelled }
+    }
+
+    private func reclaimConnectDiversion(_ table: CapabilityTable, revision: UInt64, stage: inout BoltFailureStage?) async throws {
+        guard table.controls == Set(MouseControl.allCases) else { throw BoltFailure.unsupported }
+        var preflight: [ConnectReclaim] = []
+        for control in MouseControl.allCases {
+            let state = try await reporting(control)
+            try checkConnectActive(revision: revision)
+            guard state != .foreign else { throw BoltFailure.foreignState }
+            preflight.append(ConnectReclaim(control: .button(control), feature: table.feature,
+                root: [table.feature, table.rootFlags, table.version],
+                original: [state == .diverted ? 1 : 0], native: [0]))
+        }
+        let wheelRoot = try await request(feature: 0, function: 0, parameters: [0x21, 0x21])
+        try checkConnectActive(revision: revision)
+        guard wheelRoot.count >= 3 else { throw BoltFailure.malformed }
+        if wheelRoot[0] != 0, wheelRoot[1] & 0xE0 == 0, wheelRoot[2] == 1 {
+            let capabilities = try await request(feature: wheelRoot[0], function: 0)
+            try checkConnectActive(revision: revision)
+            guard capabilities.count >= 2 else { throw BoltFailure.malformed }
+            if capabilities[1] & 0x08 != 0 {
+                let mode = try await wheelMode(feature: wheelRoot[0])
+                try checkConnectActive(revision: revision)
+                wheelMultiplier = capabilities[0]
+                preflight.append(ConnectReclaim(control: .wheel, feature: wheelRoot[0], root: Array(wheelRoot.prefix(3)),
+                    original: [mode], native: [mode & ~0x01]))
+            }
+        }
+        let thumbRoot = try await request(feature: 0, function: 0, parameters: [0x21, 0x50])
+        try checkConnectActive(revision: revision)
+        guard thumbRoot.count >= 3 else { throw BoltFailure.malformed }
+        if thumbRoot[0] != 0, thumbRoot[1] & 0xE0 == 0, thumbRoot[2] == 0 {
+            let info = try await request(feature: thumbRoot[0], function: 0)
+            try checkConnectActive(revision: revision)
+            let decoded = try ThumbwheelState.Info(info)
+            let reply = try await request(feature: thumbRoot[0], function: 1)
+            _ = try ThumbwheelState.Mode.decode(reply)
+            try checkConnectActive(revision: revision)
+            thumbwheel.info = decoded
+            preflight.append(ConnectReclaim(control: .thumbwheel, feature: thumbRoot[0], root: Array(thumbRoot.prefix(3)),
+                original: Array(reply.prefix(2)), native: [0, reply[1]]))
+        }
+        let mutations = preflight.filter { $0.original != $0.native }
+        try reserveConnectReclaimTokens(preflight, table: table)
+        try await verifyCapabilities(table)
+        try checkConnectActive(revision: revision)
+        for item in preflight {
+            try await verifyConnectReclaimRoot(item)
+            try checkConnectActive(revision: revision)
+        }
+        if !mutations.isEmpty {
+            publish(.discovering, "Recognised existing diversion; recovering and verifying native routing before connection.")
+        }
+        for item in mutations {
+            stage = .connectPreflight
+            try checkConnectActive(revision: revision)
+            try await verifyConnectReclaimRoot(item)
+            try checkConnectActive(revision: revision)
+            guard try await connectReclaimState(item) == item.original else { throw BoltFailure.foreignState }
+            try checkConnectActive(revision: revision)
+            pendingReclaims.append(item)
+            stage = .connectRecoveryWrite
+            try await writeConnectReclaim(item)
+            try checkConnectActive(revision: revision)
+            stage = .connectRecoveryReadback
+            guard try await connectReclaimState(item) == item.native else { throw BoltFailure.foreignState }
+            pendingReclaims.removeAll()
+            try checkConnectActive(revision: revision)
+        }
+        stage = .connectRecoveryReadback
+        for item in preflight {
+            try await verifyConnectReclaimRoot(item)
+            try checkConnectActive(revision: revision)
+            guard try await connectReclaimState(item) == item.native else { throw BoltFailure.foreignState }
+            try checkConnectActive(revision: revision)
+        }
+        wheel = BoltWheelStatus(support: .unsupported, message: "Device wheel settings are unavailable for this session.")
+        thumbwheel.support = .unsupported
+        thumbwheel.message = "Device thumb-wheel settings are unavailable for this session."
+        for item in preflight {
+            switch item.control {
+            case .button: break
+            case .wheel:
+                wheelBaseline = (item.feature, item.native[0])
+                latestVerifiedWheelMode = item.native[0]
+                observeWheel(item.native[0])
+            case .thumbwheel:
+                let mode = try ThumbwheelState.Mode.decode(item.native)
+                thumbwheel.feature = item.feature
+                thumbwheel.baseline = mode
+                thumbwheel.latest = mode
+                thumbwheel.support = .supported
+                thumbwheel.message = nil
+            }
+        }
+    }
+
+    private func reserveConnectReclaimTokens(_ items: [ConnectReclaim], table: CapabilityTable) throws {
+        var required: [UInt16: Int] = [:]
+        let mutations = items.filter { $0.original != $0.native }
+        required[0] = mutations.count + items.count * 2 + 2
+        required[UInt16(table.feature) << 8] = 1
+        required[UInt16(table.feature) << 8 | 1] = try eligibleCapabilityRowIndices(table).count
+        for item in items {
+            let getter: UInt8 = if case .button = item.control { 2 } else { 1 }
+            let setter: UInt8 = if case .button = item.control { 3 } else { 2 }
+            required[UInt16(item.feature) << 8 | UInt16(getter), default: 0] += item.original == item.native ? 1 : 5
+            if item.original != item.native {
+                required[UInt16(item.feature) << 8 | UInt16(setter), default: 0] += 2
+            }
+        }
+        for (signature, count) in required {
+            guard remainingNativeTokens(feature: UInt8(signature >> 8), function: UInt8(signature & 0xFF)) >= count else {
+                throw BoltFailure.tokenExhausted
+            }
+        }
+    }
+
+    private func connectReclaimState(_ item: ConnectReclaim) async throws -> [UInt8] {
+        switch item.control {
+        case .button(let control):
+            let state = try await reporting(control)
+            guard state != .foreign else { throw BoltFailure.foreignState }
+            return [state == .diverted ? 1 : 0]
+        case .wheel:
+            return [try await wheelMode(feature: item.feature, cleanup: true)]
+        case .thumbwheel:
+            let reply = try await request(feature: item.feature, function: 1)
+            _ = try ThumbwheelState.Mode.decode(reply)
+            return Array(reply.prefix(2))
+        }
+    }
+
+    private func writeConnectReclaim(_ item: ConnectReclaim) async throws {
+        if case .button(let control) = item.control {
+            try await mutate(control, flags: 0x02)
+        } else {
+            _ = try await request(feature: item.feature, function: 2, parameters: item.native)
+        }
+    }
+
+    private func cleanupConnectReclaims() async -> Bool {
+        guard let item = pendingReclaims.first else { return true }
+        do {
+            try await verifyConnectReclaimRoot(item)
+            let current = try await connectReclaimState(item)
+            if current != item.native {
+                guard current == item.original else { throw BoltFailure.foreignState }
+                try await writeConnectReclaim(item)
+                guard try await connectReclaimState(item) == item.native else { throw BoltFailure.foreignState }
+            }
+            pendingReclaims.removeAll()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func verifyConnectReclaimRoot(_ item: ConnectReclaim) async throws {
+        let query: [UInt8] = switch item.control {
+        case .button: [0x1B, 0x04]
+        case .wheel: [0x21, 0x21]
+        case .thumbwheel: [0x21, 0x50]
+        }
+        let root = try await request(feature: 0, function: 0, parameters: query)
+        guard Array(root.prefix(3)) == item.root else { throw BoltFailure.foreignState }
     }
 
     private func openCandidate(connection current: UInt64) async throws {
@@ -480,35 +665,44 @@ public actor BoltController {
     }
 
     private func performEnable() async {
+        var stage: BoltFailureStage?
         do {
             guard transport != nil else { throw BoltFailure.disconnected }
             guard let table = capabilityTable else { throw BoltFailure.unsupported }
             try reserveEnableAndCleanupTokens(for: table)
+            stage = .capabilities
             try await verifyCapabilities(table)
+            stage = .verticalWheel
             try await verifyOwnedWheelForEnable()
+            stage = .thumbWheel
             try await verifyOwnedThumbwheelForEnable()
+            stage = .capabilities
             guard available == Set(MouseControl.allCases) else { throw BoltFailure.unsupported }
             for control in MouseControl.allCases {
+                stage = control == .back ? .buttonBaselineBack : .buttonBaselineForward
                 guard try await reporting(control) == .baseline else { throw BoltFailure.foreignState }
                 try checkActive()
             }
             for control in MouseControl.allCases {
+                stage = control == .back ? .buttonWriteBack : .buttonWriteForward
                 try checkActive()
                 changed.insert(control)
                 try await mutate(control, flags: 0x03)
                 try checkActive()
+                stage = control == .back ? .buttonReadbackBack : .buttonReadbackForward
                 guard try await reporting(control) == .diverted else { throw BoltFailure.foreignState }
                 try checkActive()
             }
             armed.removeAll()
             pressed.removeAll()
+            stage = nil
             enabledAt = .now
             guard !disableRequested else { throw BoltFailure.cancelled }
             guard admission.enable(generation: generation) else { throw BoltFailure.transport }
             publish(.enabled, "Bindings enabled. Native Back/Forward behavior is suppressed. Release both buttons to arm delivery.")
         } catch {
             guard phase != .stopping else { return }
-            await fail(error)
+            await fail(error, stage: (error as? BoltFailure) == .cancelled ? nil : stage)
         }
     }
 
@@ -1048,10 +1242,11 @@ public actor BoltController {
     }
 
     private func cleanup() async -> Bool {
+        let connectRestored = await cleanupConnectReclaims()
         let wheelRestored = await cleanupWheel()
         let thumbwheelRestored = await cleanupThumbwheel(final: true)
         let buttonsRestored = await cleanupButtons()
-        let restored = wheelRestored && thumbwheelRestored && buttonsRestored
+        let restored = connectRestored && wheelRestored && thumbwheelRestored && buttonsRestored
         uncertain = !restored
         return restored
     }
@@ -1080,7 +1275,7 @@ public actor BoltController {
         guard !Task.isCancelled, phase != .stopping else { throw BoltFailure.cancelled }
     }
 
-    private func fail(_ error: Error, sourceFileID: String = #fileID, sourceLine: UInt = #line) async {
+    private func fail(_ error: Error, stage: BoltFailureStage? = nil, sourceFileID: String = #fileID, sourceLine: UInt = #line) async {
         admission.invalidate()
         invalidateScrollAdmission()
         invalidateThumbwheelAdmission()
@@ -1093,7 +1288,7 @@ public actor BoltController {
         available.removeAll()
         let failure = (error as? BoltFailure) ?? .transport
         let message = failure.errorDescription ?? "The Bolt session failed."
-        let context = BoltFailureContext(code: failure.diagnosticCode, sourceFileID: sourceFileID, sourceLine: sourceLine)
+        let context = BoltFailureContext(code: failure.diagnosticCode, sourceFileID: sourceFileID, sourceLine: sourceLine, stage: stage)
         publish(.failed, message + (restored ? " Delivery stopped." : " Cleanup is unverified; rearming is blocked."), failure: context)
     }
 

@@ -178,7 +178,7 @@ func thumbwheelDirectionCaptureNeutralizesOnceAndRestoresPolicy(restore: Bool) a
     let recorder = ThumbRecorder(); let reader = watchThumb(controller, recorder)
     defer { reader.cancel() }
     await controller.discover()
-    #expect(await fixture.count(feature: 16, function: 0) == 0)
+    #expect(await fixture.count(feature: 16, function: 0) == 1)
     await controller.applyThumbwheelPreferences(inverted: true, amount: 1, restorePreviousSettingsOnDisconnect: restore, scrollPostingAllowed: true)
     #expect(await fixture.writes == [[0, 1], [1, 0]])
     await fixture.movement(9, state: 1)
@@ -307,17 +307,33 @@ func thumbwheelFailedSetterAndCancellationRestoreAttributableState(cancel: Bool)
 }
 
 @Test(arguments: [[0, 0, 0, 0, 2, 0, 0, 0], [0, 0, 0, 0, 0, 0x10, 0, 0], [0, 0]])
-func thumbwheelMalformedInfoIsLocalUnsupported(info: [UInt8]) async {
+func thumbwheelMalformedInfoBlocksConnection(info: [UInt8]) async {
     let fixture = ThumbFixture(); await fixture.setInfo(info)
     let controller = BoltController(makeTransport: { ThumbChannel(fixture) })
     let recorder = ThumbRecorder(); let reader = watchThumb(controller, recorder)
     defer { reader.cancel() }
     await controller.discover()
     await controller.applyThumbwheelPreferences(inverted: true, amount: nil, restorePreviousSettingsOnDisconnect: false, scrollPostingAllowed: false)
-    #expect(await thumbEventually { await recorder.last?.thumbwheel.support == .unsupported })
+    #expect(await thumbEventually { await recorder.last?.phase == .failed })
     #expect(await fixture.writes.isEmpty)
-    #expect(await recorder.last?.phase == .ready)
+    #expect(await recorder.last?.phase == .failed)
     #expect(await controller.stopForRestart())
+}
+
+@Test func enableFailureIdentifiesThumbwheelStage() async {
+    let fixture = ThumbFixture()
+    let controller = BoltController(makeTransport: { ThumbChannel(fixture) })
+    let recorder = ThumbRecorder()
+    let reader = watchThumb(controller, recorder)
+    defer { reader.cancel() }
+    await controller.discover()
+    await controller.applyThumbwheelPreferences(inverted: true, amount: nil, restorePreviousSettingsOnDisconnect: true, scrollPostingAllowed: true)
+    await fixture.setMode([2, 0])
+
+    await controller.enable()
+
+    #expect(await thumbEventually { await recorder.last?.phase == .failed })
+    #expect(await recorder.last?.failure?.stage == .thumbWheel)
 }
 
 @Test func thumbwheelRetiredRequestIDsKeepFinalCleanupReserve() async throws {
@@ -328,11 +344,11 @@ func thumbwheelMalformedInfoIsLocalUnsupported(info: [UInt8]) async {
     await controller.discover()
     await controller.applyThumbwheelPreferences(inverted: true, amount: 1, restorePreviousSettingsOnDisconnect: true, scrollPostingAllowed: true)
     await controller.applyThumbwheelPreferences(inverted: false, amount: 1, restorePreviousSettingsOnDisconnect: true, scrollPostingAllowed: true)
-    #expect(await fixture.reads == 13)
+    #expect(await fixture.reads == 14)
     try fixture.requestIDs.retireForFixture(feature: 16, function: 1, count: 13)
     await controller.applyThumbwheelPreferences(inverted: false, amount: nil, restorePreviousSettingsOnDisconnect: true, scrollPostingAllowed: true)
     #expect(await thumbEventually { await recorder.last?.phase == .failed })
-    #expect(await fixture.reads == 15)
+    #expect(await fixture.reads == 16)
     #expect(await fixture.mode == [0, 0])
     #expect(await recorder.last?.cleanupUncertain == false)
     #expect(await recorder.last?.phase == .failed)
@@ -359,7 +375,7 @@ private final class ThumbPermission: @unchecked Sendable {
 
 @Test(arguments: [false, true])
 func thumbwheelPendingCaptureEventsAreNotReplayedAndPermissionIsFresh(deny: Bool) async {
-    let fixture = ThumbFixture(); await fixture.pauseRead(2)
+    let fixture = ThumbFixture(); await fixture.pauseRead(3)
     let permission = ThumbPermission()
     let controller = BoltController(scrollPostingPreflight: { permission.read() }, makeTransport: { ThumbChannel(fixture) })
     let recorder = ThumbRecorder(); let reader = watchThumb(controller, recorder)
@@ -389,7 +405,7 @@ func thumbwheelPendingCaptureEventsAreNotReplayedAndPermissionIsFresh(deny: Bool
     defer { reader.cancel() }
     await controller.discover()
     await controller.applyThumbwheelPreferences(inverted: true, amount: 1, restorePreviousSettingsOnDisconnect: false, scrollPostingAllowed: true)
-    await fixture.pauseRead(7)
+    await fixture.pauseRead(8)
     let apply = Task { await controller.applyThumbwheelPreferences(inverted: false, amount: 1, restorePreviousSettingsOnDisconnect: false, scrollPostingAllowed: true) }
     #expect(await thumbEventually { await fixture.readPaused })
     let stop = Task { await controller.stop(restorePreviousSettingsOnDisconnect: true) }
@@ -412,7 +428,7 @@ func thumbwheelPendingCaptureEventsAreNotReplayedAndPermissionIsFresh(deny: Bool
     await controller.applyThumbwheelPreferences(inverted: true, amount: 1, restorePreviousSettingsOnDisconnect: true, scrollPostingAllowed: true)
     await controller.applyThumbwheelPreferences(inverted: false, amount: 1, restorePreviousSettingsOnDisconnect: true, scrollPostingAllowed: true)
     #expect(await thumbEventually { await recorder.last?.phase == .failed })
-    #expect(await fixture.reads == 15)
+    #expect(await fixture.reads == 16)
     #expect(await fixture.mode == [0, 0])
     #expect(await recorder.last?.cleanupUncertain == false)
     #expect(fixture.requestIDs.available(slot: 2, feature: 16, function: 1) == 2)

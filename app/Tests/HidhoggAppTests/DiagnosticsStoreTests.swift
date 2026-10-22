@@ -101,6 +101,7 @@ final class DiagnosticsStoreTests: XCTestCase {
         )
 
         store.recordBoltStatus(timeout)
+        XCTAssertEqual(store.entries.first(where: { $0.code == .boltRequestTimeout })?.message, "The Bolt request timed out.")
         store.recordBoltStatus(connectedWithReadyWheels)
         store.recordBoltStatus(connectedWithUpdatedWheel)
 
@@ -139,5 +140,32 @@ final class DiagnosticsStoreTests: XCTestCase {
         XCTAssertEqual(blockers.count, 2)
         XCTAssertNotEqual(blockers[0].id, blockers[1].id)
         XCTAssertEqual(store.entries.filter { $0.code == .boltStatus }.count, 2)
+    }
+
+    func testBoltFailureStageAppearsInMessageAndPersistentLog() throws {
+        var persisted = [String]()
+        let store = DiagnosticsStore(persist: { message, _ in persisted.append(message) })
+        persisted.removeAll()
+        let status = BoltStatus(
+            phase: .failed,
+            message: "The Bolt transport failed.",
+            availableControls: [],
+            generation: 1,
+            cleanupUncertain: false,
+            failure: BoltFailureContext(
+                code: .transportFailed,
+                sourceFileID: "LogitechBolt/BoltController.swift",
+                sourceLine: 1083,
+                stage: .buttonReadbackForward
+            )
+        )
+
+        store.recordBoltStatus(status)
+
+        let entry = try XCTUnwrap(store.entries.last)
+        let logLine = try XCTUnwrap(persisted.last)
+        XCTAssertEqual(entry.message, "The Bolt transport failed. Failure stage: button-readback-forward.")
+        XCTAssertEqual(logLine, entry.consoleMessage)
+        XCTAssertNil(BoltFailureContext(code: .transportFailed, sourceFileID: "test", sourceLine: 1).stage)
     }
 }

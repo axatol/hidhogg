@@ -94,15 +94,32 @@ public enum BoltFailureCode: String, Equatable, Sendable {
     case requestIDsExhausted = "bolt.request-id.exhausted"
 }
 
+public enum BoltFailureStage: String, Equatable, Sendable {
+    case connectPreflight = "connect-preflight"
+    case connectRecoveryWrite = "connect-recovery-write"
+    case connectRecoveryReadback = "connect-recovery-readback"
+    case capabilities
+    case verticalWheel = "vertical-wheel"
+    case thumbWheel = "thumb-wheel"
+    case buttonBaselineBack = "button-baseline-back"
+    case buttonBaselineForward = "button-baseline-forward"
+    case buttonWriteBack = "button-write-back"
+    case buttonWriteForward = "button-write-forward"
+    case buttonReadbackBack = "button-readback-back"
+    case buttonReadbackForward = "button-readback-forward"
+}
+
 public struct BoltFailureContext: Equatable, Sendable {
     public let code: BoltFailureCode
     public let sourceFileID: String
     public let sourceLine: UInt
+    public let stage: BoltFailureStage?
 
-    public init(code: BoltFailureCode, sourceFileID: String, sourceLine: UInt) {
+    public init(code: BoltFailureCode, sourceFileID: String, sourceLine: UInt, stage: BoltFailureStage? = nil) {
         self.code = code
         self.sourceFileID = sourceFileID
         self.sourceLine = sourceLine
+        self.stage = stage
     }
 }
 
@@ -143,7 +160,7 @@ enum BoltFailure: Error, LocalizedError, Equatable {
         case .transport: "The Bolt transport failed."
         case .malformed: "The Bolt candidate returned malformed data."
         case .unsupported: "The candidate does not uniquely advertise eligible Back and Forward controls."
-        case .foreignState: "Button reporting or remapping changed outside this session."
+        case .foreignState: "The device state did not match the expected state."
         case .stale: "A stale Bolt report stopped the session."
         case .overflow: "The event consumer fell behind; bindings were stopped."
         case .cancelled: "The operation was stopped."
