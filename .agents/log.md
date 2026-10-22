@@ -2309,3 +2309,7 @@ Owner screenshot showed native default Label placed mouse icon at first text lin
 ## 2026-10-23 — Owner-accepted checkpoint
 
 Owner confirmed sidebar layout and authorized check-in of accumulated native UI, mouse artwork, device information, notification support, tests and documentation. Background gates/build evidence recorded above; real notification delivery and firmware type5 remain follow-ups. Local .envrc/.codex/macos, Python cache and compiled spike binary excluded without inspection. No push requested.
+
+## 2026-10-23 — Default branch merge and README refresh
+
+Owner approved merging next/logitech-slice into default master (no main exists). Fast-forward completed at70b6068, no conflicts; excluded untracked files untouched, no push. Owner requested README cleanup and logo. README now uses selected serpent asset, documents current Logitech scope, build/fixed path/configuration, future device support and links. All relative links/assets resolve and git diff --check passed. Documentation-only follow-up; no new runtime verification needed.

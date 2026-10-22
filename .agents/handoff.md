@@ -1,3 +1,7 @@
+# Current checkpoint — master and README, 2026-10-23
+
+Local master contains accepted checkpoint70b6068; next/logitech-slice points to the same checkpoint before README follow-up. No push. README refreshed with selected logo and current feature/build scope; local links checked. Type5 identification and physical notification delivery remain follow-ups. Local-only untracked files remain untouched.
+
 # Accepted checkpoint — 2026-10-23
 
 ## 2026-10-23 — Owner-accepted checkpoint
