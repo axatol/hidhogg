@@ -2110,3 +2110,202 @@ Owner says latest build looks good and requests check-in then roadmap review. NX
 Committed accepted application scope as6ce6b23 on next/logitech-slice;107files, with explicitpath staging. Local environment/IDE/cache/diagnostic artifacts excluded untouched.82testedinputs match final316-test build; required2accentJSON and source/evidence/art included. Corrected ignored build-info scalar manifest_count78→82 to match actualmaps; no source/bundle change. No push.
 
 Roadmap now separates owner-accepted functionalbaseline, residualverification and plannedwork. NX21/22 and acceptedRestart/navigation/wake Done; oldicontrials closedas superseded, not accepted. UIalignment milestone439/list67 precedes D200X443/list66 via actualdependencyedges. Nextaction UI01planning; no newimplementation authorized. Rewrote handoff/currentacceptance index to remove stale noDock/pendingappearance/registrationdiagnosis instructions; historicalreports/log preserved. Documentation-only review checkpoint follows applicationcommit.
+
+## UI01–03 expansion drafted — 2026-10-21
+
+Owner confirmed expansion coversallthreeUI tasks. docs/ui-alignment-plan.md maps current source and selectedboards05/06/11; recommendations remainforreview, notcodeapproval. Task440/milestone439 planningInProgress;441/442 stillplanned. Proposedtwobindabletargets(nativeBack/Forward), appcontextinspector andseparate devicewidewheelpanel; distinctconnection/save/admission states; nativeSettingscategories; proposedconfirmationfornonemptyoverride removal. Existingautosave,recording,presets,manualentry,inheritance,permissions,diagnostics andDock/CmdTab retained. Mockupengines/hardware/schema/runtime outofscope. Sourceunchanged, no tests/native/deviceops/commit/push thisplanningturn. Next:ownerreviewdecisiontable beforeUI02code.
+
+## UI interaction contract fleshed out — 2026-10-21
+
+Owner requested deeperplanning withvisuals/tables and questionsatend. docs/ui-alignment-review.md is the conciseownerreview, linkedfromfullplan/roadmap. Main+architect+explorer staticaudits found: editingapp differsfromforegrounddelivery; finalInheritprunesappcontext; capturecanoutlivevisibleroutes; Disablednotnativepassthroughwhileintercepted; load/save/revisionconflict needdistinctUIstates. No observednativefailure or newtestsclaimed. Proposedcapturecancellation/read-onlyloadfailureguard/typederrorprojection/emptycontextpolicy areexplicitnarrowbehaviorseams, notsilentlylayoutonly. Existingemptyappschema appearsadequate butroundtriptestrequired.
+
+Checklist: capability/sourceauditcomplete; flow/state/Settings/resize tablesdrafted; Task440–442notesexpanded; sourceunchanged; owneranswers/codeapprovalpending. Threequestionsinreviewend: Aseparatewheelpanel/Bwheelinspector; AretainappafterlastInherit/BpruneandAllapps; Aautocancelcaptureonleave/BpersistentCancelwhilewindowopen. RecommendAforeach. Closingworkspaceendscaptureeitherway. No appcode, nativeops/tests, commit orpush. Nextaction obtainownerdecisions, updateapprovedcontract, thenUI02implementationplan gate.
+
+## 2026-10-22 — UI implementation checkpoint
+
+Owner approved UI-02/03 with 1B/2A/3A. Checklist: contract approved; bounded device/Settings workers delegated; parent model integration in progress; independent tests, signed bundle and owner acceptance pending. No transport/domain schema/defaults changes. Four transient UI targets; wheels device-wide. Capture commit/cancel UUID guards and empty app retention implemented for verification. Disconnect alone preserves visible offline capture. No production app/device/config/login operations.
+
+## 2026-10-22 — UI checkpoint built and independently verified
+
+Approved 1B/2A/3A implemented with bounded device/Settings workers and parent integration; explorer audited source. Eight focused tests and final324-test regression passed (190XCTest+134SwiftTesting). First regression found only stale status assertion; typed File conflict expectation updated. Final source review corrected conflict copy and guarded manual-sheet re-presentation until dismissal cleanup (unconfirmed low-probability native race); final suite rerun. Signed dist/Hidhogg.app build17e2cfd76146, arm64/macOS26, strict signature verified; executable SHA2564e4317175a5ecc9255c0de288b4ddef635d306d97e8fca77e77535da3c87fce1. dist/build-info.json records98 inputs. docs/ui-alignment-validation.md holds decisions/checklist/evidence. No production native/device/config/login operations, commit or push. UI02/03 milestone remains awaiting owner acceptance; D200X blocked. No new runtime/transport/schema/defaults/dependency/polling. No external notification because milestone not yet accepted/completed.
+
+## 2026-10-22 — Native window crash reproduced
+
+Owner reported signed build17e2cfd76146 crashes opening workspace, approved crash inspection and native reproduction/fix. Exact crash executable UUID matches delivered binary. Scoped report shows main-thread SIGABRT in AppKit constraints/SwiftUI SplitViewChildController. Fake-session native NSWindow test now reproduces NSGenericException: window exceeds allowed Update Constraints in Window passes. Known command: swift test --disable-sandbox --build-system native --package-path app --scratch-path /Volumes/Data/cache/hidhogg-workspace-independent --filter NativeWorkspaceWindowTests. One selected test red in1.361s before resize; initial red log /Volumes/Data/tmp/hidhogg-window-repro-red.log. Production source unchanged; native test worker minimizing Devices/canvas/splitview. Prior324 model tests were insufficient native UI evidence. Owner acceptance failed; D200X remains blocked. Initial runner mistakes were resolved; do not run xctest --help (it is not supported and emits environment diagnostics). No environment values were used or saved in artifacts.
+
+## 2026-10-22 — Window crash correction independently verified
+
+Native regression exposed a gap in prior324 model/protocol tests. Final correction removes explicit sidebar and inspector width modifiers, each demonstrated by remove/pass, restore/fail, final-remove/pass at980 and820 openings. Other diagnostic probes reverted. Unsupported780 probe preserved separately, not basis for productfix. Native automatic sizing selected over preferred/fixed sidebar variants (bothfailed); no new runtime/schema/defaults changes. Independent tester ran2 real-WorkspaceView cases at980x680 and820x560 twicefresh, allpassed; regular190XCTestpassed+2native-skipped+134SwiftTestingpassed,0failures. New NativeWorkspaceWindowTests isoptin; minimizationcases/stageprints removed. Explorer audited two sourcechanges/no probes. Signed corrected dist build97d79d553024, executable SHA2560fdfc18c425efb8f2f24a5870f842f29fd0059650ca31ae42483cea2d846826a,99inputmanifest. Full evidence/checklist in docs/ui-alignment-validation.md. Owner physical/production-app acceptance stillpending, no commit/push/milestonenotification; D200Xblocked. No productionapp/HID/config/login operations required. See handoff for exactcommands and toolinglesson.
+
+## 2026-10-22 — Mouse SVG review pending
+
+Owner rejected rounded-box/grid canvas in favor of recognizable simple mouse vector with physical shaped controls or leader labels. Owner requested SVG render review BEFORE integration; do not integrate yet. Created docs/product-redesign/mockups/mx-master-3s/01-mouse-review.svg, VectorCraft-rendered PNG, and neutral transparent mouse-artwork.svg. Viewed product photo and official Logitech control overview; original simplified drawing, four editable controlIDs, Back selectedgold onreviewboardonly. VectorCraft import/export no warnings; visually inspectedPNG. Native callouts/hitregions remainfutureintegration. Current signed bundle/source unchanged at97d79d553024. README records design/reference/reviewstate.
+
+Connection diagnosis authorized: parent scoped escalated last-hour query found3 external-state failure events, source BoltController.swift:511 in17/97 builds. This narrows to performEnable catch; exact guardunknown (capabilities, wheelownership, reportingbaseline/readback). No evidence anotherapp causedit; genericmessage misleadinglybutton-specific. No HID/config mutation. Keep diagnosis separate from SVG integration; no productionfix authorizedimplicitly fromartreview.
+
+## 2026-10-22 — Reference-aligned SVG revision02
+
+Owner rejected revision01 as unlike mouse and supplied top-view photo /Volumes/Data/tmp/codex-clipboard-A3ZOos.png. Main redrew silhouette/proportions/main-button seams and wheels as pure vector in docs/product-redesign/mockups/mx-master-3s/02-reference-aligned-mouse.svg. Rendered VectorCraft side-by-side comparison02-reference-comparison.png/.svg (photo embedded only in comparisonboard). VectorCraft noimport/exportwarnings; mainvisuallychecked. TopviewhidesBack/Forward, notinventedtopbuttons; callouts/sidedetailafter silhouetteapproval. Rev01 rejectedhistory. Rev02 awaitingreview, noappintegration orsource/bundlechange.
+
+## 2026-10-22 — Simplified mouse revision03 awaiting review
+
+Owner accepted revision02 shape, requested less detail. Created03-simplified-mouse.svg and VectorCraft-rendered03-simplified-comparison.png/.svg in docs/product-redesign/mockups/mx-master-3s/. Exact outer silhouette path unchanged (compared), nine paths after removing texture/palm contours/wheel grooves/layered shading. Main visually checked render, import/export no warnings. Shape accepted; simplified styling awaitingreview. No app integration/source/bundlechanges.
+
+## 2026-10-22 — Combined control selection preview04
+
+Owner agreed to both shaped diagram regions and leader-line labels selecting the same target. Main rendered04-linked-controls-review.svg/.png through VectorCraft: approved simplified silhouette, outlinedwheelregions/maincallouts and enlarged schematicthumb-sideinset forForward/Back, Backselectedgold. Decorative dashed connector identifies hidden sidecontrolarea. Staticreviewonly, notclickprototype; actualnativebuttons/keyboardhitareas awaitintegrationapproval. No appsource/bundlechanges. README currentrevisionupdated, XML/renderchecked.
+
+## 2026-10-22 — Approved mouse vector integration started
+
+Owner approved simplifiedSVG03 and combinedcontrolpreview04, thenconfirmed integration. Checklist: [x] designapproved; [x] boundedcanvas/artworkexecutor +independenttester delegated; [ ] integrationreview; [ ] actualnativebuttonpress/820+980gates; [ ] signedbundle; [ ] ownervalidation. ExactSVG geometry willbe nativeSwiftUI paths; noSVGengine/WebView/bitmapdecoding. EightnativeButton IDs (label/region x4targets), samepairselection/openinspector; sideinsetBack/Forward, outlinedwheels, compactnativecallouts notdownscaledtext. Protected AppModel/transport/schema/defaults/lifecycle. No explicitcolumnwidthconstraints. Connectionfailure separatelynarrowed toenablecatch511 remainsunresolved anduntouched.
+
+## Approved native mouse integration — 2026-10-22
+
+Implemented owner-approved simplified SVG03/linked controls04 as native SwiftUI paths and buttons. Independent audit confirms nine path geometries and correct four-target mapping. Parent added full-area label hit shapes and corrected side inset to112×148 so44pt hit areas do not overlap. No transport/model/config/lifecycle change. Automatic native column sizing preserved.
+
+Verification:324 regular checks passed (190 XCTest+134 SwiftTesting;2 opt-in native skipped); native2/2 at820×560 and980×680 with all4 editor selections/Settings/resize/reopen. Synthetic240/600pt renders inspected and preserved under docs/product-redesign/mockups/mx-master-3s/05-native-canvas-*.png. AX click attempt found empty in-process host/window tree; no system AX request, failed helpers removed. Actual clicks/keyboard remain owner check.
+
+Signed dist/Hidhogg.app buildf71eb46cbf95f4d2607238741358b64df8541356ab9eac04be039b507c8ebc4e, executableSHA256 f0a267d829cc0214792bc55eb47023f593522a6d3d994fdb6fccde7d9276d930; strict verification passed.106-input provenance in dist/build-info.json. Native/regular/release logs: /Volumes/Data/tmp/hidhogg-mouse-canvas-{native,tests,release}.log. UI-02/03 remains InProgress in TaskView441; owner acceptance pending; D200X blocked. No commit/push/production app launch/liveHID/ownerconfig/login operations. Separate connectionfailure narrowed to performEnable catch511; cause remains unresolved, guard unchanged.
+
+Next: owner click each label/region, verify same inspector/gold; resize/scroll and keyboard; confirm production open/no crash. If accepted, commit only verified UI scope. Continue separate connectionfailure diagnosis under its authorization; do not infer Options+ caused it.
+
+## CONN-01 diagnostic-first investigation — 2026-10-22
+
+Owner accepted the integrated native mouse UI, requested connection correction and approved diagnostic-first instrumentation. TaskView450 InProgress. Existing evidence is external-state failure at performEnable catch511; exact guard/hardware cause unproven. Executor owns typed enable-stage context/controller capture/DiagnosticsStore projection and representative fake-transport red/green tests. Independent tester waits for freeze; main reviews scope/builds signed dist bundle. No safety/cleanup/admission/request behavior change or live device operations authorized by this implementation.
+
+Checklist: [x] static seam mapped; [x] diagnostic code plan approved; [x] executor/tester delegated; [ ] stage red/green; [ ] scope review/full regression; [ ] signed bundle; [ ] owner controlled reconnect and exact stage; [ ] causal correction plan. Settings one-page request explicitly deferred by owner until connection issues fixed. Approved direction is General/Permissions/Configuration/Diagnostics on one scrollable page with permission jump; no Settings edit now.
+
+## CONN-01 diagnostic checkpoint ready — 2026-10-22
+
+Signed dist/Hidhogg.app build357bb2389311cf48a3fc64958566fb273cc3c38c8b03f5a8612459ffc4f8a19c, strict signature passed, executable3,861,536bytes SHA256128573404055509073383bfc0dfa7066a209619485d1844f826a188368635797.106-input provenance in dist/build-info.json.3production+4test diagnostic files only: BoltProtocol optional9stage enum/context; BoltController performEnable localstage/fail context; DiagnosticsStore stage suffix and neutralforeignState text. Requests/guards/cleanup/admission unchanged. No Settings changes.
+
+Test evidence: first compile-red was copied fixture, not actualcheckout; final actualcheckout full193XCTest(2intentional native skipped)+137SwiftTesting passed. Independent firstfull had existing intermittent capture snapshot assertion at BoltThumbwheelTests451; preserved /Volumes/Data/tmp/hidhogg-connection-diagnostic-regression-attempt1.log. Retry /Volumes/Data/tmp/hidhogg-connection-diagnostic-regression.log passed328ordinary tests. Cause unproven; no unrelated fix. Executor logs connection-stage-green/diagnostics. Parent release log /Volumes/Data/tmp/hidhogg-connection-diagnostic-release.log.
+
+Next required: owner launches signed fixedpath bundle, reconnects once, reports Failure stage +code/eventID/build from Settings Diagnostics Recent Activity. Underlying connection issue not yet fixed/proven; no speculative guard relaxation. TaskView450 staysInProgress. Source uncommitted/no push/productionlaunch/HID/config/login operations. Settings one-page layout approved for after connection issue fixed. Prior mouseUI accepted by owner.
+
+## CONN-01 cause narrowed by approved getters — 2026-10-22
+
+Owner approved bounded read-only device checks. Parent reviewed opt-in temporary directIOKit transport harness and executed11request then15request getter-only sequences; both passed. Actualstate: Back/Forward diverted(flags1/remap0); vertical2121 supportedmode1(diverted,not highres/notinverted); thumb2150 validinfo, mode diverted=true/inverted=false. All rootversions/flags valid. This explains buttonbaseline-back failure and bothwheelunavailable; originofdiversion remainsunknown. Exactprocesscount1Hidhogg,0logioptionsplus_agent/0logioptionsplus, notproof allcompetingsoftwareabsent. No processes stopped; no setters/devicechanges.
+
+Probe removedfromapp tests; preserved /Volumes/Data/tmp/hidhogg-readonly-bolt-probe-20261022.swift. Logs /Volumes/Data/tmp/hidhogg-readonly-bolt-{probe,modes}-20261022.log. Docsdiagnostics updated. Existingdist diagnosticbuild357bb2389311 unchanged.
+
+Next: pendingownerchoice approve reclaimonConnect vsmanualrecovery. ProposedConnect reclaimsrecognised diversion on4controls,verifyreadback thennormalapplysavedsettings; rejectunknownflags/remaps; intentionallyexclusiveownership mayoverrideothermapper. Explorer reviewingbounded insertion/preflight/budgets/partialfailure safety. Nofixwritesyet. Settings remainsdeferreduntilconnectionfixed.
+
+## CONN-01 reclaim implementation approved — 2026-10-22
+
+Owner asked meaningofdiversion and approvedreclaim. Explained nativeevents→macOS versus diverted→software; currentdeviceall4diverted causesbaseline rejection, setteroriginunknown. ApprovedConnecttakeover ofrecognisedstates, unknownflags/remapsstillrejected. Executorheavy connect_reclaim_implementation ownsBoltController/BoltProtocol/reclaimtests; independenttester preparesmatrix/waitsfreeze; explorerprovidedread-onlysafetybrief.
+
+Chosenplan: allreadpreflight andaggregatepoolcapacitychecks beforeanysetter; recoveryinsertedafterreadCapabilities beforeReady, eager supportedwheel/thumbstate. Dedicatedjournal tracksattemptednative-targets only; preserve2121otherbits andentirevalid2150secondbyte (doNOTroundtripthroughMode.parameters). Onpartialfailure/cancel boundedcleanup onlyknownpre/targetstate, neverrestoreabandoneddiversion, unknownstate→uncertain/noReady/noadmission. Captureoperationrevision/disable/shutdown aroundawaits; existingcheckActivealoneinsufficient. Existingnormalpreferenceencoding notbroadenedwithoutprovenneed. Supportedfeatureunknownmodebecomesfatalpreflight; unsupportedrootremainslocalunsupported. UserSettingsonepage afterfix, noUIeditnow.
+
+Checklist: [x] ownerapproval [x] delegatedplan/matrix [ ] failingreclaimtests [ ] implementationreview [ ] independentregression [ ] signedbundle [ ] ownermanualConnect/physicalcheck. No furtherhardwarechecks or mutations performed.
+
+## CONN-01 reclaim packaged — 2026-10-22
+
+- Branch next/logitech-slice; source remains uncommitted, no push. Prior native mouse UI accepted by owner.
+- Current signed fixed bundle dist/Hidhogg.app buildce930217a62cb107be086313c35e0358aa0557362d30522ec7674e5a6a06e243. Strict signature passed; executableSHA2562e969ecfe7589ab17ae540ee271f10b3733d47d94c8b6a25e230622418f1faf3;107-input manifest dist/build-info.json.
+- Owner approved getter-only hardware checks: Back/Forward diverted flags1/remap0; verticalmode1; thumb[1,0]; feature roots/capabilities valid. This explains initial baseline-back error and wheel unavailable, but setter origin remains unknown. No recovery writes or production launch performed by agents.
+- Owner then approved Connect reclamation. Source now preflights recognised states/capacity, revalidates capability/feature associations, clears diversion only, verifies native beforeReady, then existing savedsettings reconciliation. Unknown/malformed state rejects; normalselfCID remap remains recognised. Dedicated attempted-write journal permits bounded native-only cleanup, never restores abandoned diversion. Cancellation can leave unattempted diversion but neverReady/admission. Status copy intentionally truthful; no Views/schema changes.
+- Verification: actual-checkout behaviorred26issues→green.12new testfunctions/27parameter-or-singleton cases. Independentfull193XCTest(2native intentional skipped)+149SwiftTesting=340ordinary passed,0failures, no retry. Existing pause/readinjection shifts preserve their targetedoperations. Logs Data/tmp/hidhogg-reclaim-{red,final,independent,release}.log. New source app/Tests/LogitechBoltTests/BoltConnectRecoveryTests.swift; production BoltController/BoltProtocol. Prior DiagnosticsStore stage projection retained.
+- Next required OWNER check: quitolderinstance/openfixedbundle; Connect or configuredlaunchconnection; Back/Forward shortcuts and bothwheel settings; Disconnect/reconnect. If failure reportstage/code/id/build. TaskView450 staysInProgress untilhardwareacceptance; do notclaimhardwarefixed yet or notify milestonecomplete.
+- After connection accepted: implement owner-approved single scrollable Settings page (General,Permissions,Configuration,Diagnostics), OpenPermissions scrollsjump. Keep nativeautomatic sidebar/inspector sizing (prior crashfix); no widthmodifiers.
+- Deferred finding: existing normal thumb preference encoding may drop acceptedsecondbyte bits1/2; reclaim preserves them. No broaderprotocolfix made. Prior intermittent capture assertion preserved in precedingdiagnostic logs, not reproduced in currentfullgate.
+- Decisions/evidence docs/diagnostics.md. Only main writes .agents. Preserve unrelated excludedlocals (.envrc,.codex,macos,etc); no env/config/PII/secret reads. No hardwaremutation/testing without authorised scope.
+
+
+## CONN-01 accepted and committed — 2026-10-22
+
+Owner reports everything working after reclaimbuildce930217a62c. Connectionfix accepted; TaskView450 Done. Commit18b23a1 onnext/logitech-slice contains9 explicitlystaged connectiondiagnostic/reclaim source,test,evidencefiles. No push. Earlier nativeUI work remainsuncommitted/separate. Previous340ordinary checks passed; no testsrerun solelyforacceptancedocupdate. Nextapprovedscope single-pageSettings (General,Permissions,Configuration,Diagnostics), permissionjump preserved. No additionalhardwareactions.
+
+## UI-04 single-page Settings — 2026-10-22
+
+OwnerapprovedimplementationafterCONN-01acceptance. TaskView451 InProgress. FiveSettingsviews nowonegroupedForm, noTabView/nestedForms. Mainaddedtransient settingsScrollRequestID UUID bumpedonopenPermissions forrepeatjump, plusonefocusedrequesttest. Hashcomparisonagainstacceptedreclaimbundle shows7expectedinputchangesonly (5views,AppModel,UIAlignmentTests). Boundedexecutorcomplete/sourcefrozen; independenttester runningfull/nativefakegates; parentreleasebuild inprogress. Existingnativeautomaticcolumns unchanged. No runtime/HID/schema/config changes. Owneractualscroll/keyboardvalidationpending; no productionlaunch.
+
+## UI-04 packaged — 2026-10-22
+
+- Current signed dist/Hidhogg.app build33da0970c776268951ccafe15ce9b92fc4a5a798a0dbaab81a0cbe92794610f8. Strictsignaturepassed; executable3,877,664bytes SHA256b0ebaf5552149f617f9ccbe0f6cc4d3a9422529f491937451a0122dbdf6435de.107-inputprovenance dist/build-info.json.
+- UI-04: onegroupedForm General/Permissions/Configuration/Diagnostics; childFormwrappers/tabsremoved. TransientsettingsScrollRequestID UUID bumpedforeveryopenPermissions; taskyield/cancelguard scrollsanchor, directcategorychange supported. RestartonlyPermissions; identicalDiagnosticsbuttonremoved. Existingactions/refresh preserved.
+- Scopeaudit7expectedinputhashchanges versusacceptedreclaimbundle:5Settingsviews+AppModel+UIAlignmentTests. No runtime/HID/schema/fixednavigationwidth changes. Sourceuncommitted alongsidemainUIwork; previousconnectionfixcommitted18b23a1, nopush.
+- Independent341ordinary checks passed (194XCTest,2native skipped+149SwiftTesting); explicitnative2/2 at820x560/980x680 passed. Nativefixturecoverslifecycle/modelselection, notFormactualscrolloffset/clicks. Logs Data/tmp/hidhogg-single-page-settings-{tests,native,release}.log. No productionapp/device/config/login operations.
+- NEXT OWNER CHECK: reopenfixedbundle; scrollallsections; OpenPermissions thenmanuallyscrollawayandrequestitagain; minwindow/keyboardreachability. TaskView451 remainsInProgress untilacceptance. Do notclaimrealFormscrolljumpverified. CommitverifiedUIonlyafterowneraccepts.
+- CONN01 acceptedbyowner, Task450Done, checkpoint18b23a1. SinglepageSettingswasapprovedafterconnectionfix andisnowimplemented. EarliernativeUIacceptedbutnotyetcommitted.
+- Docs/ui-alignment-validation.md,docs/structure.md,docs/roadmap.md updated. Mainonly .agentswrites; preserveexcludedlocals/noenv/config/PII/secretreads.
+
+## Angled mouse review artwork — 2026-10-22
+
+Ownerproposedside-anglephoto /Volumes/Data/tmp/codex-clipboard-iRGVeu.png toshowall4controlswithoutinset; approvedrenderedvectorreviewbeforeintegration. Executorangled_mouse_vector owns06-angled-mouse.svg and06-angled-controls-review.svg only. MainVectorCraftimport/renderfirstpasswarningsnone; parentrejecteditswedgeoutline/wheelplacement/occludedleaders andsentphoto-coordinatecorrection. Iteration2inprogress. Noappsource/bundlechanges. PrimaryLogitechdiagram https://secure.logitech.com/en-gb/software/mx-software confirms4Forward/5Back; inrotatedphotoForwardlower-left/front,Backupper-right/rear. Actualmappingviewedusingofficialdefault.jpg atData/tmp/hidhogg-logitech-controls.jpg.
+
+RequestedUIrefinementsstillpendingintegrationplan: replaceinsetwithoneangledmouse, labelsleft, simplifySavedonThisMacblock/linktoSettings, richergold, sidebarConnectedalignedwithdevicetext andmouseiconverticallycentered. Currentapprovalcoverspreviewonly. UI04Settingsbuild33da0970c776 remainscurrent; realpermissionjumpmanualchecknotyetreported.
+
+## Angled vector preview ready — 2026-10-22
+
+Reviewonlyartifacts06-angled-mouse.svg,06-angled-controls-review.svg/.png underdocs/product-redesign/mockups/mx-master-3s. Parentrevisedfirstpassagainstphotooutline/coordinates, elongatedsidebuttonregions, replacedlongboxleaderloopswithshorterpathsaboveart. VectorCraftimport/exportwarningsnone; finalPNGvisuallyinspected. Standalone15paths/noimages/norenderedtext, referencephotoembeddedonlyboard. Leftlabels4targets, Backricher#D8A52E, nosecondaryinset. PrimaryLogitechdiagrammappingverified. Ownerartreviewpending; noappsource/bundle/test changes, signedcurrent33da0970c776 unchanged. Otherrequestedsidebar/save/accentrefinementspendingintegration. READMErecordsreviewscope.
+
+## Revision07 artwork ready — 2026-10-22
+
+Ownerrejected06lines/shapes. Sourceworkerowned07standalone; mainadjustedbroadfrontpanel/seamsandbuilt07reviewboard with4single-straightlineleaders(noelbows), widerwheels/smaller14x4sidebuttons, curvedplanes, photoonlyboard. VectorCraftimport/exportwarningsnone; parentvisuallycheckedrender/linecrossings. Files07-angled-mouse.svg and07-angled-controls-review.svg/.png; READMEupdated. Ownerreviewpending; noappsource/bundlechanges. OtherUIrefinementsremainpending.
+
+## Artwork acceptance failure / photo trace checkpoint — 2026-10-22
+
+Ownerrejected07notclose; stopintegration/freehandshapeguesses. MainusedVectorCraftimageTraceactualphoto(5colors/noise25,44paths),selected14neutralregionsandphoto-derivedcontourmask for08-photo-contour-mouse.svg;08-photo-contour-review.svg/.png comparesphotoandbaretrace. No leaders/interactionlabels. Renderingwarningsnone; mainvisuallyinspected. ThisisROUGHgeometrycheckpoint, lightingboundaries/edgeirregularitiesstillneedcleanup, NOT finalapprovedsimplifiedvector. No app/bundlechanges. Failed07silhouette/planes/capsulewheelsdocumented; primaryreasonfreehandgeometrydeviated. Nextownerreviewgeometrythencleanpathswithoutalteringproportions; addlabelsaftershapeacceptance. ArtifactsREADMEupdated. Temporary reproduciblescript /Volumes/Data/tmp/hidhogg_trace08.py andrawtrace /Volumes/Data/tmp/hidhogg-reference-trace08-simple.svg. No furtherproductionworkuntilshapeapproved.
+# 2026-10-22 — Approved angled mouse integration decisions
+
+- Owner approved revision15 after rejecting noisy trace boundaries, excessive flattening and a pointed recess-band join. `docs/product-redesign/mockups/mx-master-3s/15-smooth-band.svg` is the canonical artwork; earlier revisions remain review history.
+- Implementation scope is decorative artwork, physical native buttons and adaptive native labels only. No runtime, transport, model, settings, schema, signing identity or device-state changes.
+- Chosen representation: cached native SwiftUI paths converted from the SVG. Alternatives: bundled PNG would preserve artwork but incur decoded bitmap storage; SVG parser would add runtime work/dependency; vector PDF would draw efficiently but separate geometry would still be needed for physical hit regions. Native paths share the source coordinate system with those regions.
+- Further automatic SVG merging/minification is deferred: the hand-cleaned source is already only a few kilobytes, and overlapping band/surface paths establish its accepted appearance. Prefer preserving geometry to another approximate trace. This is a file/representation decision, not measured runtime-memory evidence.
+- Executor owns artwork/geometry/presentation/button changes; independent tester owns verification. Parent supervises integration and durable docs. Existing native fake-window fixture is the agreed bounded gate; no production app/HID/config/login operations.
+
+## 2026-10-22 — Angled mouse verified and packaged
+
+- Explorer independently matched all20 SVG paths and colours/strokes/roundcaps/joins; no runtime/model/transport/package changes. Native20cachedPaths and shape buttons share1576×998 coordinates, actual displayed-sizeCanvas. Deleted obsolete two thumb-side views. Parent corrected executor's initial verbal wheel reversal before freeze and caught missing explicitreturn before compile.
+- Render gates exposed narrow wordbreaks and invisible leaders: compact now4fullwidthlabels; leaders drawn above artwork with endpointdots, labels aboveleaders. Native240/600pt renders visually inspected and saved as16-native-angled previews. Staticfollowup found no defects.
+- Ordinary341passes before final layout correction (192XCTest+149SwiftTesting,2opt-in native skips); final UIAlignment9/9 and native2/2 passed. Sandbox cache-denial logs preserved; scoped escalated retries succeeded. No pointerclick/AXtree assertion or runtime-memory measurement.
+- Owner requested background testing. Tester removed activation/front-order calls, uses orderBack and asserts visible/non-key initial/reopen; native2/2 passed again. This verifies testwindowstate, not globalfocusmonitoring. Foregroundclick tests remain separate.
+- Signed dist build5a564e91901e, strictsignaturepassed, executable3,848,112bytes SHA25605252319845e5fab7966d1397c5e56b022adaea4394fb1a7c8d74e60e85be251. Refreshed105-inputmanifest includes finaltesthash and scopedgate boundaries. Ownerclick/keyboard/resize acceptance pending; sourceuncommitted, nopush, no productionlaunch/HID/config/login operations. Other sidebar/gold/saveblock requests deferred separately.
+
+## 2026-10-22 — Owner accepts angled canvas
+
+Owner reports all working and identifies battery/firmware as missing. Treat current artwork/control integration as accepted. Static review of existing research found Feature1004 battery and Feature0003 device firmware paths; this is not current hardware support/readback proof. Next proposed slice is read-only device information with graceful unavailable/stale states, cached per connection and explicit refresh. No code or live device requests performed for that follow-up. Receiver firmware remains a separately unresolved path.
+
+## 2026-10-22 — INFO-01/02 approved and implemented in progress
+
+Owner approved informationplan, menumenu/sidebarbattery and optionalbelow10%nativealert. NewTaskView452/453InProgress. PrimaryLinux1004implementation corroborates capabilityflag+status/eventbytefields missingfromlocalREnotes; vendorHID++documents dynamicfeatures/packetframing. SeparateprotocolerrorfromgenuineIOfailure required because existingIOKitworker separatelyemitsmatchedHID++errors as sessionterminalevents. Heavyworkerownsreadonlyseam, lightworkernotification/codec, independenttester modelintegrationtests; parentAppModel/UI. No livegetter yet.
+
+Criticalchoices: no receiverfirmware/serialread, perconnection/manual/eventupdates ratherthanpoll; boundedmax8firmwareentities and rawhexversion/build ratherthanguessBCDtohuman; fixedalert0–9%knownnonchargingfreshwithin5min, rearm20%hysteresis, persistedlogicalprofilelatch separatefromXDGuserpreference. No prompt onload/connect; onlyexplicitopt-in. Sourcepolicyadapterusesfakes, productionserviceonlyinconvenienceinit. No newruntime/dependency. Details and alternatives in docs/device-information-plan.md. Firstcompilefoundreturned-switcherror in notificationadapter, ownerworkerfixed; verificationnotyetcomplete.
+
+## 2026-10-22 — INFO-01/02 verified offline and packaged
+
+- Boundedworkers completedmetadata5files, notification/configmodule+tests; parentnativeviews/AppModel, independenttester3modelintegrationtests. Metadata18/18passed. InitialtestorderingassumptionreplacedwithFIFOeventbarriers; optionalsend-completiontimeoutthatpoisonsworker mappedgenuine.transport, responsereplytimeoutremainslocalmetadataunavailable; normalsafetyunchanged.
+- Independentnotificationreview provedheldlowenqueue→20rearm→newlowcouldfalselylatchnewstate. Workerremovedmutablerevisioneligibility in favorimmutableinvalidationperenqueue andatmostonesuccessfulreplacement. Regressioncovers5→20→8andwaitsreplacementbeforelatch. No realnotificationstest.
+- Fullfirst214XCTest2skip0fail+167SwiftTesting1issueinexistingthumbcapturetest451. Samehistoricalasyncsnapshotissue; isolatedcasepassed, singlefullretrypassed379ordinarychecks,0fail. Existingtest/runtimewerenotchangedtohidefailure. Backgroundnon-keynative2/2passed. No actualmenu/sidebarviewassertion orlivehardware/UNacceptance.
+- Signedfixedbuild050d02547bd0strictsignaturepassed, executable4,112,272bytes SHA2569a8295d4deff24827e881ad0aec7fd0b8132c7b5eef194bf8bfd166aa1129515;114-inputmanifestrefreshed. TaskView452/453remainInProgressowneracceptancepending; nocommit/push/productionlaunch/HID/config/login/keychainoperations. Verification/decisions/shortownergates docs/device-information-plan.md.
+
+- Finalexploreraudit foundnoblocking safetyissue but highlightedclassificationlimits: dynamicfeatureversionbyte notretained, no numericversionwhitelist/evidenceclaim; requiredpayloadlayoutvalidatesbasefields. Missingfeature=unsupported, matchedprotocolrejection/timeout/malformed=unavailable, no exactprotocolreasonretained. Parentrecordedthisexplicitdecision/limit ratherthaninventinguntestedversionpolicyor claimingfinerdiagnostics. Futureversion-specificextensions/finerreasoncodesremainfollowup.
+
+## 2026-10-22 — Device information presentation refinement
+
+Owner requested a device-named menu battery item, a centred sidebar mouse icon beside two aligned text lines (name, then connection+battery), battery in the top overview and less-used firmware at the bottom. Bounded executor changed MenuBarView, WorkspaceView, DevicesView and DeviceInformationView, adding DeviceBatteryOverviewView. Compact sidebar battery retains full help/accessibility status; battery timestamp and existing alert controls remain together in the overview. No model, configuration, transport or policy change.
+
+Independent tester/explorer found no material defect; existing background non-key native tests passed2/2. Menu/sidebar layout is source-reviewed, without a live visual assertion. Full functional suite was not repeated for this reversible layout change. Signed fixed build42d2e843700e, strict signature passed,115-input manifest updated. Executable4,171,968bytes SHA256dcc30948235f3c8db19eec960b5dee3484ebd17ec06141b5a86eef96deece279. Owner visual acceptance pending; no live HID/notification, commit or push. Decisions/checklist in docs/device-information-plan.md.
+
+## 2026-10-22 — Notification scope and decoded firmware presentation
+
+Owner requested inline battery alert checkbox, app-global permission content in Settings and human firmware labels/versions. Two bounded workers split notification views from firmware presentation/parser/tests. Manufacturer Feature0003 mirror explicitly specifies packed BCD firmware number/revision/build and component types; Solaar corroborates hardware raw byte1. This new evidence resolves the earlier rawhex-only presentation decision. Decoder validates each decimal nibble and formats22.1.6, not ordinary integer8705; hardware and unknown layouts remain separate. No wire request/controller/transport policy changed.
+
+Notification checkbox retains existing setter/prompt timing and per-device TOML preference; authorization content is app Settings-only. Firmware preserves all source-index rows, duplicate main images and active flags; secondary components under disclosure. Optional hardwareRevision field preserves existing payload byte1 without another query. Invalid BCD remains unavailable.
+
+Independent focused24XCTest+18selectedSwiftTesting passed; backgroundnative2/2 passed. Parent strengthened fixture with fake notification adapter/in-memory latch so actual conditional branches render; prompt/enqueue both XCTFail if called, neither was. Initial worker isolated-scratch compile attempt stopped at sandbox manifest denial; coordinated authorized scratch passed. No full-suite repeat; no Options+ live-value parity or real notification delivery proof. Static explorer found no blocker.
+
+Signed fixed build76acd0ab10d4 strict signature verified,116-input manifest, executable4,238,784bytes SHA25673ae87afe5e694598e71d2d0d46c82c0616ddf5c526e0bd3819d99104f124461. Logs Data/tmp/hidhogg-info-format-{tests,native,release}.log. Owner visual/version acceptance pending, no commit/push/liveHID/UN/config/login operations. TaskView452/453 remain InProgress.
+
+## 2026-10-23 — Sidebar alignment and contrast
+
+Approved equal centred20x20 native Label icon slots for device and Settings; preserved name/status/battery. Sidebar-only #8F651F has calculated white contrast5.19:1, global accent unchanged. Independent review and background native2/2 passed. Signed fixed bundle build373fb2d693b6bb7019e95256f45ade50b9f570dbc9296730778188f4ad25063a; strict codesign passed and provenance updated. Owner visual acceptance pending. Firmware type5 unchanged. No production launch, live device operations, commit or push.
+
+## 2026-10-23 — Sidebar vertical centering and Settings padding
+
+Owner screenshot showed native default Label placed mouse icon at first text line. Approved shared SidebarLabelStyle explicitly centres the20x20 icon against complete title VStack, preserves matching horizontal columns, and adds4pt vertical padding to Settings. Nested battery label keeps standard titleAndIcon style. WorkspaceView only changed in this follow-up. Independent static review and background native2/2 passed; no pixel assertion, owner visual acceptance pending. Fixed signed bundle build09ea131e8d5468b40c8f6d7fe3ab396c940bf1fce73d5ca8c9e9d1174b70a83a; strict codesign and provenance updated. No production launch, device/config/notification operation, commit or push.
+
+## 2026-10-23 — Owner-accepted checkpoint
+
+Owner confirmed sidebar layout and authorized check-in of accumulated native UI, mouse artwork, device information, notification support, tests and documentation. Background gates/build evidence recorded above; real notification delivery and firmware type5 remain follow-ups. Local .envrc/.codex/macos, Python cache and compiled spike binary excluded without inspection. No push requested.

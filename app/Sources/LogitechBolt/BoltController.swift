@@ -45,6 +45,13 @@ public actor BoltController {
     private var physicalWheelRequest: PhysicalWheelRequest?
     private var thumbwheel = ThumbwheelState()
     private var pendingReclaims: [ConnectReclaim] = []
+    private var deviceInformation = BoltDeviceInformation()
+    private var informationRefreshPending = false
+    private var batteryFeature: (index: UInt8, capabilities: BoltDeviceInformationReader.BatteryCapabilities)?
+    private var batteryEventRevision: UInt64 = 0
+    private var connectionOpenedAt: ContinuousClock.Instant = .now
+    private var statusMessage = ""
+    private var statusFailure: BoltFailureContext?
 
     private struct ConnectReclaim {
         enum Control { case button(MouseControl), wheel, thumbwheel }
@@ -163,6 +170,124 @@ public actor BoltController {
 
     public func disable() async { await disableBindings() }
     public func stop() async { await shutdown() }
+
+    public func refreshDeviceInformation() async {
+        guard !informationRefreshPending, !shutdownRequested, !disableRequested,
+              transport != nil, terminalFailure == nil, phase == .ready || phase == .enabled else { return }
+        informationRefreshPending = true
+        let current = connection
+        let revision = operationRevision
+        await acquireOperation()
+        defer {
+            informationRefreshPending = false
+            deviceInformation.isRefreshing = false
+            if deviceInformation.batteryState == .loading { deviceInformation.batteryState = .unavailable }
+            if deviceInformation.firmwareState == .loading { deviceInformation.firmwareState = .unavailable }
+            releaseOperation()
+        }
+        do {
+            try checkInformationRefresh(connection: current, revision: revision)
+            deviceInformation.isRefreshing = true
+            deviceInformation.batteryState = .loading
+            deviceInformation.firmwareState = .loading
+            publishDeviceInformation()
+            await refreshBatteryInformation(connection: current, revision: revision)
+            try checkInformationRefresh(connection: current, revision: revision)
+            await refreshFirmwareInformation(connection: current, revision: revision)
+            try checkInformationRefresh(connection: current, revision: revision)
+            deviceInformation.isRefreshing = false
+            publishDeviceInformation()
+        } catch {
+            if connection == current, operationRevision == revision, !shutdownRequested, !disableRequested,
+               terminalFailure == nil, transport != nil, phase == .ready || phase == .enabled {
+                deviceInformation.isRefreshing = false
+                if deviceInformation.batteryState == .loading { deviceInformation.batteryState = .unavailable }
+                if deviceInformation.firmwareState == .loading { deviceInformation.firmwareState = .unavailable }
+                publishDeviceInformation()
+            }
+        }
+        await reconcileTerminalFailure()
+    }
+
+    private func checkInformationRefresh(connection current: UInt64, revision: UInt64) throws {
+        try checkActive()
+        guard connection == current, operationRevision == revision, !shutdownRequested, !disableRequested,
+              transport != nil, phase == .ready || phase == .enabled else { throw BoltFailure.cancelled }
+    }
+
+    private func informationRequest(feature: UInt8, function: UInt8, parameters: [UInt8] = [],
+                                    connection current: UInt64, revision: UInt64) async throws -> [UInt8] {
+        try checkInformationRefresh(connection: current, revision: revision)
+        guard let transport else { throw BoltFailure.disconnected }
+        guard remainingNativeTokens(feature: feature, function: function) > 2 else { throw BoltFailure.tokenExhausted }
+        do {
+            let reply = try await transport.requestDeviceInformation(slot: slot, feature: feature, function: function, parameters: parameters)
+            try checkInformationRefresh(connection: current, revision: revision)
+            return reply
+        } catch {
+            if let failure = error as? BoltFailure,
+               failure == .disconnected || failure == .transport || failure == .overflow || failure == .ambiguous {
+                _ = recordFailure(failure, connection: current)
+            }
+            throw error
+        }
+    }
+
+    private func informationFeature(_ identifier: UInt16, connection current: UInt64, revision: UInt64) async throws -> UInt8 {
+        let root = try await informationRequest(feature: 0, function: 0, parameters: BoltWire.bytes(identifier),
+                                                connection: current, revision: revision)
+        let index = try BoltDeviceInformationReader.featureIndex(root)
+        guard index != feature, index != wheelBaseline?.feature, index != thumbwheel.feature else { throw BoltFailure.malformed }
+        return index
+    }
+
+    private func refreshBatteryInformation(connection current: UInt64, revision: UInt64) async {
+        let eventRevision = batteryEventRevision
+        do {
+            let index = try await informationFeature(0x1004, connection: current, revision: revision)
+            batteryFeature = nil
+            let capabilities = try BoltDeviceInformationReader.BatteryCapabilities(
+                await informationRequest(feature: index, function: 0, connection: current, revision: revision))
+            batteryFeature = (index, capabilities)
+            let battery = try BoltDeviceInformationReader.battery(
+                await informationRequest(feature: index, function: 1, connection: current, revision: revision), capabilities: capabilities)
+            guard eventRevision == batteryEventRevision else { return }
+            deviceInformation.battery = battery
+            deviceInformation.batteryState = .available
+        } catch {
+            guard (try? checkInformationRefresh(connection: current, revision: revision)) != nil else { return }
+            if (error as? BoltFailure) == .unsupported { batteryFeature = nil }
+            guard eventRevision == batteryEventRevision else { return }
+            deviceInformation.battery = nil
+            deviceInformation.batteryState = (error as? BoltFailure) == .unsupported ? .unsupported : .unavailable
+        }
+        publishDeviceInformation()
+    }
+
+    private func refreshFirmwareInformation(connection current: UInt64, revision: UInt64) async {
+        do {
+            let index = try await informationFeature(0x0003, connection: current, revision: revision)
+            guard index != batteryFeature?.index else { throw BoltFailure.malformed }
+            let count = try BoltDeviceInformationReader.firmwareCount(
+                await informationRequest(feature: index, function: 0, connection: current, revision: revision))
+            var entities: [BoltDeviceInformation.FirmwareEntity] = []
+            for entity in 0..<count {
+                entities.append(try BoltDeviceInformationReader.firmwareEntity(
+                    await informationRequest(feature: index, function: 1, parameters: [entity], connection: current, revision: revision)))
+            }
+            deviceInformation.firmware = entities
+            deviceInformation.firmwareState = .available
+        } catch {
+            guard (try? checkInformationRefresh(connection: current, revision: revision)) != nil else { return }
+            deviceInformation.firmware = []
+            deviceInformation.firmwareState = (error as? BoltFailure) == .unsupported ? .unsupported : .unavailable
+        }
+        publishDeviceInformation()
+    }
+
+    private func publishDeviceInformation() {
+        publish(phase, statusMessage, failure: statusFailure)
+    }
 
     public func stop(restorePreviousSettingsOnDisconnect: Bool) async {
         await shutdown(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
@@ -637,6 +762,7 @@ public actor BoltController {
         terminalFailure = nil
         let candidate = makeTransport()
         transport = candidate
+        connectionOpenedAt = .now
         observer = Task { [weak self] in
             for await event in candidate.events {
                 guard !Task.isCancelled else { break }
@@ -1297,6 +1423,9 @@ public actor BoltController {
         observer = nil
         if let transport { await transport.close() }
         transport = nil
+        deviceInformation = .init()
+        batteryFeature = nil
+        batteryEventRevision &+= 1
     }
 
     private func receive(_ event: BoltTransportEvent, connection current: UInt64) async {
@@ -1307,6 +1436,7 @@ public actor BoltController {
             guard let intent = recordFailure(error, connection: current) else { return }
             if !operationHeld { await scheduleFailure(intent) }
         case .report(let report, let arrival):
+            if receiveBatteryInformation(report, at: arrival) { return }
             if let capture = thumbwheel.capture, let index = thumbwheel.feature, thumbwheel.captureVerified,
                terminalFailure == nil, phase == .ready || phase == .enabled || phase == .enabling {
                 do {
@@ -1374,6 +1504,27 @@ public actor BoltController {
         }
     }
 
+    private func receiveBatteryInformation(_ report: [UInt8], at arrival: ContinuousClock.Instant) -> Bool {
+        guard let batteryFeature, report.count >= 4, report[1] == slot,
+              report[2] == batteryFeature.index, report[3] == 0 else { return false }
+        guard terminalFailure == nil, !shutdownRequested,
+              phase == .ready || phase == .enabled || phase == .enabling else { return true }
+        batteryEventRevision &+= 1
+        do {
+            let age = arrival.duration(to: .now)
+            guard report[0] == 0x11, report.count == 20 else { throw BoltFailure.malformed }
+            guard arrival >= connectionOpenedAt, age >= .zero, age <= .milliseconds(250) else { throw BoltFailure.stale }
+            deviceInformation.battery = try BoltDeviceInformationReader.battery(Array(report.dropFirst(4)),
+                capabilities: batteryFeature.capabilities, observedAt: Date.now.addingTimeInterval(-Double(age.components.seconds) - Double(age.components.attoseconds) / 1e18))
+            deviceInformation.batteryState = .available
+        } catch {
+            deviceInformation.battery = nil
+            deviceInformation.batteryState = .unavailable
+        }
+        publishDeviceInformation()
+        return true
+    }
+
     private func recordFailure(_ error: Error, connection current: UInt64) -> FailureIntent? {
         guard current == connection, transport != nil, terminalFailure == nil,
               phase != .stopping, phase != .failed else { return nil }
@@ -1414,8 +1565,10 @@ public actor BoltController {
 
     private func publish(_ phase: BoltPhase, _ message: String, failure: BoltFailureContext? = nil) {
         self.phase = phase
+        statusMessage = message
+        statusFailure = failure
         refreshWheelCaptureStatus()
-        let result = continuation.yield(.status(BoltStatus(phase: phase, message: message, availableControls: available, generation: generation, cleanupUncertain: uncertain, wheel: wheel, thumbwheel: thumbwheel.status, failure: failure)))
+        let result = continuation.yield(.status(BoltStatus(phase: phase, message: message, availableControls: available, generation: generation, cleanupUncertain: uncertain, wheel: wheel, thumbwheel: thumbwheel.status, failure: failure, deviceInformation: deviceInformation)))
         if case .dropped(let event) = result {
             switch event {
             case .status: return

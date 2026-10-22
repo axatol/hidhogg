@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="463" height="480" viewBox="248 105 463 480" role="img"><title>Simplified MX Master 3S mouse, thumb-side view</title><g id="mouse-artwork" stroke-linecap="round" stroke-linejoin="round">
+    <path id="thumb-rest" d="M374 264 C350 302 330 333 298 360 C270 384 255 425 260 459 C264 489 291 510 328 510 C369 510 410 491 446 477 L441 391 L411 308 Z" fill="#292b2e" stroke="#55585d" stroke-width="2" />
+    <path d="M274 451 C312 462 345 452 382 427" fill="none" stroke="#414449" stroke-width="2" />
+    <path id="main-shell" d="M441 144 C483 115 531 109 570 119 C611 129 637 166 658 216 C687 284 703 360 686 432 C676 478 650 519 611 544 C558 578 491 574 441 544 C399 519 375 480 365 433 C349 364 355 297 374 240 C390 194 412 164 441 144 Z" fill="#35373b" stroke="#777a80" stroke-width="2" />
+    <path id="thumb-side-panel" d="M375 239 C385 256 396 282 404 312 C412 345 420 388 427 425 C435 465 450 508 475 552 C421 534 387 492 373 446 C353 383 351 309 375 239 Z" fill="#26282c" stroke="#55585e" stroke-width="1.5" />
+    <path id="palm-shell" d="M407 316 C459 294 511 286 553 291 C601 297 647 321 689 358 C695 418 670 499 610 538 C561 570 499 565 451 539 C433 505 423 458 417 414 C412 376 410 343 407 316 Z" fill="#3b3d41" />
+    <path d="M407 316 C459 294 511 286 553 291 C601 297 647 321 689 358" fill="none" stroke="#55585d" stroke-width="1.5" />
+    <path id="left-click-detail" d="M442 150 C469 132 495 124 520 124 L526 278 C483 282 444 296 407 312 C394 284 384 257 380 240 C395 196 418 166 442 150 Z" fill="#404247" />
+    <path id="right-click-detail" d="M540 123 C553 121 562 123 572 126 C608 138 634 176 652 221 C660 242 668 264 673 286 C629 278 585 274 546 277 Z" fill="#44464b" />
+    <path d="M532 132 L538 274" fill="none" stroke="#202225" stroke-width="3" />
+    <path id="wheel-well" d="M515 155 C513 149 517 143 524 142 L546 142 C554 143 559 148 560 156 L563 235 C563 243 558 249 551 250 L528 250 C520 250 515 245 515 237 Z" fill="#202225" />
+    <g id="vertical-wheel-target">
+      <path d="M527 155 C528 150 532 148 537 148 C543 148 548 152 549 158 L552 231 C552 238 547 243 540 243 C534 243 529 239 528 233 Z" fill="#686b70" stroke="#b5b7bb" stroke-width="2.5" />
+      <path d="M532 169 L546 169 M532 181 L547 181 M533 193 L547 193 M534 205 L548 205 M534 217 L548 217 M535 229 L548 229" fill="none" stroke="#303236" stroke-width="2" />
+    </g>
+    <path id="mode-button-detail" d="M532 263 Q532 258 538 258 L549 258 Q554 259 554 265 L555 285 Q555 290 550 291 L539 292 Q533 292 533 287 Z" fill="#292b2f" />
+    <g id="thumb-wheel-target">
+      <path d="M364 274 Q363 267 371 262 L412 241 Q421 236 427 243 L436 257 Q440 264 432 269 L389 291 Q380 296 375 290 Z" fill="#66696e" stroke="#b5b7bb" stroke-width="2.5" />
+      <path d="M377 261 L391 285 M386 256 L400 280 M395 252 L409 275 M404 247 L418 270 M413 244 L427 266" fill="none" stroke="#303236" stroke-width="2" />
+    </g>
+    <path id="forward-button-target" d="M401 307 L431 291 Q439 287 442 294 L446 306 Q449 312 442 316 L412 332 Q406 335 403 328 L398 316 Q396 310 401 307 Z" fill="#34363a" stroke="#b5b7bb" stroke-width="2.5" />
+    <path id="back-button-target" d="M356 332 L384 317 Q391 313 395 320 L399 332 Q401 338 395 342 L367 357 Q360 361 357 354 L352 342 Q350 336 356 332 Z" fill="#34363a" stroke="#b5b7bb" stroke-width="2.5" />
+    <path id="gesture-button-detail" d="M291 432 L307 421 Q311 418 313 422 L316 431 Q318 434 313 437 L298 447 Q294 450 292 446 L289 439 Q287 435 291 432 Z" fill="#33363a" />
+  </g>
+
+  </svg>

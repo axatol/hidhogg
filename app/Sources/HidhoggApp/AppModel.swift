@@ -11,6 +11,7 @@ protocol BindingSession: Sendable {
     var events: AsyncStream<BoltEvent> { get }
 
     func discover() async
+    func refreshDeviceInformation() async
     func enable() async
     func disable() async
     func stop() async
@@ -34,6 +35,8 @@ protocol BindingSession: Sendable {
 extension BoltController: BindingSession {}
 
 extension BindingSession {
+    func refreshDeviceInformation() async {}
+
     func stop(restorePreviousSettingsOnDisconnect: Bool) async { await stop() }
 
     func stopForRestart(restorePreviousSettingsOnDisconnect: Bool) async -> Bool {
@@ -80,11 +83,13 @@ struct WorkspaceLocation: Hashable {
     var route: WorkspaceRoute
     var applicationID: String?
     var control: MouseControl
+    var target: DeviceEditorTarget
 
     init(route: WorkspaceRoute = .devices, applicationID: String? = nil, control: MouseControl = .back) {
         self.route = route
         self.applicationID = applicationID
         self.control = control
+        self.target = control == .back ? .back : .forward
     }
 }
 
@@ -112,6 +117,7 @@ struct ShortcutRecordingTarget: Equatable {
 @MainActor
 final class AppModel: ObservableObject {
     let configurationURL: URL
+    let lowBatteryNotifications: LowBatteryNotificationController?
 
     @Published private(set) var navigation = NavigationHistory(initialRoute: WorkspaceLocation())
     @Published private(set) var document = ConfigurationDraft()
@@ -129,7 +135,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var isWheelApplyPending = false
     @Published private(set) var isThumbwheelApplyPending = false
     @Published private(set) var configurationLoadFailed = false
+    @Published private(set) var configurationLoadError: String?
     @Published private(set) var configurationSaveError: String?
+    @Published private(set) var configurationFailureKind: ConfigurationFailureKind?
+    @Published var selectedSettingsCategory: SettingsCategory = .general
+    @Published private(set) var settingsScrollRequestID = UUID()
+    @Published private(set) var captureSessionID: UUID?
     @Published private(set) var recordingTarget: ShortcutRecordingTarget?
     @Published private(set) var lastActionMessage: String?
     @Published var isReloadConfirmationPresented = false
@@ -187,6 +198,7 @@ final class AppModel: ObservableObject {
         self?.recordDiagnostic(code: code, message: message)
     }
     private var statusSequence: UInt64 = 0
+    private var informationRequestedForConnection = false
     private struct WakeStatusWait {
         let id: UUID
         let matches: @MainActor (BoltStatus) -> Bool
@@ -211,6 +223,7 @@ final class AppModel: ObservableObject {
             sender: ShortcutSender(),
             scrollSender: ScrollSender(),
             thumbwheelScrollSender: ScrollSender(),
+            lowBatteryNotifications: LowBatteryNotificationController(),
             loadImmediately: true,
             observeSleep: true
         )
@@ -223,6 +236,7 @@ final class AppModel: ObservableObject {
         sender: ShortcutSender,
         scrollSender: ScrollSender = ScrollSender(preflight: { false }, post: { _, _ in }),
         thumbwheelScrollSender: ScrollSender = ScrollSender(preflight: { false }, post: { _, _ in }),
+        lowBatteryNotifications: LowBatteryNotificationController? = nil,
         loadImmediately: Bool = true,
         observeSleep: Bool = true,
         wakeDelay: @escaping WakeRecoveryCoordinator.Delay = { try await Task.sleep(for: $0) },
@@ -237,6 +251,7 @@ final class AppModel: ObservableObject {
         self.sender = sender
         self.scrollSender = scrollSender
         self.thumbwheelScrollSender = thumbwheelScrollSender
+        self.lowBatteryNotifications = lowBatteryNotifications
         self.frontmostApplication = frontmostApplication
         self.wakeDelay = wakeDelay
         self.wakeStatusTimeout = wakeStatusTimeout
@@ -301,6 +316,15 @@ final class AppModel: ObservableObject {
     var selectedControl: MouseControl { navigation.current.control }
     var applicationIDs: [String] { document.draft.mouse?.applications.keys.sorted() ?? [] }
     var isBindingsEnabled: Bool { boltStatus.phase == .enabled && actionsEnabled }
+
+    var buttonReadiness: String {
+        if recordingTarget != nil { return "Shortcuts paused while recording" }
+        if !hasUsableConfiguration { return "Shortcuts blocked: configuration unavailable" }
+        if !hasConfiguredShortcut { return "No shortcuts configured" }
+        if permission != .granted { return "Shortcuts blocked: input permission required" }
+        if isBindingsEnabled { return "Button shortcuts ready" }
+        return "Shortcuts waiting for a usable connection"
+    }
     var isWheelApplyInFlight: Bool { isWheelApplyPending || boltStatus.wheel.isApplying }
     var isThumbwheelApplyInFlight: Bool { isThumbwheelApplyPending }
     var wheelPreferenceDraft: Bool? { document.draft.mouse?.wheelInverted }
@@ -401,7 +425,7 @@ final class AppModel: ObservableObject {
         case .discovering: "Discovering"
         case .ready: "Connected"
         case .enabling: "Enabling"
-        case .enabled: actionsEnabled ? "Enabled" : "Stopping"
+        case .enabled: "Connected"
         case .stopping: "Stopping"
         case .failed: "Failed"
         }
@@ -421,6 +445,7 @@ final class AppModel: ObservableObject {
         if isLoading { return "Loading configuration" }
         if isSaving { return "Saving configuration" }
         if configurationLoadFailed { return "Configuration unavailable" }
+        if configurationFailureKind == .conflict { return "File conflict" }
         if configurationSaveError != nil { return "Save failed" }
         if isDirty { return "Saving changes soon" }
         return fileRevision.exists ? "Saved" : "Not saved"
@@ -439,6 +464,7 @@ final class AppModel: ObservableObject {
     }
 
     func navigate(to route: WorkspaceRoute) {
+        if navigation.current.route != route { cancelRecording() }
         var next = navigation
         var location = next.current
         location.route = route
@@ -449,6 +475,7 @@ final class AppModel: ObservableObject {
     func goBack() {
         var next = navigation
         guard next.goBack() else { return }
+        cancelRecording()
         next.replaceCurrent(with: normalized(next.current))
         navigation = next
     }
@@ -456,6 +483,7 @@ final class AppModel: ObservableObject {
     func goForward() {
         var next = navigation
         guard next.goForward() else { return }
+        cancelRecording()
         next.replaceCurrent(with: normalized(next.current))
         navigation = next
     }
@@ -512,6 +540,7 @@ final class AppModel: ObservableObject {
     func setRestarting(_ restarting: Bool) {
         isRestarting = restarting
         if restarting {
+            cancelRecording()
             prepareForLifecycleStop()
             isEnableConfirmationPresented = false
             isReloadConfirmationPresented = false
@@ -621,6 +650,63 @@ final class AppModel: ObservableObject {
         updateDraft(configuration)
     }
 
+    var canRefreshDeviceInformation: Bool {
+        !isRestarting && !boltStatus.cleanupUncertain &&
+            [.ready, .enabled].contains(boltStatus.phase) &&
+            !boltStatus.deviceInformation.isRefreshing
+    }
+
+    func refreshDeviceInformation() {
+        guard canRefreshDeviceInformation else { return }
+        Task { await bolt.refreshDeviceInformation() }
+    }
+
+    func setLowBatteryNotificationsEnabled(_ enabled: Bool) {
+        guard canEditConfiguration, !isRestarting, let notifications = lowBatteryNotifications else { return }
+        var configuration = document.draft
+        guard let index = configuration.devices.firstIndex(where: { $0.id == AppConfiguration.logitechProfileID }) else { return }
+        configuration.devices[index].lowBatteryNotificationsEnabled = enabled
+        updateDraft(configuration)
+        Task { [weak self] in
+            await notifications.setEnabled(enabled)
+            self?.updateLowBatteryObservation()
+        }
+    }
+
+    private func synchronizeLowBatteryPreference() {
+        guard let notifications = lowBatteryNotifications else { return }
+        notifications.synchronizeEnabled(hasUsableConfiguration && !configurationLoadFailed &&
+            document.draft.mouse?.lowBatteryNotificationsEnabled == true)
+    }
+
+    private func refreshNotificationAuthorization() {
+        guard let notifications = lowBatteryNotifications else { return }
+        Task { [weak self] in
+            await notifications.refreshAuthorization()
+            self?.updateLowBatteryObservation()
+        }
+    }
+
+    func refreshLowBatteryNotificationPermission() {
+        refreshNotificationAuthorization()
+    }
+
+    private func updateLowBatteryObservation() {
+        guard let notifications = lowBatteryNotifications else { return }
+        let information = boltStatus.deviceInformation
+        let battery = information.battery
+        let fresh = [.ready, .enabled].contains(boltStatus.phase) && information.batteryState == .available &&
+            battery.map { (0...300).contains(Date.now.timeIntervalSince($0.observedAt)) } == true
+        let charging: Bool? = switch battery?.charging {
+        case .discharging: false
+        case .charging, .slowCharging, .complete: true
+        default: nil
+        }
+        Task {
+            await notifications.observe(percentage: battery?.percentage, charging: charging, isFresh: fresh)
+        }
+    }
+
     func applySavedWheelPreference() {
         guard canApplyWheelPreference else { return }
         sessionActivationRequested = true
@@ -678,6 +764,7 @@ final class AppModel: ObservableObject {
 
     func beginRecording(for control: MouseControl, applicationID: String? = nil) {
         guard canEditConfiguration else { return }
+        captureSessionID = UUID()
         recordingTarget = ShortcutRecordingTarget(control: control, applicationID: applicationID)
         refreshDeliveryAdmission()
     }
@@ -693,10 +780,17 @@ final class AppModel: ObservableObject {
     }
 
     func selectControl(_ control: MouseControl) {
-        guard selectedControl != control else { return }
-        if recordingTarget?.control != control { cancelRecording() }
+        selectTarget(control == .back ? .back : .forward)
+    }
+
+    var selectedTarget: DeviceEditorTarget { navigation.current.target }
+
+    func selectTarget(_ target: DeviceEditorTarget) {
+        guard selectedTarget != target else { return }
+        cancelRecording()
         var location = navigation.current
-        location.control = control
+        location.target = target
+        if let control = target.control { location.control = control }
         var next = navigation
         next.navigate(to: location)
         navigation = next
@@ -708,9 +802,26 @@ final class AppModel: ObservableObject {
         cancelRecording()
     }
 
+    func completeRecording(_ shortcut: KeyboardShortcut, sessionID: UUID) {
+        guard captureSessionID == sessionID else { return }
+        completeRecording(shortcut)
+    }
+
     func cancelRecording() {
         recordingTarget = nil
+        captureSessionID = nil
         refreshDeliveryAdmission()
+    }
+
+    func cancelRecording(sessionID: UUID) {
+        guard captureSessionID == sessionID else { return }
+        cancelRecording()
+    }
+
+    func openPermissions() {
+        selectedSettingsCategory = .permissions
+        settingsScrollRequestID = UUID()
+        navigate(to: .settings)
     }
 
     func addApplication(at url: URL) {
@@ -782,6 +893,7 @@ final class AppModel: ObservableObject {
                 attemptedThumbwheelRequest = nil
             }
             document.updateDraft(validated)
+            synchronizeLowBatteryPreference()
             scheduleAutosave()
             refreshDeliveryAdmission()
             requestReconciliation()
@@ -840,9 +952,11 @@ final class AppModel: ObservableObject {
                 fileRevision = snapshot.revision
                 document.acceptSaved(snapshot.configuration)
                 configurationSaveError = nil
+                configurationFailureKind = nil
                 return true
             } catch {
                 configurationSaveError = error.localizedDescription
+                configurationFailureKind = (error as? ConfigurationError) == .revisionConflict ? .conflict : .save
                 setError(
                     "Could not save configuration: \(error.localizedDescription)",
                     code: .configurationSaveFailed,
@@ -859,6 +973,7 @@ final class AppModel: ObservableObject {
 
     func requestReload() {
         guard canReloadConfiguration else { return }
+        cancelRecording()
         autosaveTask?.cancel()
         autosaveTask = nil
         guard isDirty else {
@@ -964,6 +1079,7 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func stopForTermination() async -> Bool {
+        cancelRecording()
         prepareForLifecycleStop()
         let saved = await flushPendingSave()
         await bolt.stop(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
@@ -971,6 +1087,7 @@ final class AppModel: ObservableObject {
     }
 
     func stopForRestart() async -> Bool {
+        cancelRecording()
         prepareForLifecycleStop()
         let saved = await flushPendingSave()
         let cleaned = await bolt.stopForRestart(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
@@ -1017,6 +1134,8 @@ final class AppModel: ObservableObject {
             fileRevision = snapshot.revision
             document.acceptReload(snapshot.configuration)
             configurationLoadFailed = false
+            configurationLoadError = nil
+            configurationFailureKind = nil
             hasUsableConfiguration = true
             loadedConfiguration = snapshot.configuration
         case .failure(let message):
@@ -1026,12 +1145,16 @@ final class AppModel: ObservableObject {
                 diagnosticMessage: "Configuration could not be loaded."
             )
             configurationLoadFailed = true
+            configurationLoadError = message
+            configurationFailureKind = .load
             hasUsableConfiguration = false
             loadedConfiguration = nil
         }
 
         isLoading = false
         initialConfigurationLoadPending = false
+        synchronizeLowBatteryPreference()
+        refreshNotificationAuthorization()
 
         if let deferredConnectOnLaunchValue {
             self.deferredConnectOnLaunchValue = nil
@@ -1059,9 +1182,13 @@ final class AppModel: ObservableObject {
             fileRevision = snapshot.revision
             document.acceptReload(snapshot.configuration)
             configurationSaveError = nil
+            configurationFailureKind = nil
             configurationLoadFailed = false
+            configurationLoadError = nil
             hasUsableConfiguration = true
-            recordingTarget = nil
+            cancelRecording()
+            synchronizeLowBatteryPreference()
+            refreshNotificationAuthorization()
             if let selectedApplicationID, !applicationIDs.contains(selectedApplicationID) {
                 var location = navigation.current
                 location.applicationID = nil
@@ -1080,6 +1207,9 @@ final class AppModel: ObservableObject {
                 diagnosticMessage: "Configuration could not be loaded."
             )
             configurationLoadFailed = true
+            configurationLoadError = error.localizedDescription
+            configurationFailureKind = .load
+            synchronizeLowBatteryPreference()
         }
         isLoading = false
         refreshDeliveryAdmission()
@@ -1096,7 +1226,7 @@ final class AppModel: ObservableObject {
         Task { await reloadFromDisk() }
     }
 
-    private var canEditConfiguration: Bool { !isRestarting && !isLoading }
+    var canEditConfiguration: Bool { !isRestarting && !isLoading && !configurationLoadFailed }
     private var canStartWheelApply: Bool {
         !isRestarting && !isLoading && hasUsableConfiguration &&
             [.ready, .enabled].contains(boltStatus.phase) &&
@@ -1325,6 +1455,14 @@ final class AppModel: ObservableObject {
         case .status(let status):
             statusSequence &+= 1
             boltStatus = status
+            if [.idle, .failed, .discovering].contains(status.phase) {
+                informationRequestedForConnection = false
+            }
+            if [.ready, .enabled].contains(status.phase), !informationRequestedForConnection {
+                informationRequestedForConnection = true
+                refreshDeviceInformation()
+            }
+            updateLowBatteryObservation()
             if let wait = wakeStatusWait, wait.matches(status) {
                 finishWakeStatusWait(returning: status)
             }
@@ -1454,11 +1592,7 @@ final class AppModel: ObservableObject {
             } else {
                 overrides.removeValue(forKey: control.rawValue)
             }
-            if overrides.isEmpty {
-                configuration.devices[index].applications.removeValue(forKey: applicationID)
-            } else {
-                configuration.devices[index].applications[applicationID] = overrides
-            }
+            configuration.devices[index].applications[applicationID] = overrides
         } else if let binding {
             configuration.devices[index].defaults[control.rawValue] = binding
         }

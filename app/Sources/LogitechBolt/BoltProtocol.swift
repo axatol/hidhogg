@@ -66,8 +66,9 @@ public struct BoltStatus: Equatable, Sendable {
     public let wheel: BoltWheelStatus
     public let thumbwheel: BoltThumbwheelStatus
     public let failure: BoltFailureContext?
+    public let deviceInformation: BoltDeviceInformation
 
-    public init(phase: BoltPhase, message: String, availableControls: Set<MouseControl>, generation: UInt64, cleanupUncertain: Bool, wheel: BoltWheelStatus = .init(), thumbwheel: BoltThumbwheelStatus = .init(), failure: BoltFailureContext? = nil) {
+    public init(phase: BoltPhase, message: String, availableControls: Set<MouseControl>, generation: UInt64, cleanupUncertain: Bool, wheel: BoltWheelStatus = .init(), thumbwheel: BoltThumbwheelStatus = .init(), failure: BoltFailureContext? = nil, deviceInformation: BoltDeviceInformation = .init()) {
         self.phase = phase
         self.message = message
         self.availableControls = availableControls
@@ -76,6 +77,7 @@ public struct BoltStatus: Equatable, Sendable {
         self.wheel = wheel
         self.thumbwheel = thumbwheel
         self.failure = failure
+        self.deviceInformation = deviceInformation
     }
 }
 
@@ -179,7 +181,14 @@ protocol BoltTransport: Sendable {
     func open() async throws
     func availableRequestIDs(slot: UInt8, feature: UInt8, function: UInt8) -> Int
     func request(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) async throws -> [UInt8]
+    func requestDeviceInformation(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) async throws -> [UInt8]
     func close() async
+}
+
+extension BoltTransport {
+    func requestDeviceInformation(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) async throws -> [UInt8] {
+        try await request(slot: slot, feature: feature, function: function, parameters: parameters)
+    }
 }
 
 enum BoltWire {

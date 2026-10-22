@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="348" height="426" viewBox="0 0 174 213" role="img" aria-labelledby="title description">
+  <title id="title">MX Master 3S — reference-aligned vector</title>
+  <desc id="description">Simplified top view following the supplied photograph: narrow sloping front, wide curved rear, left thumb-rest flare, inset main buttons and small vertical wheel. Side buttons are hidden by this viewing angle.</desc>
+  <g stroke-linejoin="round" stroke-linecap="round">
+    <path id="outer-silhouette" d="M77 10 C69 10 64 16 63 26 L61 64 C60 77 56 81 46 84 C35 87 30 92 28 105 L24 139 C22 151 24 156 31 162 C49 177 77 192 99 198 C115 202 133 194 143 181 C153 167 153 147 151 129 L148 100 L146 52 L144 34 C142 27 138 24 130 21 C111 14 90 8 77 10 Z" fill="#3d4041" stroke="#555859" stroke-width="0.7"/>
+    <path id="thumb-rest" d="M61 68 C59 80 55 84 45 87 C35 91 31 96 30 107 L26 138 C25 149 27 154 34 160 C49 173 72 186 94 193 C73 175 61 156 56 132 C52 110 54 87 61 68 Z" fill="#414445"/>
+    <path d="M31 108 C29 135 40 157 67 177 M37 102 C33 132 45 158 78 183 M45 99 C41 132 53 160 88 187" fill="none" stroke="#515455" stroke-width="1" opacity="0.45"/>
+    <path id="main-shell" d="M77 11 C70 11 65 17 64 28 L61 75 C56 90 55 107 58 124 C62 148 75 172 93 189 C104 199 121 198 133 190 C147 180 151 164 150 144 C150 121 147 102 147 83 L144 40 C143 30 140 26 131 22 C112 16 91 9 77 11 Z" fill="#303334"/>
+    <path id="palm-surface" d="M62 85 L93 78 L96 64 L109 65 L111 81 L144 92 C146 110 149 128 149 146 C150 166 145 180 133 189 C120 198 105 198 94 188 C78 172 65 148 61 127 C57 110 58 98 62 85 Z" fill="#343738"/>
+    <path d="M59 102 C56 132 69 163 93 185" fill="none" stroke="#414546" stroke-width="1.2"/>
+    <path d="M63 130 C68 154 82 176 102 188" fill="none" stroke="#3c4041" stroke-width="1.2"/>
+    <path id="left-button-detail" d="M77 12 C70 12 65 18 64 28 L62 75 C62 81 63 83 67 82 L91 77 L93 37 C93 32 96 30 102 30 L102 16 C94 14 85 12 77 12 Z" fill="#373a3b"/>
+    <path id="right-button-detail" d="M105 16 L105 30 C110 31 112 34 112 39 L112 79 C112 82 113 84 117 85 L138 91 C142 92 143 90 143 86 L142 40 C141 30 138 27 131 24 C123 21 115 18 105 16 Z" fill="#383b3c"/>
+    <path d="M102 15 L102 29 M62 83 L91 77 L93 37 C93 32 96 30 101 30 L105 30 C110 30 112 34 112 39 L112 79 C112 83 114 84 118 85 L139 91 C142 92 143 90 143 86 L142 41" fill="none" stroke="#171a1b" stroke-width="1.1"/>
+    <path id="vertical-wheel-well" d="M98 32 L105 32 Q109 32 109 36 L109 62 Q109 66 105 66 L98 66 Q95 66 95 62 L95 36 Q95 32 98 32 Z" fill="#191c1d"/>
+    <path id="vertical-wheel" d="M100 35 L104 35 Q106 35 106 38 L106 60 Q106 63 103 63 L100 63 Q98 63 98 60 L98 38 Q98 35 100 35 Z" fill="#a5a8a8" stroke="#c2c4c3" stroke-width="0.6"/>
+    <path d="M100 37 L100 60 M104 38 L104 60" fill="none" stroke="#5d6262" stroke-width="0.8"/>
+    <path d="M99 40 L105 40 M99 46 L105 46 M99 52 L105 52 M99 58 L105 58" fill="none" stroke="#7a7e7e" stroke-width="0.6"/>
+    <path id="mode-button-detail" d="M100 79 L105 79 Q107 79 107 81 L107 89 Q107 91 105 91 L100 91 Q98 91 98 89 L98 81 Q98 79 100 79 Z" fill="#292d2e" stroke="#1b1f20" stroke-width="0.7"/>
+    <path id="thumb-wheel-well" d="M57 87 L61 85 L61 113 L57 116 L54 114 L54 91 Z" fill="#25292a"/>
+    <path id="thumb-wheel" d="M57 89 L60 87 L60 112 L57 114 Z" fill="#a8abaa" stroke="#c2c4c3" stroke-width="0.6"/>
+    <path d="M57 94 L60 92 M57 100 L60 98 M57 106 L60 104 M57 111 L60 109" fill="none" stroke="#666c6b" stroke-width="0.6"/>
+    <path d="M56 118 L57 129" fill="none" stroke="#222627" stroke-width="1.2"/>
+    <path d="M29 136 L29 146" fill="none" stroke="#5b5e5f" stroke-width="0.8" opacity="0.6"/>
+  </g>
+</svg>

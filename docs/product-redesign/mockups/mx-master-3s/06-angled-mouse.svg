@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="510" height="306" viewBox="0 0 255 153" role="img" aria-labelledby="title description">
+  <title id="title">MX Master 3S — simplified angled view</title>
+  <desc id="description">A flat vector trace of the supplied angled photo, with a diagonal front nose, broad thumb rest, both wheels and two side buttons.</desc>
+  <g stroke-linejoin="round" stroke-linecap="round">
+    <path id="outer-silhouette" d="M4 91 C9 79 30 57 54 39 C88 12 127 3 160 5 C184 5 199 14 209 29 C221 48 230 76 238 104 Q242 116 232 122 L191 139 C172 148 157 149 146 142 L114 125 C104 120 96 121 88 125 L62 139 C49 147 37 146 28 138 L7 109 Q0 101 4 91 Z" fill="#3b4042" stroke="#545a5c" stroke-width="1" />
+    <path id="main-shell" d="M5 91 C10 80 31 58 55 40 C88 14 127 5 160 7 C183 7 197 16 207 30 C219 49 228 77 236 104 Q239 115 230 120 L190 136 C171 145 157 146 147 140 L115 123 C104 118 96 119 88 123 L62 136 C50 143 38 143 29 135 L8 108 Q2 101 5 91 Z" fill="#2c3032" />
+    <path d="M17 84 C33 65 51 47 71 31 C83 22 96 16 109 12 L127 49 C111 58 96 74 83 96 C61 108 40 110 19 102 Z" fill="#303537" />
+    <path d="M113 11 C131 5 150 5 168 8 C185 11 198 20 207 34 C219 53 229 80 236 104 Q239 115 230 120 C210 117 190 108 173 99 C154 89 137 72 127 51 Z" fill="#303537" />
+    <path id="thumb-rest" d="M122 79 C141 84 159 97 178 108 C195 118 214 122 232 122 L191 139 C172 148 157 149 146 142 L114 125 C104 120 96 121 88 125 C96 107 106 90 122 79 Z" fill="#3c4143" />
+    <path d="M109 12 C116 25 122 38 127 51" fill="none" stroke="#1b1f21" stroke-width="1.3" />
+    <path d="M82 96 C93 103 102 111 114 125" fill="none" stroke="#252a2c" stroke-width="1" />
+    <path d="M39 86 L60 59 Q63 56 67 59 L71 62 Q73 64 70 68 L49 97 Q46 101 42 98 L39 95 Q37 91 39 86 Z" fill="#191d1f" stroke="#252a2c" stroke-width="0.8" />
+    <path id="vertical-wheel" d="M43 93 L61 66 Q64 62 66 64 L68 66 L47 94 Q45 97 43 95 Z" fill="#aeb4b6" stroke="#767d80" stroke-width="0.8" />
+    <path d="M48 91 L63 69" fill="none" stroke="#707779" stroke-width="0.8" />
+    <path d="M136 70 L164 42 Q168 38 171 41 L174 44 Q177 47 173 51 L145 76 Q142 79 138 75 Z" fill="#191d1f" stroke="#737b7e" stroke-width="0.8" />
+    <path id="thumb-wheel" d="M140 70 L164 46 Q168 42 170 45 L172 47 L145 72 Q142 75 140 72 Z" fill="#b1b7b9" stroke="#7c8385" stroke-width="0.8" />
+    <path d="M145 68 L167 46" fill="none" stroke="#707779" stroke-width="0.8" />
+    <path id="forward-region" d="M143 89 L155 77 Q157 75 159 77 Q161 79 159 81 L147 93 Q145 95 143 93 Q141 91 143 89 Z" fill="#24292b" stroke="#626a6d" stroke-width="0.8" />
+    <path id="back-region" d="M160 76 L172 64 Q174 62 176 64 Q178 66 176 68 L164 80 Q162 82 160 80 Q158 78 160 76 Z" fill="#24292b" stroke="#626a6d" stroke-width="0.8" />
+  </g>
+</svg>

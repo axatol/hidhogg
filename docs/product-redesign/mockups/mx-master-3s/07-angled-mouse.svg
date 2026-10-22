@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="510" height="306" viewBox="0 0 255 153" role="img" aria-labelledby="title description">
+  <title id="title">MX Master 3S — angled mouse controls</title>
+  <desc id="description">A flat vector study of the supplied angled photo, with broad curved shell planes and clearly shaped controls.</desc>
+  <g stroke-linejoin="round" stroke-linecap="round">
+    <path id="outer-silhouette" d="M4 91 C9 79 30 57 54 39 C88 12 127 3 160 5 C184 5 199 14 209 29 C221 48 230 76 238 104 Q242 116 232 122 L191 139 C172 148 157 149 146 142 L114 125 C104 120 96 121 88 125 L62 139 C49 147 37 146 28 138 L7 109 Q0 101 4 91 Z" fill="#3b4042" stroke="#545a5c" stroke-width="1" />
+    <path id="main-shell" d="M5 91 C10 80 31 58 55 40 C88 14 127 5 160 7 C183 7 197 16 207 30 C219 49 228 77 236 104 Q239 115 230 120 L190 136 C171 145 157 146 147 140 L115 123 C104 118 96 119 88 123 L62 136 C50 143 38 143 29 135 L8 108 Q2 101 5 91 Z" fill="#2d3234" />
+
+    <path d="M110 11 C129 5 151 5 169 8 C186 11 199 22 209 40 C219 58 229 84 236 104 Q239 114 231 119 C218 116 205 109 192 101 C176 91 162 79 150 65 C136 49 124 32 115 17 Z" fill="#353a3c" />
+    <path d="M116 31 C129 25 143 25 156 31 C171 37 185 50 196 64 C202 72 207 81 210 89 C201 94 190 93 179 87 C164 79 151 68 141 57 C130 47 122 38 116 31 Z" fill="#303638" />
+
+    <path d="M5 92 C16 74 32 56 50 40 C69 24 91 13 111 10 C120 10 129 15 135 24 L147 46 C132 54 119 66 107 82 C94 99 78 118 60 135 C49 143 38 145 29 136 L8 109 Q1 100 5 92 Z" fill="#33383a" />
+    <path id="thumb-rest" d="M119 83 C135 87 150 98 167 109 C184 120 202 124 231 120 L191 138 C173 146 158 147 147 141 L115 124 C104 119 95 120 87 124 C97 108 106 93 119 83 Z" fill="#3b4143" stroke="#292e30" stroke-width="0.9" />
+    <path d="M27 114 L40 96 M67 61 L82 43" fill="none" stroke="#1d2224" stroke-width="1.1" />
+    <path d="M60 135 C82 112 114 67 147 46" fill="none" stroke="#24292b" stroke-width="1" />
+
+    <g id="vertical-wheel" transform="translate(54 78) rotate(-54)">
+      <rect x="-16" y="-6" width="32" height="12" rx="6" fill="#171b1d" stroke="#4a5153" stroke-width="0.8" />
+      <rect x="-14.5" y="-5" width="29" height="10" rx="5" fill="#b2b9bb" stroke="#7a8285" stroke-width="0.65" />
+    </g>
+
+    <g id="thumb-wheel" transform="translate(153 58) rotate(-42)">
+      <rect x="-15" y="-7" width="30" height="14" rx="7" fill="#171b1d" stroke="#4a5153" stroke-width="0.8" />
+      <rect x="-13.5" y="-6" width="27" height="12" rx="6" fill="#b5bbbd" stroke="#7c8487" stroke-width="0.65" />
+    </g>
+
+    <g transform="translate(151 86) rotate(-44)" id="forward-region">
+      <rect x="-7" y="-2" width="14" height="4" rx="2" fill="#202527" stroke="#697174" stroke-width="0.65" />
+    </g>
+    <g transform="translate(168 72) rotate(-44)" id="back-region">
+      <rect x="-7" y="-2" width="14" height="4" rx="2" fill="#202527" stroke="#697174" stroke-width="0.65" />
+    </g>
+
+    <g transform="translate(102 34) rotate(-52)" aria-label="Mode button">
+      <rect x="-5.5" y="-1.5" width="11" height="3" rx="1.5" fill="#161a1c" stroke="#52595c" stroke-width="0.55" />
+    </g>
+  </g>
+</svg>

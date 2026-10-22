@@ -128,7 +128,7 @@ final class AppModelIntegrationTests: XCTestCase {
         let flushed = await model.flushPendingSave()
         XCTAssertFalse(flushed)
         XCTAssertNotNil(model.configurationSaveError)
-        XCTAssertEqual(model.configurationStatus, "Save failed")
+        XCTAssertEqual(model.configurationStatus, "File conflict")
         session.press(.back)
         let delivered = await eventually { posted == [shortcut] }
         XCTAssertTrue(delivered)

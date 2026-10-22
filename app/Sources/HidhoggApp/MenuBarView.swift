@@ -7,6 +7,9 @@ struct MenuBarView: View {
     var body: some View {
         Label("Connection: \(model.connectionTitle)", systemImage: connectionSymbol)
 
+        let information = DeviceInformationPresentation(status: model.boltStatus)
+        Label("MX Master 3S battery: \(information.batteryText)", systemImage: information.batterySymbol)
+
         Divider()
 
         Button("Open Hidhogg", systemImage: "macwindow") {

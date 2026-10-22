@@ -31,6 +31,12 @@ final class IOKitBoltTransport: BoltTransport, @unchecked Sendable {
         try await worker.submit { try $0.request(slot: slot, feature: feature, function: function, parameters: parameters) }
     }
 
+    func requestDeviceInformation(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) async throws -> [UInt8] {
+        try await worker.submit {
+            try $0.request(slot: slot, feature: feature, function: function, parameters: parameters, optionalInformation: true)
+        }
+    }
+
     func close() async {
         _ = try? await worker.submit { $0.close() }
         continuation.finish()
@@ -66,6 +72,7 @@ final class BoltHIDWorker: @unchecked Sendable {
     private var sendResult: IOReturn?
     private var reply: Result<[UInt8], BoltFailure>?
     private var expected: BoltRequestTransaction?
+    private var optionalInformation = false
     let requestIDs = BoltRequestIDLedger()
     private var sendDeadline: TimeInterval = 0
     private var sendCompleted: TimeInterval = 0
@@ -171,12 +178,14 @@ final class BoltHIDWorker: @unchecked Sendable {
             && reportElements.contains { IOHIDElementGetType($0) == kIOHIDElementTypeOutput }
     }
 
-    func request(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) throws -> [UInt8] {
+    func request(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8], optionalInformation: Bool = false) throws -> [UInt8] {
         guard let device, !removed else { throw BoltFailure.disconnected }
         guard !pendingSend, expected == nil, !inputFailed, parameters.count <= 16, function <= 15 else { throw BoltFailure.transport }
         let transaction = try BoltRequestTransaction(ledger: requestIDs, slot: slot, feature: feature, function: function, parameters: parameters)
         defer { transaction.retire() }
         expected = transaction
+        self.optionalInformation = optionalInformation
+        defer { self.optionalInformation = false }
         reply = nil
         sendResult = nil
         sendCompleted = 0
@@ -206,7 +215,7 @@ final class BoltHIDWorker: @unchecked Sendable {
             expected = nil
             inputFailed = true
             // The callback owns its packet storage until IOKit relinquishes it.
-            throw BoltFailure.timeout
+            throw optionalInformation ? BoltFailure.transport : BoltFailure.timeout
         }
         defer { expected = nil }
         guard !removed else { throw BoltFailure.disconnected }
@@ -218,7 +227,12 @@ final class BoltHIDWorker: @unchecked Sendable {
         guard !removed else { throw BoltFailure.disconnected }
         guard !inputFailed else { throw BoltFailure.transport }
         guard let reply else { throw BoltFailure.timeout }
-        return try transaction.complete(matchedReply: reply, sendSucceeded: true)
+        do {
+            return try transaction.complete(matchedReply: reply, sendSucceeded: true)
+        } catch {
+            if optionalInformation, case .failure = reply { throw BoltDeviceInformationRequestError.protocolRejected }
+            throw error
+        }
     }
 
     private func receive(result: IOReturn, type: IOHIDReportType, reportID: UInt32, bytes: UnsafeMutablePointer<UInt8>, count: CFIndex) {
@@ -234,7 +248,9 @@ final class BoltHIDWorker: @unchecked Sendable {
         if let expected, reply == nil, ProcessInfo.processInfo.systemUptime <= requestDeadline {
             if let matched = expected.reply(report) {
                 reply = matched
-                if case .failure(let error) = matched, error != .unavailable { _ = sink?(.failure(error)) }
+                if let error = Self.matchedReplyFailure(matched, optionalInformation: optionalInformation) {
+                    _ = sink?(.failure(error))
+                }
                 return
             }
         }
@@ -243,6 +259,11 @@ final class BoltHIDWorker: @unchecked Sendable {
             if sink?(.report(report, at: .now)) == false { notificationStopped = true }
             return
         }
+    }
+
+    static func matchedReplyFailure(_ reply: Result<[UInt8], BoltFailure>, optionalInformation: Bool) -> BoltFailure? {
+        guard !optionalInformation, case .failure(let error) = reply, error != .unavailable else { return nil }
+        return error
     }
 
     func close() {

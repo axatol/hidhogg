@@ -27,6 +27,8 @@ TaskView list **67**, milestone **439**. Align the existing functionality with t
 
 Retain searchable application selection, inheritance, full-area outlined bindable controls, gold accents, a connection dot beside status text, permissions inside Settings, immediate application and autosave. Existing Back/Forward history remains. Mockup-only Actions, notification history and MCP capabilities must be identified as separate functional gaps; visual alignment does not silently authorize those engines or present them as working.
 
+[Expanded UI-01–03 contract](ui-alignment-plan.md) and [validation record](ui-alignment-validation.md) document the implemented native UI checkpoint. The owner accepted the final sidebar layout on 2026-10-23; remaining device-information follow-ups are tracked separately.
+
 **Gate:** owner accepts the native layout and existing Logitech behavior before D200X implementation starts. UI planning must settle any screen and capability questions before code changes.
 
 ## NX-M3 — First D200X functional slice

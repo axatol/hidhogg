@@ -59,6 +59,7 @@ public struct DeviceBindings: Codable, Equatable, Sendable {
     public var wheelScrollAmount: Double?
     public var thumbwheelInverted: Bool?
     public var thumbwheelScrollAmount: Double?
+    public var lowBatteryNotificationsEnabled: Bool
 
     public init(
         id: String,
@@ -69,7 +70,8 @@ public struct DeviceBindings: Codable, Equatable, Sendable {
         wheelHighResolution: Bool? = nil,
         wheelScrollAmount: Double? = nil,
         thumbwheelInverted: Bool? = nil,
-        thumbwheelScrollAmount: Double? = nil
+        thumbwheelScrollAmount: Double? = nil,
+        lowBatteryNotificationsEnabled: Bool = false
     ) {
         self.id = id
         self.defaults = defaults
@@ -80,6 +82,25 @@ public struct DeviceBindings: Codable, Equatable, Sendable {
         self.wheelScrollAmount = wheelScrollAmount
         self.thumbwheelInverted = thumbwheelInverted
         self.thumbwheelScrollAmount = thumbwheelScrollAmount
+        self.lowBatteryNotificationsEnabled = lowBatteryNotificationsEnabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        defaults = try container.decode([String: ControlBinding].self, forKey: .defaults)
+        applications = try container.decode([String: [String: ControlBinding]].self, forKey: .applications)
+        wheelInverted = try container.decodeIfPresent(Bool.self, forKey: .wheelInverted)
+        restorePreviousSettingsOnDisconnect = try container.decode(
+            Bool.self, forKey: .restorePreviousSettingsOnDisconnect
+        )
+        wheelHighResolution = try container.decodeIfPresent(Bool.self, forKey: .wheelHighResolution)
+        wheelScrollAmount = try container.decodeIfPresent(Double.self, forKey: .wheelScrollAmount)
+        thumbwheelInverted = try container.decodeIfPresent(Bool.self, forKey: .thumbwheelInverted)
+        thumbwheelScrollAmount = try container.decodeIfPresent(Double.self, forKey: .thumbwheelScrollAmount)
+        lowBatteryNotificationsEnabled = try container.decodeIfPresent(
+            Bool.self, forKey: .lowBatteryNotificationsEnabled
+        ) ?? false
     }
 
     public func binding(for control: MouseControl, application: String?) -> ControlBinding {
@@ -87,6 +108,19 @@ public struct DeviceBindings: Codable, Equatable, Sendable {
             return override
         }
         return defaults[control.rawValue] ?? .disabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case defaults
+        case applications
+        case wheelInverted
+        case restorePreviousSettingsOnDisconnect
+        case wheelHighResolution
+        case wheelScrollAmount
+        case thumbwheelInverted
+        case thumbwheelScrollAmount
+        case lowBatteryNotificationsEnabled
     }
 }
 

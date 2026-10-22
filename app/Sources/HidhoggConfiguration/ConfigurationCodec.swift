@@ -110,6 +110,7 @@ private struct DeviceDocument: Codable {
     let wheelScrollAmount: Double?
     let thumbwheelInverted: Bool?
     let thumbwheelScrollAmount: Double?
+    let lowBatteryNotificationsEnabled: Bool
 
     var configuration: DeviceBindings {
         DeviceBindings(
@@ -121,7 +122,8 @@ private struct DeviceDocument: Codable {
             wheelHighResolution: wheelHighResolution,
             wheelScrollAmount: wheelScrollAmount,
             thumbwheelInverted: thumbwheelInverted,
-            thumbwheelScrollAmount: thumbwheelScrollAmount
+            thumbwheelScrollAmount: thumbwheelScrollAmount,
+            lowBatteryNotificationsEnabled: lowBatteryNotificationsEnabled
         )
     }
 
@@ -137,6 +139,7 @@ private struct DeviceDocument: Codable {
         self.wheelScrollAmount = configuration.wheelScrollAmount
         self.thumbwheelInverted = configuration.thumbwheelInverted
         self.thumbwheelScrollAmount = configuration.thumbwheelScrollAmount
+        self.lowBatteryNotificationsEnabled = configuration.lowBatteryNotificationsEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -144,7 +147,7 @@ private struct DeviceDocument: Codable {
         try container.rejectUnknownKeys([
             "id", "defaults", "applications", "wheel_inverted",
             "restore_previous_settings_on_disconnect", "wheel_high_resolution", "wheel_scroll_amount",
-            "thumbwheel_inverted", "thumbwheel_scroll_amount"
+            "thumbwheel_inverted", "thumbwheel_scroll_amount", "low_battery_notifications_enabled"
         ])
         id = try container.decode(String.self, forKey: AnyCodingKey("id"))
         defaults = try container.decode([String: BindingDocument].self, forKey: AnyCodingKey("defaults"))
@@ -168,6 +171,9 @@ private struct DeviceDocument: Codable {
         thumbwheelScrollAmount = try container.decodeIfPresent(
             Double.self, forKey: AnyCodingKey("thumbwheel_scroll_amount")
         )
+        lowBatteryNotificationsEnabled = try container.decodeIfPresent(
+            Bool.self, forKey: AnyCodingKey("low_battery_notifications_enabled")
+        ) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -183,6 +189,7 @@ private struct DeviceDocument: Codable {
         try container.encodeIfPresent(wheelScrollAmount, forKey: .wheelScrollAmount)
         try container.encodeIfPresent(thumbwheelInverted, forKey: .thumbwheelInverted)
         try container.encodeIfPresent(thumbwheelScrollAmount, forKey: .thumbwheelScrollAmount)
+        try container.encode(lowBatteryNotificationsEnabled, forKey: .lowBatteryNotificationsEnabled)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -195,6 +202,7 @@ private struct DeviceDocument: Codable {
         case wheelScrollAmount = "wheel_scroll_amount"
         case thumbwheelInverted = "thumbwheel_inverted"
         case thumbwheelScrollAmount = "thumbwheel_scroll_amount"
+        case lowBatteryNotificationsEnabled = "low_battery_notifications_enabled"
     }
 }
 

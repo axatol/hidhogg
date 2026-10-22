@@ -1,337 +1,194 @@
 import SwiftUI
-import HidhoggDomain
-import UniformTypeIdentifiers
 
 struct DevicesView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var isApplicationPickerPresented = false
+    @State private var isInspectorPresented = true
 
     var body: some View {
-        Form {
-            Section("Device") {
-                HStack(alignment: .top, spacing: 10) {
-                    Circle()
-                        .fill(Color(nsColor: model.connectionColor))
-                        .frame(width: 9, height: 9)
-                        .padding(.top, 5)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(model.connectionTitle)
-                            .font(.headline)
-                        Text(model.boltStatus.message)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    if model.boltStatus.phase == .discovering || model.boltStatus.phase == .enabling {
-                        Button("Cancel", systemImage: "xmark.circle") { model.disconnect() }
-                    } else if [.ready, .enabled, .stopping].contains(model.boltStatus.phase) {
-                        Button("Disconnect", systemImage: "xmark.circle", role: .destructive) {
-                            model.disconnect()
-                        }
-                        .disabled(model.boltStatus.phase == .stopping)
-                    } else {
-                        Button("Connect", systemImage: "cable.connector") {
-                            model.connect()
-                        }
-                        .disabled(!model.canDiscover)
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                deviceHeader
+
+                DeviceApplicationSelector(isDeviceWide: model.selectedTarget.control == nil)
+
+                DeviceControlCanvas(isInspectorPresented: $isInspectorPresented)
+
+                configurationStatus
+
+                DeviceInformationView()
+            }
+            .frame(maxWidth: 760, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(24)
+        }
+        .navigationTitle("Devices")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    isInspectorPresented.toggle()
+                } label: {
+                    Label(
+                        isInspectorPresented ? "Hide Inspector" : "Show Inspector",
+                        systemImage: "sidebar.trailing"
+                    )
+                }
+                .help(isInspectorPresented ? "Hide device settings" : "Show device settings")
+            }
+        }
+        .inspector(isPresented: $isInspectorPresented) {
+            DeviceInspectorView()
+        }
+        .onChange(of: isInspectorPresented) { _, isPresented in
+            if !isPresented { model.cancelRecording() }
+        }
+        .onDisappear {
+            model.cancelRecording()
+        }
+    }
+
+    private var deviceHeader: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "computermouse.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(AppAppearance.accent)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Logitech device")
+                        .font(.title2.weight(.semibold))
+                    Text(model.boltStatus.message)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if model.boltStatus.cleanupUncertain {
-                    Label("Cleanup is unverified. Hidhogg will not reconnect automatically.", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                }
+                Spacer(minLength: 12)
+
+                connectionAction
+            }
+
+            DeviceBatteryOverviewView()
+
+            HStack(spacing: 18) {
+                LabeledContent("Connection", value: model.connectionTitle)
+                LabeledContent("Button handling", value: model.buttonReadiness)
+            }
+            .font(.callout)
+
+            if model.boltStatus.cleanupUncertain {
+                Label(
+                    "Cleanup is unverified. Hidhogg will not reconnect automatically.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
             }
 
             if model.permission != .granted {
-                Section("Input Permission") {
-                    Label("Input posting permission is required for shortcuts and custom scroll amount.", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Button("Open Settings", systemImage: "gearshape") {
-                        model.navigate(to: .settings)
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Label(
+                        "Input posting permission is required for shortcuts and custom scroll amounts.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    Button("Open Permissions", systemImage: "gearshape") {
+                        model.openPermissions()
                     }
                 }
-            }
-
-            Section("Scroll") {
-                Picker("Direction", selection: Binding(
-                    get: { model.wheelPreferenceDraft },
-                    set: { model.setWheelPreference($0) }
-                )) {
-                    Text("Leave unchanged").tag(Optional<Bool>.none)
-                    Text("Standard").tag(Optional<Bool>.some(false))
-                    Text("Natural").tag(Optional<Bool>.some(true))
-                }
-
-                LabeledContent("Observed device direction", value: model.observedWheelDirection)
-                if model.boltStatus.wheel.captureActive {
-                    LabeledContent("Effective direction", value: model.effectiveWheelDirection)
-                }
-
-                Picker("Input resolution", selection: Binding(
-                    get: { model.wheelHighResolutionDraft },
-                    set: { model.setWheelHighResolution($0) }
-                )) {
-                    Text("Leave unchanged").tag(Optional<Bool>.none)
-                    Text("Low").tag(Optional<Bool>.some(false))
-                    Text("High").tag(Optional<Bool>.some(true))
-                }
-
-                LabeledContent("Observed resolution", value: model.observedWheelResolution)
-                LabeledContent("Hidhogg change", value: model.wheelSessionChange)
-
-                Toggle("Custom scroll amount", isOn: Binding(
-                    get: { model.wheelScrollAmountDraft != nil },
-                    set: { model.setWheelScrollAmount($0 ? WheelScrollAmount.defaultSelection : nil) }
-                ))
-                if let amount = model.wheelScrollAmountDraft {
-                    Slider(value: Binding(
-                        get: { model.wheelScrollAmountDraft ?? WheelScrollAmount.defaultSelection },
-                        set: { model.setWheelScrollAmount($0) }
-                    ), in: WheelScrollAmount.range, step: 0.25)
-                    LabeledContent("Vertical amount", value: String(format: "%.2f×", amount))
-                }
-                LabeledContent("Scroll amount state", value: model.scrollAmountStatus)
-                Text("Custom amount captures this mouse’s wheel and posts fixed line events. Amount scales vertical movement; application handling and physical direction still need comparison. Temporary capture is always released on disconnect.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-
-                Toggle("Restore previous device settings on disconnect", isOn: Binding(
-                    get: { model.restorePreviousSettingsOnDisconnect },
-                    set: { model.setRestorePreviousSettingsOnDisconnect($0) }
-                ))
-
-                if let message = model.boltStatus.wheel.message {
-                    Text(message)
-                        .font(.callout)
-                        .foregroundStyle(model.boltStatus.cleanupUncertain ? .orange : .secondary)
-                }
-
-                Text("Changes apply while connected and are saved automatically. The device keeps its scroll settings after disconnecting unless restoration is enabled. Temporary input interception is always released.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-
-                Text("Input resolution controls device reporting granularity. Low resolution does not guarantee whole-line movement or disable animation in applications.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-
-                Text("Leave unchanged keeps the current value, or restores the previous value when restoration is enabled.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Thumb wheel") {
-                Picker("Direction", selection: Binding(
-                    get: { model.thumbwheelPreferenceDraft },
-                    set: { model.setThumbwheelPreference($0) }
-                )) {
-                    Text("Leave unchanged").tag(Optional<Bool>.none)
-                    Text("Standard").tag(Optional<Bool>.some(false))
-                    Text("Natural").tag(Optional<Bool>.some(true))
-                }
-
-                LabeledContent("Observed direction", value: model.observedThumbwheelDirection)
-                LabeledContent("Effective direction", value: model.effectiveThumbwheelDirection)
-                LabeledContent("Hidhogg change", value: model.thumbwheelSessionChange)
-
-                Toggle("Custom thumb-wheel amount", isOn: Binding(
-                    get: { model.thumbwheelScrollAmountDraft != nil },
-                    set: { model.setThumbwheelScrollAmount($0 ? WheelScrollAmount.defaultSelection : nil) }
-                ))
-                if let amount = model.thumbwheelScrollAmountDraft {
-                    Slider(value: Binding(
-                        get: { model.thumbwheelScrollAmountDraft ?? WheelScrollAmount.defaultSelection },
-                        set: { model.setThumbwheelScrollAmount($0) }
-                    ), in: WheelScrollAmount.range, step: 0.25)
-                    LabeledContent("Thumb-wheel amount", value: String(format: "%.2f×", amount))
-                }
-                LabeledContent("Thumb-wheel amount state", value: model.thumbwheelScrollAmountStatus)
-                if let message = model.boltStatus.thumbwheel.message {
-                    Text(message)
-                        .font(.callout)
-                        .foregroundStyle(model.boltStatus.cleanupUncertain ? .orange : .secondary)
-                }
-                Text("The thumb wheel has its own Standard or Natural direction and fixed line amount. At 1×, each reported rotation count posts one line; applications decide how far that line moves. Changes apply while connected and save automatically; physical settings remain in place after disconnect unless the restore option above is enabled. Temporary input interception is always released.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Configuration") {
-                LabeledContent("Saved state", value: model.configurationStatus)
-                if let error = model.configurationSaveError {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button("Retry Saving", systemImage: "arrow.clockwise") {
-                        Task { await model.flushPendingSave() }
-                    }
-                    .disabled(model.isSaving || model.configurationLoadFailed)
-                }
-                Text("Changes apply immediately and save one second after your last edit. Connect to apply settings saved while disconnected.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Button("Reload from File…", systemImage: "arrow.clockwise") { model.requestReload() }
-                    .disabled(!model.canReloadConfiguration)
-                if let lastActionMessage = model.lastActionMessage {
-                    Text(lastActionMessage)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("Application") {
-                HStack {
-                    Picker("App context", selection: Binding(
-                        get: { model.selectedApplicationID },
-                        set: { model.selectApplication($0) }
-                    )) {
-                        Text("All apps").tag(String?.none)
-                        ForEach(model.applicationIDs, id: \.self) { applicationID in
-                            Text(applicationID).tag(Optional(applicationID))
-                        }
-                    }
-                    .disabled(model.isLoading)
-
-                    Button("Add App…", systemImage: "plus") { isApplicationPickerPresented = true }
-                        .disabled(model.isLoading)
-
-                    if model.selectedApplicationID != nil {
-                        Button("Remove", systemImage: "minus", role: .destructive) {
-                            model.removeSelectedApplication()
-                        }
-                    }
-                }
-            }
-
-            Section("Control") {
-                HStack(spacing: 10) {
-                    ForEach(MouseControl.allCases, id: \.self) { control in
-                        let isSelected = model.selectedControl == control
-                        Button {
-                            model.selectControl(control)
-                        } label: {
-                            Label(control.title, systemImage: control == .back ? "arrow.left" : "arrow.right")
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 9)
-                                .contentShape(RoundedRectangle(cornerRadius: 8))
-                                .background(
-                                    isSelected ? AppAppearance.accent.opacity(0.12) : .clear,
-                                    in: RoundedRectangle(cornerRadius: 8)
-                                )
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(
-                                            isSelected ? AppAppearance.accent : Color(nsColor: .separatorColor),
-                                            lineWidth: isSelected ? 2 : 1
-                                        )
-                                }
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(isSelected ? .isSelected : [])
-                    }
-                }
-            }
-
-            Section("\(model.selectedControl.title) binding") {
-                ControlBindingRow(control: model.selectedControl)
-                Text("Shortcuts use physical macOS key codes and current keyboard-layout labels. Recording pauses shortcut delivery. Configured shortcuts apply immediately; active bindings suppress native Back and Forward behavior.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Text("Navigation presets use Command+[ and Command+] at ANSI physical key positions. Labels depend on the active keyboard layout, and applications may override or ignore these shortcuts.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("Devices")
-        .disabled(model.isLoading)
-        .fileImporter(
-            isPresented: $isApplicationPickerPresented,
-            allowedContentTypes: [.applicationBundle],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first { model.addApplication(at: url) }
-            case .failure(let error):
-                model.reportError(error.localizedDescription)
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    @ViewBuilder
+    private var connectionAction: some View {
+        if model.boltStatus.phase == .discovering || model.boltStatus.phase == .enabling {
+            Button("Cancel", systemImage: "xmark.circle") { model.disconnect() }
+        } else if [.ready, .enabled, .stopping].contains(model.boltStatus.phase) {
+            Button("Disconnect", systemImage: "xmark.circle", role: .destructive) {
+                model.disconnect()
             }
+            .disabled(model.boltStatus.phase == .stopping)
+        } else {
+            Button("Connect", systemImage: "cable.connector") {
+                model.connect()
+            }
+            .disabled(!model.canDiscover)
         }
     }
-}
 
-private struct ControlBindingRow: View {
-    @EnvironmentObject private var model: AppModel
-    @State private var isShortcutEditorPresented = false
-    @State private var shortcutEditorSessionID = UUID()
-    let control: MouseControl
+    private var configurationStatus: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                LabeledContent("Saved on this Mac", value: model.configurationStatus)
+                Spacer()
+            }
 
-    private var availableModes: [BindingEditorMode] {
-        model.selectedApplicationID == nil ? [.disabled, .shortcut] : BindingEditorMode.allCases
-    }
+            if model.configurationFailureKind == .save, let error = model.configurationSaveError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker(control.title, selection: Binding(
-                get: { model.bindingMode(for: control) },
-                set: { model.setBindingMode($0, for: control) }
-            )) {
-                ForEach(availableModes) { mode in
-                    Text(mode.title).tag(mode)
-                }
+            if model.configurationFailureKind == .conflict {
+                Label(
+                    model.configurationSaveError ?? "The configuration file changed outside Hidhogg.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Text("Your draft remains editable but cannot be saved against the changed file. Reload from File… offers confirmation before discarding unsaved edits.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if model.configurationLoadFailed {
+                Label(
+                    model.configurationLoadError ?? "The configuration file could not be loaded.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Label("Configuration editing is unavailable until the file reloads successfully.", systemImage: "lock.fill")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: 10) {
-                Text(model.bindingDescription(for: control))
+                Text("Edits apply immediately and save one second after the last change. Offline edits are saved and applied after connection.")
+                    .font(.callout)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 Spacer()
-                Menu("Preset", systemImage: "keyboard") {
-                    ForEach(NavigationPreset.allCases) { preset in
-                        Button(preset.title) {
-                            model.applyNavigationPreset(preset)
-                        }
+
+                if model.configurationFailureKind == .save {
+                    Button("Retry Saving", systemImage: "arrow.clockwise") {
+                        Task { await model.flushPendingSave() }
                     }
+                    .disabled(model.isSaving || !model.canEditConfiguration)
                 }
-                if model.bindingMode(for: control) == .shortcut, !isShortcutEditorPresented {
-                    if model.recordingTarget == ShortcutRecordingTarget(
-                        control: control,
-                        applicationID: model.selectedApplicationID
-                    ) {
-                        ShortcutCaptureView(
-                            onCapture: { model.completeRecording($0) },
-                            onCancel: { model.cancelRecording() }
-                        )
-                        .frame(width: 252, height: 32)
-                        Button("Cancel") { model.cancelRecording() }
-                    } else {
-                        Button("Record Shortcut", systemImage: "record.circle") {
-                            model.beginRecording(for: control, applicationID: model.selectedApplicationID)
-                        }
-                    }
+
+                Button("Reload from File…", systemImage: "arrow.clockwise") {
+                    model.requestReload()
                 }
+                .disabled(!model.canReloadConfiguration)
             }
 
-            Button("Choose Manually…", systemImage: "keyboard") {
-                shortcutEditorSessionID = UUID()
-                model.beginRecording(for: control, applicationID: model.selectedApplicationID)
-                isShortcutEditorPresented = true
+            if let lastActionMessage = model.lastActionMessage {
+                Text(lastActionMessage)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
-            .accessibilityHint("Choose a key and modifiers without pressing the shortcut")
         }
-        .padding(.vertical, 3)
-        .sheet(isPresented: $isShortcutEditorPresented, onDismiss: { model.cancelRecording() }) {
-            ShortcutEditorView(
-                initialShortcut: model.document.draft.mouse?.binding(
-                    for: control,
-                    application: model.selectedApplicationID
-                ).shortcut,
-                onCancel: { isShortcutEditorPresented = false },
-                onCommit: {
-                    model.completeRecording($0)
-                    isShortcutEditorPresented = false
-                }
-            )
-            .id(shortcutEditorSessionID)
-        }
+        .padding(.top, 4)
     }
 }
