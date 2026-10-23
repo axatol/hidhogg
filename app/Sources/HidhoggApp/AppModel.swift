@@ -6,6 +6,7 @@ import HidhoggConfiguration
 import HidhoggDomain
 import LogitechBolt
 import MacOSActions
+import UlanziD200X
 
 protocol BindingSession: Sendable {
     var events: AsyncStream<BoltEvent> { get }
@@ -74,6 +75,7 @@ extension BindingSession {
 
 enum WorkspaceRoute: String, CaseIterable, Hashable, Identifiable {
     case devices
+    case d200x
     case settings
 
     var id: Self { self }
@@ -118,6 +120,7 @@ struct ShortcutRecordingTarget: Equatable {
 final class AppModel: ObservableObject {
     let configurationURL: URL
     let lowBatteryNotifications: LowBatteryNotificationController?
+    let d200x: D200XModel
 
     @Published private(set) var navigation = NavigationHistory(initialRoute: WorkspaceLocation())
     @Published private(set) var document = ConfigurationDraft()
@@ -224,6 +227,7 @@ final class AppModel: ObservableObject {
             scrollSender: ScrollSender(),
             thumbwheelScrollSender: ScrollSender(),
             lowBatteryNotifications: LowBatteryNotificationController(),
+            d200x: D200XModel(session: UlanziD200X.D200XSession(), sender: ShortcutSender()),
             loadImmediately: true,
             observeSleep: true
         )
@@ -237,6 +241,7 @@ final class AppModel: ObservableObject {
         scrollSender: ScrollSender = ScrollSender(preflight: { false }, post: { _, _ in }),
         thumbwheelScrollSender: ScrollSender = ScrollSender(preflight: { false }, post: { _, _ in }),
         lowBatteryNotifications: LowBatteryNotificationController? = nil,
+        d200x: D200XModel? = nil,
         loadImmediately: Bool = true,
         observeSleep: Bool = true,
         wakeDelay: @escaping WakeRecoveryCoordinator.Delay = { try await Task.sleep(for: $0) },
@@ -252,10 +257,19 @@ final class AppModel: ObservableObject {
         self.scrollSender = scrollSender
         self.thumbwheelScrollSender = thumbwheelScrollSender
         self.lowBatteryNotifications = lowBatteryNotifications
+        self.d200x = d200x ?? D200XModel(sender: sender, frontmostApplication: frontmostApplication)
         self.frontmostApplication = frontmostApplication
         self.wakeDelay = wakeDelay
         self.wakeStatusTimeout = wakeStatusTimeout
         permissionChecks = sender.permissionChecks
+        self.d200x.onEdit = { [weak self] deckConfiguration in
+            guard let self else { return }
+            var configuration = self.document.draft
+            configuration.d200x = deckConfiguration
+            self.updateDraft(configuration)
+        }
+        self.d200x.onDiagnostic = { [weak self] event in self?.diagnosticEvent = event }
+        synchronizeD200X()
 
         let events = bolt.events
         eventTask = Task { [weak self] in
@@ -293,6 +307,7 @@ final class AppModel: ObservableObject {
             }
         } else {
             isLoading = false
+            synchronizeD200X()
         }
     }
 
@@ -539,6 +554,8 @@ final class AppModel: ObservableObject {
 
     func setRestarting(_ restarting: Bool) {
         isRestarting = restarting
+        d200x.suspendDelivery(restarting)
+        synchronizeD200X()
         if restarting {
             cancelRecording()
             prepareForLifecycleStop()
@@ -893,6 +910,7 @@ final class AppModel: ObservableObject {
                 attemptedThumbwheelRequest = nil
             }
             document.updateDraft(validated)
+            synchronizeD200X()
             synchronizeLowBatteryPreference()
             scheduleAutosave()
             refreshDeliveryAdmission()
@@ -1057,6 +1075,7 @@ final class AppModel: ObservableObject {
 
     func systemWillSleep() {
         guard !wakeRecovery.sleeping else { return }
+        d200x.sleep()
         let reconnect = sessionActivationRequested && !isRestarting && !boltStatus.cleanupUncertain && [.ready, .enabled].contains(boltStatus.phase)
         prepareForLifecycleStop()
         sleepCleanupSequence = statusSequence
@@ -1071,6 +1090,7 @@ final class AppModel: ObservableObject {
     }
 
     func systemDidWake() {
+        d200x.wake()
         wakeRecovery.wake { [weak self] in
             guard let self else { return .stop }
             return await self.discoverAfterWake()
@@ -1082,6 +1102,7 @@ final class AppModel: ObservableObject {
         cancelRecording()
         prepareForLifecycleStop()
         let saved = await flushPendingSave()
+        await d200x.stop()
         await bolt.stop(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
         return saved
     }
@@ -1090,6 +1111,7 @@ final class AppModel: ObservableObject {
         cancelRecording()
         prepareForLifecycleStop()
         let saved = await flushPendingSave()
+        await d200x.stop()
         let cleaned = await bolt.stopForRestart(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
         return saved && cleaned
     }
@@ -1153,6 +1175,7 @@ final class AppModel: ObservableObject {
 
         isLoading = false
         initialConfigurationLoadPending = false
+        synchronizeD200X()
         synchronizeLowBatteryPreference()
         refreshNotificationAuthorization()
 
@@ -1163,6 +1186,7 @@ final class AppModel: ObservableObject {
 
         guard !startupConnectionDecisionConsumed else { return }
         startupConnectionDecisionConsumed = true
+        if !isRestarting, loadedConfiguration?.connectOnLaunch == true { d200x.connect(configureIfNeeded: false) }
         guard !isRestarting,
               let startupIntent,
               lifecycleIntent == startupIntent,
@@ -1212,6 +1236,7 @@ final class AppModel: ObservableObject {
             synchronizeLowBatteryPreference()
         }
         isLoading = false
+        synchronizeD200X()
         refreshDeliveryAdmission()
         requestReconciliation()
     }
@@ -1221,9 +1246,24 @@ final class AppModel: ObservableObject {
         autosaveTask?.cancel()
         autosaveTask = nil
         isLoading = true
+        synchronizeD200X()
         isEnableConfirmationPresented = false
         refreshDeliveryAdmission()
         Task { await reloadFromDisk() }
+    }
+
+    private func synchronizeD200X() {
+        let blocker: String?
+        if isRestarting {
+            blocker = "Hidhogg is restarting."
+        } else if isLoading {
+            blocker = "Loading configuration…"
+        } else if configurationLoadFailed {
+            blocker = "Configuration is unavailable. Open Settings → Configuration to resolve the error."
+        } else {
+            blocker = nil
+        }
+        d200x.synchronize(document.draft.d200x, canEdit: canEditConfiguration, blocker: blocker)
     }
 
     var canEditConfiguration: Bool { !isRestarting && !isLoading && !configurationLoadFailed }

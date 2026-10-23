@@ -130,15 +130,18 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     public var schemaVersion: Int
     public var devices: [DeviceBindings]
     public var connectOnLaunch: Bool
+    public var d200x: D200XConfiguration?
 
     public init(
         schemaVersion: Int = currentVersion,
         devices: [DeviceBindings],
-        connectOnLaunch: Bool = true
+        connectOnLaunch: Bool = true,
+        d200x: D200XConfiguration? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.devices = devices
         self.connectOnLaunch = connectOnLaunch
+        self.d200x = d200x
     }
 
     public static var empty: Self {
@@ -174,31 +177,46 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
                 throw ConfigurationValidationError.invalidControls
             }
             for (application, overrides) in device.applications {
-                guard !application.isEmpty, application.utf8.count <= 255,
-                      !application.contains(where: { $0.isWhitespace || $0.isNewline }),
+                guard ConfigurationValueValidation.isValid(application: application),
                       Set(overrides.keys).isSubset(of: known) else {
                     throw ConfigurationValidationError.invalidApplication
                 }
             }
             for binding in Array(device.defaults.values) + device.applications.values.flatMap({ $0.values }) {
-                switch binding.kind {
-                case .disabled:
-                    guard binding.shortcut == nil else { throw ConfigurationValidationError.invalidShortcut }
-                case .shortcut:
-                    guard let shortcut = binding.shortcut, shortcut.keyCode <= 127,
-                          !(54...63).contains(shortcut.keyCode),
-                          Set(shortcut.modifiers).count == shortcut.modifiers.count else {
-                        throw ConfigurationValidationError.invalidShortcut
-                    }
+                guard ConfigurationValueValidation.isValid(binding: binding) else {
+                    throw ConfigurationValidationError.invalidShortcut
                 }
             }
         }
+
+        _ = try d200x?.validated()
+
         return self
+    }
+}
+
+enum ConfigurationValueValidation {
+    static func isValid(application: String) -> Bool {
+        !application.isEmpty && application.utf8.count <= 255
+            && !application.contains(where: { $0.isWhitespace || $0.isNewline })
+    }
+
+    static func isValid(binding: ControlBinding) -> Bool {
+        switch binding.kind {
+        case .disabled:
+            return binding.shortcut == nil
+        case .shortcut:
+            guard let shortcut = binding.shortcut else { return false }
+            return shortcut.keyCode <= 127
+                && !(54...63).contains(shortcut.keyCode)
+                && Set(shortcut.modifiers).count == shortcut.modifiers.count
+        }
     }
 }
 
 public enum ConfigurationValidationError: Error, LocalizedError, Sendable {
     case unsupportedVersion, invalidProfile, invalidControls, invalidApplication, invalidShortcut
+    case invalidD200XControls, invalidD200XAppearance
     case invalidWheelScrollAmount
 
     public var errorDescription: String? {
@@ -208,6 +226,8 @@ public enum ConfigurationValidationError: Error, LocalizedError, Sendable {
         case .invalidControls: "Back and Forward defaults are required; unknown controls are not supported."
         case .invalidApplication: "An application override is invalid."
         case .invalidShortcut: "A shortcut has an unsupported key, duplicate modifiers or inconsistent action."
+        case .invalidD200XControls: "A D200X control key is unknown or there are too many application overrides."
+        case .invalidD200XAppearance: "A D200X tile key, label or background color is invalid."
         case .invalidWheelScrollAmount: "Wheel scroll amount must be a finite value between 0.25 and 10."
         }
     }

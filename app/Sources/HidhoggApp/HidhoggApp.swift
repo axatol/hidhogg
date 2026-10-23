@@ -58,7 +58,8 @@ struct HidhoggApp: App {
                 .environmentObject(model)
                 .environmentObject(restartCoordinator)
         } label: {
-            MenuBarStatusLabel(
+            MultiDeviceMenuBarStatusLabel(
+                deck: model.d200x,
                 phase: model.boltStatus.phase,
                 cleanupUncertain: model.boltStatus.cleanupUncertain,
                 permissionChecks: model.permissionChecks
@@ -77,7 +78,7 @@ struct HidhoggApp: App {
                 .environmentObject(restartCoordinator)
                 .frame(minWidth: 820, minHeight: 560)
         }
-        .defaultSize(width: 980, height: 680)
+        .defaultSize(width: 1280, height: 800)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
         .commands {

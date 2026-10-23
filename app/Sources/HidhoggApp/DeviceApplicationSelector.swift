@@ -8,6 +8,7 @@ struct DeviceApplicationSelector: View {
     @State private var isApplicationPickerPresented = false
     @State private var isPickerWaitingForPopoverDismissal = false
     @State private var isRemovalConfirmationPresented = false
+    @State private var isRemovalWaitingForPopoverDismissal = false
     @State private var searchText = ""
     @State private var applicationPendingRemoval: String?
     @State private var metadataByBundleIdentifier: [String: ApplicationMetadata] = [:]
@@ -35,18 +36,20 @@ struct DeviceApplicationSelector: View {
     }
 
     private var removalTitle: String {
-        guard let applicationPendingRemoval else { return "Remove application context?" }
-        return "Remove \(metadataByBundleIdentifier[applicationPendingRemoval]?.displayName ?? applicationPendingRemoval)?"
+        guard let applicationPendingRemoval else { return "Remove application overrides?" }
+        return "Remove overrides for \(metadataByBundleIdentifier[applicationPendingRemoval]?.displayName ?? applicationPendingRemoval)?"
     }
 
     private var removalMessage: String {
-        guard let identifier = applicationPendingRemoval else { return "This removes the configured application context." }
+        guard let identifier = applicationPendingRemoval else {
+            return "This removes only this device's application overrides. The installed application remains unchanged."
+        }
         let assignmentCount = model.document.draft.mouse?.applications[identifier]?.count ?? 0
         guard assignmentCount > 0 else {
-            return "Bundle ID: \(identifier). This removes the configured application context."
+            return "Bundle ID: \(identifier). This removes only this device's configured application context. The installed application remains unchanged."
         }
         let assignmentLabel = assignmentCount == 1 ? "assignment" : "assignments"
-        return "Bundle ID: \(identifier). This removes \(assignmentCount) explicit \(assignmentLabel) for this application."
+        return "Bundle ID: \(identifier). This removes \(assignmentCount) explicit \(assignmentLabel) from this device's configuration. The installed application remains unchanged."
     }
 
     var body: some View {
@@ -104,9 +107,21 @@ struct DeviceApplicationSelector: View {
             metadataByBundleIdentifier = Self.loadMetadata(for: model.applicationIDs)
         }
         .onChange(of: isPopoverPresented) { _, isPresented in
-            guard !isPresented, isPickerWaitingForPopoverDismissal else { return }
-            isPickerWaitingForPopoverDismissal = false
-            isApplicationPickerPresented = true
+            guard !isPresented else { return }
+            if isPickerWaitingForPopoverDismissal {
+                isPickerWaitingForPopoverDismissal = false
+                isApplicationPickerPresented = true
+                return
+            }
+
+            if isRemovalWaitingForPopoverDismissal {
+                isRemovalWaitingForPopoverDismissal = false
+                isRemovalConfirmationPresented = true
+            }
+        }
+        .onChange(of: isRemovalConfirmationPresented) { _, isPresented in
+            guard !isPresented else { return }
+            applicationPendingRemoval = nil
         }
         .confirmationDialog(
             removalTitle,
@@ -115,10 +130,19 @@ struct DeviceApplicationSelector: View {
         ) {
             Button("Remove Application", role: .destructive) {
                 guard let applicationPendingRemoval,
-                      model.selectedApplicationID == applicationPendingRemoval else { return }
+                      model.applicationIDs.contains(applicationPendingRemoval),
+                      model.canEditConfiguration else {
+                    self.applicationPendingRemoval = nil
+                    return
+                }
+                model.selectApplication(applicationPendingRemoval)
+                guard model.selectedApplicationID == applicationPendingRemoval,
+                      model.canEditConfiguration else {
+                    self.applicationPendingRemoval = nil
+                    return
+                }
                 model.removeSelectedApplication()
                 self.applicationPendingRemoval = nil
-                isPopoverPresented = false
             }
             .disabled(!model.canEditConfiguration)
 
@@ -140,6 +164,18 @@ struct DeviceApplicationSelector: View {
                 model.reportError(error.localizedDescription)
             }
         }
+    }
+
+    private func beginRemovalConfirmation(for applicationID: String) {
+        guard model.canEditConfiguration, model.applicationIDs.contains(applicationID) else { return }
+        applicationPendingRemoval = applicationID
+        guard isPopoverPresented else {
+            isRemovalConfirmationPresented = true
+            return
+        }
+
+        isRemovalWaitingForPopoverDismissal = true
+        isPopoverPresented = false
     }
 
     private var applicationPopover: some View {
@@ -171,18 +207,6 @@ struct DeviceApplicationSelector: View {
 
             Divider()
 
-            if let selectedApplicationID = model.selectedApplicationID {
-                Button(
-                    "Remove \(metadataByBundleIdentifier[selectedApplicationID]?.displayName ?? selectedApplicationID)…",
-                    systemImage: "minus.circle",
-                    role: .destructive
-                ) {
-                    applicationPendingRemoval = selectedApplicationID
-                    isRemovalConfirmationPresented = true
-                }
-                .disabled(!model.canEditConfiguration)
-            }
-
             Button("Add Application…", systemImage: "plus.app") {
                 isPickerWaitingForPopoverDismissal = true
                 isPopoverPresented = false
@@ -207,57 +231,69 @@ struct DeviceApplicationSelector: View {
     private func applicationRow(identifier: String?) -> some View {
         let isSelected = model.selectedApplicationID == identifier
 
-        return Button {
-            model.selectApplication(identifier)
-            searchText = ""
-            isPopoverPresented = false
-        } label: {
-            HStack(spacing: 10) {
-                if let identifier {
-                    applicationIcon(for: identifier, size: 28)
-                        .frame(width: 28, height: 28)
-                        .accessibilityHidden(true)
-                } else {
-                    Image(systemName: "square.stack.3d.up")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
-                        .accessibilityHidden(true)
-                }
+        return HStack(spacing: 4) {
+            Button {
+                model.selectApplication(identifier)
+                searchText = ""
+                isPopoverPresented = false
+            } label: {
+                HStack(spacing: 10) {
+                    if let identifier {
+                        applicationIcon(for: identifier, size: 28)
+                            .frame(width: 28, height: 28)
+                            .accessibilityHidden(true)
+                    } else {
+                        Image(systemName: "square.stack.3d.up")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, height: 28)
+                            .accessibilityHidden(true)
+                    }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(identifier.map { metadataByBundleIdentifier[$0]?.displayName ?? $0 } ?? "All apps")
-                        .font(.body.weight(isSelected ? .semibold : .regular))
-                        .lineLimit(1)
-                    Text(identifier.map(assignmentSummary(for:)) ?? "Default assignments")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(identifier.map { metadataByBundleIdentifier[$0]?.displayName ?? $0 } ?? "All apps")
+                            .font(.body.weight(isSelected ? .semibold : .regular))
+                            .lineLimit(1)
+                        Text(identifier.map(assignmentSummary(for:)) ?? "Default assignments")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
 
-                Spacer(minLength: 4)
+                    Spacer(minLength: 4)
 
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(AppAppearance.accent)
-                        .accessibilityHidden(true)
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .foregroundStyle(AppAppearance.accent)
+                            .accessibilityHidden(true)
+                    }
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    isSelected ? AppAppearance.accent.opacity(0.12) : .clear,
+                    in: RoundedRectangle(cornerRadius: 8)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8))
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                isSelected ? AppAppearance.accent.opacity(0.12) : .clear,
-                in: RoundedRectangle(cornerRadius: 8)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .buttonStyle(.plain)
+            .accessibilityLabel(identifier.map {
+                "\(metadataByBundleIdentifier[$0]?.displayName ?? $0), \($0)"
+            } ?? "All apps")
+            .accessibilityValue(isSelected ? "Selected" : "")
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+            if let identifier {
+                Button("Remove Application", systemImage: "minus.circle") {
+                    beginRemovalConfirmation(for: identifier)
+                }
+                .labelStyle(.iconOnly)
+                .help("Remove application overrides")
+                .accessibilityLabel("Remove overrides for \(metadataByBundleIdentifier[identifier]?.displayName ?? identifier)")
+                .disabled(!model.canEditConfiguration)
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(identifier.map {
-            "\(metadataByBundleIdentifier[$0]?.displayName ?? $0), \($0)"
-        } ?? "All apps")
-        .accessibilityValue(isSelected ? "Selected" : "")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     @ViewBuilder

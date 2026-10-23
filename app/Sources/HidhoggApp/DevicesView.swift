@@ -2,7 +2,11 @@ import SwiftUI
 
 struct DevicesView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var isInspectorPresented = true
+    @Binding private var isInspectorPresented: Bool
+
+    init(isInspectorPresented: Binding<Bool> = .constant(true)) {
+        self._isInspectorPresented = isInspectorPresented
+    }
 
     var body: some View {
         ScrollView {
@@ -34,9 +38,6 @@ struct DevicesView: View {
                 }
                 .help(isInspectorPresented ? "Hide device settings" : "Show device settings")
             }
-        }
-        .inspector(isPresented: $isInspectorPresented) {
-            DeviceInspectorView()
         }
         .onChange(of: isInspectorPresented) { _, isPresented in
             if !isPresented { model.cancelRecording() }

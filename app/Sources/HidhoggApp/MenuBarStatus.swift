@@ -1,5 +1,6 @@
 import LogitechBolt
 import MacOSActions
+import UlanziD200X
 
 enum MenuBarStatus: String, Equatable {
     case connected = "Connected"
@@ -10,6 +11,27 @@ enum MenuBarStatus: String, Equatable {
     case disconnected = "Disconnected"
     case failed = "Failed"
     case cleanupUncertain = "Cleanup uncertain"
+    case partiallyConnected = "Some devices disconnected"
+
+    init(mouse: MenuBarStatus, deck: D200XStatus?) {
+        guard let deck else { self = mouse; return }
+        if mouse == .cleanupUncertain || mouse == .failed { self = mouse; return }
+        switch deck {
+        case .failed: self = .failed
+        case .connecting, .disconnecting: self = .connecting
+        case .connected:
+            switch mouse {
+            case .connected, .permissionIncomplete: self = mouse
+            case .connecting, .disconnecting, .enablingBindings: self = .connecting
+            default: self = .partiallyConnected
+            }
+        case .disconnected:
+            switch mouse {
+            case .connected, .permissionIncomplete: self = .partiallyConnected
+            default: self = mouse
+            }
+        }
+    }
 
     init(phase: BoltPhase, cleanupUncertain: Bool, permissionChecks: PermissionChecks) {
         guard !cleanupUncertain else {
@@ -47,7 +69,7 @@ enum MenuBarStatus: String, Equatable {
     var iconColor: MenuBarIcon.StatusColor {
         switch self {
         case .connected: .connected
-        case .permissionIncomplete: .permissionIncomplete
+        case .permissionIncomplete, .partiallyConnected: .permissionIncomplete
         case .connecting, .enablingBindings, .disconnecting: .transitioning
         case .disconnected: .disconnected
         case .failed, .cleanupUncertain: .failed

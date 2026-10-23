@@ -6,6 +6,9 @@ struct WorkspaceView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var restartCoordinator: RestartCoordinator
     @Environment(\.scenePhase) private var scenePhase
+    @State private var isDevicesInspectorPresented = true
+    @State private var isD200XInspectorPresented = true
+    @State private var inspectorContentID = UUID()
 
     var body: some View {
         NavigationSplitView {
@@ -41,6 +44,9 @@ struct WorkspaceView: View {
                         }
                         .labelStyle(SidebarLabelStyle())
                     }
+                    NavigationLink(value: WorkspaceRoute.d200x) {
+                        D200XSidebarLabel(model: model.d200x)
+                    }
                 }
                 NavigationLink(value: WorkspaceRoute.settings) {
                     Label {
@@ -57,21 +63,54 @@ struct WorkspaceView: View {
             .tint(AppAppearance.sidebarSelection)
             .navigationTitle("Hidhogg")
         } detail: {
-            Group {
-                switch model.navigation.current.route {
-                case .devices:
-                    DevicesView()
-                case .settings:
-                    SettingsView()
+            HSplitView {
+                Group {
+                    switch model.navigation.current.route {
+                    case .devices:
+                        DevicesView(isInspectorPresented: $isDevicesInspectorPresented)
+                    case .d200x:
+                        D200XDeviceView(
+                            model: model.d200x,
+                            isInspectorPresented: $isD200XInspectorPresented
+                        )
+                    case .settings:
+                        SettingsView()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(1)
+
+                if isInspectorPresentedForCurrentRoute {
+                    WorkspaceInspectorView(
+                        route: model.navigation.current.route,
+                        d200xModel: model.d200x
+                    )
+                    .id(inspectorContentID)
+                    .accessibilityIdentifier("workspace.control-inspector")
+                    .frame(
+                        minWidth: 320,
+                        idealWidth: 320,
+                        maxWidth: 480,
+                        maxHeight: .infinity,
+                        alignment: .topLeading
+                    )
+                    .background {
+                        WorkspaceInspectorInitialWidthAdapter(targetWidth: 320)
+                            .frame(width: 0, height: 0)
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .tint(AppAppearance.accent)
         .disabled(restartCoordinator.inProgress)
         .background {
             WorkspaceWindowLifecycleAdapter(
                 presentationCoordinator: presentationCoordinator,
-                onClose: { model.cancelRecording() }
+                onClose: {
+                    model.cancelRecording()
+                    inspectorContentID = UUID()
+                }
             )
                 .frame(width: 0, height: 0)
         }
@@ -116,6 +155,17 @@ struct WorkspaceView: View {
         }
     }
 
+    private var isInspectorPresentedForCurrentRoute: Bool {
+        switch model.navigation.current.route {
+        case .devices:
+            isDevicesInspectorPresented
+        case .d200x:
+            isD200XInspectorPresented
+        case .settings:
+            false
+        }
+    }
+
     private var sidebarBatteryLabel: some View {
         let information = DeviceInformationPresentation(status: model.boltStatus)
         let deviceInformation = model.boltStatus.deviceInformation
@@ -151,6 +201,7 @@ private extension WorkspaceRoute {
     var title: String {
         switch self {
         case .devices: "Devices"
+        case .d200x: "Ulanzi D200X"
         case .settings: "Settings"
         }
     }
@@ -158,7 +209,30 @@ private extension WorkspaceRoute {
     var symbol: String {
         switch self {
         case .devices: "rectangle.connected.to.line.below"
+        case .d200x: "square.grid.3x3"
         case .settings: "gearshape"
         }
+    }
+}
+
+private struct D200XSidebarLabel: View {
+    @ObservedObject var model: D200XModel
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Ulanzi D200X")
+                HStack(spacing: 4) {
+                    Circle().fill(model.isConnected ? Color.green : Color.secondary)
+                        .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
+                    Text(model.connectionTitle).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        } icon: {
+            Image(systemName: "square.grid.3x3").font(.system(size: 18))
+                .accessibilityHidden(true)
+        }
+        .labelStyle(SidebarLabelStyle())
     }
 }

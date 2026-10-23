@@ -54,7 +54,7 @@ final class MenuBarStatusTests: XCTestCase {
     private func expectedIconColor(for status: MenuBarStatus) -> MenuBarIcon.StatusColor {
         switch status {
         case .connected: .connected
-        case .permissionIncomplete: .permissionIncomplete
+        case .permissionIncomplete, .partiallyConnected: .permissionIncomplete
         case .connecting, .enablingBindings, .disconnecting: .transitioning
         case .disconnected: .disconnected
         case .failed, .cleanupUncertain: .failed

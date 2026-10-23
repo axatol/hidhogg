@@ -3,6 +3,10 @@ import LogitechBolt
 enum DiagnosticCode: String, CaseIterable, Equatable, Hashable, Identifiable, Sendable {
     case applicationStarted = "app.process.started"
     case applicationError = "app.error"
+    case d200xStatus = "d200x.status"
+    case d200xFailure = "d200x.session.failed"
+    case d200xPageSent = "d200x.page.sent"
+    case d200xActionFailed = "d200x.action.failed"
     case instanceOwnershipFailed = "app.instance.ownership-failed"
     case restartFailed = "app.restart.failed"
     case systemSleep = "app.lifecycle.sleep"

@@ -32,7 +32,7 @@ struct WheelSettingsInspector: View {
     }
 
     private var verticalWheelSettings: some View {
-        Section("Vertical wheel · all apps") {
+        Section("Scroll wheel · all apps") {
             Picker("Direction", selection: Binding(
                 get: { model.wheelPreferenceDraft },
                 set: { model.setWheelPreference($0) }
@@ -54,11 +54,11 @@ struct WheelSettingsInspector: View {
                     get: { model.wheelScrollAmountDraft ?? WheelScrollAmount.defaultSelection },
                     set: { model.setWheelScrollAmount($0) }
                 ), in: WheelScrollAmount.range, step: 0.25)
-                .accessibilityLabel("Vertical wheel amount")
+                .accessibilityLabel("Scroll wheel amount")
                 .accessibilityValue(String(format: "%.2f×", amount))
                 .disabled(!model.canEditConfiguration)
 
-                LabeledContent("Vertical amount", value: String(format: "%.2f×", amount))
+                LabeledContent("Scroll amount", value: String(format: "%.2f×", amount))
             }
 
             LabeledContent("Scroll amount state", value: model.scrollAmountStatus)

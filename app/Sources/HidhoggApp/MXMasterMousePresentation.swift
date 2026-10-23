@@ -9,7 +9,7 @@ struct MXMasterMousePresentation: View {
     private let labelSpacing: CGFloat = 8
     private let labelHeight: CGFloat = 48
     private let canvasAspectRatio = MXMasterMouseGeometry.canvasSize.width / MXMasterMouseGeometry.canvasSize.height
-    private let wideTargetOrder: [DeviceEditorTarget] = [.thumbWheel, .back, .verticalWheel, .forward]
+    private let targetOrder: [DeviceEditorTarget] = [.verticalWheel, .thumbWheel, .back, .forward]
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -23,8 +23,8 @@ struct MXMasterMousePresentation: View {
 
     private func wideLayout(artworkWidth: CGFloat) -> some View {
         let artworkHeight = artworkWidth / canvasAspectRatio
-        let labelsHeight = CGFloat(wideTargetOrder.count) * labelHeight
-            + CGFloat(wideTargetOrder.count - 1) * labelSpacing
+        let labelsHeight = CGFloat(targetOrder.count) * labelHeight
+            + CGFloat(targetOrder.count - 1) * labelSpacing
         let contentHeight = max(artworkHeight, labelsHeight)
         let artworkOriginX = labelWidth + wideSpacing
         let artworkOriginY = (contentHeight - artworkHeight) / 2
@@ -48,7 +48,7 @@ struct MXMasterMousePresentation: View {
             )
 
             VStack(spacing: labelSpacing) {
-                ForEach(wideTargetOrder, id: \.self) { target in
+                ForEach(targetOrder, id: \.self) { target in
                     controlLabel(target)
                         .frame(width: labelWidth, height: labelHeight)
                 }
@@ -71,7 +71,7 @@ struct MXMasterMousePresentation: View {
             let scale = artworkWidth / MXMasterMouseGeometry.canvasSize.width
             let labelsTop = (contentHeight - labelsHeight) / 2
 
-            for (index, target) in self.wideTargetOrder.enumerated() {
+            for (index, target) in self.targetOrder.enumerated() {
                 let bounds = self.hitBounds(for: target)
                 let targetCenter = CGPoint(
                     x: artworkOriginX + bounds.midX * scale,
@@ -125,14 +125,10 @@ struct MXMasterMousePresentation: View {
             .frame(maxWidth: 260)
 
             VStack(spacing: labelSpacing) {
-                controlLabel(.verticalWheel)
-                    .frame(maxWidth: .infinity)
-                controlLabel(.thumbWheel)
-                    .frame(maxWidth: .infinity)
-                controlLabel(.back)
-                    .frame(maxWidth: .infinity)
-                controlLabel(.forward)
-                    .frame(maxWidth: .infinity)
+                ForEach(targetOrder, id: \.self) { target in
+                    controlLabel(target)
+                        .frame(maxWidth: .infinity)
+                }
             }
             .frame(maxWidth: 400)
         }

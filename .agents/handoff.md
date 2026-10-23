@@ -1,3 +1,66 @@
+## Current checkpoint —320-point initial device panels,2026-10-23
+
+
+Initial inspector width checkpoint2026-10-23: owner confirmed adjustable panels work and approved starting narrower at320. Preferred320 and321 both measured480, retained failed probe logs; implemented WorkspaceInspectorInitialWidthAdapter one-shot public native NSSplitView trailing-pane ancestor lookup, bounded8×20ms readiness attempts and detach cancellation. Source review caught reentrant layout scheduling; corrected task marker lifetime and completion recheck. Final native2/2 passed: initial320 mouse/deck at820/1280, later320/359/479 width probes, resize and close/reopen. No focused/full repeat or live HID operations. Settings/control identity unchanged, range320–480; fresh panel mount starts320 again, later user drag unforced. Rare slow layout exceeding bounded retries remains limitation. Signed fixed dist/Hidhogg.app strict signature passed; build 22ae6f3c0b62d1491bdae2e6a192c20e0a4784cd93df0b9c31cd78e01ef70d0d,136-input provenance. Owner opening-width/pointer check pending; source uncommitted/unpushed. Logs /Volumes/Data/tmp/hidhogg-inspector-start320-{native,release}.log; source-only approval and final runtime evidence kept distinct.
+
+## Current checkpoint — native resizable device inspectors,2026-10-23
+
+
+Resizable inspector checkpoint2026-10-23: approved mouse/D200X right-panel work complete in source and signed bundle. One native HSplitView inside navigation detail, flexible main and right child320/360/480; route-specific visibility, Settings omits editor, tile/front/dial reselect opens editor. Mouse preset/manual adaptive row stacks at narrow width; capture/Cancel vertical single capture subtree both devices. Shared WorkspaceInspectorView fills standard background. Rejected root .inspector probe:1280 helper discovery failed then820 process signal5 (cause unproven), retained root-probe log. Final HSplitView native2/2 minimum820/default1280 passed; actual requested320/360/480 produced320/359/479 at1280 for mouse Back/deck key0/dial0HeldLeft,159-point delta. At820 mouse initial337/max request473; deck429. Focused20/20 passed. Initial test accessor compile error and sandbox denial corrected/preserved. Parent reviewed mouse320 full action labels and deck1280 right panel renders; native bitmap text artifacts remain elsewhere. Signed dist/Hidhogg.app strict signature passed, build 9bb0daca1af3810534228c7241f3d33b8ebc124f818c5632eeb468e3341c5061,135-input provenance refreshed. No model/schema/protocol/HID operations. Owner still check pointer divider drag, hide/show, reselect, recording/manual cancel on hide/route/close. D200X close-only identity resets rely on onDisappear cancellation; actual capture teardown not directly tested. Source uncommitted/unpushed. TaskView previously unavailable; no task completion claimed. Logs /Volumes/Data/tmp/hidhogg-resizable-inspector-{native,focused,release}.log.
+
+## Current checkpoint — default window and control order,2026-10-23
+
+
+Window/control presentation checkpoint2026-10-23: default1280×800, minimum820×560 unchanged. Shared wide/compact control order Scroll wheel,Thumb wheel,Back,Forward; visible inspector/accessibility naming updated, persisted IDs/geometry unchanged. Native minimum/default2/2 passed with background non-key windows; parent visually reviewed /Volumes/Data/tmp/hidhogg-mouse-workspace-1280w.png and confirmed controls remain left of artwork in requested order. Capture has existing text/vibrancy artifacts; not pixel-accuracy proof. Signed fixed dist/Hidhogg.app strict signature passed. Build 7af6bc662a5d96cb26a0bd4ba931c1c2e2b414fc4c58976498cfbc23e2384f33;134-input provenance refreshed. Owner launch-size check pending; restored macOS geometry may override initial default. No real launch/HID operations. Source uncommitted/unpushed. Logs /Volumes/Data/tmp/hidhogg-window-size-{native,release}.log.
+
+## Current checkpoint — dropdown-row removal, 2026-10-23
+
+
+Dropdown-row removal checkpoint 2026-10-23: owner accepted previous removal behavior and approved placement inside each configured application row. Both selector views now expose sibling selection/minus.circle controls, no external minus and no minus for All apps. Pending row ID is pinned; confirmation checks membership/editability before selecting/removing it; Cancel preserves original selection. Stable outer confirmation uses existing popover-dismiss handoff. No model/schema/runtime/hardware changes. Focused20/20 and background native2/2 passed; signed dist/Hidhogg.app strict verification passed. Build 2e4fe94affff17cef3c0c99e9f908c68d9054100f60588c1e67c302f1861b553;134-input provenance refreshed. Actual dropdown/Cancel/destructive pointer interaction remains owner check. Uncommitted/unpushed; TaskView sync previously unavailable, no new task state claimed. Logs /Volumes/Data/tmp/hidhogg-remove-row-{focused,native,release}.log.
+
+## Current checkpoint — application-context removal, 2026-10-23
+
+
+Application-context removal verified 2026-10-23: both selectors expose minus.circle with help/accessibility labels, disabled for All apps/noneditable state, confirmation and stale-selection guards. Deck removal flows through canonical edit/autosave, returns to All apps and preserves defaults/other apps/tiles. Focused removal/persistence/UIAlignment/D200XModel20/20; background native2/2; signed fixed dist/Hidhogg.app and strict signature passed. Build dfa4626fed9f49cc75bcf36b5b61752d95fe02a79b282e35b8cd4558ee9a9b9b;134-input manifest refreshed. No production launch or hardware operations. Owner pointer/dialog/Cancel checks pending. Source remains uncommitted/unpushed. TaskView446 update failed (task not found/update failed); sync pending. Logs /Volumes/Data/tmp/hidhogg-application-remove-{focused,native,release}.log.
+
+# Current checkpoint — D200X settings-layout refinement, 2026-10-23
+
+## 2026-10-23 — D200X surrounding settings alignment
+
+Ownerclarifiesstylemeanssettingslayout/appselector, notjustdeckartwork; approves~15percentdeckmaxwidthreductionandaskswiderkeygapsbasedphoto. ExactlythreeD200Xpresentationfileschangedagainstprevious133-inputbuildmanifest. Unifiedmouse-styledeviceoverviewmaterialcard,24ptspacing/760content/24padding, outlineddeckcanvas. Compactappselectorwithname/icon/bundlefallback, configured-onlymetadata, searchablepopoverandnativebundleimporterwithpopoverdismisshandoff; noinstalledscan. Deckcap740→630, grid/frontgaps8→12, correctedfrontarrangementpreserved. Inlineinspectorretained; nobehavior/model/protocol/schema/Mousechanges.
+
+Independentstaticreviewandbackgroundnative2/2passedat820/980. Initialrestrictedcachewritefailedbeforecompile; scopedescalatedgatepassed. Parentinspectedisolateddeck320/600and980workspace: widergaps/shapevisible;320frontcaptionsellipsizeandnativecachedheadingshaveoverprintartifacts. Actualpopover/fileimporter/pointer/VoiceOverandhardwareacceptanceunverified; nofullsuite/modelrepeatforpresentation-onlyscope. Signedfixedbuild39c8128d1456994ff07042b96942b8e4fe0d1f097b72c5fbb11508f358d5bf2f, strictsignaturepassed,133-inputmanifest. Executable5764384bytes SHA2565a927be97d2cf5ac3083e3e138326e70d222413e2b142ebdde2154243fb9d9e2. LogsData/tmp/hidhogg-d200x-layout-{native,release}.log. Sourceuncommittednext/d200x-slice,nopush.
+
+Ownernext:reopenfixedbundleandchecksmaller/wider-gaptilelayout, compactAllappsselector/search/nameicons/AddApplicationflow, connectioncontrolsandcontrolselection. PriorphysicalD200Xgatesremainopen;brightness/screensaverDX05notimplemented.
+
+# Current checkpoint — D200X Connect/front correction ready, 2026-10-23
+
+## 2026-10-23 — D200X first-use Connect and corrected physical front
+
+OwnerapprovedfixafterdisabledConnectfeedbackandfront-onreference. ManualConnect nowcreatesemptydeckconfig viaonEdit thenre-readsacceptedstatebeforeconnect; rejected/blockededitsdontquery. StartupconfigureIfNeededfalse remainsquietwithoutdeckconfig. Parentpassesexplicitload/restart/configblocker andviewshowsitbesidebutton. SeparateSetUpstepremoved. Existinginertfixturefactoryunchanged.
+
+Replacedpanel-likecontrolpicturewithmousepaletteflatnativecolour-blockdeck. Actualfrontrowtwosmallbuttonsleftofthreeknobs. Domain displaytitlesFrontbutton1/2; rawside0/side1 andwire15/16unchanged. Dialselectionkeepscurrentgestureonsameknob, defaultsotherknobtopress; gesturePickerremainsininlinesettings. Inspectorunconfiguredcopyupdated.
+
+Independent36focusedpassed+native2/2; parentexistingliteralwirecontract1/1passed. Isolated320/600deckrenderschecked: positions/outlines/goldselectionvisible,320captionscanellipsizewithfullAXnames. Nopointerclick/HID/inputorconfigoperations. Signedfixedbuild0c34ade6203984c2fd657f181917ee3c290a7673b9bfdb81c896c2a79e90e321, strictsignaturepassed,133inputmanifest. Sourceuncommittednext/d200x-slice,nopush. Ownerreopen/Connect/visualchecknext.
+
+# Current checkpoint — D200X hardware validation pending, 2026-10-23
+
+## 2026-10-23 — D200X native first slice ready for owner hardware check
+
+Implemented independent UlanziD200X target (codec, sanitizedidentity, boundedIOHID/session, STOREDarchives) alongsideLogitech; optionalstrict rootTOML stores31logicalbindings and14keyappearances. Native decksidebar/editor/menu, runtimeforeground overrides, immediateedits/autosave, generatedPNGlabels/colors and content-hash incrementalupdates. Globalstartup appliesonlyconfigureddeck; designatedinjectedAppModel remainsinert. Sleep/restart/termination stopbothsessions; reconnect3boundedretries restoresfullpage. No firmware/screensaver/encodercommands orreplayedvendorwizard. Alternatives/reasons docs/d200x-implementation-plan.md.
+
+Independentreview caught editcancelclosingframe, readerblockedonfontreply, querydeadlinebeforequeuedwrite, staleepochretainingrenderTask andretryallowanceresettooearly. Correctedwithcoalescedrendering, nonblockingfonttask, deadlineafterwrite, oldtaskretirementandretryresetafterpagesuccess. Suspendedwrite/reconnect/boundedretryregressionspassed. Native820window exposedD200X.inspector constraintloop; removegreen/restorered establishedtrigger. Finalinlineinspector withoutnestedScrollView passes820/980. Nativebitmapcaching hasvibrancyartifacts/oneblack980pane; notpixelproof. Shareddebugcache wasmistakenlydeletedbyworkerafterrelease-useinstruction; finalfullgaterebuiltcache, no sourceimpact. Future release meansstopusing, neverdeletecache.
+
+Finalindependent417ordinarypass (233XCTest incl2opt-inskips+186SwiftTesting), deckmodel10/10, dedicatedmodule18cases, backgroundnon-keynative2/2. No realapp/HID/input/UN/config/loginoperations. Signedfixedbundlebuildf9a33324270e5ca80a3fb0ff77aadd4d617d04cbd351d2bfe320897f040427af, strictsignaturepassed; executable5662720bytes SHA2567628a45499baeaae4ebb726983cd263aad6ceedb8f4bf0993b01580025e441e1,132inputprovenance. LogsData/tmp/hidhogg-d200x-{model-iteration3,full-final,native-final,release}.log. Branch next/d200x-slice sourceuncommitted/nopush. DX444–447 InProgress ownerhardwaregates; noDiscordmilestonecompletion orworktreeprune.
+
+Ownernext: quitStudio/oldHidhogg, openfixedbundle; D200X SetUp/Connect replacesdisplaywithdesiredpage. Validate14keys/side/dialshortcuts, incrementalappearance, appoverrides, mousecoexistenceandreconnect. Decisions/manualchecklist docs/d200x-implementation-plan.md. NativeHIDconvention, physicalappearance/input/recovery andlongsoakunverified. Firmwaretype5andrealbatteryalertremainseparateearlierfollowups.
+
+# Active D200X implementation — 2026-10-23
+
+## 2026-10-23 — D200X first slice in progress
+
+Owner approved native D200X alongside Logitech with offline/background verification and recorded decisions, no live device writes. Branch next/d200x-slice from mastera2b7c83. Re-reviewed external inventory/specification/handoff and21October lifecycle addenda; no later conclusion found in reviewed files. Independent session target+strict optionalTOML+native mockup-inspired editor implemented and compiling; focused model7/7 initially passed. Reviewer caught render-cancellation/disconnect race (corrected coalescing, heldtransfer testpending), reader blocking on queuedfontresponse and response deadline beforequeuedGETBASEsend (workerfixpending). No hardware/config/realinput operations. Canonical checklist/alternatives docs/d200x-implementation-plan.md. DX444–447 InProgress, no completedhardwareclaims.
+
 # Current checkpoint — master and README, 2026-10-23
 
 Local master contains accepted checkpoint70b6068; next/logitech-slice points to the same checkpoint before README follow-up. No push. README refreshed with selected logo and current feature/build scope; local links checked. Type5 identification and physical notification delivery remain follow-ups. Local-only untracked files remain untouched.
@@ -256,3 +319,6 @@ Ownerrejected06lines/shapes. Sourceworkerowned07standalone; mainadjustedbroadfro
 ## Artwork acceptance failure / photo trace checkpoint — 2026-10-22
 
 Ownerrejected07notclose; stopintegration/freehandshapeguesses. MainusedVectorCraftimageTraceactualphoto(5colors/noise25,44paths),selected14neutralregionsandphoto-derivedcontourmask for08-photo-contour-mouse.svg;08-photo-contour-review.svg/.png comparesphotoandbaretrace. No leaders/interactionlabels. Renderingwarningsnone; mainvisuallyinspected. ThisisROUGHgeometrycheckpoint, lightingboundaries/edgeirregularitiesstillneedcleanup, NOT finalapprovedsimplifiedvector. No app/bundlechanges. Failed07silhouette/planes/capsulewheelsdocumented; primaryreasonfreehandgeometrydeviated. Nextownerreviewgeometrythencleanpathswithoutalteringproportions; addlabelsaftershapeacceptance. ArtifactsREADMEupdated. Temporary reproduciblescript /Volumes/Data/tmp/hidhogg_trace08.py andrawtrace /Volumes/Data/tmp/hidhogg-reference-trace08-simple.svg. No furtherproductionworkuntilshapeapproved.
+
+
+Checkpoint checked in locally on next/d200x-slice after owner acceptance of current UI. D200X/native workspace45files committed; no push/merge. Local-only environment/editor/cache/probe artifacts excluded. Next requested scope: compact native permissions rows with statuses and per-row permission-request/settings action; retain app drag icon and Restart; settings code awaits concrete plan approval. Physical D200X acceptance remains bounded to owner observations, not a new comprehensive hardware gate.

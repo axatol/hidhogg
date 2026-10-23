@@ -4,7 +4,7 @@
 
 # HIDHogg
 
-A native Swift macOS app for configuring HID devices from one place. The current implementation supports **Logitech MX Master 3S over a Bolt receiver**; additional devices are planned.
+A native Swift macOS app for configuring HID devices from one place. The accepted implementation supports **Logitech MX Master 3S over a Bolt receiver**. A native **Ulanzi D200X** first slice is implemented on `next/d200x-slice` and awaits hardware validation.
 
 ## Current capabilities
 
@@ -15,7 +15,9 @@ A native Swift macOS app for configuring HID devices from one place. The current
 - TOML configuration under `$XDG_CONFIG_HOME/hidhogg/` or `~/.config/hidhogg/`, automatic saving and manual reload.
 - Bounded diagnostic activity with event IDs and source references.
 
-Bluetooth transport, Ulanzi D200X, Lofree Flow Lite, notification history and MCP support remain planned. See the [roadmap](docs/roadmap.md) for scope and verification gates.
+The D200X slice adds one editable page, key/side-button/dial shortcuts, incremental image updates and independent session maintenance. See its [implementation decisions and validation checklist](docs/d200x-implementation-plan.md) for current limits.
+
+Bluetooth transport, Lofree Flow Lite, notification history and MCP support remain planned. See the [roadmap](docs/roadmap.md) for scope and verification gates.
 
 ## Build and run
 
@@ -42,4 +44,4 @@ See [build and signing instructions](docs/build.md) for cache paths, packaging a
 | Device information and battery alerts | [Implementation plan and verification](docs/device-information-plan.md) |
 | Historical implementation | [D200X/v2 archive](docs/archive/v2/README.md) |
 
-The current implementation is on `master`. The previous implementation is preserved at checkpoint `4b3248d` on `v2`.
+The accepted checkpoint is on `master`; D200X implementation is on `next/d200x-slice`. The previous implementation is preserved at checkpoint `4b3248d` on `v2`.

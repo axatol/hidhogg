@@ -10,9 +10,10 @@ struct MenuBarStatusLabel: View {
     let phase: BoltPhase
     let cleanupUncertain: Bool
     let permissionChecks: PermissionChecks
+    var overrideStatus: MenuBarStatus? = nil
 
     private var status: MenuBarStatus {
-        MenuBarStatus(phase: phase, cleanupUncertain: cleanupUncertain, permissionChecks: permissionChecks)
+        overrideStatus ?? MenuBarStatus(phase: phase, cleanupUncertain: cleanupUncertain, permissionChecks: permissionChecks)
     }
 
     var body: some View {
@@ -20,5 +21,19 @@ struct MenuBarStatusLabel: View {
         .renderingMode(.original)
         .accessibilityLabel(status.accessibilityLabel)
         .help(status.accessibilityLabel)
+    }
+}
+
+struct MultiDeviceMenuBarStatusLabel: View {
+    @ObservedObject var deck: D200XModel
+    let phase: BoltPhase
+    let cleanupUncertain: Bool
+    let permissionChecks: PermissionChecks
+
+    var body: some View {
+        let mouse = MenuBarStatus(phase: phase, cleanupUncertain: cleanupUncertain, permissionChecks: permissionChecks)
+        let status = MenuBarStatus(mouse: mouse, deck: deck.isConfigured ? deck.status : nil)
+        MenuBarStatusLabel(phase: phase, cleanupUncertain: cleanupUncertain, permissionChecks: permissionChecks,
+                           overrideStatus: status)
     }
 }

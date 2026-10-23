@@ -14,11 +14,13 @@ let package = Package(
         .target(name: "HidhoggDomain"),
         .target(name: "HidhoggConfiguration", dependencies: ["HidhoggDomain", .product(name: "TOML", package: "swift-toml")]),
         .target(name: "LogitechBolt", dependencies: ["HidhoggDomain"]),
+        .target(name: "UlanziD200X"),
         .target(name: "MacOSActions", dependencies: ["HidhoggDomain"]),
-        .executableTarget(name: "HidhoggApp", dependencies: ["HidhoggDomain", "HidhoggConfiguration", "LogitechBolt", "MacOSActions"]),
+        .executableTarget(name: "HidhoggApp", dependencies: ["HidhoggDomain", "HidhoggConfiguration", "LogitechBolt", "MacOSActions", "UlanziD200X"]),
+        .testTarget(name: "UlanziD200XTests", dependencies: ["UlanziD200X"]),
         .testTarget(name: "HidhoggConfigurationTests", dependencies: ["HidhoggConfiguration", "HidhoggDomain"]),
         .testTarget(name: "LogitechBoltTests", dependencies: ["LogitechBolt", "HidhoggDomain"]),
         .testTarget(name: "MacOSActionsTests", dependencies: ["MacOSActions", "HidhoggDomain"]),
-        .testTarget(name: "HidhoggAppTests", dependencies: ["HidhoggApp", "HidhoggDomain", "HidhoggConfiguration", "LogitechBolt", "MacOSActions"])
+        .testTarget(name: "HidhoggAppTests", dependencies: ["HidhoggApp", "HidhoggDomain", "HidhoggConfiguration", "LogitechBolt", "MacOSActions", "UlanziD200X"])
     ]
 )

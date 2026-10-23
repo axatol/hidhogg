@@ -63,12 +63,14 @@ private struct ConfigurationDocument: Codable {
     let schemaVersion: Int
     let connectOnLaunch: Bool
     let devices: [DeviceDocument]
+    let d200x: D200XDocument?
 
     var configuration: AppConfiguration {
         AppConfiguration(
             schemaVersion: schemaVersion,
             devices: devices.map(\.configuration),
-            connectOnLaunch: connectOnLaunch
+            connectOnLaunch: connectOnLaunch,
+            d200x: d200x?.configuration
         )
     }
 
@@ -76,14 +78,16 @@ private struct ConfigurationDocument: Codable {
         self.schemaVersion = configuration.schemaVersion
         self.connectOnLaunch = configuration.connectOnLaunch
         self.devices = configuration.devices.map(DeviceDocument.init(configuration:))
+        self.d200x = configuration.d200x.map(D200XDocument.init(configuration:))
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
-        try container.rejectUnknownKeys(["schema_version", "connect_on_launch", "devices"])
+        try container.rejectUnknownKeys(["schema_version", "connect_on_launch", "devices", "d200x"])
         schemaVersion = try container.decode(Int.self, forKey: AnyCodingKey("schema_version"))
         connectOnLaunch = try container.decodeIfPresent(Bool.self, forKey: AnyCodingKey("connect_on_launch")) ?? true
         devices = try container.decode([DeviceDocument].self, forKey: AnyCodingKey("devices"))
+        d200x = try container.decodeIfPresent(D200XDocument.self, forKey: AnyCodingKey("d200x"))
     }
 
     func encode(to encoder: Encoder) throws {
@@ -91,12 +95,102 @@ private struct ConfigurationDocument: Codable {
         try container.encode(schemaVersion, forKey: .schemaVersion)
         try container.encode(connectOnLaunch, forKey: .connectOnLaunch)
         try container.encode(devices, forKey: .devices)
+        try container.encodeIfPresent(d200x, forKey: .d200x)
     }
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case connectOnLaunch = "connect_on_launch"
         case devices
+        case d200x
+    }
+}
+
+private struct D200XDocument: Codable {
+    let defaults: [String: BindingDocument]
+    let applications: [String: [String: BindingDocument]]
+    let tiles: [String: D200XTileAppearanceDocument]
+
+    var configuration: D200XConfiguration {
+        D200XConfiguration(
+            defaults: defaults.mapValues(\.configuration),
+            applications: applications.mapValues { $0.mapValues(\.configuration) },
+            tiles: tiles.mapValues(\.configuration)
+        )
+    }
+
+    init(configuration: D200XConfiguration) {
+        defaults = configuration.defaults.mapValues(BindingDocument.init(configuration:))
+        applications = configuration.applications.mapValues {
+            $0.mapValues(BindingDocument.init(configuration:))
+        }
+        tiles = configuration.tiles.mapValues(D200XTileAppearanceDocument.init(configuration:))
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        try container.rejectUnknownKeys(["defaults", "applications", "tiles"])
+        defaults = try container.decodeIfPresent(
+            [String: BindingDocument].self,
+            forKey: AnyCodingKey("defaults")
+        ) ?? [:]
+        applications = try container.decodeIfPresent(
+            [String: [String: BindingDocument]].self,
+            forKey: AnyCodingKey("applications")
+        ) ?? [:]
+        tiles = try container.decodeIfPresent(
+            [String: D200XTileAppearanceDocument].self,
+            forKey: AnyCodingKey("tiles")
+        ) ?? [:]
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(defaults, forKey: .defaults)
+        if !applications.isEmpty {
+            try container.encode(applications, forKey: .applications)
+        }
+        if !tiles.isEmpty {
+            try container.encode(tiles, forKey: .tiles)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case defaults
+        case applications
+        case tiles
+    }
+}
+
+private struct D200XTileAppearanceDocument: Codable {
+    let label: String
+    let backgroundHex: String
+
+    var configuration: D200XTileAppearance {
+        D200XTileAppearance(label: label, backgroundHex: backgroundHex)
+    }
+
+    init(configuration: D200XTileAppearance) {
+        label = configuration.label
+        backgroundHex = configuration.backgroundHex
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        try container.rejectUnknownKeys(["label", "background_hex"])
+        label = try container.decode(String.self, forKey: AnyCodingKey("label"))
+        backgroundHex = try container.decode(String.self, forKey: AnyCodingKey("background_hex"))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(label, forKey: .label)
+        try container.encode(backgroundHex, forKey: .backgroundHex)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case label
+        case backgroundHex = "background_hex"
     }
 }
 

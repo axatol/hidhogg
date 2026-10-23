@@ -5,10 +5,11 @@ struct MenuBarView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        Label("Connection: \(model.connectionTitle)", systemImage: connectionSymbol)
+        Label("MX Master 3S: \(model.connectionTitle)", systemImage: connectionSymbol)
 
         let information = DeviceInformationPresentation(status: model.boltStatus)
         Label("MX Master 3S battery: \(information.batteryText)", systemImage: information.batterySymbol)
+        D200XMenuSection(model: model.d200x)
 
         Divider()
 
@@ -50,5 +51,21 @@ struct MenuBarView: View {
 
     private func openWorkspace() {
         ApplicationInstanceBootstrap.shared.requestWorkspace()
+    }
+}
+
+private struct D200XMenuSection: View {
+    @ObservedObject var model: D200XModel
+
+    var body: some View {
+        if model.isConfigured {
+            Label("Ulanzi D200X: \(model.connectionTitle)", systemImage: "square.grid.3x3")
+            if model.isConnected {
+                Button("Disconnect D200X") { model.disconnect() }
+            } else {
+                Button("Connect D200X") { model.connect() }
+                    .disabled(model.isBusy || !model.canEdit)
+            }
+        }
     }
 }

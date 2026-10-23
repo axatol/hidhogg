@@ -17,7 +17,7 @@ enum DeviceEditorTarget: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .back: "Back"
         case .forward: "Forward"
-        case .verticalWheel: "Vertical wheel"
+        case .verticalWheel: "Scroll wheel"
         case .thumbWheel: "Thumb wheel"
         }
     }

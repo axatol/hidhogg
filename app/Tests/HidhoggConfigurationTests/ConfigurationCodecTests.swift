@@ -9,6 +9,7 @@ final class ConfigurationCodecTests: XCTestCase {
         let device = try XCTUnwrap(configuration.mouse)
 
         XCTAssertTrue(configuration.connectOnLaunch)
+        XCTAssertNil(configuration.d200x)
         XCTAssertFalse(device.restorePreviousSettingsOnDisconnect)
         XCTAssertNil(device.wheelHighResolution)
         XCTAssertNil(device.wheelScrollAmount)
@@ -37,7 +38,132 @@ final class ConfigurationCodecTests: XCTestCase {
         XCTAssertFalse(source.contains("wheel_inverted"))
         XCTAssertFalse(source.contains("thumbwheel_inverted"))
         XCTAssertFalse(source.contains("thumbwheel_scroll_amount"))
+        XCTAssertFalse(source.contains("d200x"))
         XCTAssertEqual(try ConfigurationCodec.decode(first), ConfigurationFixtures.configuration)
+    }
+
+    func testD200XConfigurationRoundTripsSparseBindingsAndTileAppearance() throws {
+        let d200x = D200XConfiguration(
+            defaults: [
+                "key0": .key(KeyboardShortcut(keyCode: 4, modifiers: [.command])),
+                "side0": .disabled
+            ],
+            applications: [
+                "com.example.Editor_ID": [
+                    "dial2HeldRight": .key(KeyboardShortcut(keyCode: 12, modifiers: [.option]))
+                ]
+            ],
+            tiles: ["key13": D200XTileAppearance(label: "Wide status", backgroundHex: "12ABef")]
+        )
+        var configuration = ConfigurationFixtures.configuration
+        configuration.d200x = d200x
+
+        let encoded = try ConfigurationCodec.encode(configuration)
+        let source = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+        let decoded = try ConfigurationCodec.decode(encoded)
+
+        XCTAssertTrue(source.contains("background_hex = \"12ABef\""))
+        XCTAssertFalse(source.contains("backgroundHex"))
+        XCTAssertEqual(decoded, configuration)
+        XCTAssertEqual(decoded.d200x?.binding(for: .key0, application: nil), d200x.defaults["key0"])
+        XCTAssertEqual(
+            decoded.d200x?.binding(for: .dial2HeldRight, application: "com.example.Editor_ID"),
+            d200x.applications["com.example.Editor_ID"]?["dial2HeldRight"]
+        )
+        XCTAssertEqual(decoded.d200x?.binding(for: .dial0Left, application: nil), .disabled)
+        XCTAssertEqual(decoded.d200x?.appearance(for: .key13), d200x.tiles["key13"])
+        XCTAssertEqual(decoded.d200x?.appearance(for: .key0), D200XTileAppearance(label: "Key 1"))
+    }
+
+    func testExplicitEmptyD200XConfigurationRoundTripsAsPresent() throws {
+        var configuration = ConfigurationFixtures.configuration
+        configuration.d200x = .empty
+
+        let encoded = try ConfigurationCodec.encode(configuration)
+
+        XCTAssertEqual(try ConfigurationCodec.decode(encoded).d200x, .empty)
+    }
+
+    func testD200XControlTitlesWireIndicesAndGestures() {
+        XCTAssertEqual(D200XControl.allCases.count, 31)
+        XCTAssertEqual(D200XControl.key13.title, "Key 14")
+        XCTAssertEqual(D200XControl.key13.wireIndex, 13)
+        XCTAssertEqual(D200XControl.side0.wireIndex, 15)
+        XCTAssertEqual(D200XControl.side1.wireIndex, 16)
+        XCTAssertNil(D200XControl.side0.gesture)
+        XCTAssertEqual(D200XControl.dial2HeldRight.wireIndex, 19)
+        XCTAssertEqual(D200XControl.dial2HeldRight.gesture, .heldRight)
+        XCTAssertEqual(D200XControl.dial2HeldRight.title, "Dial 3 Held Right")
+        XCTAssertEqual(D200XGesture.allCases.map(\.rawValue), [1, 2, 3, 4, 5])
+    }
+
+    func testRejectsInvalidD200XControlsAppearanceAndShortcuts() {
+        let tooManyApplications = Dictionary(uniqueKeysWithValues: (0..<129).map { index in
+            ("com.example.\(index)", ["key0": ControlBinding.disabled])
+        })
+        let invalidConfigurations = [
+            D200XConfiguration(defaults: ["unknown": .disabled]),
+            D200XConfiguration(applications: ["com.example.Editor": ["unknown": .disabled]]),
+            D200XConfiguration(applications: tooManyApplications),
+            D200XConfiguration(tiles: ["key14": D200XTileAppearance()]),
+            D200XConfiguration(tiles: ["key0": D200XTileAppearance(label: String(repeating: "x", count: 65))]),
+            D200XConfiguration(tiles: ["key0": D200XTileAppearance(backgroundHex: "#30343B")]),
+            D200XConfiguration(defaults: ["key0": .key(KeyboardShortcut(keyCode: 55))])
+        ]
+
+        for d200x in invalidConfigurations {
+            var configuration = ConfigurationFixtures.configuration
+            configuration.d200x = d200x
+
+            XCTAssertThrowsError(try ConfigurationCodec.encode(configuration)) {
+                guard case .invalidConfiguration = $0 as? ConfigurationError else {
+                    return XCTFail("Expected D200X domain validation error, received \($0)")
+                }
+            }
+        }
+    }
+
+    func testRejectsUnknownKeysWithinD200XScopes() {
+        let unknownD200XKey = ConfigurationFixtures.toml + """
+
+        [d200x]
+        unknown = true
+        """
+        XCTAssertThrowsError(try ConfigurationCodec.decode(ConfigurationFixtures.data(unknownD200XKey))) {
+            XCTAssertEqual($0 as? ConfigurationError, .unknownKey("unknown"))
+        }
+
+        let unknownBindingKey = ConfigurationFixtures.toml + """
+
+        [d200x.defaults.key0]
+        kind = "disabled"
+        extra = true
+        """
+        XCTAssertThrowsError(try ConfigurationCodec.decode(ConfigurationFixtures.data(unknownBindingKey))) {
+            XCTAssertEqual($0 as? ConfigurationError, .unknownKey("extra"))
+        }
+
+        let unknownAppearanceKey = ConfigurationFixtures.toml + """
+
+        [d200x.tiles.key0]
+        label = "Key 1"
+        background_hex = "30343B"
+        extra = true
+        """
+        XCTAssertThrowsError(try ConfigurationCodec.decode(ConfigurationFixtures.data(unknownAppearanceKey))) {
+            XCTAssertEqual($0 as? ConfigurationError, .unknownKey("extra"))
+        }
+
+        let unknownControl = ConfigurationFixtures.toml + """
+
+        [d200x.defaults.key14]
+        kind = "disabled"
+        """
+        XCTAssertThrowsError(try ConfigurationCodec.decode(ConfigurationFixtures.data(unknownControl))) {
+            guard case .invalidConfiguration = $0 as? ConfigurationError else {
+                return XCTFail("Expected D200X domain validation error, received \($0)")
+            }
+        }
     }
 
     func testConnectOnLaunchPreferenceRoundTripsExplicitFalse() throws {

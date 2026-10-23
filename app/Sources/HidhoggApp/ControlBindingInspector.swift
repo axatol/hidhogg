@@ -100,7 +100,7 @@ struct ControlBindingInspector: View {
     @ViewBuilder
     private var shortcutControls: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 if let sessionID = model.captureSessionID,
                    model.recordingTarget == captureTarget,
                    !isShortcutEditorPresented {
@@ -112,7 +112,7 @@ struct ControlBindingInspector: View {
                             model.cancelRecording(sessionID: sessionID)
                         }
                     )
-                    .frame(minWidth: 180, maxWidth: .infinity, minHeight: 34)
+                    .frame(maxWidth: .infinity, minHeight: 34)
                     .id(sessionID)
 
                     Button("Cancel", systemImage: "xmark.circle") {
@@ -126,29 +126,47 @@ struct ControlBindingInspector: View {
                 }
             }
 
-            HStack(spacing: 10) {
-                Menu("Preset", systemImage: "keyboard") {
-                    ForEach(NavigationPreset.allCases) { preset in
-                        Button(preset.title) {
-                            model.applyNavigationPreset(preset)
-                        }
-                    }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    presetMenu
+                        .fixedSize(horizontal: true, vertical: false)
+                    manualShortcutButton
+                        .fixedSize(horizontal: true, vertical: false)
                 }
-                .disabled(!model.canEditConfiguration)
 
-                Button("Choose Manually…", systemImage: "keyboard") {
-                    guard manualEditorCaptureSessionID == nil else { return }
-                    manualEditorApplicationID = model.selectedApplicationID
-                    model.beginRecording(for: control, applicationID: manualEditorApplicationID)
-                    guard let sessionID = model.captureSessionID else { return }
-                    manualEditorCaptureSessionID = sessionID
-                    manualEditorPresentationID = UUID()
-                    isShortcutEditorPresented = true
+                VStack(alignment: .leading, spacing: 8) {
+                    presetMenu
+                        .fixedSize(horizontal: false, vertical: true)
+                    manualShortcutButton
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .disabled(!model.canEditConfiguration || manualEditorCaptureSessionID != nil)
-                .accessibilityHint("Choose a key and modifiers without pressing the shortcut")
             }
         }
+    }
+
+    private var presetMenu: some View {
+        Menu("Preset", systemImage: "keyboard") {
+            ForEach(NavigationPreset.allCases) { preset in
+                Button(preset.title) {
+                    model.applyNavigationPreset(preset)
+                }
+            }
+        }
+        .disabled(!model.canEditConfiguration)
+    }
+
+    private var manualShortcutButton: some View {
+        Button("Choose Manually…", systemImage: "keyboard") {
+            guard manualEditorCaptureSessionID == nil else { return }
+            manualEditorApplicationID = model.selectedApplicationID
+            model.beginRecording(for: control, applicationID: manualEditorApplicationID)
+            guard let sessionID = model.captureSessionID else { return }
+            manualEditorCaptureSessionID = sessionID
+            manualEditorPresentationID = UUID()
+            isShortcutEditorPresented = true
+        }
+        .disabled(!model.canEditConfiguration || manualEditorCaptureSessionID != nil)
+        .accessibilityHint("Choose a key and modifiers without pressing the shortcut")
     }
 
     private func finishManualEditor() {
