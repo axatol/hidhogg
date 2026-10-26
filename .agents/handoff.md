@@ -1,6 +1,6 @@
 # Current handoff — verified check-in checkpoint
 
-26 October 2026. Branch: next/d200x-slice. HEAD: e2744addc666f461af3237d571eb29ef89e49de2. The user approved the discovered argument-editor fix and then authorised committing and pushing the verified checkpoint to mainline. GitHub confirms master is the default and only remote branch; main does not exist.
+26 October 2026. Mainline: master. Reviewed source checkpoint: ca60802841fa0616c24840a2771d3720d878abf7, prepared on next/d200x-slice after e2744addc666f461af3237d571eb29ef89e49de2. The user approved the discovered argument-editor fix and then authorised committing and pushing the verified checkpoint to mainline. GitHub confirms master is the default and only remote branch; main does not exist.
 
 ## Included scope
 
@@ -22,7 +22,7 @@ Independent standards/correctness review found one medium, high-confidence issue
 
 README, overview, structure, build instructions and roadmap describe current implementation. TaskView parent443 is In Progress; stable child IDs and open physical gates are retained. Current evidence/review is docs/checkin-preparation.md. The explicit reviewed path list is docs/checkin-files.txt; stage only that list and verify staged path equality and no working/index drift before an actual commit.
 
-Feature groups share AppModel/D200XModel/package/config hunks. A complete checkpoint avoids unverified intermediate split trees. The preparation process staged 116 explicit reviewed files. Staged path equality, current source blob hashes and working/index parity were verified before handoff. The user has now requested the mainline commit/push. Recheck actual Git and remote state on resume; this handoff records authorisation, not a guarantee that a later network operation completed.
+Feature groups share AppModel/D200XModel/package/config hunks. A complete checkpoint avoids unverified intermediate split trees. The preparation process staged 116 explicit reviewed files. Staged path equality, current source blob hashes and working/index parity were verified before handoff. The reviewed source checkpoint was committed, fast-forwarded to local master and pushed normally to GitHub; remote master equality at ca60802 was verified. This publication-only documentation follow-up does not change the198verifiedsource inputs. Recheck Git/remote state on resume for later commits.
 
 Targeted .gitignore rules exclude local .envrc, .codex, xcuserdata, Python bytecode caches and the generated D200X probe. Their contents were not read/altered. Dist products are ignored. Public source assets, code/tests, decision records and the main-agent handoff/log belong in the candidate checkpoint.
 
@@ -30,8 +30,8 @@ Targeted .gitignore rules exclude local .envrc, .codex, xcuserdata, Python bytec
 
 Owner confirmed baseline notifications/scripts, media controls, action search and improved wide rendering. D200X sleep black-display behaviour, Logitech physical recovery, other native effects, permissions/profile/preset cases, actual login and resource/exceptional cleanup remain separate checks. Idle100/10/10s, lock/screensaver policy, multiple pages and notification payload passing are not implemented. DX09/475 is a deferred spike.
 
-1. The explicit staging and final tracker/checklist facts are complete; recheck index if resuming.
-2. Commit the reviewed set, fast-forward local master, push without force and verify GitHub remote head.
-3. After check-in, continue the owner gates and proposed follow-up selection.
+1. Source checkpoint publication is complete; this documentation record is being published as a follow-up.
+2. Continue the documented owner gates and select the next proposed slice.
+3. Recheck actual Git/remote status if resuming; do not repeat the completed source commit.
 
 Only the main agent edits this handoff and .agents/log.md. Preserve unrelated pre-existing work.

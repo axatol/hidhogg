@@ -4,7 +4,7 @@ Updated 26 October 2026. TaskView Personal / HIDhogg project 5 owns stable task 
 
 ## Current checkpoint
 
-Mainline branch: master. This native Logitech/D200X checkpoint was prepared on next/d200x-slice after e2744ad. Check-in review and verification are complete for the 116-file reviewed set; the owner authorised publication to the repository mainline on 26 October 2026. Signed checkpoint873e84a8bb59 passed566unique offline/background checks.
+Mainline branch: master. This native Logitech/D200X checkpoint was prepared on next/d200x-slice after e2744ad. The 116-file reviewed source checkpoint ca60802 was published to master on 26 October 2026 and its remote head was verified. Signed checkpoint873e84a8bb59 passed566unique offline/background checks.
 
 The owner has confirmed baseline notifications/scripts, native media controls, action search and the improved 458×196 wide-tile rendering. These confirmations do not close every hardware, permission or platform-effect gate. [Remaining owner checks](d200x-parity-owner-checks.md).
 
@@ -44,10 +44,11 @@ Automatic recovery is implemented under exclusive mouse ownership: retain intent
 
 ## Next work
 
-1. Publish the owner-authorised [check-in checkpoint](checkin-preparation.md) to master and verify the remote head.
-2. Run the short remaining owner checks for D200X sleep and Logitech recovery; test the other native effects and app-profile/preset paths as needed.
-3. Review the proposed idle-brightness and lock/screensaver policy after the sleep trial; those behaviours remain unimplemented.
-4. DX-09 is the next recommended research slice: safely pass notification data into actions. No production interpolation is currently implemented or approved.
+The [check-in checkpoint](checkin-preparation.md) is published.
+
+1. Run the short remaining owner checks for D200X sleep and Logitech recovery; test the other native effects and app-profile/preset paths as needed.
+2. Review the proposed idle-brightness and lock/screensaver policy after the sleep trial; those behaviours remain unimplemented.
+3. DX-09 is the next recommended research slice: safely pass notification data into actions. No production interpolation is currently implemented or approved.
 
 ## Proposed and deferred
 

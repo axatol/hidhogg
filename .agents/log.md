@@ -2490,3 +2490,7 @@ Finalpreparation:116explicitreviewedfilesstaged fromdocs/checkin-files.txt; no p
 ## Owner-authorised mainline publication — 26 October 2026
 
 Owner requested push up to main. GitHubmetadata confirms axatol/hidhogg default/onlybranchmaster; remotea2b7c835f1867b50b6538c1389aac7868fadbcbf matcheslocalmasterandisancestorofverifiedfeatureHEAD. Existing116stagedpaths/198sourcehashesandworkingindexparityreverified. Plancommitreviewedcheckpoint, fastforwardmasterandnormalpush(no force), thenverifyremoteSHA. GitHubconnectorusedformetadata; noGitpushcapability, soGitCLI transfershistory. Thisentryrecordsauthorisation/preflight, notnetworksuccess.
+
+## Source checkpoint published — 26 October 2026
+
+Committed116reviewedfiles asca60802841fa0616c24840a2771d3720d878abf7 (AddD200Xautomationandverifieddevicerecovery). Localmasterfast-forwardeda2b7c83→ca60802, preservinge2744adancestry. NormalGitpush tohttps://github.com/axatol/hidhogg.git refs/heads/master succeeded; gitls-remoteverifiedexactca60802head. Repositorydefault/onlybranchismaster, notmain. No force/historyrewrite/productionapp/deviceoperations. Final198sourcehashesstillmatchHEADand signedbuild873e84a8bb59. Publicationrecord-onlydocsfollowupbeingcommitted; remaininghardwaregatesnotclosed.

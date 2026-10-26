@@ -57,7 +57,7 @@ Run these sequentially. The explicit native gate uses fake services and non-key 
 
 Local .envrc, .codex, Xcode xcuserdata, Python bytecode caches, the generated D200X probe executable and dist products are excluded. Targeted ignore rules protect these paths; their contents were not read or altered. Source SVG assets and asset-catalog metadata are included.
 
-The explicit path list is [checkin-files.txt](checkin-files.txt): 116 reviewed files are staged. Staged paths and source blob hashes are verified against the reviewed tree and signed-artifact manifest. Local environment/user artifacts and dist remain excluded. The owner has now authorised the actual check-in and push to master; verify the resulting remote head.
+The explicit path list is [checkin-files.txt](checkin-files.txt): 116 reviewed files were included in checkpoint ca60802841fa0616c24840a2771d3720d878abf7. Source blob hashes were verified against the reviewed tree and signed-artifact manifest. Local environment/user artifacts and dist stayed excluded. The checkpoint was fast-forwarded and pushed to master; remote head equality was verified.
 
 ## Remaining owner gates
 
@@ -81,3 +81,7 @@ The explicit path list is [checkin-files.txt](checkin-files.txt): 116 reviewed f
 Title: Add D200X automation and verified device recovery
 
 Include the profile-aware deck actions, notifications/CLI, portable presets, lossless executable editor, higher-resolution wide rendering, retained-connection sleep trial, Logitech recovery, native permissions/assets and current documentation as one dependency-complete checkpoint. Validation: 566 unique offline/background tests and signed build873e84a8bb59 with198matching source inputs. Remaining manual gates stay documented.
+
+## Publication completed
+
+The owner-authorised source checkpoint is [ca60802](https://github.com/axatol/hidhogg/commit/ca60802841fa0616c24840a2771d3720d878abf7). Remote master was verified at that SHA after a normal, non-force push. The earlier local e2744ad checkpoint is retained in its ancestry. This publication record is a documentation-only follow-up; the signed build and198verifiedsource inputs are unchanged.
