@@ -1,63 +1,162 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 struct PermissionsSettingsView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        Section("Input Permission") {
-            LabeledContent("Accessibility trust", value: model.permissionChecks.accessibilityTrusted ? "Granted" : "Not granted")
-            LabeledContent("Post input events", value: model.permission == .granted ? "Granted" : "Not granted")
+        Section {
+            accessibilityPermissionRow
 
-            if model.permissionChecks.accessibilityTrusted && !model.permissionChecks.eventPostingAllowed {
-                Text("Accessibility is trusted, but macOS still reports event posting as denied for this process. Refresh or restart Hidhogg. If this persists, remove and re-add this copy in System Settings.")
+            if let mismatch = accessibilityMismatchMessage {
+                Label(mismatch, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("Hidhogg posts shortcuts and custom wheel or thumb-wheel scroll events only while their connected session and input permission are active.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-
-            Button(model.permission == .granted ? "Refresh Permission" : "Request Permission", systemImage: "hand.raised") {
-                if model.permission == .granted {
-                    _ = model.refreshPermission(retryScrollCapture: true)
-                } else {
-                    _ = model.requestPermission()
-                    openPermissionSettings()
-                }
-            }
-
-            Button("Open Accessibility Settings", systemImage: "arrow.up.forward.app") {
-                openPermissionSettings()
-            }
-
-            HStack(spacing: 8) {
-                Image(nsImage: AppAppearance.icon)
-                    .resizable()
-                    .frame(width: 28, height: 28)
-                Text("Drag Hidhogg into the permission list")
-            }
-            .padding(8)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-            .onDrag {
-                NSItemProvider(object: ApplicationIdentity.current.bundleURL as NSURL)
-            } preview: {
-                Image(nsImage: AppAppearance.icon).resizable().frame(width: 64, height: 64)
-            }
-            .help("Adds the running app’s file URL to the drag. Enable its switch in System Settings afterward.")
-
-            RestartSettingsButton()
-        }
-
-        if let notifications = model.lowBatteryNotifications {
-            Section("Notifications") {
+            if let notifications = model.lowBatteryNotifications {
                 LowBatteryNotificationSettingsView(controller: notifications)
+            }
+        } header: {
+            Text("Permissions")
+        } footer: {
+            permissionFooter
+        }
+        .task {
+            model.refreshLowBatteryNotificationPermission()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            refreshPermissionStatuses()
+        }
+    }
+
+    private var accessibilityPermissionRow: some View {
+        PermissionSettingsRow(
+            title: "Accessibility",
+            detail: "Required to send shortcuts and custom scroll events.",
+            systemImage: "keyboard"
+        ) {
+            if accessibilityIsAllowed {
+                Label("Allowed", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else if accessibilityNeedsAttention {
+                accessibilityAttentionAction
+            } else {
+                Button("Allow", systemImage: "hand.raised") {
+                    _ = model.requestPermission()
+                    openAccessibilitySettings()
+                }
             }
         }
     }
 
-    private func openPermissionSettings() {
+    private var permissionFooter: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                draggableAppIdentity
+                Spacer()
+                HStack {
+                    refreshButton
+                    RestartSettingsButton()
+                }
+                .fixedSize(horizontal: true, vertical: false)
+            }
+
+            VStack(alignment: .leading) {
+                draggableAppIdentity
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        refreshButton
+                        RestartSettingsButton()
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+
+                    VStack(alignment: .leading) {
+                        refreshButton
+                        RestartSettingsButton()
+                    }
+                }
+            }
+        }
+    }
+
+    private var draggableAppIdentity: some View {
+        HStack {
+            Image(nsImage: AppAppearance.icon)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 28, height: 28)
+                .accessibilityHidden(true)
+            Text("Drag Hidhogg into the Accessibility list")
+        }
+        .onDrag {
+            NSItemProvider(object: ApplicationIdentity.current.bundleURL as NSURL)
+        } preview: {
+            Image(nsImage: AppAppearance.icon)
+                .resizable()
+                .frame(width: 64, height: 64)
+        }
+        .help("Drag Hidhogg into System Settings → Privacy & Security → Accessibility.")
+    }
+
+    private var refreshButton: some View {
+        Button("Refresh", systemImage: "arrow.clockwise") {
+            refreshPermissionStatuses(retryingFailedInput: true)
+        }
+    }
+
+    private var accessibilityIsAllowed: Bool {
+        model.permissionChecks.accessibilityTrusted && model.permissionChecks.eventPostingAllowed
+    }
+
+    private var accessibilityAttentionAction: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                attentionStatus
+                openAccessibilitySettingsButton
+            }
+
+            VStack(alignment: .leading) {
+                attentionStatus
+                openAccessibilitySettingsButton
+            }
+        }
+    }
+
+    private var attentionStatus: some View {
+        Label("Needs attention", systemImage: "exclamationmark.triangle.fill")
+            .foregroundStyle(.orange)
+    }
+
+    private var openAccessibilitySettingsButton: some View {
+        Button("Open Settings", systemImage: "arrow.up.forward.app") {
+            openAccessibilitySettings()
+        }
+    }
+
+    private var accessibilityNeedsAttention: Bool {
+        model.permissionChecks.accessibilityTrusted != model.permissionChecks.eventPostingAllowed
+    }
+
+    private var accessibilityMismatchMessage: String? {
+        let checks = model.permissionChecks
+        guard checks.accessibilityTrusted != checks.eventPostingAllowed else { return nil }
+
+        if checks.accessibilityTrusted {
+            return "Accessibility is trusted, but macOS still reports event posting as denied for this process. Refresh or restart Hidhogg. If this persists, remove and re-add this copy in System Settings."
+        }
+
+        return "macOS reports event posting as allowed, but Accessibility trust is denied for this process. Refresh or restart Hidhogg. If this persists, remove and re-add this copy in System Settings."
+    }
+
+    private func refreshPermissionStatuses(retryingFailedInput: Bool = false) {
+        _ = model.refreshPermission(retryScrollCapture: retryingFailedInput)
+        model.refreshLowBatteryNotificationPermission()
+    }
+
+    private func openAccessibilitySettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"),
               NSWorkspace.shared.open(url) else {
             model.reportError("Open System Settings → Privacy & Security → Accessibility, then add Hidhogg and enable it.")

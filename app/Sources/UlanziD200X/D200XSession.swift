@@ -18,6 +18,18 @@ public protocol D200XSessionProtocol: Sendable {
     func connect() async throws
     func disconnect() async
     func applyPage(_ page: D200XPage, update: D200XPageUpdate) async throws
+    func setBrightness(_ percent: Int) async throws
+    func setKeepAwakeEnabled(_ enabled: Bool) async throws
+}
+
+public extension D200XSessionProtocol {
+    func setBrightness(_ percent: Int) async throws {
+        throw D200XFailure.unavailable
+    }
+
+    func setKeepAwakeEnabled(_ enabled: Bool) async throws {
+        throw D200XFailure.unavailable
+    }
 }
 
 public protocol D200XTransport: Sendable {
@@ -57,6 +69,8 @@ public actor D200XSession: D200XSessionProtocol {
     private var fontReply: Task<Void, Never>?
     private var deadline: Task<Void, Never>?
     private var deadlineSequence: UInt64 = 0
+    private var maintenanceRevision: UInt64 = 0
+    private var maintenancePaused = false
     private var identityWaiter: CheckedContinuation<Void, Error>?
     private var awaitingIdentity = false
 
@@ -87,6 +101,8 @@ public actor D200XSession: D200XSessionProtocol {
         try Task.checkCancellation()
         generation &+= 1
         let token = generation
+        maintenanceRevision &+= 1
+        maintenancePaused = false
         let link = makeTransport()
         transport = link
         publish(.connecting)
@@ -135,6 +151,50 @@ public actor D200XSession: D200XSessionProtocol {
             await fail(Self.failure(error), token: token)
             throw Self.failure(error)
         }
+    }
+
+    public func setBrightness(_ percent: Int) async throws {
+        guard case .connected = status, let transport else { throw D200XFailure.disconnected }
+        guard (0...100).contains(percent) else { throw D200XFailure.invalidPage }
+        let token = generation
+        let payload = Data(String(percent).utf8)
+        do {
+            try Task.checkCancellation()
+            let reports = try D200XCodec.reports(for: D200XFrame(
+                command: D200XCommand(0, 10), payload: payload
+            ))
+            try await withTaskCancellationHandler {
+                try await transport.write(reports)
+            } onCancel: {
+                Task { await self.fail(.cancelled, token: token) }
+            }
+            guard token == generation, case .connected = status else { throw D200XFailure.disconnected }
+            try Task.checkCancellation()
+        } catch {
+            await fail(Self.failure(error), token: token)
+            throw Self.failure(error)
+        }
+    }
+
+    public func setKeepAwakeEnabled(_ enabled: Bool) async throws {
+        guard case .connected = status else { throw D200XFailure.disconnected }
+        if enabled {
+            guard maintenancePaused else { return }
+            maintenancePaused = false
+            maintenanceRevision &+= 1
+            startMaintenance(generation)
+            return
+        }
+
+        guard !maintenancePaused else { return }
+        maintenancePaused = true
+        maintenanceRevision &+= 1
+        maintenance?.cancel()
+        maintenance = nil
+        deadline?.cancel()
+        deadlineSequence &+= 1
+        deadline = nil
+        awaitingIdentity = false
     }
 
     private func startReading(_ link: any D200XTransport, token: UInt64) {
@@ -203,21 +263,30 @@ public actor D200XSession: D200XSessionProtocol {
         fontReply = nil
     }
 
-    private func queryIdentity(token: UInt64) async throws {
+    private func queryIdentity(token: UInt64, maintenanceRevision revision: UInt64? = nil) async throws {
         guard token == generation, let transport, status != .disconnecting else { throw D200XFailure.disconnected }
+        if let revision {
+            guard revision == maintenanceRevision, !maintenancePaused, case .connected = status else { return }
+        }
         awaitingIdentity = true
         try await transport.write(D200XCodec.reports(for: D200XFrame(command: .getBase)))
-        if token == generation, awaitingIdentity { armDeadline(token) }
+        guard token == generation else { return }
+        if let revision {
+            guard revision == maintenanceRevision, !maintenancePaused, case .connected = status else { return }
+        }
+        if awaitingIdentity { armDeadline(token) }
     }
 
     private func startMaintenance(_ token: UInt64) {
+        guard token == generation, !maintenancePaused, maintenance == nil, case .connected = status else { return }
+        let revision = maintenanceRevision
         let timing = timing
         maintenance = Task { [weak self] in
             do {
                 while !Task.isCancelled {
                     try await timing.sleep(timing.queryInterval)
                     try Task.checkCancellation()
-                    try await self?.queryIdentity(token: token)
+                    try await self?.queryIdentity(token: token, maintenanceRevision: revision)
                 }
             } catch {
                 if !Task.isCancelled { await self?.fail(Self.failure(error), token: token) }
@@ -226,6 +295,7 @@ public actor D200XSession: D200XSessionProtocol {
     }
 
     private func armDeadline(_ token: UInt64) {
+        guard token == generation, !maintenancePaused, status != .disconnecting else { return }
         deadline?.cancel()
         deadlineSequence &+= 1
         let sequence = deadlineSequence
@@ -240,7 +310,8 @@ public actor D200XSession: D200XSessionProtocol {
     }
 
     private func expireDeadline(token: UInt64, sequence: UInt64) async {
-        guard sequence == deadlineSequence, awaitingIdentity || status == .connecting else { return }
+        guard token == generation, sequence == deadlineSequence, !maintenancePaused,
+              awaitingIdentity || status == .connecting else { return }
         await fail(.timeout, token: token)
     }
 
@@ -252,6 +323,8 @@ public actor D200XSession: D200XSessionProtocol {
         guard token == generation, let link = transport else { return }
         if status == .disconnecting { await link.close(); return }
         publish(.disconnecting)
+        maintenanceRevision &+= 1
+        maintenancePaused = false
         initialization?.cancel()
         initialization = nil
         reader?.cancel()

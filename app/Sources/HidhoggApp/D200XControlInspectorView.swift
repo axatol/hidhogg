@@ -6,19 +6,21 @@ import SwiftUI
 struct D200XControlInspectorView: View {
     @ObservedObject var model: D200XModel
     @Environment(\.scenePhase) private var scenePhase
-    @State private var isChoosingShortcut = false
     @State private var isCapturingShortcut = false
     @State private var captureControl: D200XControl?
     @State private var captureApplicationID: String?
     @State private var captureSessionID = UUID()
+    @State private var isActionChooserPresented = false
+    @State private var actionChooserControl: D200XControl?
+    @State private var actionChooserApplicationID: String?
+    @State private var actionChooserSessionID = UUID()
     @State private var isManualEditorPresented = false
     @State private var manualEditorControl: D200XControl?
     @State private var manualEditorApplicationID: String?
     @State private var manualEditorInitialShortcut: HidhoggDomain.KeyboardShortcut?
     @State private var manualEditorPresentationID = UUID()
-    @State private var appearanceLabel = ""
-    @State private var appearanceHex = ""
-    @State private var loadedAppearanceControl: D200XControl?
+    @State private var topicDraft = ""
+    @State private var topicError: String?
 
     private var selectedDialIndex: Int? {
         switch model.selectedControl {
@@ -29,34 +31,30 @@ struct D200XControlInspectorView: View {
         }
     }
 
-    private var assignmentSelection: Binding<String> {
-        Binding(
-            get: {
-                if isChoosingShortcut { return "shortcut" }
-                if model.applicationID != nil && model.isInherited { return "inherit" }
-                return model.binding.kind == .disabled ? "disabled" : "shortcut"
-            },
-            set: setAssignment
-        )
-    }
-
-    private var isValidAppearanceHex: Bool {
-        let value = appearanceHex.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.utf8.count == 6 && value.utf8.allSatisfy { byte in
-            (48...57).contains(byte) || (65...70).contains(byte) || (97...102).contains(byte)
-        }
-    }
-
-    private var normalizedAppearanceHex: String {
-        appearanceHex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    private var actionIDs: [String] {
+        model.configuration?.actionIDs ?? []
     }
 
     private var canEditControl: Bool {
         model.canEdit && model.isConfigured
     }
 
-    private var requiresShortcutSelection: Bool {
-        (model.applicationID != nil && model.isInherited) || model.binding.kind != .shortcut
+    private var parsedTopicFilters: [String] {
+        topicDraft
+            .split(whereSeparator: { $0 == "," || $0 == "\n" || $0 == "\r" })
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private var topicValidationMessage: String? {
+        let filters = parsedTopicFilters
+        guard !filters.isEmpty else { return nil }
+        guard filters.count <= 16 else { return "A control can subscribe to at most 16 topic filters." }
+        guard Set(filters).count == filters.count else { return "Topic filters must be unique." }
+        guard filters.allSatisfy({ NotificationTopic.isValidFilter($0) }) else {
+            return "Use 1–64 ASCII letters, digits, dots, underscores, hyphens, or *; begin with a letter, digit, or *."
+        }
+        return nil
     }
 
     var body: some View {
@@ -65,18 +63,21 @@ struct D200XControlInspectorView: View {
             gesturePicker
             assignmentGroup
 
-            if model.binding.kind == .shortcut || isChoosingShortcut {
-                shortcutGroup
-            }
-
             if model.selectedControl.isTile {
                 appearanceGroup
+                topicSubscriptionsGroup
+                if model.applicationID != nil {
+                    Button("Use All Apps Appearance and Topics", systemImage: "arrow.uturn.backward") {
+                        model.resetSelectedAppearanceAndTopics()
+                    }
+                    .disabled(!canEditControl)
+                }
             }
 
             if !model.isConfigured {
                 GroupBox("Configuration") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Connect once to add this deck to your saved devices. You can then edit its bindings while disconnected.")
+                        Text("Set up a local configuration on Devices or Actions before editing this control. You can make configuration changes while disconnected.")
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -87,13 +88,22 @@ struct D200XControlInspectorView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear(perform: loadAppearanceDraft)
+        .onAppear {
+            normalizeLegacyHeldControl()
+            syncTopicDraft()
+        }
         .onChange(of: model.selectedControl) { _, _ in
-            loadAppearanceDraft()
             cancelInputSessions()
+            normalizeLegacyHeldControl()
+            syncTopicDraft()
         }
         .onChange(of: model.applicationID) { _, _ in
             cancelInputSessions()
+            syncTopicDraft()
+        }
+        .onChange(of: model.notificationTopics) { _, _ in syncTopicDraft() }
+        .onChange(of: isActionChooserPresented) { _, isPresented in
+            if !isPresented { finishActionChooser() }
         }
         .onChange(of: model.canEdit) { _, canEdit in
             if !canEdit { cancelInputSessions() }
@@ -144,50 +154,116 @@ struct D200XControlInspectorView: View {
     private var gesturePicker: some View {
         if let dialIndex = selectedDialIndex {
             GroupBox("Dial gesture") {
-                Picker("Gesture", selection: Binding(
-                    get: { model.selectedControl.gesture ?? .press },
-                    set: { selectDialGesture($0, dialIndex: dialIndex) }
-                )) {
-                    ForEach(D200XGesture.allCases, id: \.self) { gesture in
-                        Text(gesture.title).tag(gesture)
+                VStack(spacing: 8) {
+                    gestureButton(.press, title: "Press", dialIndex: dialIndex)
+                    HStack(spacing: 8) {
+                        Text("Rotate")
+                            .font(.body.weight(.semibold))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                        gestureButton(
+                            .left,
+                            title: "Left",
+                            accessibilityTitle: "Rotate Left",
+                            dialIndex: dialIndex
+                        )
+                        gestureButton(
+                            .right,
+                            title: "Right",
+                            accessibilityTitle: "Rotate Right",
+                            dialIndex: dialIndex
+                        )
                     }
                 }
-                .pickerStyle(.menu)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .disabled(!canEditControl)
                 .padding(.vertical, 4)
             }
         }
     }
 
-    private var assignmentGroup: some View {
-        GroupBox("Assignment") {
-            VStack(alignment: .leading, spacing: 10) {
-                Picker("Action", selection: assignmentSelection) {
-                    if model.applicationID != nil {
-                        Text("Inherit from All apps").tag("inherit")
-                    }
-                    Text("Disabled").tag("disabled")
-                    Text("Keyboard shortcut").tag("shortcut")
-                }
-                .pickerStyle(.menu)
-                .disabled(!canEditControl)
-
-                Text(assignmentDescription)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
+    private var selectedDialGesture: D200XGesture {
+        switch model.selectedControl.gesture {
+        case .some(.heldLeft): .left
+        case .some(.heldRight): .right
+        case .some(.press), .none: .press
+        case .some(.left): .left
+        case .some(.right): .right
         }
     }
 
-    private var shortcutGroup: some View {
-        GroupBox("Keyboard shortcut") {
+    private func gestureButton(
+        _ gesture: D200XGesture,
+        title: String,
+        accessibilityTitle: String? = nil,
+        dialIndex: Int
+    ) -> some View {
+        let isSelected = selectedDialGesture == gesture
+        let spokenTitle = accessibilityTitle ?? title
+        let shape = RoundedRectangle(cornerRadius: 8)
+
+        return Button {
+            selectDialGesture(gesture, dialIndex: dialIndex)
+        } label: {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.callout.weight(.bold))
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(
+                isSelected ? MXMasterMousePalette.selected.opacity(0.18) : MXMasterMousePalette.cardBackground,
+                in: shape
+            )
+            .overlay {
+                shape.stroke(
+                    isSelected ? MXMasterMousePalette.selected : Color(nsColor: .separatorColor),
+                    lineWidth: isSelected ? 2 : 1
+                )
+            }
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .disabled(!canEditControl)
+        .accessibilityLabel(spokenTitle)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint("Selects the \(spokenTitle) dial gesture.")
+        .help("Select the \(spokenTitle) dial gesture.")
+        .accessibilityIdentifier("d200x-dial-gesture-\(gesture.rawValue)")
+    }
+
+    private var assignmentGroup: some View {
+        GroupBox("Assignment") {
             VStack(alignment: .leading, spacing: 10) {
-                if model.binding.kind == .shortcut, let shortcut = model.binding.shortcut {
-                    LabeledContent("Current shortcut", value: ShortcutSender.label(for: shortcut))
+                HStack(alignment: .center, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Current assignment")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(currentAssignmentSummary)
+                            .font(.callout)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(currentAssignmentSummary)
+                            .accessibilityLabel("Current assignment: \(currentAssignmentSummary)")
+                    }
+                    Spacer(minLength: 4)
+                    if model.binding.kind != .disabled {
+                        Button("Clear assignment", systemImage: "xmark") {
+                            model.setBinding(.disabled)
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .help("Set the current app scope to Disabled.")
+                        .disabled(!canEditControl || isCapturingShortcut)
+                    }
                 }
 
                 if isCapturingShortcut {
@@ -195,25 +271,86 @@ struct D200XControlInspectorView: View {
                         shortcutCaptureView
                             .frame(maxWidth: .infinity, minHeight: 34)
 
-                        Button("Cancel", systemImage: "xmark.circle") {
+                        Button("Cancel Shortcut Capture", systemImage: "xmark.circle") {
                             cancelShortcutCapture()
                         }
                     }
                 } else {
-                    Button("Record Shortcut", systemImage: "record.circle") {
-                        beginShortcutCapture()
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) {
+                            recordShortcutButton
+                            chooseActionButton
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            recordShortcutButton
+                                .frame(maxWidth: .infinity)
+                            chooseActionButton
+                                .frame(maxWidth: .infinity)
+                        }
                     }
+
+                    Button("Choose Manually…", systemImage: "keyboard") {
+                        beginManualEditor()
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .help("Choose a key and modifiers without pressing the shortcut.")
                     .disabled(!canEditControl)
                 }
 
-                Button("Choose Manually…", systemImage: "keyboard") {
-                    beginManualEditor()
+                if model.applicationID != nil && !model.isInherited {
+                    Button("Use All Apps Default", systemImage: "arrow.uturn.backward") {
+                        model.setBinding(nil)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Remove this app's override and use the All Apps assignment.")
+                    .disabled(!canEditControl || isCapturingShortcut)
                 }
-                .disabled(!canEditControl)
-                .accessibilityHint("Choose a key and modifiers without pressing the shortcut")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
+        }
+        .popover(isPresented: $isActionChooserPresented, arrowEdge: .bottom) {
+            actionChooserPopover
+        }
+    }
+
+    private var recordShortcutButton: some View {
+        Button("Record Shortcut", systemImage: "record.circle") {
+            beginShortcutCapture()
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(AppAppearance.accent)
+        .help("Start keyboard shortcut capture for the selected control and app.")
+        .accessibilityHint("The current assignment changes only after you press a shortcut.")
+        .disabled(!canEditControl)
+    }
+
+    private var chooseActionButton: some View {
+        Button("Choose Action", systemImage: "list.bullet") {
+            beginActionChooser()
+        }
+        .buttonStyle(.bordered)
+        .help("Choose an action to assign to the selected control.")
+        .disabled(!canEditControl)
+    }
+
+    @ViewBuilder
+    private var actionChooserPopover: some View {
+        if let control = actionChooserControl {
+            let applicationID = actionChooserApplicationID
+            let sessionID = actionChooserSessionID
+            D200XActionChooserView(model: model) { actionID in
+                commitChosenAction(
+                    actionID,
+                    control: control,
+                    applicationID: applicationID,
+                    sessionID: sessionID
+                )
+            }
+        } else {
+            Text("Choose an action from the current control context.")
+                .padding(16)
         }
     }
 
@@ -237,90 +374,65 @@ struct D200XControlInspectorView: View {
     }
 
     private var appearanceGroup: some View {
-        GroupBox("Key appearance") {
-            VStack(alignment: .leading, spacing: 10) {
-                TextField("Label", text: $appearanceLabel)
+        D200XAppearanceEditorView(model: model)
+    }
+
+    private var topicSubscriptionsGroup: some View {
+        GroupBox("Topic filters") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Exact filters match one topic. * matches any sequence, including dots. Leave empty to clear.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                TextField("build.finished, build.*", text: $topicDraft, axis: .vertical)
+                    .lineLimit(2...4)
                     .textFieldStyle(.roundedBorder)
                     .disabled(!canEditControl)
-                    .onChange(of: appearanceLabel) { _, _ in
-                        applyAppearanceDraft()
-                    }
+                    .accessibilityLabel("Notification topic filters")
 
-                HStack(spacing: 8) {
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(color(forHex: normalizedAppearanceHex))
-                        .frame(width: 26, height: 26)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 5)
-                                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-                        }
-                        .accessibilityLabel("Key background preview")
-
-                    TextField("Six-digit hex color", text: $appearanceHex)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityLabel("Key background color as six hexadecimal digits")
-                        .disabled(!canEditControl)
-                        .onChange(of: appearanceHex) { _, _ in
-                            applyAppearanceDraft()
-                        }
-                }
-
-                if appearanceLabel.count > 64 {
-                    Text("Key labels can contain at most 64 characters.")
+                if let topicError {
+                    Text(topicError)
                         .font(.caption)
                         .foregroundStyle(.orange)
-                } else if !isValidAppearanceHex {
-                    Text("Enter six hexadecimal digits without a # prefix. The color saves when valid.")
+                } else if let topicValidationMessage {
+                    Text(topicValidationMessage)
                         .font(.caption)
                         .foregroundStyle(.orange)
-                } else {
-                    Text("Appearance changes save automatically on this Mac.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
+
+                Button("Save topic filters", systemImage: "square.and.arrow.down", action: saveTopicFilters)
+                    .disabled(!canEditControl || topicValidationMessage != nil)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
+            .padding(.vertical, 2)
         }
     }
 
-    private var assignmentDescription: String {
-        if model.applicationID != nil && model.isInherited {
-            return "This control uses its All apps assignment. Choose an action to create an app-specific override."
+    private var currentAssignmentSummary: String {
+        let scope: String
+        if model.applicationID == nil {
+            scope = "All apps"
+        } else {
+            scope = model.isInherited ? "All apps default" : "This app"
         }
-        if model.binding.kind == .disabled {
-            return "No keyboard shortcut is assigned to this control."
-        }
-        guard let shortcut = model.binding.shortcut else {
-            return "Choose or record a keyboard shortcut for this control."
-        }
-        return "Sends \(ShortcutSender.label(for: shortcut)) when this control is used."
-    }
 
-    private func setAssignment(_ value: String) {
-        guard canEditControl else { return }
-
-        switch value {
-        case "inherit":
-            isChoosingShortcut = false
-            cancelShortcutCapture()
-            model.setBinding(nil)
-        case "disabled":
-            isChoosingShortcut = false
-            cancelShortcutCapture()
-            model.setBinding(.disabled)
-        case "shortcut":
-            guard requiresShortcutSelection || model.binding.shortcut == nil else { return }
-            isChoosingShortcut = true
-            beginShortcutCapture()
-        default:
-            break
+        let assignment: String
+        switch model.binding.kind {
+        case .disabled:
+            assignment = "Disabled"
+        case .shortcut:
+            assignment = model.binding.shortcut.map { "Keyboard shortcut · \(ShortcutSender.label(for: $0))" }
+                ?? "Keyboard shortcut"
+        case .action:
+            assignment = model.binding.actionID.map { "Action · \($0)" } ?? "Action"
         }
+        return "\(scope): \(assignment)"
     }
 
     private func beginShortcutCapture() {
         guard canEditControl else { return }
-        isChoosingShortcut = requiresShortcutSelection
+        cancelActionChooser()
         captureControl = model.selectedControl
         captureApplicationID = model.applicationID
         captureSessionID = UUID()
@@ -343,14 +455,13 @@ struct D200XControlInspectorView: View {
         }
 
         model.setBinding(.key(shortcut))
-        isChoosingShortcut = false
         cancelShortcutCapture()
     }
 
     private func beginManualEditor() {
         guard canEditControl else { return }
+        cancelActionChooser()
         cancelShortcutCapture()
-        isChoosingShortcut = requiresShortcutSelection
         manualEditorControl = model.selectedControl
         manualEditorApplicationID = model.applicationID
         manualEditorInitialShortcut = model.binding.shortcut
@@ -374,7 +485,6 @@ struct D200XControlInspectorView: View {
         }
 
         model.setBinding(.key(shortcut))
-        isChoosingShortcut = false
         isManualEditorPresented = false
     }
 
@@ -382,7 +492,6 @@ struct D200XControlInspectorView: View {
         manualEditorControl = nil
         manualEditorApplicationID = nil
         manualEditorInitialShortcut = nil
-        isChoosingShortcut = false
     }
 
     private func cancelShortcutCapture() {
@@ -390,13 +499,54 @@ struct D200XControlInspectorView: View {
         captureControl = nil
         captureApplicationID = nil
         captureSessionID = UUID()
-        isChoosingShortcut = false
     }
 
     private func cancelInputSessions() {
         cancelShortcutCapture()
+        cancelActionChooser()
         if isManualEditorPresented { isManualEditorPresented = false }
-        isChoosingShortcut = false
+    }
+
+    private func beginActionChooser() {
+        guard canEditControl else { return }
+        cancelShortcutCapture()
+        actionChooserControl = model.selectedControl
+        actionChooserApplicationID = model.applicationID
+        actionChooserSessionID = UUID()
+        isActionChooserPresented = true
+    }
+
+    private func commitChosenAction(
+        _ actionID: String,
+        control: D200XControl,
+        applicationID: String?,
+        sessionID: UUID
+    ) {
+        guard actionChooserSessionID == sessionID,
+              actionChooserControl == control,
+              actionChooserApplicationID == applicationID else { return }
+        guard isActionChooserPresented,
+              model.selectedControl == control,
+              model.applicationID == applicationID,
+              canEditControl,
+              model.configuration?.actionDefinition(id: actionID) != nil else {
+            cancelActionChooser()
+            return
+        }
+
+        model.setBinding(.action(actionID))
+        cancelActionChooser()
+    }
+
+    private func cancelActionChooser() {
+        isActionChooserPresented = false
+        finishActionChooser()
+    }
+
+    private func finishActionChooser() {
+        actionChooserControl = nil
+        actionChooserApplicationID = nil
+        actionChooserSessionID = UUID()
     }
 
     private func selectDialGesture(_ gesture: D200XGesture, dialIndex: Int) {
@@ -406,33 +556,28 @@ struct D200XControlInspectorView: View {
         model.selectedControl = control
     }
 
-    private func loadAppearanceDraft() {
-        loadedAppearanceControl = model.selectedControl
-        appearanceLabel = model.appearance.label
-        appearanceHex = model.appearance.backgroundHex
+    private func normalizeLegacyHeldControl() {
+        guard let dialIndex = selectedDialIndex else { return }
+        switch model.selectedControl.gesture {
+        case .some(.heldLeft): selectDialGesture(.left, dialIndex: dialIndex)
+        case .some(.heldRight): selectDialGesture(.right, dialIndex: dialIndex)
+        case .some(.press), .some(.left), .some(.right), .none: return
+        }
     }
 
-    private func applyAppearanceDraft() {
-        guard let loadedAppearanceControl,
-              model.selectedControl == loadedAppearanceControl,
-              loadedAppearanceControl.isTile,
-              canEditControl,
-              appearanceLabel.count <= 64,
-              isValidAppearanceHex else { return }
-
-        let backgroundHex = normalizedAppearanceHex
-        guard model.appearance.label != appearanceLabel ||
-                model.appearance.backgroundHex != backgroundHex else { return }
-
-        model.setAppearance(label: appearanceLabel, backgroundHex: backgroundHex)
+    private func syncTopicDraft() {
+        topicDraft = model.notificationTopics.joined(separator: ", ")
+        topicError = nil
     }
 
-    private func color(forHex hex: String) -> Color {
-        guard let value = UInt32(hex, radix: 16) else { return .gray }
-        return Color(
-            red: Double((value >> 16) & 0xff) / 255,
-            green: Double((value >> 8) & 0xff) / 255,
-            blue: Double(value & 0xff) / 255
-        )
+    private func saveTopicFilters() {
+        guard canEditControl, topicValidationMessage == nil else { return }
+        do {
+            try model.setNotificationTopics(parsedTopicFilters)
+            topicError = nil
+        } catch {
+            topicError = error.localizedDescription
+        }
     }
+
 }

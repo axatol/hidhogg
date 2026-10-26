@@ -16,6 +16,7 @@ struct D200XDeviceView: View {
 
                 D200XApplicationSelectorView(model: model)
                 deckCanvas
+                deviceSettings
 
                 if let firmware = model.firmware {
                     GroupBox("Firmware") {
@@ -79,10 +80,23 @@ struct D200XDeviceView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else if !model.isConfigured {
-                Label("Connect to create this deck's local configuration.", systemImage: "externaldrive")
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Label(
+                        "Create a local configuration to edit this deck. You can save changes while disconnected.",
+                        systemImage: "externaldrive"
+                    )
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer(minLength: 8)
+
+                    Button("Set Up Deck Configuration", systemImage: "plus.square") {
+                        model.enableConfiguration()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.canEdit)
+                }
             }
 
             if let errorMessage = model.errorMessage {
@@ -146,5 +160,54 @@ struct D200XDeviceView: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
         }
+    }
+
+    private var deviceSettings: some View {
+        GroupBox("Device settings") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Brightness")
+                    .font(.headline)
+
+                Toggle("Set brightness preference", isOn: Binding(
+                    get: { model.configuration?.brightnessPercent != nil },
+                    set: { enabled in
+                        model.setBrightnessPercent(
+                            enabled ? (model.configuration?.brightnessPercent ?? 100) : nil
+                        )
+                    }
+                ))
+                .disabled(!canEditBrightness)
+
+                HStack {
+                    Text("Level")
+                    Spacer()
+                    Text(brightnessValueDescription)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+
+                Slider(
+                    value: Binding(
+                        get: { Double(model.configuration?.brightnessPercent ?? 100) },
+                        set: { model.setBrightnessPercent(Int($0.rounded())) }
+                    ),
+                    in: 1...100,
+                    step: 1
+                )
+                .disabled(!canEditBrightness || model.configuration?.brightnessPercent == nil)
+                .accessibilityLabel("D200X brightness preference")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
+        }
+    }
+
+    private var canEditBrightness: Bool {
+        model.canEdit && model.isConfigured
+    }
+
+    private var brightnessValueDescription: String {
+        guard let brightnessPercent = model.configuration?.brightnessPercent else { return "Device default" }
+        return "\(brightnessPercent)%"
     }
 }

@@ -78,7 +78,9 @@ struct DevicesView: View {
 
             if model.boltStatus.cleanupUncertain {
                 Label(
-                    "Cleanup is unverified. Hidhogg will not reconnect automatically.",
+                    model.connectionRequested
+                        ? "Mouse settings could not be verified. Reconnecting automatically."
+                        : "Mouse settings could not be verified. Connect to check them again.",
                     systemImage: "exclamationmark.triangle.fill"
                 )
                 .foregroundStyle(.orange)
@@ -114,6 +116,10 @@ struct DevicesView: View {
                 model.disconnect()
             }
             .disabled(model.boltStatus.phase == .stopping)
+        } else if model.connectionRequested {
+            Button(model.isReconnectPending ? "Cancel Reconnect" : "Cancel", systemImage: "xmark.circle", role: .destructive) {
+                model.disconnect()
+            }
         } else {
             Button("Connect", systemImage: "cable.connector") {
                 model.connect()

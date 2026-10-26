@@ -76,6 +76,9 @@ extension BindingSession {
 enum WorkspaceRoute: String, CaseIterable, Hashable, Identifiable {
     case devices
     case d200x
+    case actions
+    case notifications
+    case tilePresets
     case settings
 
     var id: Self { self }
@@ -227,10 +230,11 @@ final class AppModel: ObservableObject {
             scrollSender: ScrollSender(),
             thumbwheelScrollSender: ScrollSender(),
             lowBatteryNotifications: LowBatteryNotificationController(),
-            d200x: D200XModel(session: UlanziD200X.D200XSession(), sender: ShortcutSender()),
+            d200x: D200XModel(session: UlanziD200X.D200XSession(), sender: ShortcutSender(), nativePlatform: NativeActionSender()),
             loadImmediately: true,
             observeSleep: true
         )
+        d200x.startAutomation()
     }
 
     init(
@@ -258,6 +262,7 @@ final class AppModel: ObservableObject {
         self.thumbwheelScrollSender = thumbwheelScrollSender
         self.lowBatteryNotifications = lowBatteryNotifications
         self.d200x = d200x ?? D200XModel(sender: sender, frontmostApplication: frontmostApplication)
+        self.d200x.configureStorage(configurationURL: configurationURL)
         self.frontmostApplication = frontmostApplication
         self.wakeDelay = wakeDelay
         self.wakeStatusTimeout = wakeStatusTimeout
@@ -427,15 +432,18 @@ final class AppModel: ObservableObject {
     var canDiscover: Bool {
         !isRestarting && !isLoading && !discoveryPending && canStartDiscovery
     }
+    var connectionRequested: Bool { sessionActivationRequested || wakeRecovery.isRecovering }
+    var isReconnectPending: Bool { wakeRecovery.isRecovering }
     var canEnableBindings: Bool {
         !isRestarting && !isLoading && hasUsableConfiguration &&
-            permission == .granted && boltStatus.phase == .ready &&
+            permission == .granted && boltStatus.phase == .ready && !boltStatus.cleanupUncertain &&
             boltStatus.availableControls == Set(MouseControl.allCases) &&
             (try? document.draft.validated()) != nil
     }
 
     var connectionTitle: String {
-        switch boltStatus.phase {
+        if isReconnectPending { return "Reconnecting" }
+        return switch boltStatus.phase {
         case .idle: "Disconnected"
         case .discovering: "Discovering"
         case .ready: "Connected"
@@ -447,7 +455,8 @@ final class AppModel: ObservableObject {
     }
 
     var connectionColor: NSColor {
-        switch boltStatus.phase {
+        if isReconnectPending { return .systemOrange }
+        return switch boltStatus.phase {
         case .ready: .systemGreen
         case .enabled: actionsEnabled ? .systemGreen : .systemOrange
         case .discovering, .enabling, .stopping: .systemOrange
@@ -510,12 +519,19 @@ final class AppModel: ObservableObject {
             let intent = advanceLifecycleIntent()
             let sequence = sleepCleanupSequence
             Task { @MainActor [weak self] in
-                let cleaned = await cleanup.value
+                _ = await cleanup.value
                 guard let self, self.lifecycleIntent == intent, !self.isRestarting else { return }
+                var status = await self.waitForSettledControllerStatus(after: sequence)
+                guard self.lifecycleIntent == intent else { return }
+                if status == nil, !self.canDiscover {
+                    let stopSequence = self.statusSequence
+                    await self.bolt.stop(restorePreviousSettingsOnDisconnect: self.restorePreviousSettingsOnDisconnect)
+                    guard self.lifecycleIntent == intent, !self.isRestarting else { return }
+                    status = await self.waitForSettledControllerStatus(after: stopSequence)
+                    guard self.lifecycleIntent == intent else { return }
+                }
+                guard status != nil || self.canDiscover else { return }
                 self.sleepCleanupTask = nil
-                guard cleaned else { return }
-                let status = await self.waitForWakeStatus(after: sequence, matching: { [.idle, .failed].contains($0.phase) })
-                guard self.lifecycleIntent == intent, status?.phase == .idle, status?.cleanupUncertain == false else { return }
                 self.connect()
             }
             return
@@ -534,10 +550,15 @@ final class AppModel: ObservableObject {
                   self.discoveryPending,
                   !self.isRestarting,
                   self.canStartDiscovery else { return }
+            let sequence = self.statusSequence
             await self.bolt.discover()
             guard self.lifecycleIntent == intent else { return }
             self.discoveryPending = false
             self.requestReconciliation()
+            if self.statusSequence > sequence, !self.isRestarting, self.sessionActivationRequested,
+               [.idle, .failed].contains(self.boltStatus.phase) {
+                self.startConnectionRecovery()
+            }
         }
     }
 
@@ -1076,7 +1097,7 @@ final class AppModel: ObservableObject {
     func systemWillSleep() {
         guard !wakeRecovery.sleeping else { return }
         d200x.sleep()
-        let reconnect = sessionActivationRequested && !isRestarting && !boltStatus.cleanupUncertain && [.ready, .enabled].contains(boltStatus.phase)
+        let reconnect = connectionRequested && !isRestarting
         prepareForLifecycleStop()
         sleepCleanupSequence = statusSequence
         let previous = sleepCleanupTask
@@ -1093,7 +1114,7 @@ final class AppModel: ObservableObject {
         d200x.wake()
         wakeRecovery.wake { [weak self] in
             guard let self else { return .stop }
-            return await self.discoverAfterWake()
+            return await self.performRecoveryAttempt()
         }
     }
 
@@ -1281,13 +1302,15 @@ final class AppModel: ObservableObject {
     }
 
     private var shouldEnableButtons: Bool {
-        sessionActivationRequested && !isRestarting && !isLoading && hasUsableConfiguration &&
+        sessionActivationRequested && !isRestarting && !isLoading && !boltStatus.cleanupUncertain && hasUsableConfiguration &&
             permission == .granted && hasConfiguredShortcut &&
             boltStatus.availableControls == Set(MouseControl.allCases)
     }
 
     private func refreshDeliveryAdmission() {
-        if permission != .granted || !sessionActivationRequested || isRestarting {
+        let canDeliver = permission == .granted && sessionActivationRequested && !isRestarting &&
+            !boltStatus.cleanupUncertain && [.ready, .enabling, .enabled].contains(boltStatus.phase)
+        if !canDeliver {
             bolt.invalidateScrollAdmission()
             scrollSender.reset()
             bolt.invalidateThumbwheelAdmission()
@@ -1390,7 +1413,7 @@ final class AppModel: ObservableObject {
     }
 
     private var canStartDiscovery: Bool {
-        !boltStatus.cleanupUncertain && [.idle, .ready, .failed].contains(boltStatus.phase)
+        [.idle, .ready, .failed].contains(boltStatus.phase)
     }
 
     private func beginDiscovery() -> UInt64 {
@@ -1408,15 +1431,35 @@ final class AppModel: ObservableObject {
         return intent
     }
 
-    private func discoverAfterWake() async -> WakeRecoveryCoordinator.Outcome {
-        if sleepCleanupTask != nil {
-            let cleanupIntent = lifecycleIntent
-            let status = await waitForWakeStatus(after: sleepCleanupSequence, matching: { [.idle, .failed].contains($0.phase) })
-            guard !Task.isCancelled, lifecycleIntent == cleanupIntent,
-                  status?.phase == .idle, status?.cleanupUncertain == false else { return .stop }
-            sleepCleanupTask = nil
+    private func startConnectionRecovery() {
+        guard sessionActivationRequested, !isRestarting, !wakeRecovery.sleeping else { return }
+        wakeRecovery.retry { [weak self] in
+            guard let self else { return .stop }
+            return await self.performRecoveryAttempt()
         }
-        guard !Task.isCancelled, canDiscover else { return .stop }
+    }
+
+    private func performRecoveryAttempt() async -> WakeRecoveryCoordinator.Outcome {
+        if let cleanup = sleepCleanupTask {
+            let cleanupIntent = lifecycleIntent
+            _ = await cleanup.value
+            guard !Task.isCancelled, lifecycleIntent == cleanupIntent else { return .stop }
+            var status = await waitForSettledControllerStatus(after: sleepCleanupSequence)
+            guard lifecycleIntent == cleanupIntent, !Task.isCancelled else { return .stop }
+            if status == nil {
+                let stopSequence = statusSequence
+                await bolt.stop(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
+                guard lifecycleIntent == cleanupIntent, !Task.isCancelled else { return .stop }
+                status = await waitForSettledControllerStatus(after: stopSequence)
+                guard lifecycleIntent == cleanupIntent, !Task.isCancelled else { return .stop }
+            }
+            sleepCleanupTask = nil
+            guard status != nil else { return .retry }
+        }
+        guard !Task.isCancelled, !isRestarting else { return .stop }
+        guard !isLoading, hasUsableConfiguration else { return .retry }
+        if [.ready, .enabled].contains(boltStatus.phase), !boltStatus.cleanupUncertain { return .connected }
+        guard !discoveryPending, canDiscover else { return .retry }
         let intent = beginDiscovery()
         let sequence = statusSequence
         await bolt.discover()
@@ -1425,17 +1468,19 @@ final class AppModel: ObservableObject {
         guard lifecycleIntent == intent else { return .stop }
         discoveryPending = false
         guard let status else {
-            invalidateLifecycleIntent()
-            return .stop
+            guard !Task.isCancelled else { return .stop }
+            await bolt.stop(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
+            guard lifecycleIntent == intent, !Task.isCancelled else { return .stop }
+            requestReconciliation()
+            return .retry
         }
         requestReconciliation()
-        guard !Task.isCancelled, !status.cleanupUncertain else { return .stop }
-        if status.phase == .ready { return .connected }
-        guard status.phase == .failed, let failure = status.failure else { return .stop }
-        switch failure.code {
-        case .endpointUnavailable, .requestTimeout, .disconnected, .transportFailed: return .retry
-        default: return .stop
+        guard !Task.isCancelled else { return .stop }
+        if [.ready, .enabled].contains(status.phase) {
+            return status.cleanupUncertain ? .retry : .connected
         }
+        if [.idle, .failed].contains(status.phase) { return .retry }
+        return .stop
     }
 
     private func cancelWakeRecovery() {
@@ -1459,6 +1504,10 @@ final class AppModel: ObservableObject {
             }
             wakeStatusWait = WakeStatusWait(id: id, matches: matches, continuation: continuation, timeout: timeout)
         }
+    }
+
+    private func waitForSettledControllerStatus(after sequence: UInt64) async -> BoltStatus? {
+        await waitForWakeStatus(after: sequence, matching: { [.idle, .failed].contains($0.phase) })
     }
 
     private func finishWakeStatusWait(returning status: BoltStatus?) {
@@ -1493,6 +1542,7 @@ final class AppModel: ObservableObject {
     private func receive(_ event: BoltEvent) {
         switch event {
         case .status(let status):
+            guard status.generation >= boltStatus.generation else { return }
             statusSequence &+= 1
             boltStatus = status
             if [.idle, .failed, .discovering].contains(status.phase) {
@@ -1502,12 +1552,15 @@ final class AppModel: ObservableObject {
                 informationRequestedForConnection = true
                 refreshDeviceInformation()
             }
+            if [.ready, .enabled].contains(status.phase), !status.cleanupUncertain {
+                wakeRecovery.connectionRestored()
+            }
             updateLowBatteryObservation()
             if let wait = wakeStatusWait, wait.matches(status) {
                 finishWakeStatusWait(returning: status)
             }
-            if status.phase == .idle || status.phase == .failed {
-                if !discoveryPending { sessionActivationRequested = false }
+            if [.idle, .failed].contains(status.phase), !discoveryPending, sessionActivationRequested {
+                startConnectionRecovery()
             }
             refreshDeliveryAdmission()
             requestReconciliation()
@@ -1521,7 +1574,7 @@ final class AppModel: ObservableObject {
     }
 
     private func deliverScroll(vertical: Double, horizontal: Double, generation: UInt64, observedAt: ContinuousClock.Instant) {
-        guard sessionActivationRequested, !isRestarting,
+        guard sessionActivationRequested, !isRestarting, !boltStatus.cleanupUncertain,
               [.ready, .enabling, .enabled].contains(boltStatus.phase), permission == .granted,
               let amount = wheelScrollAmountDraft else { return }
         var deliveryError: Error?
@@ -1550,7 +1603,7 @@ final class AppModel: ObservableObject {
     }
 
     private func deliverThumbwheel(rotation: Double, state: UInt8, generation: UInt64, observedAt: ContinuousClock.Instant) {
-        guard sessionActivationRequested, !isRestarting,
+        guard sessionActivationRequested, !isRestarting, !boltStatus.cleanupUncertain,
               [.ready, .enabling, .enabled].contains(boltStatus.phase), permission == .granted,
               let amount = thumbwheelScrollAmountDraft else { return }
         var deliveryError: Error?
@@ -1582,6 +1635,7 @@ final class AppModel: ObservableObject {
 
     private func deliver(control: MouseControl, generation: UInt64, observedAt: ContinuousClock.Instant) {
         guard actionsEnabled,
+              !boltStatus.cleanupUncertain,
               deliveryGeneration == generation,
               boltStatus.phase == .enabled,
               boltStatus.generation == generation,

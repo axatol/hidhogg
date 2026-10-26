@@ -108,19 +108,46 @@ public enum D200XControl: String, Codable, CaseIterable, Hashable, Sendable {
     }
 }
 
+public enum D200XTitlePlacement: String, Codable, CaseIterable, Sendable { case top, center, bottom }
+public enum D200XTitleAlignment: String, Codable, CaseIterable, Sendable { case left, center, right }
+
 public struct D200XTileAppearance: Codable, Equatable, Sendable {
     public static let defaultBackgroundHex = "30343B"
 
     public var label: String
     public var backgroundHex: String
+    public var imageAsset: String?
+    public var titleSize: Double
+    public var titleColorHex: String?
+    public var titlePlacement: D200XTitlePlacement
+    public var titleAlignment: D200XTitleAlignment
+    public var showTitle: Bool
 
-    public init(label: String = "Key 1", backgroundHex: String = Self.defaultBackgroundHex) {
+    public init(label: String = "Key 1", backgroundHex: String = Self.defaultBackgroundHex,
+                imageAsset: String? = nil, titleSize: Double = 22, titleColorHex: String? = nil,
+                titlePlacement: D200XTitlePlacement = .center, showTitle: Bool = true,
+                titleAlignment: D200XTitleAlignment = .left) {
         self.label = label
         self.backgroundHex = backgroundHex
+        self.imageAsset = imageAsset
+        self.titleSize = titleSize
+        self.titleColorHex = titleColorHex
+        self.titlePlacement = titlePlacement
+        self.titleAlignment = titleAlignment
+        self.showTitle = showTitle
     }
 
-    func isValid() -> Bool {
+    public func isValid() -> Bool {
         label.count <= 64 && Self.isHexColor(backgroundHex)
+            && titleSize.isFinite && (8...48).contains(titleSize)
+            && (titleColorHex.map(Self.isHexColor) ?? true)
+            && (imageAsset.map(Self.isValidAssetReference) ?? true)
+    }
+
+    public static func isValidAssetReference(_ value: String) -> Bool {
+        let stem = value.dropLast(4)
+        return value.hasSuffix(".png") && stem.utf8.count == 64
+            && stem.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
     }
 
     private static func isHexColor(_ value: String) -> Bool {
@@ -131,31 +158,83 @@ public struct D200XTileAppearance: Codable, Equatable, Sendable {
 }
 
 public struct D200XConfiguration: Codable, Equatable, Sendable {
-    public var defaults: [String: ControlBinding]
-    public var applications: [String: [String: ControlBinding]]
+    public var defaults: [String: D200XBinding]
+    public var applications: [String: [String: D200XBinding]]
     public var tiles: [String: D200XTileAppearance]
+    public var brightnessPercent: Int?
+    public var actions: [String: ConfiguredExecutable]
+    public var nativeActions: [String: NativeAction]
+    public var notificationTopics: [String: [String]]
+    public var applicationTiles: [String: [String: D200XTileAppearance]]
+    public var applicationNotificationTopics: [String: [String: [String]]]
+    public var tilePresets: [String: D200XTilePreset]
 
     public init(
-        defaults: [String: ControlBinding] = [:],
-        applications: [String: [String: ControlBinding]] = [:],
-        tiles: [String: D200XTileAppearance] = [:]
+        defaults: [String: D200XBinding] = [:],
+        applications: [String: [String: D200XBinding]] = [:],
+        tiles: [String: D200XTileAppearance] = [:],
+        brightnessPercent: Int? = nil,
+        actions: [String: ConfiguredExecutable] = [:],
+        notificationTopics: [String: [String]] = [:],
+        applicationTiles: [String: [String: D200XTileAppearance]] = [:],
+        applicationNotificationTopics: [String: [String: [String]]] = [:],
+        tilePresets: [String: D200XTilePreset] = [:],
+        nativeActions: [String: NativeAction] = [:]
     ) {
         self.defaults = defaults
         self.applications = applications
         self.tiles = tiles
+        self.brightnessPercent = brightnessPercent
+        self.actions = actions
+        self.nativeActions = nativeActions
+        self.notificationTopics = notificationTopics
+        self.applicationTiles = applicationTiles
+        self.applicationNotificationTopics = applicationNotificationTopics
+        self.tilePresets = tilePresets
     }
 
     public static let empty = Self()
 
-    public func binding(for control: D200XControl, application: String?) -> ControlBinding {
+    public var actionIDs: [String] { Set(actions.keys).union(nativeActions.keys).sorted() }
+
+    public func actionDefinition(id: String) -> ConfiguredActionDefinition? {
+        if let executable = actions[id] { return .executable(executable) }
+        return nativeActions[id].map(ConfiguredActionDefinition.native)
+    }
+
+    public func binding(for control: D200XControl, application: String?) -> D200XBinding {
         if let application, let override = applications[application]?[control.rawValue] {
             return override
         }
         return defaults[control.rawValue] ?? .disabled
     }
 
-    public func appearance(for control: D200XControl) -> D200XTileAppearance {
-        tiles[control.rawValue] ?? Self.defaultAppearance(for: control)
+    public func appearance(for control: D200XControl, application: String? = nil) -> D200XTileAppearance {
+        if let application, let appearance = applicationTiles[application]?[control.rawValue] { return appearance }
+        return tiles[control.rawValue] ?? Self.defaultAppearance(for: control)
+    }
+
+    public var applicationIDs: [String] {
+        Set(applications.keys).union(applicationTiles.keys).union(applicationNotificationTopics.keys).sorted()
+    }
+
+    public func topics(for control: D200XControl, application: String?) -> [String] {
+        if let application, let topics = applicationNotificationTopics[application]?[control.rawValue] { return topics }
+        return notificationTopics[control.rawValue] ?? []
+    }
+
+    public func resolved(application: String?) -> Self {
+        var result = self
+        if let application {
+            result.defaults.merge(applications[application] ?? [:]) { _, override in override }
+            result.tiles.merge(applicationTiles[application] ?? [:]) { _, override in override }
+            result.notificationTopics.merge(applicationNotificationTopics[application] ?? [:]) { _, override in override }
+        }
+        result.applications = [:]
+        result.applicationTiles = [:]
+        result.applicationNotificationTopics = [:]
+        result.tilePresets = [:]
+        return result
     }
 
     public static func defaultAppearance(for control: D200XControl) -> D200XTileAppearance {
@@ -178,7 +257,7 @@ public struct D200XConfiguration: Codable, Equatable, Sendable {
         }
 
         for binding in Array(defaults.values) + applications.values.flatMap({ $0.values }) {
-            guard ConfigurationValueValidation.isValid(binding: binding) else {
+            guard binding.isValid(actions: actions, nativeActions: nativeActions) else {
                 throw ConfigurationValidationError.invalidShortcut
             }
         }
@@ -186,6 +265,30 @@ public struct D200XConfiguration: Codable, Equatable, Sendable {
         guard Set(tiles.keys).isSubset(of: knownTiles), tiles.values.allSatisfy({ $0.isValid() }) else {
             throw ConfigurationValidationError.invalidD200XAppearance
         }
+
+        guard brightnessPercent.map({ (1...100).contains($0) }) ?? true,
+              actionIDs.count <= 64, actionIDs.allSatisfy(ConfiguredExecutable.isValidIdentifier),
+              Set(actions.keys).isDisjoint(with: nativeActions.keys),
+              Set(notificationTopics.keys).isSubset(of: knownTiles),
+              notificationTopics.values.allSatisfy({ topics in
+                  topics.count <= 16 && Set(topics).count == topics.count
+                      && topics.allSatisfy(NotificationTopic.isValidFilter)
+              }) else { throw ConfigurationValidationError.invalidD200XAction }
+        for action in actions.values { _ = try action.validated() }
+        for action in nativeActions.values { _ = try action.validated() }
+
+        guard applicationIDs.count <= 128,
+              applicationIDs.allSatisfy(ConfigurationValueValidation.isValid(application:)),
+              applicationTiles.values.allSatisfy({ Set($0.keys).isSubset(of: knownTiles) && $0.values.allSatisfy { $0.isValid() } }),
+              applicationNotificationTopics.values.allSatisfy({ overrides in
+                  Set(overrides.keys).isSubset(of: knownTiles) && overrides.values.allSatisfy { topics in
+                      topics.count <= 16 && Set(topics).count == topics.count && topics.allSatisfy(NotificationTopic.isValidFilter)
+                  }
+              }), tilePresets.count <= 128,
+              tilePresets.keys.allSatisfy(ConfiguredExecutable.isValidIdentifier) else {
+            throw ConfigurationValidationError.invalidD200XAppearance
+        }
+        for preset in tilePresets.values { _ = try preset.validated() }
 
         return self
     }

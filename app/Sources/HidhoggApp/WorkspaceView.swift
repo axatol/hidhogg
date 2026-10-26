@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import HidhoggDomain
 
 struct WorkspaceView: View {
     let presentationCoordinator: WorkspacePresentationCoordinator
@@ -38,8 +39,11 @@ struct WorkspaceView: View {
                                 }
                             }
                         } icon: {
-                            Image(systemName: "computermouse")
-                                .font(.system(size: 18))
+                            Image("DeviceMouse")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 18, height: 18)
                                 .accessibilityHidden(true)
                         }
                         .labelStyle(SidebarLabelStyle())
@@ -48,15 +52,19 @@ struct WorkspaceView: View {
                         D200XSidebarLabel(model: model.d200x)
                     }
                 }
-                NavigationLink(value: WorkspaceRoute.settings) {
-                    Label {
-                        Text("Settings")
-                    } icon: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 18))
+                Section("Workspace") {
+                    ForEach([WorkspaceRoute.actions, .notifications, .tilePresets]) { route in
+                        NavigationLink(value: route) {
+                            Label(route.title, systemImage: route.symbol)
+                                .labelStyle(SidebarLabelStyle())
+                                .padding(.vertical, 4)
+                        }
                     }
-                    .labelStyle(SidebarLabelStyle())
-                    .padding(.vertical, 4)
+                }
+                NavigationLink(value: WorkspaceRoute.settings) {
+                    Label("Settings", systemImage: WorkspaceRoute.settings.symbol)
+                        .labelStyle(SidebarLabelStyle())
+                        .padding(.vertical, 4)
                 }
             }
             .listStyle(.sidebar)
@@ -73,6 +81,12 @@ struct WorkspaceView: View {
                             model: model.d200x,
                             isInspectorPresented: $isD200XInspectorPresented
                         )
+                    case .actions:
+                        ActionsView(model: model.d200x, onOpenTile: openD200XTile)
+                    case .notifications:
+                        NotificationsView(model: model.d200x, onOpenTile: openD200XTile)
+                    case .tilePresets:
+                        TilePresetsView(model: model.d200x)
                     case .settings:
                         SettingsView()
                     }
@@ -161,7 +175,7 @@ struct WorkspaceView: View {
             isDevicesInspectorPresented
         case .d200x:
             isD200XInspectorPresented
-        case .settings:
+        case .actions, .notifications, .tilePresets, .settings:
             false
         }
     }
@@ -184,6 +198,22 @@ struct WorkspaceView: View {
         .accessibilityLabel("Battery: \(information.batteryText)")
         .labelStyle(.titleAndIcon)
     }
+
+    private func openD200XTile(_ profile: String?, _ controlIdentifier: String) {
+        guard let control = D200XControl(rawValue: controlIdentifier) else { return }
+
+        let applicationID: String?
+        if let profile, profile != "Default" {
+            guard model.d200x.configuration?.applicationIDs.contains(profile) == true else { return }
+            applicationID = profile
+        } else {
+            applicationID = nil
+        }
+
+        model.d200x.applicationID = applicationID
+        model.d200x.selectedControl = control
+        model.navigate(to: .d200x)
+    }
 }
 
 private struct SidebarLabelStyle: LabelStyle {
@@ -197,11 +227,14 @@ private struct SidebarLabelStyle: LabelStyle {
     }
 }
 
-private extension WorkspaceRoute {
+fileprivate extension WorkspaceRoute {
     var title: String {
         switch self {
         case .devices: "Devices"
         case .d200x: "Ulanzi D200X"
+        case .actions: "Actions"
+        case .notifications: "Notifications"
+        case .tilePresets: "Tile Presets"
         case .settings: "Settings"
         }
     }
@@ -210,6 +243,9 @@ private extension WorkspaceRoute {
         switch self {
         case .devices: "rectangle.connected.to.line.below"
         case .d200x: "square.grid.3x3"
+        case .actions: "bolt.fill"
+        case .notifications: "bell.badge"
+        case .tilePresets: "square.grid.2x2"
         case .settings: "gearshape"
         }
     }
@@ -230,7 +266,11 @@ private struct D200XSidebarLabel: View {
                 }
             }
         } icon: {
-            Image(systemName: "square.grid.3x3").font(.system(size: 18))
+            Image("DeviceDeck")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
                 .accessibilityHidden(true)
         }
         .labelStyle(SidebarLabelStyle())

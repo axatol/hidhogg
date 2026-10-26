@@ -27,22 +27,25 @@ final class WakeRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(codes, [.systemSleep, .systemWake, .wakeReconnectAttempt, .wakeReconnectSucceeded])
     }
 
-    func testTransportRetriesAreBoundedAndHaveNoIdleWorkAfterExhaustion() async {
+    func testConnectionRetriesUseCappedBackoffUntilReady() async {
         var durations: [Duration] = []
         var attempts = 0
         var codes: [DiagnosticCode] = []
         let coordinator = WakeRecoveryCoordinator(delay: { durations.append($0) }) { code, _ in codes.append(code) }
-        coordinator.sleep(reconnect: true) { true }
-        coordinator.wake { attempts += 1; return .retry }
+        coordinator.retry {
+            attempts += 1
+            return attempts == 9 ? .connected : .retry
+        }
         await drain()
-        XCTAssertEqual(durations, [.zero, .seconds(1), .seconds(2), .seconds(4)])
-        XCTAssertEqual(attempts, 4)
-        XCTAssertEqual(codes.last, .wakeReconnectExhausted)
+        XCTAssertEqual(durations, [.seconds(1), .seconds(2), .seconds(4), .seconds(8), .seconds(16), .seconds(30), .seconds(30), .seconds(30), .seconds(30)])
+        XCTAssertEqual(attempts, 9)
+        XCTAssertEqual(codes.last, .connectionReconnectSucceeded)
         await drain()
-        XCTAssertEqual(attempts, 4)
+        XCTAssertFalse(coordinator.isRecovering)
+        XCTAssertEqual(attempts, 9)
     }
 
-    func testUncertainCleanupAndSafetyFailuresNeverRetry() async {
+    func testUncertainCleanupDoesNotBlockDiscoveryAndSafetyFailureCanRetry() async {
         for cleaned in [false, true] {
             var attempts = 0
             var codes: [DiagnosticCode] = []
@@ -50,7 +53,7 @@ final class WakeRecoveryCoordinatorTests: XCTestCase {
             coordinator.sleep(reconnect: true) { cleaned }
             coordinator.wake { attempts += 1; return .stop }
             await drain()
-            XCTAssertEqual(attempts, cleaned ? 1 : 0)
+            XCTAssertEqual(attempts, 1)
             XCTAssertEqual(codes.last, .wakeReconnectCancelled)
             XCTAssertFalse(codes.contains(.wakeReconnectSucceeded))
         }

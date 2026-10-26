@@ -44,6 +44,29 @@ final class WakeConnectionTests: XCTestCase {
         XCTAssertEqual(model.diagnosticEvent?.code, .wakeReconnectSucceeded)
     }
 
+    func testSecondSleepDuringWakeBackoffRetainsReconnectOwnership() async {
+        let delay = WakeDelayGate()
+        let session = WakeBindingSession()
+        let model = makeModel(session, delay: { duration in await delay.wait(duration) })
+        model.connect()
+        await drain()
+        model.systemWillSleep()
+        model.systemDidWake()
+        await drain()
+        XCTAssertTrue(model.connectionRequested)
+
+        model.systemWillSleep()
+        model.systemDidWake()
+        await drain()
+        delay.resume()
+        await drain()
+
+        let discoveries = await session.discoverCount
+        XCTAssertEqual(discoveries, 2)
+        XCTAssertEqual(model.boltStatus.phase, .ready)
+        XCTAssertTrue(model.connectionRequested)
+    }
+
     func testWakeBeforeCleanupWaitsAndDuplicateNotificationsReconnectOnlyOnceWithoutPermission() async {
         let session = WakeBindingSession()
         let model = makeModel(session)
@@ -95,7 +118,7 @@ final class WakeConnectionTests: XCTestCase {
         XCTAssertEqual(count, 1)
     }
 
-    func testOnlyDiscoveryTransportFailuresRetryAndExhaustAtFourAttempts() async {
+    func testWakeRetriesTransportFailuresUntilConnectionReturns() async {
         let session = WakeBindingSession()
         let model = makeModel(session)
         var codes: [DiagnosticCode] = []
@@ -108,13 +131,12 @@ final class WakeConnectionTests: XCTestCase {
         model.systemDidWake()
         await drain()
         let count = await session.discoverCount
-        XCTAssertEqual(count, 5)
-        XCTAssertEqual(codes.filter { $0 == .wakeReconnectAttempt }.count, 4)
-        XCTAssertEqual(codes.last, .wakeReconnectExhausted)
-        XCTAssertFalse(codes.contains(.wakeReconnectSucceeded))
+        XCTAssertEqual(count, 6)
+        XCTAssertEqual(codes.filter { $0 == .wakeReconnectAttempt }.count, 5)
+        XCTAssertEqual(codes.last, .wakeReconnectSucceeded)
     }
 
-    func testSafetyAndUnknownDiscoveryFailuresStopWithoutRetry() async {
+    func testDiscoveryFailuresRetryUntilTheControllerReturnsReady() async {
         for failure in [BoltFailureCode.endpointAmbiguous, .externalStateChanged, .replyMalformed, .controlsUnsupported, .operationCancelled, .eventsOverflowed, .requestIDsExhausted] {
             let session = WakeBindingSession()
             let model = makeModel(session)
@@ -125,12 +147,13 @@ final class WakeConnectionTests: XCTestCase {
             model.systemDidWake()
             await drain()
             let count = await session.discoverCount
-            XCTAssertEqual(count, 2, failure.rawValue)
-            XCTAssertEqual(model.diagnosticEvent?.code, .wakeReconnectCancelled)
+            XCTAssertEqual(count, 3, failure.rawValue)
+            XCTAssertEqual(model.boltStatus.phase, .ready, failure.rawValue)
+            XCTAssertEqual(model.diagnosticEvent?.code, .wakeReconnectSucceeded, failure.rawValue)
         }
     }
 
-    func testCleanupUncertaintyFailsClosed() async {
+    func testWakeRecoversAfterUncertainCleanup() async {
         let session = WakeBindingSession()
         let model = makeModel(session)
         model.connect()
@@ -140,9 +163,86 @@ final class WakeConnectionTests: XCTestCase {
         model.systemDidWake()
         await drain()
         let count = await session.discoverCount
-        XCTAssertEqual(count, 1)
-        XCTAssertTrue(model.boltStatus.cleanupUncertain)
-        XCTAssertEqual(model.diagnosticEvent?.code, .wakeReconnectCancelled)
+        XCTAssertEqual(count, 2)
+        XCTAssertEqual(model.boltStatus.phase, .ready)
+        XCTAssertFalse(model.boltStatus.cleanupUncertain)
+        XCTAssertEqual(model.diagnosticEvent?.code, .wakeReconnectSucceeded)
+    }
+
+    func testExplicitConnectRetriesAfterUncertainSleepCleanup() async {
+        let session = WakeBindingSession()
+        let model = makeModel(session)
+        model.connect()
+        await drain()
+        await session.setCleanupResult(false)
+        model.systemWillSleep()
+        await drain()
+        model.connect()
+        await drain()
+
+        let count = await session.discoverCount
+        XCTAssertEqual(count, 2)
+        XCTAssertEqual(model.boltStatus.phase, .ready)
+        XCTAssertFalse(model.boltStatus.cleanupUncertain)
+    }
+
+    func testUnexpectedDisconnectRetainsConnectionIntentAndReappliesBindings() async {
+        let delay = WakeDelayGate()
+        let session = WakeBindingSession()
+        let model = makeModel(session, permissionAllowed: true, delay: { duration in await delay.wait(duration) })
+        var configuration = AppConfiguration.empty
+        configuration.devices[0].defaults[MouseControl.back.rawValue] = .key(KeyboardShortcut(keyCode: 33))
+        model.updateDraft(configuration)
+        model.connect()
+        await drain()
+        XCTAssertTrue(model.isBindingsEnabled)
+
+        await session.disconnectUnexpectedly(cleanupUncertain: true)
+        await drain()
+        XCTAssertEqual(model.boltStatus.phase, .failed)
+        XCTAssertEqual(model.boltStatus.failure?.code, .disconnected)
+        let attemptsBeforeRetry = await session.discoverCount
+        XCTAssertEqual(attemptsBeforeRetry, 1)
+        XCTAssertEqual(delay.waitedDurations, [.seconds(1)])
+
+        delay.resumeNext()
+        await drain()
+
+        let attemptsAfterRetry = await session.discoverCount
+        XCTAssertEqual(attemptsAfterRetry, 2)
+        XCTAssertEqual(model.boltStatus.phase, .enabled)
+        XCTAssertFalse(model.boltStatus.cleanupUncertain)
+        XCTAssertTrue(model.isBindingsEnabled)
+        let enablesAfterRetry = await session.enableCount
+        XCTAssertEqual(enablesAfterRetry, 2)
+    }
+
+    func testRepeatedDiscoveryFailuresUseIncreasingCappedBackoffAndDisconnectCancelsLoop() async {
+        let delay = WakeDelayGate()
+        let session = WakeBindingSession()
+        let model = makeModel(session, delay: { duration in await delay.wait(duration) })
+        model.connect()
+        await drain()
+        await session.setFailures(Array(repeating: .transportFailed, count: 8))
+        await session.disconnectUnexpectedly(cleanupUncertain: true)
+
+        for expected in [Duration.seconds(1), .seconds(2), .seconds(4), .seconds(8), .seconds(16), .seconds(30), .seconds(30)] {
+            await drain()
+            XCTAssertEqual(delay.waitedDurations.last, expected)
+            delay.resumeNext()
+            await drain()
+        }
+
+        let attemptsBeforeDisconnect = await session.discoverCount
+        XCTAssertEqual(attemptsBeforeDisconnect, 8)
+        XCTAssertEqual(delay.waitedDurations, [.seconds(1), .seconds(2), .seconds(4), .seconds(8), .seconds(16), .seconds(30), .seconds(30), .seconds(30)])
+        model.disconnect()
+        await drain()
+        delay.resume()
+        await drain()
+        let attemptsAfterDisconnect = await session.discoverCount
+        XCTAssertEqual(attemptsAfterDisconnect, 8)
+        XCTAssertEqual(model.boltStatus.phase, .idle)
     }
 
     func testExplicitConnectDuringPausedSleepCleanupWaitsAndCancelsAutomaticRecovery() async {
@@ -218,14 +318,22 @@ final class WakeConnectionTests: XCTestCase {
         model.systemWillSleep()
         model.systemDidWake()
         await drain()
+        let firstGeneration = await session.deferredGeneration(at: 0)
         timeout.resume()
         await drain()
-        XCTAssertEqual(model.diagnosticEvent?.code, .wakeReconnectCancelled)
+        XCTAssertEqual(model.boltStatus.phase, .discovering)
+        XCTAssertTrue(model.connectionRequested)
+        let attemptsAfterTimeout = await session.discoverCount
+        XCTAssertEqual(attemptsAfterTimeout, 3)
+        if let firstGeneration { await session.publishReady(generation: firstGeneration) }
+        await drain()
+        XCTAssertEqual(model.boltStatus.phase, .discovering)
         await session.completeDiscovery()
         await drain()
         XCTAssertFalse(model.isBindingsEnabled)
         let count = await session.discoverCount
-        XCTAssertEqual(count, 2)
+        XCTAssertEqual(count, 3)
+        XCTAssertEqual(model.boltStatus.phase, .ready)
     }
 
     private func makeModel(
@@ -254,12 +362,26 @@ final class WakeConnectionTests: XCTestCase {
 
 @MainActor
 private final class WakeDelayGate {
-    private var continuations: [CheckedContinuation<Void, Never>] = []
-    func wait() async { await withCheckedContinuation { continuations.append($0) } }
+    private var continuations: [(Duration?, CheckedContinuation<Void, Never>)] = []
+    private(set) var waitedDurations: [Duration] = []
+
+    func wait(_ duration: Duration? = nil) async {
+        await withCheckedContinuation { continuation in
+            if let duration { waitedDurations.append(duration) }
+            continuations.append((duration, continuation))
+        }
+    }
+
     func resume() {
         let pending = continuations
         continuations = []
-        for continuation in pending { continuation.resume() }
+        for (_, continuation) in pending { continuation.resume() }
+    }
+
+    func resumeNext() {
+        guard !continuations.isEmpty else { return }
+        let (_, continuation) = continuations.removeFirst()
+        continuation.resume()
     }
 }
 
@@ -274,6 +396,7 @@ private actor WakeBindingSession: BindingSession {
     private var cleanupPaused = false
     private var cleanupWait: CheckedContinuation<Void, Never>?
     private var deferredDiscovery = false
+    private var deferredGenerations: [UInt64] = []
 
     init() {
         let stream = AsyncStream<BoltEvent>.makeStream(bufferingPolicy: .unbounded)
@@ -285,17 +408,26 @@ private actor WakeBindingSession: BindingSession {
         discoverCount += 1
         generation &+= 1
         publish(.discovering)
-        guard !deferredDiscovery else { return }
+        guard !deferredDiscovery else { deferredGenerations.append(generation); return }
         if !failures.isEmpty { publish(.failed, failure: failures.removeFirst()) }
         else { publish(.ready) }
     }
 
     func setFailures(_ failures: [BoltFailureCode]) { self.failures = failures }
+    func disconnectUnexpectedly(cleanupUncertain: Bool) {
+        generation &+= 1
+        publish(.failed, uncertain: cleanupUncertain, failure: .disconnected)
+    }
     func setCleanupResult(_ result: Bool) { cleanupResult = result }
     func pauseCleanup() { cleanupPaused = true }
     func completeCleanup() { cleanupPaused = false; cleanupWait?.resume(); cleanupWait = nil }
     func deferDiscoveryStatus() { deferredDiscovery = true }
     func completeDiscovery() { deferredDiscovery = false; publish(.ready) }
+    func deferredGeneration(at index: Int) -> UInt64? {
+        guard deferredGenerations.indices.contains(index) else { return nil }
+        return deferredGenerations[index]
+    }
+    func publishReady(generation: UInt64) { publish(.ready, generation: generation) }
     func enable() async { enableCount += 1; publish(.enabled) }
     func disable() async { publish(.ready) }
     func stop() async { _ = await stopForRestart() }
@@ -308,12 +440,17 @@ private actor WakeBindingSession: BindingSession {
     }
     nonisolated func withPressAdmission(generation: UInt64, observedAt: ContinuousClock.Instant, _ operation: () -> Void) -> Bool { false }
 
-    private func publish(_ phase: BoltPhase, uncertain: Bool = false, failure: BoltFailureCode? = nil) {
+    private func publish(
+        _ phase: BoltPhase,
+        uncertain: Bool = false,
+        failure: BoltFailureCode? = nil,
+        generation: UInt64? = nil
+    ) {
         continuation.yield(.status(BoltStatus(
             phase: phase,
             message: "Synthetic wake test status",
             availableControls: Set(MouseControl.allCases),
-            generation: generation,
+            generation: generation ?? self.generation,
             cleanupUncertain: uncertain,
             failure: failure.map { BoltFailureContext(code: $0, sourceFileID: #fileID, sourceLine: #line) }
         )))

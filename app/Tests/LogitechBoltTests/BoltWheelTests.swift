@@ -196,6 +196,8 @@ private actor WheelRecorder {
     var scrollCount: Int { scrolls.count }
     var pressCount: Int { presses.count }
     func firstPressGeneration() -> UInt64? { presses.first?.1 }
+    func isVerifiedReady() -> Bool { last?.phase == .ready && last?.cleanupUncertain == false }
+    func isUncertainFailure() -> Bool { last?.phase == .failed && last?.cleanupUncertain == true }
     func record(_ event: BoltEvent) {
         switch event {
         case .thumbwheel: break
@@ -690,7 +692,7 @@ func wheelRejectsReservedModeBeforeConnection(mode: UInt8) async {
     #expect(await recorder.last?.cleanupUncertain == false)
 }
 
-@Test func wheelForeignFullModeBlocksCleanupAndFurtherMutation() async {
+@Test func wheelForeignFullModeIsReverifiedOnFreshConnection() async {
     let fixture = WheelFixture()
     let controller = BoltController(makeTransport: { WheelChannel(fixture) })
     let recorder = WheelRecorder()
@@ -707,12 +709,17 @@ func wheelRejectsReservedModeBeforeConnection(mode: UInt8) async {
     #expect(await fixture.mode == 6)
     #expect(await fixture.closes == 1)
     await controller.discover()
+    #expect(await wheelEventually { await recorder.isVerifiedReady() })
+    #expect(await recorder.last?.wheel.support == .supported)
+    #expect(await recorder.last?.wheel.observedInverted == true)
     await controller.applyWheelPreference(nil, restorePreviousSettingsOnDisconnect: true)
     await controller.enable()
     await controller.applyWheelPreference(true)
-    #expect(await fixture.opens.count == 1)
+    #expect(await fixture.opens == [0, 6])
     #expect(await fixture.writes == [[4]])
-    #expect(await controller.stopForRestart() == false)
+    #expect(await controller.stopForRestart())
+    #expect(await fixture.mode == 6)
+    #expect(await fixture.closes == 2)
 }
 
 @Test(arguments: [[16, 0, 1], [0, 0, 0], [15, 0x20, 1], [15, 0, 2], []])
@@ -737,7 +744,8 @@ func wheelChangedFeatureAssociationNeverReadsOrWritesStaleIndex(root: [UInt8]) a
     await controller.discover()
     await controller.applyWheelPreference(nil, restorePreviousSettingsOnDisconnect: true)
     await controller.enable()
-    #expect(await fixture.opens == [0])
+    #expect(await fixture.opens == [0, 4])
+    #expect(await wheelEventually { await recorder.isUncertainFailure() })
     #expect(await controller.stopForRestart() == false)
     #expect(await fixture.writes == [[4]])
     #expect(await fixture.modeReads == reads)
@@ -765,7 +773,8 @@ func wheelChangedCapabilityAssociationNeverReadsOrWritesStaleIndex(capabilities:
     await controller.discover()
     await controller.applyWheelPreference(nil, restorePreviousSettingsOnDisconnect: true)
     await controller.enable()
-    #expect(await fixture.opens == [0])
+    #expect(await fixture.opens == [0, 4])
+    #expect(await wheelEventually { await recorder.isUncertainFailure() })
     #expect(await controller.stopForRestart() == false)
     #expect(await fixture.writes == [[4]])
     #expect(await fixture.modeReads == reads)
@@ -975,7 +984,9 @@ func wheelTerminalFailureRestoresOrRetainsUncertainty(unreadable: Bool) async {
     if unreadable {
         await controller.discover()
         await controller.applyWheelPreference(nil, restorePreviousSettingsOnDisconnect: true)
-        #expect(await fixture.opens.count == 1)
+        #expect(await fixture.opens.count == 2)
+        #expect(await wheelEventually { await recorder.isUncertainFailure() })
+        #expect(await fixture.writes == [[4]])
         #expect(await controller.stopForRestart() == false)
     }
 }

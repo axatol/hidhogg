@@ -216,7 +216,7 @@ enum ConfigurationValueValidation {
 
 public enum ConfigurationValidationError: Error, LocalizedError, Sendable {
     case unsupportedVersion, invalidProfile, invalidControls, invalidApplication, invalidShortcut
-    case invalidD200XControls, invalidD200XAppearance
+    case invalidD200XControls, invalidD200XAppearance, invalidD200XAction
     case invalidWheelScrollAmount
 
     public var errorDescription: String? {
@@ -228,6 +228,7 @@ public enum ConfigurationValidationError: Error, LocalizedError, Sendable {
         case .invalidShortcut: "A shortcut has an unsupported key, duplicate modifiers or inconsistent action."
         case .invalidD200XControls: "A D200X control key is unknown or there are too many application overrides."
         case .invalidD200XAppearance: "A D200X tile key, label or background color is invalid."
+        case .invalidD200XAction: "A D200X action, notification source or brightness preference is invalid."
         case .invalidWheelScrollAmount: "Wheel scroll amount must be a finite value between 0.25 and 10."
         }
     }

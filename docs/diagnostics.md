@@ -1,6 +1,6 @@
 # Diagnostic codes and correlation
 
-Updated22 October2026. Recent Activity in Settings is a bounded100-entry, newest-first list. Rows are full-width and left-aligned; Details exposes selectable event ID, build ID and source. Console uses subsystem `com.hidhogg.app`, category `diagnostics`; macOS manages persistence/retention.
+Updated 26 October 2026. Recent Activity in Settings is a bounded100-entry, newest-first list. Rows are full-width and left-aligned; Details exposes selectable event ID, build ID and source. Console uses subsystem `com.hidhogg.app`, category `diagnostics`; macOS manages persistence/retention.
 
 ## Following an error
 
@@ -11,8 +11,9 @@ Updated22 October2026. Recent Activity in Settings is a bounded100-entry, newest
 | Code family | Meaning and code seam |
 |---|---|
 | `app.lifecycle.sleep`, `app.lifecycle.wake` | macOS sleep/wake notification handled by AppModel |
-| `app.wake-reconnect.attempt`, `app.wake-reconnect.succeeded` | Bounded numbered discovery attempt and restored connection; normal settings reconciliation continues separately |
-| `app.wake-reconnect.exhausted`, `app.wake-reconnect.cancelled` | Four readiness attempts exhausted, newer intent, or a safety/cleanup gate stopped recovery |
+| `app.wake-reconnect.attempt`, `app.wake-reconnect.succeeded` | Numbered wake discovery attempt and restored connection; normal settings reconciliation continues separately |
+| `app.wake-reconnect.exhausted`, `app.wake-reconnect.cancelled` | Exhausted is retained for historical four-attempt recovery; cancelled records a newer intent or a lifecycle condition stopping recovery |
+| `app.connection-reconnect.attempt`, `app.connection-reconnect.succeeded`, `app.connection-reconnect.cancelled` | Automatic recovery after unexpected loss or unsuccessful initial discovery; retries use capped backoff while connection intent remains active |
 | `app.process.started` | Owner model/store started; DiagnosticsStore initialization |
 | `app.instance.ownership-failed` | Pre-runtime ownership bootstrap failed; ApplicationInstanceBootstrap |
 | `app.restart.failed` | Restart could not complete; HidhoggApp/RestartCoordinator reporter |

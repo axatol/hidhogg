@@ -2,3 +2,9 @@
 /dist/
 /app/.build/
 /app/.swiftpm/
+
+/.envrc
+/.codex/
+**/xcuserdata/
+**/__pycache__/
+/spikes/go-hid-d200x/d200xprobe

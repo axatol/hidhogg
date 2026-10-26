@@ -141,14 +141,24 @@ final class LowBatteryNotificationController: ObservableObject {
 
     func setEnabled(_ enabled: Bool) async {
         synchronizeEnabled(enabled)
-        guard enabled, !isRequestingAuthorization else { return }
+        guard enabled else { return }
+
+        await requestAuthorization(requireEnabled: true)
+    }
+
+    func requestAuthorization() async {
+        await requestAuthorization(requireEnabled: false)
+    }
+
+    private func requestAuthorization(requireEnabled: Bool) async {
+        guard !isRequestingAuthorization else { return }
 
         isRequestingAuthorization = true
         defer { isRequestingAuthorization = false }
 
         var status = await notificationCenter.authorizationStatus()
         updateAuthorizationState(status)
-        guard isEnabled, status == .notDetermined else { return }
+        guard (!requireEnabled || isEnabled), status == .notDetermined else { return }
 
         do {
             _ = try await notificationCenter.requestAlertAuthorization()

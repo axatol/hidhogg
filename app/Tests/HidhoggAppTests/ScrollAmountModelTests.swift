@@ -120,12 +120,78 @@ final class ScrollAmountModelTests: XCTestCase {
         await expectEventually { session.lastRequest?.amount == nil && !session.captureActive }
     }
 
-    private func makeModel(_ root: URL, _ session: ScrollModelSession, _ scrollSender: ScrollSender) -> AppModel {
+    func testCustomScrollFractionsSurviveButtonStateChangesAndResetAfterReconnect() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = ScrollModelSession()
+        var posts = [Int32]()
+        let model = makeModel(
+            root,
+            session,
+            ScrollSender(preflight: { true }, post: { vertical, _ in posts.append(vertical) }),
+            wakeDelay: { _ in }
+        )
+        var configuration = AppConfiguration.empty
+        configuration.devices[0].defaults[MouseControl.back.rawValue] = .key(KeyboardShortcut(keyCode: 33))
+        model.updateDraft(configuration)
+        model.setWheelScrollAmount(1)
+        model.connect()
+        await expectEventually { session.captureActive }
+
+        session.emitScroll(vertical: 0.5)
+        await Task.yield()
+        XCTAssertTrue(posts.isEmpty)
+        model.confirmEnableBindings()
+        await expectEventually { model.isBindingsEnabled }
+        session.emitScroll(vertical: 0.5)
+        await expectEventually { posts == [1] }
+
+        var buttonsDisabled = model.document.draft
+        for control in MouseControl.allCases {
+            buttonsDisabled.devices[0].defaults[control.rawValue] = .disabled
+        }
+        buttonsDisabled.devices[0].applications.removeAll()
+        model.updateDraft(buttonsDisabled)
+        await expectEventually { model.boltStatus.phase == .ready }
+        XCTAssertTrue(session.captureActive)
+        session.emitScroll(vertical: 0.5)
+        await Task.yield()
+        XCTAssertEqual(posts, [1])
+
+        var buttonsEnabled = model.document.draft
+        buttonsEnabled.devices[0].defaults[MouseControl.back.rawValue] = .key(KeyboardShortcut(keyCode: 33))
+        model.updateDraft(buttonsEnabled)
+        await expectEventually { model.isBindingsEnabled }
+        session.emitScroll(vertical: 0.5)
+        await expectEventually { posts == [1, 1] }
+
+        session.emitScroll(vertical: 0.5)
+        await Task.yield()
+        XCTAssertEqual(posts, [1, 1])
+        session.reuseNextCaptureGeneration()
+        session.disconnectUnexpectedly()
+        await expectEventually { session.captureActive && !model.boltStatus.cleanupUncertain }
+        session.emitScroll(vertical: 0.5)
+        await Task.yield()
+        XCTAssertEqual(posts, [1, 1])
+        session.emitScroll(vertical: 0.5)
+        await expectEventually { posts == [1, 1, 1] }
+
+        model.disconnect()
+        await expectEventually { !session.captureActive }
+    }
+
+    private func makeModel(
+        _ root: URL,
+        _ session: ScrollModelSession,
+        _ scrollSender: ScrollSender,
+        wakeDelay: @escaping WakeRecoveryCoordinator.Delay = { try await Task.sleep(for: $0) }
+    ) -> AppModel {
         let url = root.appendingPathComponent("config.toml")
         let shortcut = ShortcutSender(preflight: { true }, request: { true }, postPair: { _ in })
         return AppModel(configurationURL: url, store: ConfigurationStore(url: url), bolt: session,
                         sender: shortcut, scrollSender: scrollSender, loadImmediately: false, observeSleep: false,
-                        frontmostApplication: { nil })
+                        wakeDelay: wakeDelay, frontmostApplication: { nil })
     }
 
     private func temporaryDirectory() throws -> URL {
@@ -160,6 +226,9 @@ private final class ScrollModelSession: BindingSession, @unchecked Sendable {
     private var request: Request?
     private var active = false
     private var epoch: UInt64 = 0
+    private var statusGeneration: UInt64 = 0
+    private var cleanupUncertain = false
+    private var reuseCaptureGenerationNext = false
     private var invalidationCount = 0
     private var pauseRelease = false
     private var releaseContinuation: CheckedContinuation<Void, Never>?
@@ -180,11 +249,27 @@ private final class ScrollModelSession: BindingSession, @unchecked Sendable {
         pending?.resume()
     }
 
-    func discover() async { publish(.ready) }
-    func enable() async { publish(.enabled) }
-    func disable() async { publish(.ready) }
+    func discover() async {
+        lock.withLock {
+            statusGeneration &+= 1
+            cleanupUncertain = false
+        }
+        publish(.ready)
+    }
+    func enable() async {
+        lock.withLock { statusGeneration &+= 1 }
+        publish(.enabled)
+    }
+    func disable() async {
+        lock.withLock { statusGeneration &+= 1 }
+        publish(.ready)
+    }
     func stop() async {
-        invalidateScrollAdmission()
+        lock.withLock {
+            active = false
+            statusGeneration &+= 1
+            cleanupUncertain = false
+        }
         publish(.idle)
     }
     func stopForRestart() async -> Bool { await stop(); return true }
@@ -203,7 +288,8 @@ private final class ScrollModelSession: BindingSession, @unchecked Sendable {
         lock.withLock {
             request = Request(inverted: inverted, amount: amount, allowed: scrollPostingAllowed)
             active = amount != nil && scrollPostingAllowed
-            epoch &+= 1
+            if reuseCaptureGenerationNext { reuseCaptureGenerationNext = false }
+            else { epoch &+= 1 }
         }
         let shouldPause = lock.withLock {
             if amount != nil && !scrollPostingAllowed && pauseRelease { pauseRelease = false; return true }
@@ -216,10 +302,22 @@ private final class ScrollModelSession: BindingSession, @unchecked Sendable {
         let generation = lock.withLock { epoch }
         continuation.yield(.scroll(vertical: vertical, horizontal: horizontal, generation: generation, observedAt: .now))
     }
-    private func publish(_ phase: BoltPhase) {
-        let capture = captureActive
+    func reuseNextCaptureGeneration() { lock.withLock { reuseCaptureGenerationNext = true } }
+    func disconnectUnexpectedly() {
+        lock.withLock {
+            active = false
+            cleanupUncertain = true
+            statusGeneration &+= 1
+        }
+        publish(.failed, failure: .disconnected)
+    }
+    private func publish(_ phase: BoltPhase, failure: BoltFailureCode? = nil) {
+        let (capture, generation, uncertain) = lock.withLock {
+            (active, statusGeneration, cleanupUncertain)
+        }
         continuation.yield(.status(BoltStatus(phase: phase, message: "Fixture", availableControls: Set(MouseControl.allCases),
-                                             generation: 1, cleanupUncertain: false,
-                                             wheel: BoltWheelStatus(support: .supported, captureActive: capture))))
+                                             generation: generation, cleanupUncertain: uncertain,
+                                             wheel: BoltWheelStatus(support: .supported, captureActive: capture),
+                                             failure: failure.map { BoltFailureContext(code: $0, sourceFileID: #fileID, sourceLine: #line) })))
     }
 }

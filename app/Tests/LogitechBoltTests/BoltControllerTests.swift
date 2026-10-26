@@ -162,6 +162,9 @@ private actor Recorder {
         }
     }
     var last: BoltStatus? { statuses.last }
+    func failedUncertainStatusWasPublished(after count: Int) -> Bool {
+        statuses.count > count && statuses.last?.phase == .failed && statuses.last?.cleanupUncertain == true
+    }
 }
 
 private func recording(_ controller: BoltController, _ recorder: Recorder) -> Task<Void, Never> {
@@ -388,7 +391,7 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
     await controller.stop()
 }
 
-@Test func externalMutationIsNotOverwrittenAndBlocksRearm() async {
+@Test func externalMutationIsNotOverwrittenAndFreshDiscoveryRejectsIt() async {
     let transport = FixtureTransport()
     let controller = BoltController(makeTransport: { FixtureChannel(transport) })
     let recorder = Recorder()
@@ -402,9 +405,15 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
     #expect(await transport.states[0x53] == 2)
     #expect(await transport.mutations.map(\.0) == [0x53, 0x56, 0x56])
     let opens = await transport.opens
+    let failuresBeforeRediscovery = await recorder.statuses.count
     await controller.discover()
     await controller.enable()
-    #expect(await transport.opens == opens)
+    #expect(await transport.opens == opens + 1)
+    #expect(await transport.closes == 2)
+    #expect(await eventually { await recorder.failedUncertainStatusWasPublished(after: failuresBeforeRediscovery) })
+    #expect(await transport.states[0x53] == 2)
+    #expect(await transport.mutations.map(\.0) == [0x53, 0x56, 0x56])
+    #expect(await controller.stopForRestart() == false)
 }
 
 @Test func offAcknowledgementRequiresSeparateBaselineVerification() async {

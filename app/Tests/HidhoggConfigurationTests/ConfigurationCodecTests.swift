@@ -99,7 +99,7 @@ final class ConfigurationCodecTests: XCTestCase {
 
     func testRejectsInvalidD200XControlsAppearanceAndShortcuts() {
         let tooManyApplications = Dictionary(uniqueKeysWithValues: (0..<129).map { index in
-            ("com.example.\(index)", ["key0": ControlBinding.disabled])
+            ("com.example.\(index)", ["key0": D200XBinding.disabled])
         })
         let invalidConfigurations = [
             D200XConfiguration(defaults: ["unknown": .disabled]),

@@ -11,13 +11,6 @@ struct D200XDeckView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("Ulanzi")
-                .font(.caption.weight(.semibold))
-                .tracking(1.2)
-                .foregroundStyle(MXMasterMousePalette.neutralRegion)
-                .padding(.top, 2)
-                .padding(.bottom, 10)
-
             Grid(horizontalSpacing: 12, verticalSpacing: 12) {
                 GridRow {
                     ForEach(tileControls.prefix(5), id: \.self) { control in
@@ -66,7 +59,7 @@ struct D200XDeckView: View {
         .frame(maxWidth: 630)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Ulanzi D200X control deck")
+        .accessibilityLabel("D200X control deck")
     }
 
     private var frontControls: some View {
@@ -82,33 +75,40 @@ struct D200XDeckView: View {
     }
 
     private func tileButton(_ control: D200XControl, isWide: Bool = false) -> some View {
-        let appearance = model.configuration?.appearance(for: control) ??
+        let appearance = model.configuration?.appearance(for: control, application: model.applicationID) ??
             D200XConfiguration.defaultAppearance(for: control)
+        let notificationLabel = model.notificationLabels[control.rawValue]
+        let spokenLabel = notificationLabel.flatMap { $0.isEmpty ? nil : $0 } ?? appearance.label
         let isSelected = model.selectedControl == control
         let shape = RoundedRectangle(cornerRadius: 5)
 
         return Button {
             select(control)
         } label: {
-            Text(appearance.label)
-                .font(.callout.weight(.semibold))
-                .lineLimit(2)
-                .minimumScaleFactor(0.7)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 4)
+            Rectangle()
+                .fill(tileColor(for: appearance.backgroundHex))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .aspectRatio(isWide ? 2.05 : 1, contentMode: .fit)
-                .foregroundStyle(foregroundColor(for: appearance.backgroundHex))
-                .background(tileColor(for: appearance.backgroundHex), in: shape)
+                .overlay {
+                    D200XTilePreview(
+                        appearance: appearance,
+                        wide: isWide,
+                        labelOverride: notificationLabel,
+                        assetDirectory: model.assetDirectory
+                    )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .clipShape(shape)
                 .overlay {
                     shape.stroke(
                         isSelected ? MXMasterMousePalette.selected : MXMasterMousePalette.neutralRegion.opacity(0.72),
                         lineWidth: isSelected ? 2.5 : 1
                     )
                 }
+                .contentShape(shape)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(control.title), \(appearance.label)")
+        .accessibilityLabel("\(control.title), \(spokenLabel)")
         .accessibilityValue(isSelected ? "Selected" : "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -121,19 +121,13 @@ struct D200XDeckView: View {
             select(control)
         } label: {
             VStack(spacing: 4) {
-                ZStack {
-                    Circle()
-                        .fill(MXMasterMousePalette.darkDetail)
-                        .frame(width: 31, height: 31)
-
-                    Circle()
-                        .fill(MXMasterMousePalette.lowerShell)
-                        .frame(width: 24, height: 24)
-                        .overlay {
-                            Circle().stroke(outline, lineWidth: isSelected ? 2 : 1)
-                        }
-                }
-                .frame(height: 32)
+                Circle()
+                    .fill(MXMasterMousePalette.lowerShell)
+                    .frame(width: 24, height: 24)
+                    .overlay {
+                        Circle().stroke(outline, lineWidth: isSelected ? 2 : 1)
+                    }
+                    .frame(height: 32)
 
                 Text(control.title)
                     .font(.caption)
@@ -161,11 +155,6 @@ struct D200XDeckView: View {
         } label: {
             VStack(spacing: 4) {
                 ZStack {
-                    Ellipse()
-                        .fill(MXMasterMousePalette.darkDetail)
-                        .frame(width: 48, height: 34)
-                        .offset(y: 5)
-
                     Circle()
                         .fill(MXMasterMousePalette.lowerShell)
                         .frame(width: 39, height: 39)
@@ -215,12 +204,6 @@ struct D200XDeckView: View {
     private func tileColor(for hex: String) -> Color {
         let (red, green, blue) = rgbComponents(for: hex)
         return Color(red: red, green: green, blue: blue)
-    }
-
-    private func foregroundColor(for hex: String) -> Color {
-        let (red, green, blue) = rgbComponents(for: hex)
-        let luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
-        return luminance > 0.56 ? .black : .white
     }
 
     private func rgbComponents(for hex: String) -> (Double, Double, Double) {

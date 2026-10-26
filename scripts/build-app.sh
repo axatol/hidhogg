@@ -17,7 +17,7 @@ usage() {
     cat <<'USAGE'
 Usage: scripts/build-app.sh --signing-identity IDENTITY [--output PATH] [--scratch-path PATH] [--disable-build-sandbox]
 
-Builds and signs the arm64 macOS 26+ Hidhogg application bundle.
+Builds and signs the arm64 macOS 26+ Hidhogg application bundle and adjacent hidhoggctl CLI.
 The signing identity is required; ad-hoc signing is not supported.
 SwiftPM's subprocess sandbox stays enabled unless explicitly disabled.
 USAGE
@@ -102,10 +102,22 @@ output_path="$output_parent/$output_name"
 stage_root=""
 backup_path=""
 destination_moved=0
+cli_backup_path=""
+cli_destination_moved=0
+cli_installed=0
+install_complete=0
 
 cleanup() {
     status=$?
     trap - EXIT
+    if [ "$install_complete" -eq 0 ]; then
+        if [ "$cli_installed" -eq 1 ]; then
+            rm -f "$cli_output_path" || status=1
+        fi
+        if [ "$cli_destination_moved" -eq 1 ]; then
+            mv "$cli_backup_path" "$cli_output_path" || status=1
+        fi
+    fi
     if [ "$destination_moved" -eq 1 ] && [ ! -e "$output_path" ] && [ -e "$backup_path" ]; then
         if mv "$backup_path" "$output_path"; then
             destination_moved=0
@@ -144,6 +156,12 @@ build_package
 binary_directory="$(build_package --show-bin-path)"
 binary_path="$binary_directory/Hidhogg"
 [ -x "$binary_path" ] || fail "SwiftPM did not produce the Hidhogg executable"
+cli_binary_path="$binary_directory/hidhoggctl"
+[ -x "$cli_binary_path" ] || fail "SwiftPM did not produce the hidhoggctl executable"
+cli_output_path="$output_parent/hidhoggctl"
+if [ -e "$cli_output_path" ] || [ -L "$cli_output_path" ]; then
+    [ -f "$cli_output_path" ] && [ ! -L "$cli_output_path" ] || fail "existing CLI output is not a regular file"
+fi
 menu_bar_head_source="$repository_root/docs/product-redesign/logos/menu-bar/head-clean.png"
 [ -f "$menu_bar_head_source" ] || fail "head menu bar icon is missing"
 binary_digest="$(shasum --algorithm 256 "$binary_path")"
@@ -157,6 +175,7 @@ icon_source="$repository_root/docs/product-redesign/logos/27-selected-serpent-pa
 iconset="$stage_root/Hidhogg.iconset"
 mkdir -p "$stage_app/Contents/MacOS" "$stage_app/Contents/Resources"
 cp "$binary_path" "$stage_app/Contents/MacOS/Hidhogg"
+cp "$cli_binary_path" "$stage_root/hidhoggctl"
 cp "$repository_root/docs/third-party-notices.txt" "$stage_app/Contents/Resources/ThirdPartyNotices.txt"
 xcrun actool --compile "$stage_app/Contents/Resources" --platform macosx --minimum-deployment-target 26.0 "$repository_root/app/Branding.xcassets" >/dev/null
 cp "$menu_bar_head_source" "$stage_app/Contents/Resources/MenuBarIconHead.png"
@@ -222,6 +241,18 @@ printf 'APPL????' > "$stage_app/Contents/PkgInfo"
 
 codesign --force --options runtime --timestamp=none --sign "$signing_identity" "$stage_app"
 codesign --verify --strict --verbose=2 "$stage_app"
+codesign --force --options runtime --timestamp=none --sign "$signing_identity" "$stage_root/hidhoggctl"
+codesign --verify --strict --verbose=2 "$stage_root/hidhoggctl"
+
+if [ -e "$cli_output_path" ] || [ -L "$cli_output_path" ]; then
+    [ -f "$cli_output_path" ] && [ ! -L "$cli_output_path" ] || fail "existing CLI output is not a regular file"
+    cli_backup_path="$output_parent/.hidhoggctl.backup.$$"
+    [ ! -e "$cli_backup_path" ] && [ ! -L "$cli_backup_path" ] || fail "CLI backup path already exists"
+    mv "$cli_output_path" "$cli_backup_path"
+    cli_destination_moved=1
+fi
+mv "$stage_root/hidhoggctl" "$cli_output_path" || fail "could not install the verified CLI"
+cli_installed=1
 
 if [ -e "$output_path" ] || [ -L "$output_path" ]; then
     [ -d "$output_path" ] && [ ! -L "$output_path" ] || fail "existing output is not a bundle directory"
@@ -233,10 +264,15 @@ fi
 
 if mv "$stage_app" "$output_path"; then
     destination_moved=0
+    install_complete=1
+    if [ "$cli_destination_moved" -eq 1 ]; then
+        rm -f "$cli_backup_path" || printf 'build-app: previous CLI retained at %s\n' "$cli_backup_path" >&2
+    fi
     if [ -n "$backup_path" ]; then
         rm -rf "$backup_path" || printf 'build-app: previous bundle retained at %s\n' "$backup_path" >&2
     fi
     printf 'Created signed app bundle: %s\n' "$output_path"
+    printf 'Created signed CLI: %s\n' "$cli_output_path"
 else
     fail "could not install the verified app bundle"
 fi

@@ -158,15 +158,15 @@ enum BoltFailure: Error, LocalizedError, Equatable {
         case .unavailable: "No eligible Bolt candidate responded."
         case .ambiguous: "Multiple Bolt endpoints or device slots require explicit association."
         case .timeout: "The Bolt request timed out."
-        case .disconnected: "The Bolt candidate disconnected. Connect again deliberately."
+        case .disconnected: "The Bolt candidate disconnected. Retry discovery to verify a fresh session."
         case .transport: "The Bolt transport failed."
         case .malformed: "The Bolt candidate returned malformed data."
-        case .unsupported: "The candidate does not uniquely advertise eligible Back and Forward controls."
+        case .unsupported: "The candidate does not advertise the required supported controls or routing."
         case .foreignState: "The device state did not match the expected state."
         case .stale: "A stale Bolt report stopped the session."
         case .overflow: "The event consumer fell behind; bindings were stopped."
         case .cancelled: "The operation was stopped."
-        case .tokenExhausted: "Too many device requests could not be verified. Reconnect after cleanup."
+        case .tokenExhausted: "Too many device requests could not be verified. Start a fresh discovery to verify a new session."
         }
     }
 }

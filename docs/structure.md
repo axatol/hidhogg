@@ -1,61 +1,59 @@
 # Structure
 
-Updated 2026-10-22. Current implementation boundaries:
+Updated 26 October 2026. The active implementation is the Swift package under app; local Xcode user metadata under macos is not a production build input.
 
-```text
-app/                     new Swift package and native SwiftUI application
-  Sources/HidhoggDomain/          configuration and binding value types
-  Sources/HidhoggConfiguration/   bounded TOML codec and revision-aware file store
-  Sources/LogitechBolt/           HID++ protocol, IOKit transport and session
-  Sources/MacOSActions/           permissions, recording, shortcut and fixed-line scroll posting
-  Sources/HidhoggApp/             menu-bar entry, singleton editor, immediate preferences, autosave and lifecycle
-  Tests/                         injected configuration/session/action fixtures
-scripts/build-app.sh     fixed-path arm64 Release packaging and signing
-dist/Hidhogg.app          ignored local build product
-docs/                    current overview, decisions and milestone index
-docs/product-redesign/   preserved mock-ups, accepted logo and design history
-docs/archive/v2/         prior docs, protocol/schema/examples and legal artifacts
-spikes/                  preserved historical experiments
-scripts/diagnostics/     preserved research tooling, not app dependencies
-.agents/                 main-agent session log and handoff
-```
+## Modules
 
-Only the main agent updates `.agents/log.md` and `.agents/handoff.md`. Frozen Logitech experiments remain in the external LogiBridge checkout; the new app must not depend on their executable artifacts. Existing local Xcode metadata left under `macos/` is outside the active build and is not production source.
+| Path | Responsibility |
+|---|---|
+| app/Sources/HidhoggDomain | Validated configuration, bindings, profiles, presets, topics and static action definitions |
+| app/Sources/HidhoggConfiguration | Strict TOML codec, configuration paths and revision-aware file persistence |
+| app/Sources/LogitechBolt | HID++ framing/correlation, IOHID transport, discovery, routing ownership and verified mouse reconciliation |
+| app/Sources/UlanziD200X | Bounded frames, input/identity codecs, page archives, IOHID transport and generation-bound session maintenance |
+| app/Sources/MacOSActions | Permission adapters, shortcut/scroll posting and injected native media, volume, sound and opener services |
+| app/Sources/HidhoggAutomation | Local wire protocol/server, notification overlay store, bounded process/native action lanes and metadata history |
+| app/Sources/HidhoggApp | Native workspace/menu, canonical app model, device models and editor/lifecycle composition |
+| app/Sources/HidhoggCLI | hidhoggctl client for the existing local service; it does not launch the app |
+| app/Tests | Domain, codec, fake transport/action/server, model and opt-in background window tests |
+| app/Branding.xcassets | App accent and decorative template device icons |
+| scripts/build-app.sh | Signed arm64 release packaging of the app and adjacent CLI |
+| docs | Current architecture/roadmap, decisions, acceptance records and preserved research/mockups |
+| .agents | Main-agent continuity log and handoff |
+| dist | Ignored local signed artifacts and source/build provenance |
+| spikes, scripts/diagnostics | Historical experiments and research tools, not runtime dependencies |
 
-Ownership policy is per-device domain/configuration state, reconciled by AppModel and serialized by BoltController. Verified persistent wheel settings are distinct from incomplete-write rollback and temporary button interception. LoginItemController isolates native main-app registration from injected tests.
+## Ownership boundaries
 
-NX-06 adds optional wheel resolution to domain/TOML, one combined direction/resolution request through AppModel, and per-bit attribution in BoltController. BoltWheelStatus carries both observed fields; native DevicesView exposes the resolution picker. SmartShift remains deferred as NX-07#423.
+AppModel owns ConfigurationDocument, autosave/reload, workspace navigation, startup and Logitech connection intent. BoltController owns one selected transport, request-ID ledger, capability discovery, recognised routing reclamation and verification. WakeRecoveryCoordinator owns the cancellable application retry schedule. Native input admission checks remain tied to verified generations.
 
-NX-11 adds optional wheelScrollAmount intent/TOML, an injected ScrollSender with fractional accumulation, independent scroll admission/epochs and temporary routing ownership in BoltController, and an opt-in native amount control. Amount-only edits are host-side; no global event tap or new runtime process. See contract56–61.
+D200XModel is independently observed by its views and owns D200X connection intent, foreground profile resolution, rendering, action context and ordered power transitions. D200XSession owns the transport, reader, handshake, maintenance query/deadline state and pause/resume revisions. The model is the sole page-write coordinator; UI views do not write HID frames.
 
-NX08/09 adds typed ThumbwheelState in LogitechBolt, independent2150 events/admission/ownership inside the same controller, optional thumbwheel configuration, and a native Thumb wheel section. Separate sender instances share axis-selectable fractional delivery without sharing timestamps/fractions. Natural is the UI name for inverted direction.
+Configuration paths and file state belong to HidhoggConfiguration. Static values and validation belong to HidhoggDomain. Live device handles, notification text, capture sessions and action-origin context are not persisted into those values.
 
-NX12 adds one lock-protected BoltRequestIDLedger per transport, with identity-checked rotating leases and shared BoltRequestTransaction framing/correlation for native and fake requests. Controller reservations query that ledger; lifetime counters are removed.
+## Workspace and editing
 
-NX13 adds DiagnosticCode/DiagnosticEvent and typed Bolt failure metadata; DiagnosticsStore projects semantic channels into bounded UI/Console entries. NX14 ApplicationInstanceBootstrap is the entry point before HidhoggApp/Model; ApplicationInstanceLease owns validated persistent descriptors, and RestartCoordinator isolates bounded ownership handoff. The MenuBarExtra label mounts workspace activation. NX15 NavigationPreset lives in domain; missing-file defaults stay separate from inert empty, with a focused AppModel+Navigation adapter and native preset menu. No new package target, helper or daemon.
+WorkspaceView composes the device sidebar, management pages and native HSplitView inspector. WorkspaceInspectorInitialWidthAdapter performs the bounded initial divider adjustment. Do not replace this with the previously rejected SwiftUI inspector bridge.
 
-NX18 MenuBarStatus maps transportphase/cleanupuncertainty to aggregate UI meaning; MenuBarStatusLabel owns native templatehead/originalcolordot composition, tooltip/VoiceOver and cached indicator bitmaps. MenuBarIcon owns the selected24x20pt cachedglyph. Runtime/discovery ownership is unchanged.
+Mouse artwork uses cached native vector paths from the approved SVG. Region buttons and callouts select controls without issuing transport requests. D200XDeckView similarly owns selection and geometry; its keys/front controls/dial gestures retain their physical mappings.
 
-NX19 MenuBarIconStyle identifies two trialassets; MenuBarIcon produces singleoriginalcolorcomposites keyedbycurrentstyle/status/light-darkappearance. HidhoggApp holds transientstyle state passed to MenuBarView Picker and MenuBarStatusLabel. Resource staging hashes both newPNGs. No additional config/runtime/lifecycle ownership.
+ActionsView, NotificationsView and TilePresetsView own their management layouts. ConfiguredExecutableArgumentsDraft retains stable rows of literal argument strings for the executable editor, preserving empty values and embedded newlines. D200XControlInspectorView owns temporary assignment/capture UI, while model methods apply the selected edit. Application selectors edit one profile without changing runtime selection. Clear writes an explicit disabled override; Use All Apps Default removes the override.
 
-NX22 adds an app-owned WorkspacePresentationCoordinator and a tiny native window lifecycle bridge. The shared bootstrap requests regular activation before opening; the concrete window close observer requests accessory mode. No second runtime or persistent preference. Observer lifetime follows the coordinator, not SwiftUI bridge teardown; window captures are weak.
+D200XAssetStore bounds imported and stored image data. D200XPageRenderer draws PNGs off the main actor. Device wide output uses 458×196; the explicit preview destination keeps its previous bitmap/layout. D200XTilePresetPackage validates portable copied images and optional immutable action definitions before applying independent copies.
 
-UI-02/03 splits presentation into DevicesView, DeviceApplicationSelector, DeviceControlCanvas and native DeviceInspectorView with button/wheel editors. DeviceEditorTarget is transient navigation state, separate from the two domain MouseControl bindings. AppModel retains the canonical draft, one-second autosave and device commands; capture commit/cancel use session UUIDs. Empty application contexts persist until explicit removal. SettingsView hosts one grouped Form with General, Permissions, Configuration and Diagnostics section views. SettingsCategory is a transient scroll anchor; settingsScrollRequestID distinguishes repeated permission jumps. ConfigurationFailureKind is a typed presentation of existing store failures. The native window bridge also cancels capture on concrete window close. No new runtime, transport, schema or package dependency was introduced.
+## Automation and platform effects
 
-### Native mouse canvas — 2026-10-22
+D200XAutomationCoordinator joins local requests, subscriptions, transactional notification overlays and captured control/profile origins. NotificationOverlayStore bounds receipt/history state and handles replacement, expiry and dismissal. Message text is retained only by the opt-in bounded live listener.
 
-`DeviceControlCanvas` owns editor selection and inspector presentation. `MXMasterMousePresentation` owns adaptive callouts; `MXMasterMouseArtwork` draws the approved angled mouse from20 cached paths in `MXMasterMouseGeometry`. The source artwork is `docs/product-redesign/mockups/mx-master-3s/15-smooth-band.svg`; no SVG parser or artwork bitmap is bundled. Canvas size follows the displayed artwork, with shared scaling/origin for drawing and path-shaped hit regions. `MXMasterControlButton` provides native label/region buttons and stable accessibility IDs. Wide labels use straight leaders with endpoint dots; compact labels stack at native text size. The obsolete top-down thumb-side inset is removed. These views do not own device requests, configuration persistence or runtime lifecycle.
+ConfiguredActionRunner separates one executable lane and one native lane, sharing eight queued slots and bounded history. Clearing history does not stop running work. AppNativeActionRunner validates captured runtime context before physical native effects. NativeActionSender and its injected services contain AppKit/Core Audio operations; tests use fakes.
 
-### Device information and low-battery alerts — 2026-10-22
+LocalAutomationServer owns a private same-user Unix endpoint. It rejects unsafe existing endpoints rather than deleting them. HidhoggCLI uses the shared protocol and does not retry potentially consequential requests automatically.
 
-`BoltDeviceInformation` and its parser expose only battery and bounded mouse firmware entities. `BoltController.refreshDeviceInformation` reuses the serialized selected connection and lifecycle guards; IOKit has a narrowly scoped optional-information request path that keeps matched protocol rejections local while real I/O/disconnect/overflow failures retain existing safety. No separate device owner, polling loop or hardware setters are introduced. Battery broadcasts use cached validated capabilities.
+## Permissions, lifecycle and tests
 
-`AppModel` triggers one read per connection and explicit refresh, synchronizes the saved per-device alert preference, and sends fresh eligible readings to an optional injected `LowBatteryNotificationController`. Production construction supplies the native notification service; fake model/window fixtures leave it absent. `DeviceInformationPresentation` supplies consistent menu/sidebar/device-page text; `DeviceInformationView` and `LowBatteryNotificationSettingsView` own native controls. The alert controller owns authorization, enqueue race handling and the operational logical-profile latch. TOML stores user preference; a narrow app-defaults key stores episode suppression. Receiver firmware, serial collection and notification history remain out of scope.
+LowBatteryNotificationController separates saved per-device alert preference from app-wide authorization and the operational episode latch. Compact permission rows request only through explicit user actions; rendering/refreshing does not prompt.
 
-The menu battery item names its device. The sidebar uses a centred mouse icon beside two aligned lines: device name, then connection status and compact battery percentage/charging symbol. `DeviceBatteryOverviewView` hosts battery, read timestamp and alert controls within the top device overview; firmware and manual information refresh remain in `DeviceInformationView` at the bottom of the device page.
+The per-user application lease precedes SwiftUI model construction. WorkspacePresentationCoordinator and small native adapters control window visibility and activation. Device models remain alive when the workspace closes.
 
-The per-device alert checkbox sits beside battery status, with a narrow-width fallback. App-wide notification authorization content is hosted by `PermissionsSettingsView` in the Settings Notifications section; the device checkbox keeps the existing saved preference and explicit prompt path. Firmware presentation decodes validated packed BCD into unpadded numeric version/revision/build, distinguishes the mouse’s main firmware, bootloader and hardware revision, and preserves multiple main records. `BoltDeviceInformation.FirmwareEntity.hardwareRevision` retains the separate raw revision byte from existing hardware responses; no extra request or transport change. Native fixtures inject a fake notification service so the checkbox and Settings branch render without host notification access.
+Default tests use synthetic configuration, devices and action services. NativeWorkspaceWindowTests is opt-in, uses non-key background windows and fake adapters, and cannot prove physical input or platform effects. Only the main agent edits .agents/log.md and .agents/handoff.md.
 
-## Native D200X first slice — 2026-10-23
-
-UlanziD200X is an independent Swift target with bounded frame/input/identity codecs, STORED page archives, one generation-bound session actor and a run-loop IOHID transport. It has no mouse-domain dependency. D200XConfiguration in HidhoggDomain and strict optional root TOML store intent, never archives/serials. AppModel remains canonical draft/autosave owner and production-only live-session factory; injected model tests remain inert by default. D200XModel owns independent connection/retry/render epochs, foreground shortcut dispatch and coalesced page differences. CoreGraphics/CoreText/ImageIO generate native PNG labels off the main actor. Native D200X views observe that child model directly; shared sidebar/menu reflects both devices. WorkspaceView owns a native HSplitView in the navigation detail, with per-device visibility bindings and a shared WorkspaceInspectorView for mouse and deck control settings. The right split child has a 320–480-point width range; WorkspaceInspectorInitialWidthAdapter uses a bounded one-shot native divider adjustment to start at320, since the preferred width alone did not establish that geometry. Settings omits that child. This replaces the deck inline editor and avoids the rejected SwiftUI inspector bridge probe. No additional process, image/ZIP library, polling loop or telemetry engine was introduced; GETBASE maintenance is an intentional five-second session task.
+Detailed evidence: [D200X decisions](d200x-workspace-evolution-plan.md), [native actions](native-action-catalog-proposal.md), [Logitech recovery](logitech-reconnection.md), [permissions](settings-permissions-plan.md).

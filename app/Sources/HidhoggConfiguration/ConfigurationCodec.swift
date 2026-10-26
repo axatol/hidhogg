@@ -107,37 +107,65 @@ private struct ConfigurationDocument: Codable {
 }
 
 private struct D200XDocument: Codable {
-    let defaults: [String: BindingDocument]
-    let applications: [String: [String: BindingDocument]]
+    let defaults: [String: D200XBindingDocument]
+    let applications: [String: [String: D200XBindingDocument]]
     let tiles: [String: D200XTileAppearanceDocument]
+    let brightnessPercent: Int?
+    let actions: [String: ExecutableDocument]
+    let nativeActions: [String: NativeActionDocument]
+    let notificationTopics: [String: [String]]
+    let applicationTiles: [String: [String: D200XTileAppearanceDocument]]
+    let applicationNotificationTopics: [String: [String: [String]]]
+    let tilePresets: [String: D200XTilePresetDocument]
 
     var configuration: D200XConfiguration {
         D200XConfiguration(
             defaults: defaults.mapValues(\.configuration),
             applications: applications.mapValues { $0.mapValues(\.configuration) },
-            tiles: tiles.mapValues(\.configuration)
+            tiles: tiles.mapValues(\.configuration),
+            brightnessPercent: brightnessPercent,
+            actions: actions.mapValues(\.configuration),
+            notificationTopics: notificationTopics,
+            applicationTiles: applicationTiles.mapValues { $0.mapValues(\.configuration) },
+            applicationNotificationTopics: applicationNotificationTopics,
+            tilePresets: tilePresets.mapValues(\.configuration),
+            nativeActions: nativeActions.mapValues(\.configuration)
         )
     }
 
     init(configuration: D200XConfiguration) {
-        defaults = configuration.defaults.mapValues(BindingDocument.init(configuration:))
+        defaults = configuration.defaults.mapValues(D200XBindingDocument.init(configuration:))
         applications = configuration.applications.mapValues {
-            $0.mapValues(BindingDocument.init(configuration:))
+            $0.mapValues(D200XBindingDocument.init(configuration:))
         }
         tiles = configuration.tiles.mapValues(D200XTileAppearanceDocument.init(configuration:))
+        brightnessPercent = configuration.brightnessPercent
+        actions = configuration.actions.mapValues(ExecutableDocument.init(configuration:))
+        nativeActions = configuration.nativeActions.mapValues(NativeActionDocument.init(configuration:))
+        notificationTopics = configuration.notificationTopics
+        applicationTiles = configuration.applicationTiles.mapValues { $0.mapValues(D200XTileAppearanceDocument.init(configuration:)) }
+        applicationNotificationTopics = configuration.applicationNotificationTopics
+        tilePresets = configuration.tilePresets.mapValues(D200XTilePresetDocument.init(configuration:))
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
-        try container.rejectUnknownKeys(["defaults", "applications", "tiles"])
+        try container.rejectUnknownKeys(["defaults", "applications", "tiles", "brightness_percent", "actions", "native_actions", "notification_topics", "application_tiles", "application_notification_topics", "tile_presets"])
+        nativeActions = try container.decodeIfPresent([String: NativeActionDocument].self, forKey: AnyCodingKey("native_actions")) ?? [:]
+        applicationTiles = try container.decodeIfPresent([String: [String: D200XTileAppearanceDocument]].self, forKey: AnyCodingKey("application_tiles")) ?? [:]
+        applicationNotificationTopics = try container.decodeIfPresent([String: [String: [String]]].self, forKey: AnyCodingKey("application_notification_topics")) ?? [:]
+        tilePresets = try container.decodeIfPresent([String: D200XTilePresetDocument].self, forKey: AnyCodingKey("tile_presets")) ?? [:]
         defaults = try container.decodeIfPresent(
-            [String: BindingDocument].self,
+            [String: D200XBindingDocument].self,
             forKey: AnyCodingKey("defaults")
         ) ?? [:]
         applications = try container.decodeIfPresent(
-            [String: [String: BindingDocument]].self,
+            [String: [String: D200XBindingDocument]].self,
             forKey: AnyCodingKey("applications")
         ) ?? [:]
+        brightnessPercent = try container.decodeIfPresent(Int.self, forKey: AnyCodingKey("brightness_percent"))
+        actions = try container.decodeIfPresent([String: ExecutableDocument].self, forKey: AnyCodingKey("actions")) ?? [:]
+        notificationTopics = try container.decodeIfPresent([String: [String]].self, forKey: AnyCodingKey("notification_topics")) ?? [:]
         tiles = try container.decodeIfPresent(
             [String: D200XTileAppearanceDocument].self,
             forKey: AnyCodingKey("tiles")
@@ -153,44 +181,209 @@ private struct D200XDocument: Codable {
         if !tiles.isEmpty {
             try container.encode(tiles, forKey: .tiles)
         }
+        try container.encodeIfPresent(brightnessPercent, forKey: .brightnessPercent)
+        if !actions.isEmpty { try container.encode(actions, forKey: .actions) }
+        if !nativeActions.isEmpty { try container.encode(nativeActions, forKey: .nativeActions) }
+        if !notificationTopics.isEmpty { try container.encode(notificationTopics, forKey: .notificationTopics) }
+        if !applicationTiles.isEmpty { try container.encode(applicationTiles, forKey: .applicationTiles) }
+        if !applicationNotificationTopics.isEmpty { try container.encode(applicationNotificationTopics, forKey: .applicationNotificationTopics) }
+        if !tilePresets.isEmpty { try container.encode(tilePresets, forKey: .tilePresets) }
     }
 
     private enum CodingKeys: String, CodingKey {
         case defaults
         case applications
         case tiles
+        case brightnessPercent = "brightness_percent"
+        case actions
+        case nativeActions = "native_actions"
+        case notificationTopics = "notification_topics"
+        case applicationTiles = "application_tiles"
+        case applicationNotificationTopics = "application_notification_topics"
+        case tilePresets = "tile_presets"
     }
+}
+
+private struct D200XTilePresetDocument: Codable {
+    let name: String
+    let appearance: D200XTileAppearanceDocument
+    let binding: D200XBindingDocument?
+    let actions: [String: ExecutableDocument]
+    let nativeActions: [String: NativeActionDocument]
+
+    var configuration: D200XTilePreset {
+        D200XTilePreset(name: name, appearance: appearance.configuration,
+            binding: binding?.configuration, actions: actions.mapValues(\.configuration),
+            nativeActions: nativeActions.mapValues(\.configuration))
+    }
+
+    init(configuration: D200XTilePreset) {
+        name = configuration.name
+        appearance = D200XTileAppearanceDocument(configuration: configuration.appearance)
+        binding = configuration.binding.map(D200XBindingDocument.init(configuration:))
+        actions = configuration.actions.mapValues(ExecutableDocument.init(configuration:))
+        nativeActions = configuration.nativeActions.mapValues(NativeActionDocument.init(configuration:))
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        try container.rejectUnknownKeys(["name", "appearance", "binding", "actions", "native_actions"])
+        nativeActions = try container.decodeIfPresent([String: NativeActionDocument].self, forKey: AnyCodingKey("native_actions")) ?? [:]
+        name = try container.decode(String.self, forKey: AnyCodingKey("name"))
+        appearance = try container.decode(D200XTileAppearanceDocument.self, forKey: AnyCodingKey("appearance"))
+        binding = try container.decodeIfPresent(D200XBindingDocument.self, forKey: AnyCodingKey("binding"))
+        actions = try container.decodeIfPresent([String: ExecutableDocument].self, forKey: AnyCodingKey("actions")) ?? [:]
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(appearance, forKey: .appearance)
+        try container.encodeIfPresent(binding, forKey: .binding)
+        if !actions.isEmpty { try container.encode(actions, forKey: .actions) }
+        if !nativeActions.isEmpty { try container.encode(nativeActions, forKey: .nativeActions) }
+    }
+
+    enum CodingKeys: String, CodingKey { case name, appearance, binding, actions; case nativeActions = "native_actions" }
 }
 
 private struct D200XTileAppearanceDocument: Codable {
     let label: String
     let backgroundHex: String
+    let imageAsset: String?
+    let titleSize: Double
+    let titleColorHex: String?
+    let titlePlacement: D200XTitlePlacement
+    let titleAlignment: D200XTitleAlignment
+    let showTitle: Bool
 
     var configuration: D200XTileAppearance {
-        D200XTileAppearance(label: label, backgroundHex: backgroundHex)
+        D200XTileAppearance(label: label, backgroundHex: backgroundHex, imageAsset: imageAsset,
+                            titleSize: titleSize, titleColorHex: titleColorHex,
+                            titlePlacement: titlePlacement, showTitle: showTitle, titleAlignment: titleAlignment)
     }
 
     init(configuration: D200XTileAppearance) {
         label = configuration.label
         backgroundHex = configuration.backgroundHex
+        imageAsset = configuration.imageAsset
+        titleSize = configuration.titleSize
+        titleColorHex = configuration.titleColorHex
+        titlePlacement = configuration.titlePlacement
+        titleAlignment = configuration.titleAlignment
+        showTitle = configuration.showTitle
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
-        try container.rejectUnknownKeys(["label", "background_hex"])
+        try container.rejectUnknownKeys(["label", "background_hex", "image_asset", "title_size", "title_color_hex", "title_placement", "title_alignment", "show_title"])
+        titleAlignment = try container.decodeIfPresent(D200XTitleAlignment.self, forKey: AnyCodingKey("title_alignment")) ?? .left
         label = try container.decode(String.self, forKey: AnyCodingKey("label"))
         backgroundHex = try container.decode(String.self, forKey: AnyCodingKey("background_hex"))
+        imageAsset = try container.decodeIfPresent(String.self, forKey: AnyCodingKey("image_asset"))
+        titleSize = try container.decodeIfPresent(Double.self, forKey: AnyCodingKey("title_size")) ?? 22
+        titleColorHex = try container.decodeIfPresent(String.self, forKey: AnyCodingKey("title_color_hex"))
+        titlePlacement = try container.decodeIfPresent(D200XTitlePlacement.self, forKey: AnyCodingKey("title_placement")) ?? .center
+        showTitle = try container.decodeIfPresent(Bool.self, forKey: AnyCodingKey("show_title")) ?? true
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(label, forKey: .label)
         try container.encode(backgroundHex, forKey: .backgroundHex)
+        try container.encodeIfPresent(imageAsset, forKey: .imageAsset)
+        if titleSize != 22 { try container.encode(titleSize, forKey: .titleSize) }
+        try container.encodeIfPresent(titleColorHex, forKey: .titleColorHex)
+        if titlePlacement != .center { try container.encode(titlePlacement, forKey: .titlePlacement) }
+        if titleAlignment != .left { try container.encode(titleAlignment, forKey: .titleAlignment) }
+        if !showTitle { try container.encode(showTitle, forKey: .showTitle) }
     }
 
     private enum CodingKeys: String, CodingKey {
         case label
         case backgroundHex = "background_hex"
+        case imageAsset = "image_asset"
+        case titleSize = "title_size"
+        case titleColorHex = "title_color_hex"
+        case titlePlacement = "title_placement"
+        case titleAlignment = "title_alignment"
+        case showTitle = "show_title"
+    }
+}
+
+private struct D200XBindingDocument: Codable {
+    let configuration: D200XBinding
+    init(configuration: D200XBinding) { self.configuration = configuration }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: AnyCodingKey.self)
+        try c.rejectUnknownKeys(["kind", "shortcut", "action_id"])
+        configuration = D200XBinding(
+            kind: try c.decode(D200XBinding.Kind.self, forKey: AnyCodingKey("kind")),
+            shortcut: try c.decodeIfPresent(ShortcutDocument.self, forKey: AnyCodingKey("shortcut"))?.configuration,
+            actionID: try c.decodeIfPresent(String.self, forKey: AnyCodingKey("action_id"))
+        )
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyCodingKey.self)
+        try c.encode(configuration.kind, forKey: AnyCodingKey("kind"))
+        try c.encodeIfPresent(configuration.shortcut.map(ShortcutDocument.init(configuration:)), forKey: AnyCodingKey("shortcut"))
+        try c.encodeIfPresent(configuration.actionID, forKey: AnyCodingKey("action_id"))
+    }
+}
+
+private struct NativeActionDocument: Codable {
+    let configuration: NativeAction
+    init(configuration: NativeAction) { self.configuration = configuration }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: AnyCodingKey.self)
+        try c.rejectUnknownKeys(["kind", "media", "volume", "percent", "target", "topic", "text", "ttl_seconds", "shortcut"])
+        configuration = try NativeAction(
+            kind: c.decode(NativeAction.Kind.self, forKey: AnyCodingKey("kind")),
+            media: c.decodeIfPresent(NativeAction.Media.self, forKey: AnyCodingKey("media")),
+            volume: c.decodeIfPresent(NativeAction.Volume.self, forKey: AnyCodingKey("volume")),
+            percent: c.decodeIfPresent(Int.self, forKey: AnyCodingKey("percent")),
+            target: c.decodeIfPresent(String.self, forKey: AnyCodingKey("target")),
+            topic: c.decodeIfPresent(String.self, forKey: AnyCodingKey("topic")),
+            text: c.decodeIfPresent(String.self, forKey: AnyCodingKey("text")),
+            ttlSeconds: c.decodeIfPresent(Int.self, forKey: AnyCodingKey("ttl_seconds")),
+            shortcut: c.decodeIfPresent(ShortcutDocument.self, forKey: AnyCodingKey("shortcut"))?.configuration
+        ).validated()
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyCodingKey.self)
+        try c.encode(configuration.kind, forKey: AnyCodingKey("kind"))
+        try c.encodeIfPresent(configuration.media, forKey: AnyCodingKey("media"))
+        try c.encodeIfPresent(configuration.volume, forKey: AnyCodingKey("volume"))
+        try c.encodeIfPresent(configuration.percent, forKey: AnyCodingKey("percent"))
+        try c.encodeIfPresent(configuration.target, forKey: AnyCodingKey("target"))
+        try c.encodeIfPresent(configuration.topic, forKey: AnyCodingKey("topic"))
+        try c.encodeIfPresent(configuration.text, forKey: AnyCodingKey("text"))
+        try c.encodeIfPresent(configuration.ttlSeconds, forKey: AnyCodingKey("ttl_seconds"))
+        try c.encodeIfPresent(configuration.shortcut.map(ShortcutDocument.init(configuration:)), forKey: AnyCodingKey("shortcut"))
+    }
+}
+
+private struct ExecutableDocument: Codable {
+    let configuration: ConfiguredExecutable
+    init(configuration: ConfiguredExecutable) { self.configuration = configuration }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: AnyCodingKey.self)
+        try c.rejectUnknownKeys(["executable", "arguments", "working_directory", "timeout_seconds"])
+        configuration = ConfiguredExecutable(
+            executable: try c.decode(String.self, forKey: AnyCodingKey("executable")),
+            arguments: try c.decodeIfPresent([String].self, forKey: AnyCodingKey("arguments")) ?? [],
+            workingDirectory: try c.decodeIfPresent(String.self, forKey: AnyCodingKey("working_directory")),
+            timeoutSeconds: try c.decodeIfPresent(Int.self, forKey: AnyCodingKey("timeout_seconds")) ?? 10
+        )
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: AnyCodingKey.self)
+        try c.encode(configuration.executable, forKey: AnyCodingKey("executable"))
+        try c.encode(configuration.arguments, forKey: AnyCodingKey("arguments"))
+        try c.encodeIfPresent(configuration.workingDirectory, forKey: AnyCodingKey("working_directory"))
+        try c.encode(configuration.timeoutSeconds, forKey: AnyCodingKey("timeout_seconds"))
     }
 }
 

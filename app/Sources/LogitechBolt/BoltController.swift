@@ -25,6 +25,8 @@ public actor BoltController {
     private var capabilityTable: CapabilityTable?
     private var changed = Set<MouseControl>()
     private var uncertain = false
+    private var freshWheelRoutingRequired = false
+    private var freshThumbwheelRoutingRequired = false
     private var armed = Set<MouseControl>()
     private var pressed = Set<MouseControl>()
     private var terminalFailure: BoltFailure?
@@ -132,8 +134,8 @@ public actor BoltController {
         await acquireOperation()
         defer { releaseOperation() }
         guard requestedRevision == operationRevision, !shutdownRequested, !disableRequested,
-              phase != .enabled, phase != .enabling, phase != .stopping, !uncertain else {
-            publish(phase, "Discovery is unavailable while the current Bolt session is active or uncertain.")
+              phase != .enabled, phase != .enabling, phase != .stopping else {
+            publish(phase, "Discovery is unavailable while the current Bolt session is active or transitioning.")
             return
         }
         generation &+= 1
@@ -497,7 +499,7 @@ public actor BoltController {
         let restored = await cleanup()
         await closeTransport()
         available.removeAll()
-        publish(restored ? .idle : .failed, restored ? "Disconnected. Session cleanup verified." : "Cleanup is unverified. Rearming is blocked; resolve receiver state before restarting.")
+        publish(restored ? .idle : .failed, restored ? "Disconnected. Session cleanup verified." : "Cleanup is unverified. Delivery is stopped; fresh discovery must verify capabilities and native routing before bindings can be enabled.")
         shutdownRequested = false
     }
 
@@ -564,6 +566,7 @@ public actor BoltController {
             stage = .connectPreflight
             try await reclaimConnectDiversion(table, revision: revision, stage: &stage)
             try checkConnectActive(revision: revision)
+            uncertain = false
             publish(.ready, "Connected Bolt candidate; model identity is unverified. Keep competing mouse software closed while Hidhogg manages this device.")
         } catch {
             guard phase != .stopping else { return }
@@ -590,10 +593,13 @@ public actor BoltController {
         let wheelRoot = try await request(feature: 0, function: 0, parameters: [0x21, 0x21])
         try checkConnectActive(revision: revision)
         guard wheelRoot.count >= 3 else { throw BoltFailure.malformed }
-        if wheelRoot[0] != 0, wheelRoot[1] & 0xE0 == 0, wheelRoot[2] == 1 {
+        let wheelRootSupported = wheelRoot[0] != 0 && wheelRoot[1] & 0xE0 == 0 && wheelRoot[2] == 1
+        if freshWheelRoutingRequired, !wheelRootSupported { throw BoltFailure.unsupported }
+        if wheelRootSupported {
             let capabilities = try await request(feature: wheelRoot[0], function: 0)
             try checkConnectActive(revision: revision)
             guard capabilities.count >= 2 else { throw BoltFailure.malformed }
+            guard capabilities[1] & 0x08 != 0 || !freshWheelRoutingRequired else { throw BoltFailure.unsupported }
             if capabilities[1] & 0x08 != 0 {
                 let mode = try await wheelMode(feature: wheelRoot[0])
                 try checkConnectActive(revision: revision)
@@ -605,7 +611,9 @@ public actor BoltController {
         let thumbRoot = try await request(feature: 0, function: 0, parameters: [0x21, 0x50])
         try checkConnectActive(revision: revision)
         guard thumbRoot.count >= 3 else { throw BoltFailure.malformed }
-        if thumbRoot[0] != 0, thumbRoot[1] & 0xE0 == 0, thumbRoot[2] == 0 {
+        let thumbwheelRootSupported = thumbRoot[0] != 0 && thumbRoot[1] & 0xE0 == 0 && thumbRoot[2] == 0
+        if freshThumbwheelRoutingRequired, !thumbwheelRootSupported { throw BoltFailure.unsupported }
+        if thumbwheelRootSupported {
             let info = try await request(feature: thumbRoot[0], function: 0)
             try checkConnectActive(revision: revision)
             let decoded = try ThumbwheelState.Info(info)
@@ -669,6 +677,8 @@ public actor BoltController {
                 thumbwheel.message = nil
             }
         }
+        freshWheelRoutingRequired = false
+        freshThumbwheelRoutingRequired = false
     }
 
     private func reserveConnectReclaimTokens(_ items: [ConnectReclaim], table: CapabilityTable) throws {
@@ -743,23 +753,17 @@ public actor BoltController {
     }
 
     private func openCandidate(connection current: UInt64) async throws {
-        guard await cleanup() else { throw BoltFailure.foreignState }
+        let recoveryRequired = uncertain
+        if !recoveryRequired {
+            guard await cleanup() else { throw BoltFailure.foreignState }
+        }
         try checkActive()
         await closeTransport()
         try checkActive()
-        capabilityTable = nil
-        wheelMultiplier = 0
-        physicalWheelRequest = nil
-        captureBlocker = nil
-        wheelAssociationLost = false
-        wheelBaseline = nil
-        latestVerifiedWheelMode = nil
-        pendingWheelRollback = nil
-        restorePreviousSettingsOnDisconnect = false
-        available.removeAll()
-        wheel = BoltWheelStatus()
-        thumbwheel = ThumbwheelState()
-        terminalFailure = nil
+        resetSessionStateForDiscovery()
+        if recoveryRequired {
+            publish(.discovering, "Verifying a fresh Bolt session after uncertain cleanup; native routing must be confirmed before delivery.")
+        }
         let candidate = makeTransport()
         transport = candidate
         connectionOpenedAt = .now
@@ -788,6 +792,35 @@ public actor BoltController {
         }
         guard responsive.count == 1 else { throw responsive.isEmpty ? BoltFailure.unavailable : BoltFailure.ambiguous }
         slot = responsive[0]
+    }
+
+    private func resetSessionStateForDiscovery() {
+        capabilityTable = nil
+        slot = 0
+        feature = 0
+        available.removeAll()
+        changed.removeAll()
+        armed.removeAll()
+        pressed.removeAll()
+        wheel = BoltWheelStatus()
+        wheelMultiplier = 0
+        wheelOwnership = nil
+        wheelBaseline = nil
+        latestVerifiedWheelMode = nil
+        pendingWheelRollback = nil
+        restorePreviousSettingsOnDisconnect = false
+        wheelAssociationLost = false
+        physicalWheelRequest = nil
+        captureOwnership = nil
+        captureVerified = false
+        captureBlocker = nil
+        scrollGeneration &+= 1
+        scrollEnabledAt = .now
+        thumbwheel = ThumbwheelState()
+        pendingReclaims.removeAll()
+        terminalFailure = nil
+        scrollAdmission.invalidate()
+        thumbwheelAdmission.invalidate()
     }
 
     private func performEnable() async {
@@ -1125,7 +1158,7 @@ public actor BoltController {
             return true
         } catch {
             wheel = BoltWheelStatus(support: wheel.support, isOwned: true,
-                                   message: "Scroll capture cleanup is unverified. Reconnection is blocked.", captureBlocker: "Native wheel routing could not be verified.")
+                                   message: "Scroll capture cleanup is unverified. Fresh discovery must verify native wheel routing before delivery can resume.", captureBlocker: "Native wheel routing could not be verified.")
             return false
         }
     }
@@ -1188,7 +1221,7 @@ public actor BoltController {
                 : "Unverified wheel change rolled back.")
             return true
         } catch {
-            wheel = BoltWheelStatus(support: wheel.support, observedInverted: nil, isOwned: true, message: "Wheel cleanup is unverified. Rearming and reconnecting are blocked.")
+            wheel = BoltWheelStatus(support: wheel.support, observedInverted: nil, isOwned: true, message: "Wheel cleanup is unverified. Fresh discovery must verify wheel routing before bindings can be enabled.")
             return false
         }
     }
@@ -1341,7 +1374,7 @@ public actor BoltController {
         } catch {
             thumbwheel.latest = nil
             thumbwheel.blocker = "Native thumb-wheel routing could not be verified."
-            thumbwheel.message = "Thumb-wheel cleanup is unverified; reconnection is blocked."
+            thumbwheel.message = "Thumb-wheel cleanup is unverified. Fresh discovery must verify thumb-wheel routing before bindings can be enabled."
             return false
         }
     }
@@ -1368,13 +1401,25 @@ public actor BoltController {
     }
 
     private func cleanup() async -> Bool {
+        let pendingReclaim = pendingReclaims.first
         let connectRestored = await cleanupConnectReclaims()
+        if !connectRestored, let pendingReclaim {
+            switch pendingReclaim.control {
+            case .wheel: freshWheelRoutingRequired = true
+            case .thumbwheel: freshThumbwheelRoutingRequired = true
+            case .button: break
+            }
+        }
+        let wheelRoutingWasOwned = captureOwnership != nil || wheelOwnership != nil || pendingWheelRollback != nil
         let wheelRestored = await cleanupWheel()
+        if !wheelRestored, wheelRoutingWasOwned { freshWheelRoutingRequired = true }
+        let thumbwheelRoutingWasOwned = thumbwheel.capture != nil || thumbwheel.ownership != nil || thumbwheel.pendingRollback != nil
         let thumbwheelRestored = await cleanupThumbwheel(final: true)
+        if !thumbwheelRestored, thumbwheelRoutingWasOwned { freshThumbwheelRoutingRequired = true }
         let buttonsRestored = await cleanupButtons()
         let restored = connectRestored && wheelRestored && thumbwheelRestored && buttonsRestored
-        uncertain = !restored
-        return restored
+        uncertain = uncertain || !restored
+        return restored && !uncertain
     }
 
     private func cleanupButtons() async -> Bool {
@@ -1415,7 +1460,7 @@ public actor BoltController {
         let failure = (error as? BoltFailure) ?? .transport
         let message = failure.errorDescription ?? "The Bolt session failed."
         let context = BoltFailureContext(code: failure.diagnosticCode, sourceFileID: sourceFileID, sourceLine: sourceLine, stage: stage)
-        publish(.failed, message + (restored ? " Delivery stopped." : " Cleanup is unverified; rearming is blocked."), failure: context)
+        publish(.failed, message + (restored ? " Delivery stopped." : " Cleanup is unverified. Delivery is stopped; fresh discovery must verify capabilities and native routing before bindings can be enabled."), failure: context)
     }
 
     private func closeTransport() async {

@@ -50,6 +50,22 @@ final class StartupConnectionTests: XCTestCase {
         XCTAssertEqual(session.discoverCount, 1)
     }
 
+    func testConnectOnLaunchRetriesAfterInitialTransportFailure() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        try await writeConfiguration(.empty, to: url)
+        let session = StartupBindingSession(discoveryFailures: [.transportFailed])
+        let model = makeModel(url: url, session: session, wakeDelay: { _ in })
+
+        let recovered = await eventually {
+            !model.isLoading && session.discoverCount == 2 && model.boltStatus.phase == .ready
+        }
+
+        XCTAssertTrue(recovered)
+        XCTAssertEqual(session.discoverCount, 2)
+    }
+
     func testSavedDisabledPreferenceSkipsStartupDiscovery() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -77,28 +93,43 @@ final class StartupConnectionTests: XCTestCase {
         XCTAssertEqual(session.discoverCount, 0)
     }
 
-    func testStartupAttemptIsNotRetriedAfterMissingOrUnsupportedCandidate() async throws {
-        for (phase, controls) in [
-            (BoltPhase.failed, Set<MouseControl>()),
-            (.ready, Set<MouseControl>())
-        ] {
-            let root = try makeTemporaryDirectory()
-            defer { try? FileManager.default.removeItem(at: root) }
-            let url = root.appendingPathComponent("config.toml")
-            try await writeConfiguration(.empty, to: url)
-            let session = StartupBindingSession(discoveryPhase: phase, availableControls: controls)
-            let model = makeModel(url: url, session: session)
+    func testFailedStartupDiscoverySchedulesRetryUntilDisconnectedAndUnsupportedReadyDoesNotRetry() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        try await writeConfiguration(.empty, to: url)
+        let delay = StartupDelayGate()
+        let failedSession = StartupBindingSession(discoveryPhase: .failed)
+        let failedModel = makeModel(url: url, session: failedSession, wakeDelay: { duration in await delay.wait(duration) })
 
-            let attempted = await eventually { !model.isLoading && session.discoverCount == 1 }
-            XCTAssertTrue(attempted)
-            _ = model.refreshPermission()
-            model.requestReload()
-            let reloaded = await eventually { !model.isLoading }
+        let attempted = await eventually { !failedModel.isLoading && failedSession.discoverCount == 1 }
+        XCTAssertTrue(attempted)
+        let retryScheduled = await eventually { delay.waitedDurations == [.seconds(1)] }
+        XCTAssertTrue(retryScheduled)
+        XCTAssertTrue(failedModel.connectionRequested)
+        _ = failedModel.refreshPermission()
+        failedModel.requestReload()
+        let reloaded = await eventually { !failedModel.isLoading }
+        XCTAssertTrue(reloaded)
+        await drainMainActorTasks()
+        XCTAssertEqual(failedSession.discoverCount, 1)
 
-            XCTAssertTrue(reloaded)
-            await drainMainActorTasks()
-            XCTAssertEqual(session.discoverCount, 1)
+        failedModel.disconnect()
+        await drainMainActorTasks()
+        delay.resume()
+        await drainMainActorTasks()
+        XCTAssertEqual(failedSession.discoverCount, 1)
+        XCTAssertFalse(failedModel.connectionRequested)
+
+        let unsupportedSession = StartupBindingSession(discoveryPhase: .ready, availableControls: [])
+        let unsupportedModel = makeModel(url: url, session: unsupportedSession, wakeDelay: { _ in })
+        let unsupportedAttempted = await eventually {
+            !unsupportedModel.isLoading && unsupportedSession.discoverCount == 1
         }
+        XCTAssertTrue(unsupportedAttempted)
+        await drainMainActorTasks()
+        XCTAssertEqual(unsupportedSession.discoverCount, 1)
+        unsupportedModel.disconnect()
     }
 
     func testEnablingPreferenceDuringInitialLoadDoesNotStartThisLaunchWhenSavedOff() async throws {
@@ -371,7 +402,8 @@ final class StartupConnectionTests: XCTestCase {
     private func makeModel(
         url: URL,
         session: StartupBindingSession,
-        eventPostingAllowed: Bool = true
+        eventPostingAllowed: Bool = true,
+        wakeDelay: @escaping WakeRecoveryCoordinator.Delay = { try await Task.sleep(for: $0) }
     ) -> AppModel {
         AppModel(
             configurationURL: url,
@@ -383,7 +415,8 @@ final class StartupConnectionTests: XCTestCase {
                 postPair: { _ in }
             ),
             loadImmediately: true,
-            observeSleep: false
+            observeSleep: false,
+            wakeDelay: wakeDelay
         )
     }
 
@@ -419,6 +452,7 @@ private final class StartupBindingSession: BindingSession, @unchecked Sendable {
     private let lock = NSLock()
     private let discoveryPhase: BoltPhase
     private let availableControls: Set<MouseControl>
+    private var discoveryFailures: [BoltFailureCode]
     private var generation: UInt64 = 0
     private var discoverCalls = 0
     private var stopCalls = 0
@@ -429,13 +463,15 @@ private final class StartupBindingSession: BindingSession, @unchecked Sendable {
 
     init(
         discoveryPhase: BoltPhase = .ready,
-        availableControls: Set<MouseControl> = Set(MouseControl.allCases)
+        availableControls: Set<MouseControl> = Set(MouseControl.allCases),
+        discoveryFailures: [BoltFailureCode] = []
     ) {
         let stream = AsyncStream<BoltEvent>.makeStream(bufferingPolicy: .unbounded)
         events = stream.stream
         continuation = stream.continuation
         self.discoveryPhase = discoveryPhase
         self.availableControls = availableControls
+        self.discoveryFailures = discoveryFailures
     }
 
     var discoverCount: Int { locked { discoverCalls } }
@@ -446,12 +482,14 @@ private final class StartupBindingSession: BindingSession, @unchecked Sendable {
         let status = locked { () -> BoltStatus in
             discoverCalls += 1
             generation &+= 1
+            let failure = discoveryFailures.isEmpty ? nil : discoveryFailures.removeFirst()
             return BoltStatus(
-                phase: discoveryPhase,
+                phase: failure == nil ? discoveryPhase : .failed,
                 message: "Synthetic candidate ready",
                 availableControls: availableControls,
                 generation: generation,
-                cleanupUncertain: false
+                cleanupUncertain: false,
+                failure: failure.map { BoltFailureContext(code: $0, sourceFileID: #fileID, sourceLine: #line) }
             )
         }
         continuation.yield(.status(status))
@@ -505,5 +543,24 @@ private final class StartupBindingSession: BindingSession, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return operation()
+    }
+}
+
+@MainActor
+private final class StartupDelayGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var waitedDurations: [Duration] = []
+
+    func wait(_ duration: Duration) async {
+        await withCheckedContinuation { continuation in
+            waitedDurations.append(duration)
+            self.continuation = continuation
+        }
+    }
+
+    func resume() {
+        let pending = continuation
+        continuation = nil
+        pending?.resume()
     }
 }

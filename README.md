@@ -4,7 +4,7 @@
 
 # HIDHogg
 
-A native Swift macOS app for configuring HID devices from one place. The accepted implementation supports **Logitech MX Master 3S over a Bolt receiver**. A native **Ulanzi D200X** first slice is implemented on `next/d200x-slice` and awaits hardware validation.
+A native Swift macOS app for configuring **Logitech MX Master 3S over a Bolt receiver** and **Ulanzi D200X** from one workspace. The mainline branch is `master`; acceptance is recorded per feature rather than claiming complete hardware compatibility.
 
 ## Current capabilities
 
@@ -15,9 +15,13 @@ A native Swift macOS app for configuring HID devices from one place. The accepte
 - TOML configuration under `$XDG_CONFIG_HOME/hidhogg/` or `~/.config/hidhogg/`, automatic saving and manual reload.
 - Bounded diagnostic activity with event IDs and source references.
 
-The D200X slice adds one editable page, key/side-button/dial shortcuts, incremental image updates and independent session maintenance. See its [implementation decisions and validation checklist](docs/d200x-implementation-plan.md) for current limits.
+The D200X implementation includes one editable page, key/front-button/dial bindings, brightness 1–100, imported key images and title styling, automatic app profiles and independently editable tile presets. Named actions include media, volume, bell/sound, app/file/URL opening, deck notifications, shortcuts and custom executables. Actions, Tile presets and compact notification history have dedicated workspace pages. Topic filters support a simple `*` wildcard. It retains incremental updates and independent session maintenance. See the [workspace decisions and validation checklist](docs/d200x-workspace-evolution-plan.md) for current verification status.
 
-Bluetooth transport, Lofree Flow Lite, notification history and MCP support remain planned. See the [roadmap](docs/roadmap.md) for scope and verification gates.
+The signed `dist/hidhoggctl` supports notification emission/clearing/history and named action invocation. See the [D200X owner checks](docs/d200x-parity-owner-checks.md) for commands, execution limits and verification.
+
+Wide-tile device images render at 458×196; the owner has confirmed improved physical text rendering. The current sleep trial retains the D200X connection, pauses maintenance and sets transient brightness to zero, then restores brightness on wake. Its physical sleep behaviour remains an owner check.
+
+Multiple physical pages, notification-payload passing into actions, multi-actions, wider telemetry/screensaver controls, Bluetooth transport, Lofree Flow Lite and MCP remain deferred or proposed. See the [roadmap](docs/roadmap.md) and [check-in preparation](docs/checkin-preparation.md).
 
 ## Build and run
 
@@ -44,4 +48,4 @@ See [build and signing instructions](docs/build.md) for cache paths, packaging a
 | Device information and battery alerts | [Implementation plan and verification](docs/device-information-plan.md) |
 | Historical implementation | [D200X/v2 archive](docs/archive/v2/README.md) |
 
-The accepted checkpoint is on `master`; D200X implementation is on `next/d200x-slice`. The previous implementation is preserved at checkpoint `4b3248d` on `v2`.
+The native Logitech and D200X implementation is maintained on `master`. The previous implementation is preserved at checkpoint `4b3248d` on `v2`.

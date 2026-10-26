@@ -70,6 +70,75 @@ final class LowBatteryNotificationControllerTests: XCTestCase {
         XCTAssertTrue(controller.error?.contains("disabled") == true)
     }
 
+    func testExplicitAuthorizationRequestWhileDisabledUpdatesStatusWithoutChangingAlertState() async {
+        let center = FakeLowBatteryNotificationCenter(status: .notDetermined)
+        let latch = FakeLowBatteryAlertLatchStore(isLatched: true)
+        let controller = makeController(center: center, latch: latch)
+
+        await controller.requestAuthorization()
+
+        XCTAssertEqual(center.authorizationRequestCount, 1)
+        XCTAssertEqual(controller.authorizationState, .authorized)
+        XCTAssertFalse(controller.isEnabled)
+        XCTAssertTrue(latch.isLatched)
+        XCTAssertEqual(latch.setLatchedCallCount, 0)
+        XCTAssertTrue(center.enqueueRequests.isEmpty)
+    }
+
+    func testExplicitAuthorizationRequestDoesNotPromptAgainAfterDenial() async {
+        let center = FakeLowBatteryNotificationCenter(status: .notDetermined)
+        center.requestResult = .denied
+        let controller = makeController(center: center)
+
+        await controller.requestAuthorization()
+        await controller.requestAuthorization()
+
+        XCTAssertEqual(center.authorizationRequestCount, 1)
+        XCTAssertEqual(controller.authorizationState, .denied)
+        XCTAssertFalse(controller.isEnabled)
+        XCTAssertTrue(center.enqueueRequests.isEmpty)
+    }
+
+    func testExplicitAuthorizationRequestAndEnableShareOnePrompt() async {
+        let center = FakeLowBatteryNotificationCenter(status: .notDetermined)
+        center.holdAuthorizationRequest = true
+        let controller = makeController(center: center)
+        let explicitRequest = Task { @MainActor in await controller.requestAuthorization() }
+
+        let authorizationStarted = await eventually { center.authorizationRequestCount == 1 }
+        XCTAssertTrue(authorizationStarted)
+
+        let enable = Task { @MainActor in await controller.setEnabled(true) }
+        let enabled = await eventually { controller.isEnabled }
+        XCTAssertTrue(enabled)
+        XCTAssertEqual(center.authorizationRequestCount, 1)
+
+        center.resumeAuthorizationRequest()
+        await explicitRequest.value
+        await enable.value
+
+        XCTAssertEqual(center.authorizationRequestCount, 1)
+        XCTAssertEqual(controller.authorizationState, .authorized)
+    }
+
+    func testDisablingBeforeAuthorizationStatusReturnsPreventsPrompt() async {
+        let center = FakeLowBatteryNotificationCenter(status: .notDetermined)
+        center.holdAuthorizationStatus = true
+        let controller = makeController(center: center)
+        let enable = Task { @MainActor in await controller.setEnabled(true) }
+
+        let statusReadStarted = await eventually { center.authorizationStatusRequestCount == 1 }
+        XCTAssertTrue(statusReadStarted)
+
+        await controller.setEnabled(false)
+        center.resumeAuthorizationStatus()
+        await enable.value
+
+        XCTAssertFalse(controller.isEnabled)
+        XCTAssertEqual(controller.authorizationState, .notDetermined)
+        XCTAssertEqual(center.authorizationRequestCount, 0)
+    }
+
     func testConcurrentEnableRequestsShareOneAuthorizationPrompt() async {
         let center = FakeLowBatteryNotificationCenter(status: .notDetermined)
         center.holdAuthorizationRequest = true
@@ -334,16 +403,19 @@ final class LowBatteryNotificationControllerTests: XCTestCase {
 @MainActor
 private final class FakeLowBatteryNotificationCenter: LowBatteryNotificationCenterAdapter {
     var status: LowBatteryNotificationAuthorizationState
+    var authorizationStatusRequestCount = 0
     var authorizationRequestCount = 0
     var enqueueRequests: [LowBatteryNotificationRequest] = []
     var removedRequestIdentifiers: [String] = []
     var requestResult: LowBatteryNotificationAuthorizationState = .authorized
     var authorizationError: Error?
     var enqueueError: Error?
+    var holdAuthorizationStatus = false
     var holdAuthorizationRequest = false
     var holdEnqueue = false
 
-    private var authorizationContinuation: CheckedContinuation<Void, Never>?
+    private var authorizationStatusContinuations: [CheckedContinuation<Void, Never>] = []
+    private var authorizationContinuations: [CheckedContinuation<Void, Never>] = []
     private var enqueueContinuation: CheckedContinuation<Void, Never>?
 
     init(status: LowBatteryNotificationAuthorizationState) {
@@ -351,14 +423,20 @@ private final class FakeLowBatteryNotificationCenter: LowBatteryNotificationCent
     }
 
     func authorizationStatus() async -> LowBatteryNotificationAuthorizationState {
-        status
+        authorizationStatusRequestCount += 1
+        if holdAuthorizationStatus {
+            await withCheckedContinuation { continuation in
+                authorizationStatusContinuations.append(continuation)
+            }
+        }
+        return status
     }
 
     func requestAlertAuthorization() async throws -> Bool {
         authorizationRequestCount += 1
         if holdAuthorizationRequest {
             await withCheckedContinuation { continuation in
-                authorizationContinuation = continuation
+                authorizationContinuations.append(continuation)
             }
         }
         if let authorizationError { throw authorizationError }
@@ -381,9 +459,19 @@ private final class FakeLowBatteryNotificationCenter: LowBatteryNotificationCent
     }
 
     func resumeAuthorizationRequest() {
-        let continuation = authorizationContinuation
-        authorizationContinuation = nil
-        continuation?.resume()
+        let continuations = authorizationContinuations
+        authorizationContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume()
+        }
+    }
+
+    func resumeAuthorizationStatus() {
+        let continuations = authorizationStatusContinuations
+        authorizationStatusContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume()
+        }
     }
 
     func resumeEnqueue() {
@@ -396,12 +484,14 @@ private final class FakeLowBatteryNotificationCenter: LowBatteryNotificationCent
 @MainActor
 private final class FakeLowBatteryAlertLatchStore: LowBatteryAlertLatchStore {
     private(set) var isLatched: Bool
+    private(set) var setLatchedCallCount = 0
 
     init(isLatched: Bool = false) {
         self.isLatched = isLatched
     }
 
     func setLatched(_ value: Bool) {
+        setLatchedCallCount += 1
         isLatched = value
     }
 }
