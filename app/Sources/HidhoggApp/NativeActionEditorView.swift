@@ -55,7 +55,7 @@ struct NativeActionEditorView: View {
         case .openURL:
             "Enter an HTTP or HTTPS URL with a host and no credentials."
         case .deckNotification:
-            "Use a concrete topic and one-line text of at most 64 characters and 256 bytes."
+            "Use a concrete topic and provide valid one-line text or an application bundle ID."
         case .shortcut:
             "Choose a valid keyboard shortcut."
         }
@@ -249,9 +249,15 @@ struct NativeActionEditorView: View {
                     TextField("Concrete topic", text: topicBinding)
                         .textFieldStyle(.roundedBorder)
                         .disabled(!canEdit)
-                    TextField("Notification text", text: textBinding)
+                    TextField("Application bundle ID (optional)", text: appIDBinding)
                         .textFieldStyle(.roundedBorder)
                         .disabled(!canEdit)
+                    TextField("Notification text (optional)", text: textBinding)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(!canEdit)
+                    Text("An installed app icon replaces the text on the deck. If the icon is unavailable, the deck shows your text or the bundle ID when text is omitted.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Toggle("Set expiry", isOn: Binding(
                         get: { action.ttlSeconds != nil },
                         set: { action.ttlSeconds = $0 ? (action.ttlSeconds ?? 10) : nil }
@@ -311,6 +317,10 @@ struct NativeActionEditorView: View {
 
     private var textBinding: Binding<String> {
         Binding(get: { action.text ?? "" }, set: { action.text = $0.isEmpty ? nil : $0 })
+    }
+
+    private var appIDBinding: Binding<String> {
+        Binding(get: { action.appID ?? "" }, set: { action.appID = $0.isEmpty ? nil : $0 })
     }
 
     private var expiryBinding: Binding<Int> {

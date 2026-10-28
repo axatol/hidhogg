@@ -4,6 +4,17 @@ import MacOSActions
 @testable import HidhoggApp
 
 final class MenuBarStatusTests: XCTestCase {
+    func testAdditionalDevicePreservesWarningsAndReportsPartialConnection() {
+        XCTAssertEqual(MenuBarStatus(base: .connected, additional: nil), .connected)
+        XCTAssertEqual(MenuBarStatus(base: .connected, additional: .disconnected), .partiallyConnected)
+        XCTAssertEqual(MenuBarStatus(base: .disconnected, additional: .connected), .partiallyConnected)
+        XCTAssertEqual(MenuBarStatus(base: .disconnected, additional: .disconnected), .disconnected)
+        XCTAssertEqual(MenuBarStatus(base: .permissionIncomplete, additional: .connected), .permissionIncomplete)
+        XCTAssertEqual(MenuBarStatus(base: .cleanupUncertain, additional: .connected), .cleanupUncertain)
+        XCTAssertEqual(MenuBarStatus(base: .connecting, additional: .failed), .failed)
+        XCTAssertEqual(MenuBarStatus(base: .connected, additional: .connecting), .connecting)
+    }
+
     func testEveryPhaseAndPermissionCombinationMapsToExpectedStatusAndColor() {
         let permissionCombinations = [
             PermissionChecks(accessibilityTrusted: false, eventPostingAllowed: false),

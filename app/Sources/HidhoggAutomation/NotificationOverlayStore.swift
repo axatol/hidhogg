@@ -23,12 +23,13 @@ public struct NotificationOverlayStore: Sendable {
 
     public func prepareEmit(
         topic: String,
-        text: String,
+        text: String? = nil,
+        appID: String? = nil,
         ttlSeconds: Int?,
         subscriptions: [String: [String]],
         now: Date
     ) throws -> PreparedNotificationMutation {
-        try Self.validate(topic: topic, text: text, ttlSeconds: ttlSeconds)
+        try Self.validate(topic: topic, text: text, appID: appID, ttlSeconds: ttlSeconds)
 
         var seenControls = Set<String>()
         var controls = [String]()
@@ -60,6 +61,7 @@ public struct NotificationOverlayStore: Sendable {
                 notificationID: notificationID,
                 topic: topic,
                 text: text,
+                appID: appID,
                 targetControls: controls,
                 ttlSeconds: ttlSeconds
             )
@@ -67,6 +69,7 @@ public struct NotificationOverlayStore: Sendable {
                 candidateOverlays[control] = NotificationOverlay(
                     notificationID: notificationID,
                     text: text,
+                    appID: appID,
                     expiresAt: nil
                 )
             }
@@ -189,6 +192,7 @@ public struct NotificationOverlayStore: Sendable {
                 committedOverlays[control] = NotificationOverlay(
                     notificationID: pendingEmission.notificationID,
                     text: pendingEmission.text,
+                    appID: pendingEmission.appID,
                     expiresAt: expiresAt
                 )
             }
@@ -200,6 +204,7 @@ public struct NotificationOverlayStore: Sendable {
                 committedHistory.append(NotificationHistoryEntry(
                     notificationID: pendingEmission.notificationID,
                     topic: pendingEmission.topic,
+                    appID: pendingEmission.appID,
                     committedAt: committedAt,
                     expiresAt: expiresAt,
                     matchedCount: pendingEmission.targetControls.count,
@@ -219,6 +224,10 @@ public struct NotificationOverlayStore: Sendable {
 
     public func labelOverrides(at date: Date) -> [String: String] {
         Self.labelOverrides(in: overlays, at: date)
+    }
+
+    public func notificationAppIDs(at date: Date) -> [String: String] {
+        Self.notificationAppIDs(in: overlays, at: date)
     }
 
     public func notificationID(for control: String, at date: Date) -> UUID? {
@@ -248,6 +257,7 @@ public struct NotificationOverlayStore: Sendable {
     ) -> PreparedNotificationMutation {
         PreparedNotificationMutation(
             labelOverrides: Self.labelOverrides(in: candidate.overlays, at: date),
+            notificationAppIDs: Self.notificationAppIDs(in: candidate.overlays, at: date),
             notificationID: notificationID,
             matchedCount: matchedCount,
             clearedCount: clearedCount,
@@ -268,9 +278,13 @@ public struct NotificationOverlayStore: Sendable {
         return candidate
     }
 
-    private static func validate(topic: String, text: String, ttlSeconds: Int?) throws {
+    private static func validate(topic: String, text: String?, appID: String?, ttlSeconds: Int?) throws {
         guard NotificationTopic.isValidTopic(topic) else { throw NotificationOverlayStoreError.invalidTopic }
-        try validate(text: text)
+        guard text != nil || appID != nil else { throw NotificationOverlayStoreError.missingContent }
+        if let text { try validate(text: text) }
+        if let appID, !NativeAction.isValidBundleIdentifier(appID) {
+            throw NotificationOverlayStoreError.invalidAppID
+        }
         if let ttlSeconds, !(1...86_400).contains(ttlSeconds) {
             throw NotificationOverlayStoreError.invalidTTL
         }
@@ -320,7 +334,14 @@ public struct NotificationOverlayStore: Sendable {
 
     private static func labelOverrides(in overlays: [String: NotificationOverlay], at date: Date) -> [String: String] {
         overlays.compactMapValues { overlay in
-            isActive(overlay, at: date) ? overlay.text : nil
+            isActive(overlay, at: date) ? overlay.displayLabel : nil
+        }
+    }
+
+    private static func notificationAppIDs(in overlays: [String: NotificationOverlay], at date: Date) -> [String: String] {
+        overlays.compactMapValues { overlay in
+            guard isActive(overlay, at: date) else { return nil }
+            return overlay.appID
         }
     }
 

@@ -162,6 +162,8 @@ public struct D200XConfiguration: Codable, Equatable, Sendable {
     public var applications: [String: [String: D200XBinding]]
     public var tiles: [String: D200XTileAppearance]
     public var brightnessPercent: Int?
+    public var wideDisplayMode: D200XWideDisplayMode
+    public var clockFormat: D200XClockFormat
     public var actions: [String: ConfiguredExecutable]
     public var nativeActions: [String: NativeAction]
     public var notificationTopics: [String: [String]]
@@ -179,12 +181,16 @@ public struct D200XConfiguration: Codable, Equatable, Sendable {
         applicationTiles: [String: [String: D200XTileAppearance]] = [:],
         applicationNotificationTopics: [String: [String: [String]]] = [:],
         tilePresets: [String: D200XTilePreset] = [:],
-        nativeActions: [String: NativeAction] = [:]
+        nativeActions: [String: NativeAction] = [:],
+        wideDisplayMode: D200XWideDisplayMode = .custom,
+        clockFormat: D200XClockFormat = .twentyFourHour
     ) {
         self.defaults = defaults
         self.applications = applications
         self.tiles = tiles
         self.brightnessPercent = brightnessPercent
+        self.wideDisplayMode = wideDisplayMode
+        self.clockFormat = clockFormat
         self.actions = actions
         self.nativeActions = nativeActions
         self.notificationTopics = notificationTopics

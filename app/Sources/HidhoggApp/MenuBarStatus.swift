@@ -13,6 +13,23 @@ enum MenuBarStatus: String, Equatable {
     case cleanupUncertain = "Cleanup uncertain"
     case partiallyConnected = "Some devices disconnected"
 
+    init(base: MenuBarStatus, additional: MenuBarStatus?) {
+        guard let additional else { self = base; return }
+        let states = [base, additional]
+        if states.contains(.cleanupUncertain) { self = .cleanupUncertain; return }
+        if states.contains(.failed) { self = .failed; return }
+        if states.contains(where: { [.connecting, .enablingBindings, .disconnecting].contains($0) }) {
+            self = .connecting
+            return
+        }
+        if states.contains(.partiallyConnected) { self = .partiallyConnected; return }
+        if states.contains(.disconnected) {
+            self = states.allSatisfy { $0 == .disconnected } ? .disconnected : .partiallyConnected
+            return
+        }
+        self = states.contains(.permissionIncomplete) ? .permissionIncomplete : .connected
+    }
+
     init(mouse: MenuBarStatus, deck: D200XStatus?) {
         guard let deck else { self = mouse; return }
         if mouse == .cleanupUncertain || mouse == .failed { self = mouse; return }

@@ -7,7 +7,7 @@ Usage: hidhoggctl [--socket ABSOLUTE_PATH] COMMAND
 
   actions invoke ID
   actions history
-  notifications emit --topic TOPIC --text TEXT [--ttl-seconds N]
+  notifications emit --topic TOPIC [--text TEXT] [--app-id BUNDLE_ID] [--ttl-seconds N]
   notifications clear UUID
   notifications history
   status
@@ -52,7 +52,8 @@ private struct Command {
         arguments.removeFirst(2)
         var options: [String: String] = [:]
         while !arguments.isEmpty {
-            guard arguments.count >= 2, ["--topic", "--text", "--ttl-seconds"].contains(arguments[0]), options[arguments[0]] == nil else {
+            guard arguments.count >= 2, ["--topic", "--text", "--app-id", "--ttl-seconds"].contains(arguments[0]),
+                  options[arguments[0]] == nil else {
                 throw CLIError.invalidArguments
             }
             options[arguments[0]] = arguments[1]
@@ -63,7 +64,9 @@ private struct Command {
             guard !value.isEmpty, value.utf8.allSatisfy({ (48...57).contains($0) }), let integer = Int(value) else { throw CLIError.invalidArguments }
             ttl = integer
         }
-        request = AutomationRequest(method: .notificationsEmit, params: AutomationParameters(topic: options["--topic"], text: options["--text"], ttlSeconds: ttl))
+        request = AutomationRequest(method: .notificationsEmit, params: AutomationParameters(
+            topic: options["--topic"], text: options["--text"], ttlSeconds: ttl, appID: options["--app-id"]
+        ))
         try request?.validated()
     }
 }

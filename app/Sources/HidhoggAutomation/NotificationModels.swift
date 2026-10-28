@@ -4,6 +4,7 @@ public struct NotificationHistoryEntry: Equatable, Identifiable, Sendable {
     public let id: UUID
     public let notificationID: UUID
     public let topic: String
+    public let appID: String?
     public let committedAt: Date
     public let expiresAt: Date?
     public let matchedCount: Int
@@ -15,6 +16,7 @@ public struct NotificationHistoryEntry: Equatable, Identifiable, Sendable {
         id: UUID = UUID(),
         notificationID: UUID,
         topic: String,
+        appID: String? = nil,
         committedAt: Date,
         expiresAt: Date?,
         matchedCount: Int,
@@ -25,6 +27,7 @@ public struct NotificationHistoryEntry: Equatable, Identifiable, Sendable {
         self.id = id
         self.notificationID = notificationID
         self.topic = topic
+        self.appID = appID
         self.committedAt = committedAt
         self.expiresAt = expiresAt
         self.matchedCount = matchedCount
@@ -36,6 +39,7 @@ public struct NotificationHistoryEntry: Equatable, Identifiable, Sendable {
 
 public struct PreparedNotificationMutation: Sendable {
     public let labelOverrides: [String: String]
+    public let notificationAppIDs: [String: String]
     public let notificationID: UUID?
     public let matchedCount: Int
     public let clearedCount: Int
@@ -47,6 +51,7 @@ public struct PreparedNotificationMutation: Sendable {
 
     init(
         labelOverrides: [String: String],
+        notificationAppIDs: [String: String],
         notificationID: UUID?,
         matchedCount: Int,
         clearedCount: Int,
@@ -56,6 +61,7 @@ public struct PreparedNotificationMutation: Sendable {
         candidate: NotificationOverlayCandidate
     ) {
         self.labelOverrides = labelOverrides
+        self.notificationAppIDs = notificationAppIDs
         self.notificationID = notificationID
         self.matchedCount = matchedCount
         self.clearedCount = clearedCount
@@ -68,14 +74,18 @@ public struct PreparedNotificationMutation: Sendable {
 
 struct NotificationOverlay: Sendable {
     let notificationID: UUID
-    let text: String
+    let text: String?
+    let appID: String?
     let expiresAt: Date?
+
+    var displayLabel: String { text ?? appID ?? "" }
 }
 
 struct PendingNotificationEmission: Sendable {
     let notificationID: UUID
     let topic: String
-    let text: String
+    let text: String?
+    let appID: String?
     let targetControls: [String]
     let ttlSeconds: Int?
 }
@@ -88,6 +98,8 @@ struct NotificationOverlayCandidate: Sendable {
 
 public enum NotificationOverlayStoreError: Error, Equatable, LocalizedError, Sendable {
     case invalidTopic
+    case missingContent
+    case invalidAppID
     case blankText
     case multilineText
     case textTooLongByCharacters
@@ -106,6 +118,10 @@ public enum NotificationOverlayStoreError: Error, Equatable, LocalizedError, Sen
         switch self {
         case .invalidTopic:
             "The notification topic must use 1–64 ASCII letters, digits, dots, underscores, or hyphens and start with a letter or digit."
+        case .missingContent:
+            "A notification must include text or an application bundle identifier."
+        case .invalidAppID:
+            "The application bundle identifier is invalid."
         case .blankText:
             "Notification text must not be blank."
         case .multilineText:

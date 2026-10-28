@@ -10,6 +10,8 @@ Updated 26 October 2026. The active implementation is the Swift package under ap
 | app/Sources/HidhoggConfiguration | Strict TOML codec, configuration paths and revision-aware file persistence |
 | app/Sources/LogitechBolt | HID++ framing/correlation, IOHID transport, discovery, routing ownership and verified mouse reconciliation |
 | app/Sources/UlanziD200X | Bounded frames, input/identity codecs, page archives, IOHID transport and generation-bound session maintenance |
+| app/Sources/LofreeFlowLite84 | Receiver-specific read-only status codec, exact non-seizing discovery and serialized session |
+| app/Sources/FlowLite84StatusProbe | Developer-only, explicit --read-only one-snapshot diagnostic; not bundled in the app |
 | app/Sources/MacOSActions | Permission adapters, shortcut/scroll posting and injected native media, volume, sound and opener services |
 | app/Sources/HidhoggAutomation | Local wire protocol/server, notification overlay store, bounded process/native action lanes and metadata history |
 | app/Sources/HidhoggApp | Native workspace/menu, canonical app model, device models and editor/lifecycle composition |
@@ -27,6 +29,8 @@ Updated 26 October 2026. The active implementation is the Swift package under ap
 AppModel owns ConfigurationDocument, autosave/reload, workspace navigation, startup and Logitech connection intent. BoltController owns one selected transport, request-ID ledger, capability discovery, recognised routing reclamation and verification. WakeRecoveryCoordinator owns the cancellable application retry schedule. Native input admission checks remain tied to verified generations.
 
 D200XModel is independently observed by its views and owns D200X connection intent, foreground profile resolution, rendering, action context and ordered power transitions. D200XSession owns the transport, reader, handshake, maintenance query/deadline state and pause/resume revisions. The model is the sole page-write coordinator; UI views do not write HID frames.
+
+FlowLite84Model owns read-only keyboard connection intent, lifecycle and the hourly keyboard-activity throttle. Production composition injects AppKitKeyboardActivityMonitor; tests default to an inert monitor. The monitor reports activity without accessing key contents and owns native event-monitor registration/removal. FlowLite84Session serializes full and battery-only read batches; full-snapshot and battery timestamps are separate. Startup follows the shared Connect on launch preference without overriding an earlier explicit keyboard decision.
 
 Configuration paths and file state belong to HidhoggConfiguration. Static values and validation belong to HidhoggDomain. Live device handles, notification text, capture sessions and action-origin context are not persisted into those values.
 

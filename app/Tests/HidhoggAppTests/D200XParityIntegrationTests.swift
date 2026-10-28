@@ -10,7 +10,10 @@ final class D200XParityIntegrationTests: XCTestCase {
     func testInactiveProfileEditPreservesActiveNotificationAndDoesNotWriteDeck() async throws {
         var foreground: String? = nil
         let session = D200XParitySession()
-        let model = D200XModel(session: session, sender: makeSender(), frontmostApplication: { foreground })
+        let iconData = try D200XIconTestFixture.png()
+        let iconResolver = FixedD200XApplicationIconResolver(pngData: iconData)
+        let model = D200XModel(session: session, sender: makeSender(), frontmostApplication: { foreground },
+                               iconResolver: iconResolver)
         let configuration = D200XConfiguration(applications: ["com.example.Editor": [:]],
             notificationTopics: ["key0": ["build.*"]])
         model.synchronize(configuration, canEdit: true)
@@ -18,8 +21,10 @@ final class D200XParityIntegrationTests: XCTestCase {
         model.connect()
         let baseline = await eventually { await session.pageApplications().count == 1 }
         XCTAssertTrue(baseline)
-        let result = await model.publishNotification(topic: "build.finished", text: "Active overlay", ttlSeconds: nil)
+        let result = await model.publishNotification(topic: "build.finished", text: "Active overlay", ttlSeconds: nil,
+                                                     appID: "com.example.Builder")
         XCTAssertNil(result.error)
+        XCTAssertEqual(model.notificationIcons["key0"], iconData)
         let writesBefore = await session.pageApplications().count
         model.applicationID = "com.example.Editor"
         model.setAppearance(.init(label: "Inactive edit"))
@@ -36,7 +41,10 @@ final class D200XParityIntegrationTests: XCTestCase {
     func testProfileSwitchSerializesAfterStartedNotificationWrite() async throws {
         var foreground: String? = "com.example.Editor"
         let session = D200XParitySession(heldApplyIndex: 2)
-        let model = D200XModel(session: session, sender: makeSender(), frontmostApplication: { foreground })
+        let iconData = try D200XIconTestFixture.png()
+        let iconResolver = FixedD200XApplicationIconResolver(pngData: iconData)
+        let model = D200XModel(session: session, sender: makeSender(), frontmostApplication: { foreground },
+                               iconResolver: iconResolver)
         let configuration = D200XConfiguration(
             applications: ["com.example.Editor": [:]],
             tiles: ["key0": .init(label: "Default")],
@@ -47,7 +55,10 @@ final class D200XParityIntegrationTests: XCTestCase {
         model.connect()
         let baseline = await eventually { await session.pageApplications().count == 1 }
         XCTAssertTrue(baseline)
-        let notification = Task { await model.publishNotification(topic: "build.finished", text: "Complete", ttlSeconds: 5) }
+        let notification = Task {
+            await model.publishNotification(topic: "build.finished", text: "Complete", ttlSeconds: 5,
+                                            appID: "com.example.Builder")
+        }
         let started = await eventually { await session.pageApplications().count == 2 }
         XCTAssertTrue(started)
         foreground = "com.example.Unmapped"
@@ -65,6 +76,51 @@ final class D200XParityIntegrationTests: XCTestCase {
         XCTAssertEqual(applications.last?.page.slots["0_0"], expected.slots["0_0"])
         XCTAssertEqual(model.liveNotifications.last?.profile, "com.example.Editor")
         XCTAssertEqual(model.liveNotifications.last?.outcome, "failed")
+        XCTAssertTrue(model.notificationIcons.isEmpty)
+        await model.stop()
+    }
+
+    func testIconOnlyNativeActionUsesInjectedResolverAndKeepsNotificationMarker() async throws {
+        let iconData = try D200XIconTestFixture.png(red: 0.15, green: 0.75, blue: 0.25)
+        let iconResolver = FixedD200XApplicationIconResolver(pngData: iconData)
+        let session = D200XParitySession()
+        let appID = "com.example.Builder"
+        let configuration = D200XConfiguration(
+            notificationTopics: ["key0": ["build.*"]],
+            nativeActions: ["notify-build": .init(kind: .deckNotification, topic: "build.finished", appID: appID)]
+        )
+        let model = D200XModel(session: session, sender: makeSender(), iconResolver: iconResolver)
+        model.synchronize(configuration, canEdit: true)
+        model.setListening(true)
+        model.connect()
+        let baseline = await eventually { await session.pageApplications().count == 1 }
+        XCTAssertTrue(baseline)
+
+        let response = await model.handleAutomation(AutomationRequest(
+            method: .actionsInvoke,
+            params: AutomationParameters(actionID: "notify-build")
+        ))
+        XCTAssertNil(response.error)
+
+        let delivered = await eventually {
+            guard model.notificationHistory.last?.appID == appID else { return false }
+            return await session.pageApplications().count == 2
+        }
+        XCTAssertTrue(delivered)
+        XCTAssertEqual(model.notificationLabels["key0"], appID)
+        XCTAssertEqual(model.notificationIcons["key0"], iconData)
+        XCTAssertEqual(model.notificationHistory.last?.appID, appID)
+        XCTAssertNil(model.liveNotifications.last?.text)
+        XCTAssertEqual(model.liveNotifications.last?.appID, appID)
+        XCTAssertTrue(iconResolver.requestedBundleIDs.contains(appID))
+
+        let expected = try D200XPageRenderer.page(
+            configuration: configuration,
+            labelOverrides: ["key0": appID],
+            notificationIcons: ["key0": iconData]
+        )
+        let applications = await session.pageApplications()
+        XCTAssertEqual(applications.last?.page.slots["0_0"], expected.slots["0_0"])
         await model.stop()
     }
 

@@ -1,5 +1,7 @@
 # D200X core Studio parity proposal
 
+28 October 2026 update: the owner approved and the signed app now implements the seven built-in wide modes/12–24h, explicit custom-screensaver preview/Apply and static app-ID notifications. The [current plan and 206-test evidence](d200x-display-controls-plan.md) supersede deferred statements for those features below. Screensaver original restoration/timeout, mode100/command17, flashing and a live Now Playing provider remain outside this initial slice; the [media spike](d200x-now-playing-spike.md) is complete. Physical acceptance remains open; no agent device writes were performed.
+
 Reviewed2026-10-23. Owner approved appearance and local automation implementation on23October2026; deck branding/shadow removal is separately approved and delivered. Investigation reviewed through its21October2026 addenda; no22–23October addendum found in the targeted sources. Native source confirms first-slice shortcuts/page/maintenance, not complete vendor parity.
 
 ## Sequence

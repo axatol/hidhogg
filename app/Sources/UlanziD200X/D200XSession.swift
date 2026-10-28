@@ -20,9 +20,15 @@ public protocol D200XSessionProtocol: Sendable {
     func applyPage(_ page: D200XPage, update: D200XPageUpdate) async throws
     func setBrightness(_ percent: Int) async throws
     func setKeepAwakeEnabled(_ enabled: Bool) async throws
+    func setWideDisplay(_ status: D200XWideStatus) async throws
+    func applyScreensaver(_ screensaver: D200XScreensaver) async throws
+    func showScreensaver() async throws
 }
 
 public extension D200XSessionProtocol {
+    func showScreensaver() async throws { throw D200XFailure.unavailable }
+    func setWideDisplay(_ status: D200XWideStatus) async throws { throw D200XFailure.unavailable }
+    func applyScreensaver(_ screensaver: D200XScreensaver) async throws { throw D200XFailure.unavailable }
     func setBrightness(_ percent: Int) async throws {
         throw D200XFailure.unavailable
     }
@@ -163,6 +169,37 @@ public actor D200XSession: D200XSessionProtocol {
             let reports = try D200XCodec.reports(for: D200XFrame(
                 command: D200XCommand(0, 10), payload: payload
             ))
+            try await withTaskCancellationHandler {
+                try await transport.write(reports)
+            } onCancel: {
+                Task { await self.fail(.cancelled, token: token) }
+            }
+            guard token == generation, case .connected = status else { throw D200XFailure.disconnected }
+            try Task.checkCancellation()
+        } catch {
+            await fail(Self.failure(error), token: token)
+            throw Self.failure(error)
+        }
+    }
+
+    public func setWideDisplay(_ status: D200XWideStatus) async throws {
+        try await sendDisplayCommand(6, payload: status.payload())
+    }
+
+    public func applyScreensaver(_ screensaver: D200XScreensaver) async throws {
+        try await sendDisplayCommand(9, payload: screensaver.archive())
+    }
+
+    public func showScreensaver() async throws {
+        try await sendDisplayCommand(4, payload: Data())
+    }
+
+    private func sendDisplayCommand(_ command: UInt8, payload: Data) async throws {
+        guard case .connected = status, let transport else { throw D200XFailure.disconnected }
+        let token = generation
+        do {
+            try Task.checkCancellation()
+            let reports = try D200XCodec.reports(for: D200XFrame(command: D200XCommand(0, command), payload: payload))
             try await withTaskCancellationHandler {
                 try await transport.write(reports)
             } onCancel: {

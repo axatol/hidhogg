@@ -63,17 +63,19 @@ public struct BoltStatus: Equatable, Sendable {
     public let availableControls: Set<MouseControl>
     public let generation: UInt64
     public let cleanupUncertain: Bool
+    public let deviceResponding: Bool
     public let wheel: BoltWheelStatus
     public let thumbwheel: BoltThumbwheelStatus
     public let failure: BoltFailureContext?
     public let deviceInformation: BoltDeviceInformation
 
-    public init(phase: BoltPhase, message: String, availableControls: Set<MouseControl>, generation: UInt64, cleanupUncertain: Bool, wheel: BoltWheelStatus = .init(), thumbwheel: BoltThumbwheelStatus = .init(), failure: BoltFailureContext? = nil, deviceInformation: BoltDeviceInformation = .init()) {
+    public init(phase: BoltPhase, message: String, availableControls: Set<MouseControl>, generation: UInt64, cleanupUncertain: Bool, wheel: BoltWheelStatus = .init(), thumbwheel: BoltThumbwheelStatus = .init(), failure: BoltFailureContext? = nil, deviceInformation: BoltDeviceInformation = .init(), deviceResponding: Bool = false) {
         self.phase = phase
         self.message = message
         self.availableControls = availableControls
         self.generation = generation
         self.cleanupUncertain = cleanupUncertain
+        self.deviceResponding = deviceResponding
         self.wheel = wheel
         self.thumbwheel = thumbwheel
         self.failure = failure

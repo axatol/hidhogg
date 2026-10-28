@@ -4,6 +4,7 @@ import Foundation
 import HidhoggDomain
 import ImageIO
 import UniformTypeIdentifiers
+import UlanziD200X
 import Darwin
 
 struct D200XAssetStore {
@@ -50,6 +51,25 @@ struct D200XAssetStore {
     func restoreImage(_ data: Data, reference: String) throws {
         try validateAsset(data, reference: reference)
         _ = try persist(data)
+    }
+
+    func screensaverImage() throws -> Data {
+        let path = Self.appending("d200x-screensaver.jpg", to: try validatedDirectoryPath(createMissing: false))
+        let data = try readFile(atPath: path, maximumBytes: D200XCodec.maximumPayloadSize)
+        _ = try D200XScreensaver(jpeg: data).archive()
+        return data
+    }
+
+    func saveScreensaverImage(_ jpeg: Data) throws {
+        _ = try D200XScreensaver(jpeg: jpeg).archive()
+        let path = Self.appending("d200x-screensaver.jpg", to: try validatedDirectoryPath(createMissing: true))
+        var existing = stat()
+        if lstat(path, &existing) == 0 {
+            guard (existing.st_mode & S_IFMT) == S_IFREG else { throw Failure.unsafePath }
+        } else {
+            guard errno == ENOENT else { throw Failure.fileAccess }
+        }
+        try jpeg.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 
     func validateAsset(_ data: Data, reference: String) throws {
@@ -112,7 +132,7 @@ struct D200XAssetStore {
     }
 
     private func readFile(atPath path: String, maximumBytes: Int) throws -> Data {
-        let descriptor = open(path, O_RDONLY | O_NOFOLLOW)
+        let descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
         guard descriptor >= 0 else {
             if errno == ELOOP { throw Failure.unsafePath }
             throw Failure.fileAccess

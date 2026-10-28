@@ -2494,3 +2494,228 @@ Owner requested push up to main. GitHubmetadata confirms axatol/hidhogg default/
 ## Source checkpoint published — 26 October 2026
 
 Committed116reviewedfiles asca60802841fa0616c24840a2771d3720d878abf7 (AddD200Xautomationandverifieddevicerecovery). Localmasterfast-forwardeda2b7c83→ca60802, preservinge2744adancestry. NormalGitpush tohttps://github.com/axatol/hidhogg.git refs/heads/master succeeded; gitls-remoteverifiedexactca60802head. Repositorydefault/onlybranchismaster, notmain. No force/historyrewrite/productionapp/deviceoperations. Final198sourcehashesstillmatchHEADand signedbuild873e84a8bb59. Publicationrecord-onlydocsfollowupbeingcommitted; remaininghardwaregatesnotclosed.
+
+## Flow Lite84 feasibility — 26 October 2026
+
+Userrequestednextdeviceassessment andconfirmedfirmwarestatus/versionwording. Readcurrentlofree-flow-lite84investigation; historicalnativequery/manualvalidationwascompleted19October, contrarytooldermemorynote. Currentofficialproduct/download/manualchecked; PDFvisuallyrenderedwithoutdevicecommunication. Recoveredbattery/lighting/CurrentSystemcontracts supportproposednativework, nothardwarewriteproof. Battery4newqueryscope/precision, lightinglabels/effects/persistence andphysicalOSselector meaning remaingates.
+
+Created docs/lofree-flow-lite-feasibility.md withprimarylinks, evidenceclasses andproposedboundaries; independentdocauditfoundno materialmismatch. TaskViewexistingHIDhoggproject5 list78,parent492/FL-M1 andchildren493/FL01,494/FL02,495/FL03 createdasTODO; FL01blocksFL02/03. Noprojectcreated. README/roadmapnowlinktheproposal. No code/HID/probes/installs/mutation/tests/commit/push inthisresearchturn. Ownerapprovalpending fornativefirstslice andexplicitbattery/targetedstatusreadscope.
+
+2026-10-26 — FL-01 approved and implementation started on next/lofree-flow-lite84 from published f5bb00f. Pinned docs/flow-lite84-implementation.md contract: exact non-seizing receiver, narrow status commands/addresses, no normal input/private content/settings writes. Bounded backend and model/view owners implementing; parent integrates lifecycle/navigation/menu and developer-only explicit read probe. Independent fake tests/read-boundary review precede any live receiver query. TaskView492/493 In Progress;494/495 remain blocked and separately gated. No commit/push or production app launch.
+
+2026-10-26 — FL-01 source checkpoint frozen: receiver-specific codec/transport/session, native inert model/status page, shared lifecycle/menu/sidebar route, developer-only explicit read-only probe. Source review corrected pending-read cancellation, disconnect-after-failure state and display-helper return; callback token registry bounds late-callback lifetime. Four backend files typecheck, whole-app/probe Swift6/macOS26 discarded-SIL compilation pass. 25 backend test cases plus independent boundary/model/menu/native test sources written but NOT executed. SwiftPM known/fresh/dependency-free attempts blocked by Operation not permitted on compiler outputs/dependency config/Combine module cache despite accepted escalation; no auto-review rejection, permission changes or cache deletion. Disposable file writes succeed in allowed roots; specific build restriction unresolved. Release stopped before dist replacement; old signed provenance remains. Live probe deliberately unrun pending fake gate. TaskView492/493 InProgress with blocker;494/495 untouched. No screenshots/hardware claims/commit/push. See docs/flow-lite84-implementation.md for logs, decisions and exact resume gates.
+
+2026-10-26 — Build diagnosis: direct Swift module output first-create passes but external /Volumes/Data/tmp overwrite fails EPERM; empty Clang preprocessing reproduces the same create/overwrite boundary. Same Swift output create+overwrite inside app/.build passes. Exact disposable file Python opens/truncate+identical restore pass; no ACL/immutable flags; no specific sandbox/TCC denial established. noowners mount flag observed but causal status unproved. Legacy/native flag is NOT established cause: default full test build also fails on external outputs. Workspace-cache focused test run compiles/executes: backend28+model8+menu3 pass; fake native case fails 592/560 and832/800 exact hosting-height assertions. Independent tester notes neighboring harness tests use >=, titled/toolbar window, no production layout defect established; lower GroupBox bitmap regions blank and visually unverified. No production/test/script source edits, security/perms/cache changes, live HID, dist replacement, commit/push. docs/flow-lite84-build-diagnosis.md pins repro/workaround/limits. Buildscript permits onlyexternal scratch paths, so workspace cache support and native measurement correction need scoped follow-up.
+
+2026-10-26 — FL-01 final local validation: after owner reapplied WezTerm FDA, exact external compiler overwrite repros pass; original-cache39focused, fulloffline349XCTest+249SwiftTesting and6explicitbackgroundnative pass (604unique). Native minheight assertion corrected only, matching existingharness; lowerGroupBoxbitmap content unverified. Signed distapp/CLI783f76c1cd9488e724aeb0ea34f0964a5dd0659822485d957363a85ea566a4f5 strictverified;209sourcehashes/currentlogs/provenance refreshed; CLIhelp andprobeusage pass. Firstliveapprovedreadonlyprobe invalidFrame; second succeedsCID1/MID1/type0,online,fwv1.61,battery40/notcharging3755mV,light10enabledbrightness0speed1idle6,storedsystem1;receiverVersionunavailable. Probe-only attempted-stage instrumentation independentlyaudited; no rawframesretained andno claimedcausalfix. Noproductionapp launch/settingswrites/commit/push. TaskView492/493 remainInProgress ownergates;494/495 separate. Ownerchecklist andlimits in docs/flow-lite84-implementation.md; buildscriptunchanged.
+
+2026-10-27 — Refresh fix: reproduced29sendcomplete/no successfulreply timeout inroutine status; removedunverified29query fromsnapshots,receiverVersionnil/unavailable,otherreads+correlationunchanged. ExactoldsequenceConnectvalidreject→Refreshsilent red .timeout; fixedgreen plusbothregressions30modulecases. Independent349XCT+251SwiftTesting+6native=606unique pass. Signedd00415f320d16652b78fe14b644d95a259620e07e8a5f22d037c5e8c5e42e487,209hashes/provenance verified; noapp launch/commit/push/writes. PostfixboundedConnect→Refresh2receiver reads succeedsbutonlinefalse; ownerreportsneverdisconnected, active2.4/BT/USBquestionpending. Fullonlinekeyboardrefreshunverified; noassumeddisconnection/sleep/driverstatechange. Seeimplementationdoc/currenthandoff/logpaths.
+
+2026-10-27 — Ownerconfirms2.4receiver,newfirstConnectinvalidFrame screenshot. CurrentCLIunchangedfullonline2snapshotspass;3repeat1invalidonlineafterwritecomplete,2fullonlinepass. modequestionresolved; earlieronlinefalse notnormaltypingdisconnectproof. Startingtypedvalidationdiagnostics ONLY (no routingrelaxation) toclassifychecksum/correlation/duplicate/etc. RootprobeoutputonlytypedFlowFailureenumeratedsafefields. Backend4files+testsowner; testerholdsfreeze; noHIDbyworkers/writes/normalinputcapture. ExactsafeprobeJSONs/activehandoffpinpendingwork.
+
+2026-10-27 — Typedliveexpected3received1 causefoundlateidentity; minimalconfirmedidentityfilterred/green39module, full615unique, signed9ff4e08cd36e42f74c6bd29a9926cc578ada080a8fdbf874ebdb7423fca63aee/209hashes verified. Root3fixedcyclesreceiveronlypassonlinefalse, owneragainconfirmsalwaysawakeavailable. Immediateactiveprobeinitialonline snapshotcompletes butRefreshloseslightingmode8replyafterwriteconfirmed. DoNOTinferMacdisconnect/sleep; readreliabilitystillincomplete. Proposedoneexactreadretry withinlogicalpending, tags/writebarrier/positiveboundedduplicatecache/noinvalid orwriteerrorretries; independentreadonlyreviewdone, sourceunchanged. AsyncownerapprovalaskedunderAGENTSpolicy, noansweryet. No retryimplementation untilconfirmation. docs/flow-lite84-read-reliability-plan.md andactivehandoffpinresume. No writes/productionlaunch/commit/push.
+
+2026-10-27 — Newownerimage expected4received18 afterConnect→Refresh,identity-onlyexceptioninsufficient. No approvalforretryinimage. ReadonlyreviewfavoursNOHISTORYselectivemailbox: off-currentordinaryvalidresponsesdiscardedwithoutstate/timerupdates; currentheaderandmatchedvalidationretained; identitywrong/rejectedbindingexceptionpreserved. Simplerreferenceprobe.receive534 confirmsmatchingfilter. Supersedesunnecessary16-historyplan; no sourcecodewritten. RevisedPartAcorrelation+PartBoptionaloneboundedidenticalreadretry awaitingexplicitconfirmation viaasyncquestion. Allsource/cachefrozen, existing9ff615testbuildnotcompletehardwarefix. Newplan/currenthandoffpinresume; no writes/app launch/commit/push.
+
+2026-10-27 — OwnerCPUincident: xctest29651 orphan(parent1), started26Oct01:28:26,~98%CPU, command selectsHidhoggAppTests.WakeConnectionTests andbundlehidhogg-reconnect-verification/out/Products/Debug. Captured1sstack /Volumes/Data/tmp/hidhogg-orphan-xctest-29651.sample.txt; recoveryattempt/testdelayframes, exactloopcause not established. RecheckedexactcommandthenSIGTERM; PIDgone,noxctestremain. No newtests/source/devicechanges. Addowned-runner postflight checktofuturetestexecution; do notgloballykillunrelatedtestprocesses. Pendingcorrelation/retryapprovalunchanged.
+
+
+## 2026-10-27 — mouse reconnect restoration candidate
+
+Owner reported scroll direction reverting after reconnect and requested fix first, regression test after physical confirmation. AppModel now clears attempted wheel/thumb-wheel/button reconciliation state on entry to fresh discovery, and records wheel requests only when supported and actually dispatched. No new tests or live mouse operations. Signed background build and owner reconnect verification pending. This is a candidate fix, not a confirmed hardware resolution.
+
+Background signed build completed; strict app/CLI signature verification and git diff --check passed. Build ID 038ea20fe6fcabdb61be119d4cb3024146e1f2ecc4284fd76106f6b1a228be91. dist/build-info.json refreshed; prior tests marked historical. No app launch, hardware verification or new test.
+
+
+## 2026-10-27 — wireless mouse connection monitoring
+
+Owner confirmed prior restoration candidate did not detect wireless disconnect or recover, then approved a lightweight read-only connection check. Verified transport removal callback tracks USB receiver removal, while controller has no wireless connection monitor. Added a three-second controller-owned root protocol/nonce query using the existing discovery request, serialized with settings operations and skipped while busy. Failure invalidates delivery and uses existing cleanup/reconnect; shutdown/transport close cancels monitoring and old connection/revision results cannot fail a newer session. No receiver-event decoding or setting commands added.
+
+Checklist: [x] implementation; [ ] final frozen-source signed build/signature check; [ ] owner wireless disconnect/reconnect and settings confirmation; [ ] regression test after owner confirmation, per explicit request. No production app or hardware operation by agent. Lofree reply-routing/retry work remains pending separate approval.
+
+Final frozen-source monitor build completed and strict app/CLI signatures plus git diff --check passed. Build ID 45b06736901a01f8b55cbf029b76544dacd0e9bd6f64594fdbd3ad677bd2b269. dist/build-info.json refreshed. Physical behaviour and deferred regression test remain unchecked.
+
+
+## 2026-10-27 — background retry presentation
+
+Owner reports recovery works better, approved showing Disconnected while waiting/probing, Reconnecting only after mouse response, and a stable header/cancel control with retry details in Diagnostics. Added explicit deviceResponding to BoltStatus, set only after discovery confirms one responsive slot and cleared on discovery restart/failure/close. AppModel derives background presentation; DevicesView uses stable recovery copy and Cancel, suppressing transient cleanup warning during automatic recovery. Raw controller messages and diagnostic attempts retained.
+
+Checklist: [x] implementation; [ ] signed frozen-source build; [ ] owner visual/physical acceptance; [ ] deferred regression tests after confirmation. Menu status contrast request under review; proposed enabled device navigation rows awaits owner answer.
+
+Final background retry presentation build completed; strict app/CLI signatures and git diff --check passed. Build ID 6411b76571cc7e963fc098f8eb76177f20af0cd42b6c530cdbd4515adceab8fe. No app launch or new tests. Owner visual acceptance remains pending. Menu row contrast proposal (enabled navigation to matching device page) awaits owner reply; no menu row changes made yet.
+
+
+## 2026-10-27 — readable device menu rows
+
+Owner approved enabled device navigation rows to replace dim informational labels. MenuBarView now uses native Buttons for MX Master 3S, D200X and Flow Lite84 status; each selects the matching workspace route and requests the workspace. Disconnected rows remain usable for navigation. Existing status text retained. No hardware commands or permission prompts added.
+
+Checklist: [x] implementation; [ ] signed build/signature validation; [ ] owner menu contrast/navigation check. No new tests for this small reversible UI change; physical reconnect regression tests remain deferred as previously requested.
+
+Readable menu signed build completed; strict app/CLI signature verification and git diff --check passed. Build ID 49249ec3e978a0285a18384a1c842664d2331531873e1858c33cdfa1db3180eb. Build provenance refreshed. No app launch; owner contrast/navigation check pending.
+
+
+## 2026-10-27 — compact mouse/deck headers
+
+Owner approved matching existing DeviceMouse/DeviceDeck template assets in headers, MX Master 3S title, concise Bindings enabled subtitle for enabled mouse sessions, retaining D200X operational messages, and replacing redundant Connection/value rows with a status dot and state text. Background recovery copy and detailed controller diagnostics retained.
+
+Checklist: [x] implementation; [ ] signed build/signature verification; [ ] owner visual confirmation. No new tests for this reversible presentation change; reconnect regression tests remain deferred.
+
+Device header signed build completed; strict app/CLI signatures and git diff --check passed. Build ID 1063087c6a7e23ef176c1d4b88022a7d60aa99b4b5daedf4e69bfe67c7d6e34f. Build provenance refreshed. No production launch or native visual verification; owner check pending.
+
+
+## 2026-10-27 — FL-01 hourly activity refresh in progress
+
+Owner approved event-driven (global/local AppKit keyDown monitors) battery/status refresh at most hourly, including keyboard in existing Connect on launch, and retaining manual full Refresh. No periodic activity/device polling, no key characters/codes retained, no permission prompts; permission-unavailable remains manual. Monitor lifecycle must follow connected intent, sleep/suspension/Disconnect/stop.
+
+Ownership: flowlite_battery_refresh owns backend API/session/tests; keyboard_activity_refresh owns model/monitor/model-tests; root owns production injection/startup/native fake/provenance/docs. Existing general reply-correlation/read-retry proposal remains unapproved and protected.
+
+Checklist: [ ] backend battery-only API + fake tests; [ ] monitor/hourly model + fake tests; [ ] startup integration checks; [ ] independent focused verification; [ ] frozen-source signed build/provenance; [ ] owner app/physical validation. No live HID or input capture is authorized for automated checks.
+
+Independent FL-ACT gate passed 75 unique focused checks (43 Lofree module,13 model,19 startup). All16 scoped input SHA256 values match pre/post; targeted postflight found no owned compiler/test runners. Logs: /tmp/hidhogg-activity-independent-{lofree,model,startup}.log. Read-only explorer audit found no implementation contradiction. Existing command10 status notifications can still request full refresh independently of hourly keyboard-activity triggers; this exception is documented. No native monitors, permission prompts, app launch or HID exercised. Frozen-source release build underway; owner live acceptance remains open.
+
+FL-ACT implementation and verification complete; owner acceptance pending. Final signed app/CLI build fc98d1aed0f64203f5b38087b58150ae5b7e06036145635d644f759a3b26c433 passes strict signatures;210 source/resource/test hashes and three independent log hashes recorded in dist/build-info.json. Release log /Volumes/Data/tmp/hidhogg-keyboard-activity-refresh-20261027.log. Checklist: [x] backend battery-only API/tests; [x] event-driven hourly model/tests; [x] startup on/off/early-disconnect checks; [x] independent75 focused checks and read-only audit; [x] signed frozen-source build/provenance; [ ] owner native event/physical keyboard verification. No launch, permission prompt, live HID, commit or push. Next: owner restarts dist/Hidhogg.app, confirms launch connection/manual refresh and activity refresh after an hour, sleep/Disconnect behavior. Battery cost and secure-input delivery remain unmeasured. Previous generalized Lofree correlation/retry approval remains pending.
+
+
+## 2026-10-28 — menu Open Settings
+
+Owner approved Open Settings… beneath Open Hidhogg in the menu bar. The action selects WorkspaceRoute.settings and requests the existing workspace through ApplicationInstanceBootstrap, reusing the established navigation/window path. Signed build eb5b71efb3511aa30a321e5c0ea94aba442e3848bfce3218ab9e00cb5e6bb297 completed; app/CLI strict signatures and git diff --check pass. Build/provenance refreshed (210 inputs); prior activity feature tests preserved separately. No new tests for this small reversible change, no app launch or hardware. Owner UI check pending; no commit/push. Release log /Volumes/Data/tmp/hidhogg-menu-settings-20261028.log.
+
+
+## 2026-10-28 — FL-RX-UPDATE in progress
+
+Owner screenshot reports intermittent idle unexpected command4 reply. Verified current receive() fails when no request is pending. Owner approved accepting useful identity-confirmed validated unsolicited battery data (received-at, not proven sample time), independently of pending queries; unrelated globally valid ordinary reads may be ignored. Retain current matching validators/send barrier, global scope/checksum, identity/generation safeguards. No additional traffic/read retries, no device writes.
+
+Ownership: flowlite_battery_events_fix owns module/backend tests; independent activity_refresh_verification reviews/tests; root owns UI timestamp wording, docs/provenance/build. Checklist: [ ] red idle command4 regression; [ ] safe telemetry/correlation/order fix; [ ] focused green; [ ] independent checks/hash/postflight; [ ] signed frozen-source build; [ ] owner physical acceptance. No live HID/input capture/app launch authorized for automated verification. Prior PartB read retry remains unapproved.
+
+FL-RX-UPDATE progress: independent verifier inspected two genuine behavioral red logs (/Volumes/Data/tmp/hidhogg-battery-red.log and hidhogg-battery-pending-red.log). Worker reports54 module checks green at stage3, source not yet frozen (final solicited partial/all-nil case being added). Global read allowlist now shared by decoder/sanitizer/output; unrelated replies cannot evade it. Unsolicited admission requires all three known fields; solicited partial/unavailable semantics retained. Receipt ordering uses a session-local sequence rather than Date comparisons. No traffic or retransmission added. Root withdrew an incorrect all-nil base-marker concern after checking original semantics; no extra unavailableFields change requested. Final independent gate/build/owner acceptance still pending.
+
+
+## Current checkpoint — 28 October 2026: useful battery events
+
+Owner approved preserving useful unsolicited battery command4 data after an intermittent unexpected command4 error. The signed fix accepts fully valid identity-confirmed battery updates without completing/extending unrelated queries, ignores globally valid off-current ordinary replies, preserves newer battery receipt ordering through batch commit, and labels the timestamp Battery received. Checksums/global scope/identity/generation and matched-query send barriers remain. Partial unsolicited battery ignored; solicited partial/unavailable semantics retained. No extra queries/writes/retries. Read retransmission PartB remains unapproved.
+
+Build c7c485f779318576457313ef0b9da097aadab13be860f22c71016d9f9749f19f: strict app/CLI signatures and211 input hashes verified in dist/build-info.json, including package lockfile. Independent69 checks (56module+13model) pass;12 scoped hashes match; no owned test processes remain. Red logs /Volumes/Data/tmp/hidhogg-battery-{red,pending-red}.log; independent logs /tmp/hidhogg-fl-rx-independent-{lofree,model}.log; release /Volumes/Data/tmp/hidhogg-battery-events-release-20261028.log. Root independently verified all12 tested input hashes after build.
+
+No production app launch/HID/native monitoring exercised. Owner must restart signed dist/Hidhogg.app and confirm intermittent error no longer occurs. Packet origin and actual sample time remain unknown; current timestamp means host receipt. Worktree remains dirty/uncommitted; no push. Source frozen. Read-only explorer audit found no source contradiction; documentation status/deferred gates updated.
+
+---
+
+
+## Current work — 28 October 2026: D200X displays/icons and media spike
+
+Owner approved seven built-in wide modes and explicit screensaver image apply, then authorized implementation/spikes for static notification text/app icons and Now Playing. Initial notifications are static; flashing deferred. Canonical plan/checklist: docs/d200x-display-controls-plan.md. No agent live device/media/input queries, permission prompts or persistent screensaver writes. Owner applies from UI.
+
+Owners: d200x_display_controls owns D200XModel/device view/domain-wide config/Ulanzi module and D200XDocument codec subsection; notification_app_icons owns API/store/CLI/native action/coordinator/renderer/previews and NativeActionDocument subsection; now_playing_feasibility owns isolated spike+report. Root owns integration/provenance/docs. Model icon bridges pre-added; no builds until both production workers freeze. Existing Lofree fix and all unrelated dirty work protected.
+
+New evidence re-review: seven modes visually accepted19October; custom screensaver quadrants and real mode0 CPU/RAM/GPU display accepted21October; persistence/original restoration unresolved. GPU exact PerformanceStatistics/Device Utilization % source on IOGPU was sampled, not universally guaranteed; do not invent0 or assume universally unavailable. Exclude mode100/command17 and guessed timeout/reset controls.
+
+Checklist: [ ] display/session/config/saver implementation; [ ] notification icon end-to-end; [ ] media research/synthetic rendering spike; [ ] focused independent offline checks; [ ] signed build; [ ] owner physical acceptance.
+
+---
+
+DX-DISPLAY progress: production workers prepared typed modes/saver and static appID flow; source freeze reached after root review corrections (clock refresh sends only status, no14-image redraw or renderRevision invalidation; metrics sampled only in metrics mode; host Mach send right scoped/released; crop preview coalesced/cancellable single worker). Display focused compile/tests now underway, notification focused tests next. Media spike complete: synthetic458x196 playing/paused frames and942x196 contact sheet, public26.5 and27SDK compile probes pass; newer public NowPlaying is own-app publishing, not cross-app reader. Music dictionary verified without queryingmedia; Spotify bundle-ID lookup unresolved, not globally absent proof. Root viewed synthetic PNG and adopted output-device mute semantics. Report docs/d200x-now-playing-spike.md; no production media provider/permission added.
+
+
+## Current checkpoint — DX display/icon final verification, 28 October 2026
+
+User authorized implementation of seven built-in wide modes/12–24h and explicit custom screensaver preview/Apply, static notification text or installed-app icon, and Now Playing spikes. Source is frozen after display iteration2 and notification iteration3. Owner-only persistent screensaver Apply; no agent app/HID/media/input operations or prompts. Flashing, mode100/command17, unknown timeout/reset/original restoration and live NowPlaying remain excluded.
+
+Implemented source: D200X typed status6/ZIP9/session+domain/TOML+UI; status-only ticks share pageOperation without page re-render/revision interference; real availability-dependent metrics sampled only metricsmode; scoped host Mach right cleanup; optional SmallViewMode2 only3_2 for builtin path, defaultcustom unchanged; single debounced/cancellable crop worker. Notifications carry app_id through API/CLI/action/TOML/overlay/preview/history; injected bounded app-icon resolver; TTL/clear/profile behavior; candidate icon snapshots beforecommit. Model bridges coordinated. Preset whitelist and summary fixed for appID with roundtrip regression.
+
+Passed worker checks: display22 (log /Volumes/Data/tmp/hidhogg-d200x-display-tests-20261028.log); notification focused protocol/overlay/config/icon/native integration pass (/Volumes/Data/tmp/dx-notify-icon-2-rerun-nz5oc6z1.log); preset/config10 pass (/Volumes/Data/tmp/dx-notify-icon-3-op3gxx5y.log). No owned process groups remain. activity_refresh_verification now running final broader fake-only gate in existing independent cache, including newpresetfiles and pre/post hashes; no production endpoints, native windows, actual metrics/app lookup or old WakeConnection tests. Wait result before release.
+
+Now Playing spike complete, docs/d200x-now-playing-spike.md and spikes/d200x-now-playing; PNG /Volumes/Data/tmp/d200x-now-playing/contact-sheet.png viewed byroot (fake playing/paused458x196 each). SDK26.5 public provider surface and27 public NowPlaying own-session stand-in typechecked; no livequeries. Public frameworks are publisher-side, not documented cross-appreader. Music installed dictionary verified; Spotify bundle lookup unresolved (not proof absenteverywhere). Recommended opt-in Musicadapter future; outputdevice mutechosen; no AppleEvents permission/entitlement or provider wired toapp.
+
+TaskView448/DX05 and470/DX08 notes appended/readback verified, stillInProgress14. Plan/checklist docs/d200x-display-controls-plan.md. Next: independent gate/findings, root CLIhelp/invalid+valid parser smoke via guaranteed nonexistent socketpath only, signedrelease/provenance (lastdist stillbatteryfix c7c485...), docs/owner checklist and read-onlyhandoff audit. All dirty unrelated work preserved; no commit/push.
+
+---
+
+
+## Current checkpoint — 28 October 2026: D200X display/icon delivery
+
+Signed app/CLI build13f34555eca71132786b3b421ba6e46174d4339ce8e2bef2175c609b6be2b4ea is ready for owner testing.225 source/resource/test inputs and all84 independently tested input hashes verified after build in dist/build-info.json; strict signatures pass. Independent broader206 checks pass (168XCTest+35D200XSwiftTesting+3protocolfunctions including21malformed vectors); focused21 overlaps broader. Five CLIhelp/invalid/valid-parser smoke cases passed using guaranteed missing socket parent (no running endpoint contacted). Logs /tmp/dx-display-icon-independent-{focused,broader}.log; hashes /tmp/dx-display-icon-independent-post.sha256; CLIproof /Volumes/Data/tmp/hidhogg-d200x-cli-smoke-20261028.json; release /Volumes/Data/tmp/hidhogg-d200x-displays-icons-release-20261028.log. No owned test processes left.
+
+Delivered: customdefault+seven builtin wide modes/12–24h, availability-dependent realmetrics, status-only queued clock updates without PNG redraw/revision interference, optional3_2 SmallViewMode2 and notification mode restore; explicit user-confirmed custom-screensaver crop/ZIP9 Apply with bounded coalesced worker; static app_id API/CLI/native action/TOML/overlays/previews/history and preset support with bounded injected iconresolver and fallback. No new agent HID/app/input/media query, window, prompt, flashing, live provider or persistentdevice apply. Source frozen. All dirty unrelated source preserved; no commit/push/worktree changes.
+
+Media spike complete: docs/d200x-now-playing-spike.md; spikes/d200x-now-playing; /Volumes/Data/tmp/d200x-now-playing/contact-sheet.png (fake playing/paused458x196 frames). SDK26.5 and27 publicAPI stand-ins typechecked only. Public NowPlaying is own-app publishing; Musicdictionary verified withoutactualquery; Spotify bundleIDdidnotresolve (not proof absent everywhere). Recommended future opt-in Musicadapter with Automation permission/entitlement design; outputdevice mute chosen. Not a productionNowPlaying feature.
+
+Decisions/remaininggates: docs/d200x-display-controls-plan.md and docs/d200x-parity-owner-checks.md. Root audit fixed preset appID allowlist/summary integration before release; independent read-only finalaudit found no material contradiction. CPU firstdelta after samplingpause may averagepause interval, then resumes2s cadence; documentedqualitynuance, not fabricated0. Hardwareappearance, GPUavailability, screensaverplacement/persistence and realappiconlookup remain ownerchecks. No screensaver timeout/originalrestore, mode100/command17 or flashing. TaskView448/470 remain InProgress14; deliverynotes readbackverified. Broadmilestone notmarkedcomplete and no completionnotification sent before ownergate. Earlier Lofree batteryeventfix remains included; retransmission PartB still unapproved.
+
+Next: owner restarts dist/Hidhogg.app, exercises modes/icons, explicitly selects/reviews/Applies screensaver if desired; report physicalresults. No further implementation required in current initial static slice; futurelive-media provider is separate.
+
+---
+
+
+## 28 October 2026 — default screensaver artwork
+
+Owner requested a black image with HidHogg logo bottom-right. Used built-in imagegen with existing selected-serpent logo reference, then exported and visually inspected docs/product-redesign/screensavers/hidhogg-default.jpg at1220x708 JPEG, approximately40KiB. Original generation retained under generated_images; project copy is ready for manual selection in Screensaver controls. No app code/resource integration, build, launch or device Apply was performed.
+
+
+## 28 October 2026 — screensaver preview layout guide
+
+Owner approved preview-only screen geometry overlay. Added D200XScreensaverLayoutGuide and integrated it in the crop preview: 1220x708 host composition, 196-square cells with 60-pixel gaps, 14 outlined windows including a 452x196 bottom-right wide window. Source: external Ulanzi session-display-investigation.md:80. Gaps dimmed; guide ignores pointer/accessibility. Crop JPEG, confirmed image and device payload unchanged. Offscreen SwiftUI ImageRenderer previews at widths320/620 visually inspected; no foreground app launch or device writes. Guide reveals default logo slightly enters the gap above the bottom row; asset not changed.
+
+Signed dist/Hidhogg.app and dist/hidhoggctl rebuilt; strict signature verification and git diff --check pass. BuildID86aa665ef3e048cd2c14a68e87958b60896afe54cf8ce4c79a73ea161434c64b; 226-input provenance updated in ignored dist/build-info.json. Log /Volumes/Data/tmp/hidhogg-screensaver-guide-release-20261028.log. Prior206-check suite is historical, not rerun for this preview-only UI change. Owner should restart the app and inspect crop placement; physical mapping remains owner acceptance. No commit/push.
+
+
+## 28 October 2026 — temporary on-device screensaver preview in progress
+
+Owner approved five-second hardware preview after first persistent-overwrite confirmation, then restore latest active tiles; later crop/zoom updates restart the five-second deadline. App hides large image after confirmation, retains crop controls; new source requires confirmation. Worker screensaver_live_preview owns editor/model/session and fake tests. Root owns artwork, verification/build and durable notes. No live agent HID writes. Recovered Studio SendScreenData(true) selects command4 and empty QString payloads; physical immediate activation remains unverified in this native implementation. Root regenerated default JPEG with smaller/downward logo and visually inspected against same guide at320/620: entirely inside wide window. Current signed build remains earlier86aa665 until this slice freezes/builds. Checklist in docs/d200x-display-controls-plan.md.
+
+
+DX-SAVER-LIVE verification checkpoint (28 October 2026): implementation frozen across seven Swift files (AppModel, D200XModel, ScreensaverEditor, ScreensaverPreview, Ulanzi session, two display testfiles). Worker32fakechecks pass; independent same32checks pass after root success-status wording fix (26XCTest plus6SwiftTesting), /tmp/dx-saver-live-independent.log. Posthash/process check pending. Root signed build running, /Volumes/Data/tmp/hidhogg-screensaver-live-release-20261028.log; no native launch/HID. Main review requested explicit mode2 recovery for custom wide tile (caught by regression), identical-JPEG completion revision, real committed deferred notification PNG assertion, queued-crop/lifecycle guards; worker implemented. Independent source audit confirmed empty command4 payload through retained sender/queue evidence, no guessed command5. DefaultJPEG revised and inspected entirely inside wide window. Hardware effect/duration/lock notification delivery remain owner checks.
+
+
+## 28 October 2026 — temporary screensaver preview delivered
+
+Signed dist/Hidhogg.app and dist/hidhoggctl build7d5d9017151f73528ba39683425fe29c7e4eb782b8baef0f878fe461c8c40f58 completed0; strict app/CLI signatures and git diff --check pass. Independent focused32checks pass (26XCTest,6SwiftTesting) with17pre/post/test/build hashes matched; /tmp/dx-saver-live-final.sha256 digest7eff32fb65d3216708c3a7ce75ff20e1cf066ef87e0ee7423cf65dce5fa25377. No test/build processes remain per verifier. Logs /tmp/dx-saver-live-independent.log and /Volumes/Data/tmp/hidhogg-screensaver-live-release-20261028.log. Ignored dist/build-info.json updated with226sourceinputs and separate current gate; old206suite remains historical, not rerun for this slice.
+
+Flow: choose/review/confirm one source; local large preview hides; serialized maintenance pause→ZIP9→empty command4; five-second latest-revision deadline→full current14-slot page/wide-mode restore→maintenance resume. Confirmed crop/zoom updates reset deadline; identical-JPEG render completions handled; Preview on Deck retries unchanged crop. Lock awareness explicitly enabled only production; active preview invalidates on lock, restore waits unlock. Sleep/disconnect cancel with existing recovery. Deferred committed notifications preserved in restoration. New source requires new confirmation. Guide remains preview-only.
+
+Corrected docs/product-redesign/screensavers/hidhogg-default.jpg now1220x708 with smaller/downward logo entirely within wide screen window, verified against guide. Reselect revised file to avoid old in-memory candidate. Owner acceptance pending immediate screensaver effect, approximately5sec return, physical positioning and real lock delivery. Tests do not exercise distinct-JPEG burst or live profile change directly; source captures latest JPEG and resolves current runtime config. No app launch/device writes/commit/push. Next: owner restart signed app, reselect artwork, confirm and exercise crop/zoom/Preview on Deck; checklist docs/d200x-parity-owner-checks.md. BroaderDX05 remains in progress until hardware gate.
+
+Final read-only audit: no material implementation contradiction; owner-check header and superseded crop/visibility rows reconciled to build7d5d901 and current temporary-preview flow. Success label denotes save/send completion; no physical readback/power-cycle persistence claim added. Broader owner gate remains open.
+
+
+## 28 October 2026 — wide-mode defect and saved preview in progress
+
+Owner reports CPU/RAM/GPU layout persists after switching modes, counters go0. Approved retained collapsed screensaver preview and focused diagnosis/fix. Worker wide_mode_transition_fix owns model/protocol/mode tests; root owns new D200XScreensaverPreviewStore, D200XSavedScreensaverPreview, asset JPEG cache methods, editor insertion and2synthetic persistence tests. Modelworker owns3storehooks too; no simultaneous model edits. Lastsent JPEG recorded immediately after successfulcommand9, even if later activation fails. Preview cached under validated assets/d200x-screensaver.jpg; no readback or automaticreapply. Actualprevious-build image cannot be reconstructed before nextsend.
+
+Known-good probe numericfields vs Swiftemptyfields is primary candidate; root approved numeric0wirefillers only in nontelemetry modes, preserving nil domain metrics and complete telemetrymode0gate. Other candidates stale timer/page metadata. Agent redregression now fails expected numericfield shape; no physical symptom reproduced offline. Root sourcefrozen after offscreen collapsed/expanded checks usingfakediskstore, no foregroundwindow/device. Rootpersistence tests compiled as partworkerredgate; greenpending. Planchecklist docs/d200x-display-controls-plan.md. Build remains7d5d901 until newfrozenrelease.
+
+
+DX-WIDE-STORE frozen checkpoint: worker38checks pass (31XCTest,7SwiftTesting), /Volumes/Data/tmp/dx-wide-transition-green-final.log. Redcounterexamples numericfield/initialsample and reconnecttimer recorded in dx-wide-transition-red.log and dx-wide-transition-reconnect-red.log. Rootsourcefrozen; independentverifier captured25inputs (manifest bbc94b2768788429fba098825487b9f1352105a62dc219f0291f602b764b75f8) and runningfourfocused suites. Nontelemetrynil remainsnil property, numeric0wirefillers only forabsentignoredfields; suppliedvalidnumbers remainallowed matchingprobe. Timer mode/format/reconnectrestart and stale-delayguards implemented. Read-only storeaudit no materialdefect; onloadrevisionguard and command9successhook source-reviewed, 2storetests coverpersistence/latestwrite/symlink/invalidinput. No schema migration, nativeapp/devicewrites.
+
+
+## 28 October 2026 — mode-switch correction and saved screensaver preview delivered
+
+Current signed dist/Hidhogg.app and dist/hidhoggctl build d26b3a0e331884035af4a9eb43fdf13af9b9a0aeb822e548b7133b0cdffae7cd; strict signatures/git diff --check pass. Independent38focusedchecks (31XCTest,7SwiftTesting) pass,25input hashes unchanged across pre/post tests and build; manifest /tmp/dx-wide-store-final.sha256 digestbbc94b2768788429fba098825487b9f1352105a62dc219f0291f602b764b75f8. Log /tmp/dx-wide-store-independent.log; build /Volumes/Data/tmp/hidhogg-wide-store-release-20261028.log. No remainingownedcompiler/testprocesses. Ignored build-info tracks229sourceinputs, separatecurrent38gate andoffscreenaccordionvisuals; prior32/206records historical, notsum.
+
+Verified source defects: nontelemetrycommand6 emitted empty numericfields unlike acceptedprobe; clock→systemStatus reused schedulerwithout initialsample; newepochguard required explicit oldtimerstopatreconnect (caught byredregression). Fix numeric0onlyignoredmissingwirefields (nilpropertiesremainnil; mode0requirescompletemetrics), restartmode/format/reconnectscheduler andstale revision/epoch/cancelguards. Physicalparsercause is leadinghypothesis, not device proof.
+
+Retained preview: newD200XScreensaverPreviewStore/SavedScreensaverPreview, exact lastcommand9sentJPEG cached invalidated assets/d200x-screensaver.jpg; defaultcollapseddisclosure, no uploadonopen, localcopy survivesreopen. Recordhook aftersuccessfulcommand9 beforeactivationfreshnesscheck. Fixedfile boundedvalidatedJPEG regular/nofollow/nonblockingread, atomicreplace andsymlinkdestinationrejection. Two synthetic persistence tests pass; load/sendrace and modelhookorder source-reviewed. Offscreencollapsed/expandedlayout inspected withfakediskstore, noforegroundwindow. Priorbuildimages were notcached; sendagainoncetoretain.
+
+No schema migration/commit/push/liveHID/app/realendpoint. Owner should restart signedapp, retest CPU/RAM/GPU→Clockface→Customtile and reconnect, send imageonce then inspectaccordion/reopen. docs/d200x-parity-owner-checks.md header/steps reconciledcurrentbuild. Existinghardwarepreviewactivation/timing/persistence/lock gates remain; no broader milestonecompletion/Discordnotification.
+
+
+## 28 October 2026 — owner confirmation
+
+Owner reports the latest mode-switch and retained-preview changes appear to work. Accepted scope: the reported wide-mode switching issue and saved screensaver preview follow-up in buildd26b3a0e331884035af4a9eb43fdf13af9b9a0aeb822e548b7133b0cdffae7cd. This general confirmation does not independently establish all earlier screensaver activation/duration/power-cycle persistence/lock/sleep checks. No code change, additional tests, commit or push performed for this acknowledgment.
+
+
+## 28 October 2026 — checkpoint and mainline merge preparation
+
+Owner requested check-in before any new icon/text/badge/MCP implementation, then explicitly selected existing master mainline. Local master/featureHEAD and GitHub master verified at f5bb00f0d1eed275e719b66b5a0e4a0d21820238. Root safe staging candidate list contains98files in docs/checkin-files-2026-10-28.txt, including untracked Lofree/display/saver/icon/module tests and isolated spike/artwork dependencies. Source is frozen; only documentation reconciled.
+
+Independent correctness review found no high-confidence code blocker; read-only specification audit found no missing implementation dependency, but historical206counts/current38 and modeacceptance wording needed qualification. Root reconciled README/roadmaps and prepended current handoff; archived priorcheckin report to docs/checkin-preparation-2026-10-26.md. Newcode notstarted: additiveicon/text, badges, MCP allUIconfig/readstate/refresh; transport/access/tools planstillpending. Current hardwaregates preserved, notallroadmapmarkedcomplete.
+
+Consolidated offline gate starting across284safe source/test/resource/packageinputs (prehash d234be0325310808b9fa9655901224ecd0a035606d242f9c84ce963a216024f9), excluding knownhistoricallyhanging WakeConnectionTests and opt-in NativeWorkspaceWindowTests. SynthetictempUnixsocket and pureNSApplicationdelegatequeries allowed; no app.run/windows/device/productionendpoint/nativeeffects. Root willstageexplicit98paths, auditindexbytesagainst signedinputmanifest, commit andfastforwardlocalmaster onlyaftergreen. No push requested.
+
+
+CHECKIN-VERIFY firstgate failed635executed/634pass:351XCTestpass and284SwiftTestingcases/oneissue, BoltWheelTests.enableReusesOwnedWheelHandleWhileDiscoverySettlesBeforeReplacement(enable:false). Isolated2casespass. Independentread-only diagnosis: new discoveringstatusafterwheelownershipresetfalse satisfiesoldtestwait before readyrecorded; sourceuser-facingbehavior notdefective. Ownerexplicitlyapprovedtest-onlyfix; rootupdatedeventualpredicate toreadonerecorderstatus andassertbothownership+phase, retainingfixturewrite/modechecks. Targeted/fullsame-boundaryrerunsrequested, nocommituntilgreen. Allproductioninputs/signaturesunchanged; onlyexistingtestfilechanged, notsignedbinary. Refreshstaginglistafterfix.
+
+
+SecondCHECKINgate635executed/634pass: Boltallpass, D200XUsability.clearActionHistory immediatearrayempty false. Isolatedmethodpass. Read-onlyreviewconfirmedpre-existing f5codepublicationrace with concurrenthistoryrefreshsupersedingclearrefresh; exactobservedinterleaving notinstrumented. Ownerapprovedproductionfix+finishmerge. RootaddedsecondhistoryReadRevision bump andactionHistory=[] afterawaitrunner.clearHistory; preservedawaitrefreshHistory forlegitnewadmissions. No changedtestassertion. Frozenagain, target+consolidatedrerunpending; signedrebuildrequired becausecoordinatorproductionchanged. Mainlinecommitstillheld.
+
+
+CHECKIN finalgate passed635/635 (351XCTest,284SwiftTesting cases); authorizedWakeConnectionTests/NativeWorkspaceWindowTests excluded, not counted as passes. Final284filepre/post/buildaggregate59f5fbbd6f5451c88d91f95efab462f7daccd932c297b4c723b710fbb7bc4fcc. Gateartifacts /Volumes/Data/cache/hidhogg-workspace-independent/CHECKIN-VERIFY-20261028T133458Z-3fed1a03/; finalconsolidatedlog logs/consolidated-after-coordinator-fix.log, finalmanifest post-signed-build-manifest.json. Noownedtest/compilerprocessesremain. Signedrebuild fec36149ac455d36e8187bc8c9b878a5d06e8bce140f76ca21218cbf20f2a66d, strictapp/CLI signatures+CLIhelp pass;229sourcehashes refreshed inignored build-info. Rootnextaudits99explicitindexpaths andcommits/fastforwardsmaster. No unresolvedsourceblocker, hardwaregatesstillseparate, newnotif/MCPcodeunstarted, nopushrequested.

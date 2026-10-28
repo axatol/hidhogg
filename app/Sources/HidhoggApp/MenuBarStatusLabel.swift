@@ -26,14 +26,27 @@ struct MenuBarStatusLabel: View {
 
 struct MultiDeviceMenuBarStatusLabel: View {
     @ObservedObject var deck: D200XModel
+    @ObservedObject var keyboard: FlowLite84Model
     let phase: BoltPhase
     let cleanupUncertain: Bool
     let permissionChecks: PermissionChecks
 
     var body: some View {
         let mouse = MenuBarStatus(phase: phase, cleanupUncertain: cleanupUncertain, permissionChecks: permissionChecks)
-        let status = MenuBarStatus(mouse: mouse, deck: deck.isConfigured ? deck.status : nil)
+        let devices = MenuBarStatus(mouse: mouse, deck: deck.isConfigured ? deck.status : nil)
+        let status = MenuBarStatus(base: devices, additional: keyboardStatus)
         MenuBarStatusLabel(phase: phase, cleanupUncertain: cleanupUncertain, permissionChecks: permissionChecks,
                            overrideStatus: status)
+    }
+
+    private var keyboardStatus: MenuBarStatus? {
+        guard keyboard.connectionRequested else { return nil }
+        switch keyboard.status {
+        case .disconnected: return .disconnected
+        case .connecting: return .connecting
+        case .disconnecting: return .disconnecting
+        case .connected: return keyboard.isKeyboardOnline ? .connected : .disconnected
+        case .failed: return .failed
+        }
     }
 }

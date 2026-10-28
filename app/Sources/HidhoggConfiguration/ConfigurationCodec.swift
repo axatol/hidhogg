@@ -111,6 +111,8 @@ private struct D200XDocument: Codable {
     let applications: [String: [String: D200XBindingDocument]]
     let tiles: [String: D200XTileAppearanceDocument]
     let brightnessPercent: Int?
+    let wideDisplayMode: D200XWideDisplayMode
+    let clockFormat: D200XClockFormat
     let actions: [String: ExecutableDocument]
     let nativeActions: [String: NativeActionDocument]
     let notificationTopics: [String: [String]]
@@ -129,7 +131,9 @@ private struct D200XDocument: Codable {
             applicationTiles: applicationTiles.mapValues { $0.mapValues(\.configuration) },
             applicationNotificationTopics: applicationNotificationTopics,
             tilePresets: tilePresets.mapValues(\.configuration),
-            nativeActions: nativeActions.mapValues(\.configuration)
+            nativeActions: nativeActions.mapValues(\.configuration),
+            wideDisplayMode: wideDisplayMode,
+            clockFormat: clockFormat
         )
     }
 
@@ -140,6 +144,8 @@ private struct D200XDocument: Codable {
         }
         tiles = configuration.tiles.mapValues(D200XTileAppearanceDocument.init(configuration:))
         brightnessPercent = configuration.brightnessPercent
+        wideDisplayMode = configuration.wideDisplayMode
+        clockFormat = configuration.clockFormat
         actions = configuration.actions.mapValues(ExecutableDocument.init(configuration:))
         nativeActions = configuration.nativeActions.mapValues(NativeActionDocument.init(configuration:))
         notificationTopics = configuration.notificationTopics
@@ -150,7 +156,9 @@ private struct D200XDocument: Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
-        try container.rejectUnknownKeys(["defaults", "applications", "tiles", "brightness_percent", "actions", "native_actions", "notification_topics", "application_tiles", "application_notification_topics", "tile_presets"])
+        try container.rejectUnknownKeys(["defaults", "applications", "tiles", "brightness_percent", "wide_display_mode", "clock_format", "actions", "native_actions", "notification_topics", "application_tiles", "application_notification_topics", "tile_presets"])
+        wideDisplayMode = try container.decodeIfPresent(D200XWideDisplayMode.self, forKey: AnyCodingKey("wide_display_mode")) ?? .custom
+        clockFormat = try container.decodeIfPresent(D200XClockFormat.self, forKey: AnyCodingKey("clock_format")) ?? .twentyFourHour
         nativeActions = try container.decodeIfPresent([String: NativeActionDocument].self, forKey: AnyCodingKey("native_actions")) ?? [:]
         applicationTiles = try container.decodeIfPresent([String: [String: D200XTileAppearanceDocument]].self, forKey: AnyCodingKey("application_tiles")) ?? [:]
         applicationNotificationTopics = try container.decodeIfPresent([String: [String: [String]]].self, forKey: AnyCodingKey("application_notification_topics")) ?? [:]
@@ -182,6 +190,8 @@ private struct D200XDocument: Codable {
             try container.encode(tiles, forKey: .tiles)
         }
         try container.encodeIfPresent(brightnessPercent, forKey: .brightnessPercent)
+        if wideDisplayMode != .custom { try container.encode(wideDisplayMode, forKey: .wideDisplayMode) }
+        if clockFormat != .twentyFourHour { try container.encode(clockFormat, forKey: .clockFormat) }
         if !actions.isEmpty { try container.encode(actions, forKey: .actions) }
         if !nativeActions.isEmpty { try container.encode(nativeActions, forKey: .nativeActions) }
         if !notificationTopics.isEmpty { try container.encode(notificationTopics, forKey: .notificationTopics) }
@@ -195,6 +205,8 @@ private struct D200XDocument: Codable {
         case applications
         case tiles
         case brightnessPercent = "brightness_percent"
+        case wideDisplayMode = "wide_display_mode"
+        case clockFormat = "clock_format"
         case actions
         case nativeActions = "native_actions"
         case notificationTopics = "notification_topics"
@@ -337,7 +349,7 @@ private struct NativeActionDocument: Codable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyCodingKey.self)
-        try c.rejectUnknownKeys(["kind", "media", "volume", "percent", "target", "topic", "text", "ttl_seconds", "shortcut"])
+        try c.rejectUnknownKeys(["kind", "media", "volume", "percent", "target", "topic", "text", "app_id", "ttl_seconds", "shortcut"])
         configuration = try NativeAction(
             kind: c.decode(NativeAction.Kind.self, forKey: AnyCodingKey("kind")),
             media: c.decodeIfPresent(NativeAction.Media.self, forKey: AnyCodingKey("media")),
@@ -346,6 +358,7 @@ private struct NativeActionDocument: Codable {
             target: c.decodeIfPresent(String.self, forKey: AnyCodingKey("target")),
             topic: c.decodeIfPresent(String.self, forKey: AnyCodingKey("topic")),
             text: c.decodeIfPresent(String.self, forKey: AnyCodingKey("text")),
+            appID: c.decodeIfPresent(String.self, forKey: AnyCodingKey("app_id")),
             ttlSeconds: c.decodeIfPresent(Int.self, forKey: AnyCodingKey("ttl_seconds")),
             shortcut: c.decodeIfPresent(ShortcutDocument.self, forKey: AnyCodingKey("shortcut"))?.configuration
         ).validated()
@@ -360,6 +373,7 @@ private struct NativeActionDocument: Codable {
         try c.encodeIfPresent(configuration.target, forKey: AnyCodingKey("target"))
         try c.encodeIfPresent(configuration.topic, forKey: AnyCodingKey("topic"))
         try c.encodeIfPresent(configuration.text, forKey: AnyCodingKey("text"))
+        try c.encodeIfPresent(configuration.appID, forKey: AnyCodingKey("app_id"))
         try c.encodeIfPresent(configuration.ttlSeconds, forKey: AnyCodingKey("ttl_seconds"))
         try c.encodeIfPresent(configuration.shortcut.map(ShortcutDocument.init(configuration:)), forKey: AnyCodingKey("shortcut"))
     }

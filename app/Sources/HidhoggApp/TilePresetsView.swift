@@ -307,7 +307,13 @@ struct TilePresetsView: View {
         case .openURL:
             "Open URL · \(action.target ?? "Unknown URL")"
         case .deckNotification:
-            "Deck notification · topic \(action.topic ?? "Unknown") · text \(action.text ?? "Unknown") · expiry \(action.ttlSeconds.map { "\($0)s" } ?? "none")"
+            [
+                "Deck notification",
+                "topic \(action.topic ?? "Unknown")",
+                action.appID.map { "bundle ID \($0)" },
+                action.text.map { "text \($0)" },
+                "expiry \(action.ttlSeconds.map { "\($0)s" } ?? "none")"
+            ].compactMap { $0 }.joined(separator: " · ")
         case .shortcut:
             "Keyboard shortcut · \(action.shortcut.map { ShortcutSender.label(for: $0) } ?? "Unknown")"
         }

@@ -7,6 +7,7 @@ import HidhoggDomain
 import LogitechBolt
 import MacOSActions
 import UlanziD200X
+import LofreeFlowLite84
 
 protocol BindingSession: Sendable {
     var events: AsyncStream<BoltEvent> { get }
@@ -76,6 +77,7 @@ extension BindingSession {
 enum WorkspaceRoute: String, CaseIterable, Hashable, Identifiable {
     case devices
     case d200x
+    case flowLite
     case actions
     case notifications
     case tilePresets
@@ -124,6 +126,7 @@ final class AppModel: ObservableObject {
     let configurationURL: URL
     let lowBatteryNotifications: LowBatteryNotificationController?
     let d200x: D200XModel
+    let flowLite: FlowLite84Model
 
     @Published private(set) var navigation = NavigationHistory(initialRoute: WorkspaceLocation())
     @Published private(set) var document = ConfigurationDraft()
@@ -230,7 +233,8 @@ final class AppModel: ObservableObject {
             scrollSender: ScrollSender(),
             thumbwheelScrollSender: ScrollSender(),
             lowBatteryNotifications: LowBatteryNotificationController(),
-            d200x: D200XModel(session: UlanziD200X.D200XSession(), sender: ShortcutSender(), nativePlatform: NativeActionSender()),
+            d200x: D200XModel(session: UlanziD200X.D200XSession(), sender: ShortcutSender(), nativePlatform: NativeActionSender(), observeScreenLock: true),
+            flowLite: FlowLite84Model(session: FlowLite84Session(), keyboardActivityMonitor: AppKitKeyboardActivityMonitor()),
             loadImmediately: true,
             observeSleep: true
         )
@@ -246,6 +250,7 @@ final class AppModel: ObservableObject {
         thumbwheelScrollSender: ScrollSender = ScrollSender(preflight: { false }, post: { _, _ in }),
         lowBatteryNotifications: LowBatteryNotificationController? = nil,
         d200x: D200XModel? = nil,
+        flowLite: FlowLite84Model? = nil,
         loadImmediately: Bool = true,
         observeSleep: Bool = true,
         wakeDelay: @escaping WakeRecoveryCoordinator.Delay = { try await Task.sleep(for: $0) },
@@ -262,6 +267,7 @@ final class AppModel: ObservableObject {
         self.thumbwheelScrollSender = thumbwheelScrollSender
         self.lowBatteryNotifications = lowBatteryNotifications
         self.d200x = d200x ?? D200XModel(sender: sender, frontmostApplication: frontmostApplication)
+        self.flowLite = flowLite ?? FlowLite84Model()
         self.d200x.configureStorage(configurationURL: configurationURL)
         self.frontmostApplication = frontmostApplication
         self.wakeDelay = wakeDelay
@@ -274,6 +280,7 @@ final class AppModel: ObservableObject {
             self.updateDraft(configuration)
         }
         self.d200x.onDiagnostic = { [weak self] event in self?.diagnosticEvent = event }
+        self.flowLite.onDiagnostic = { [weak self] event in self?.diagnosticEvent = event }
         synchronizeD200X()
 
         let events = bolt.events
@@ -434,6 +441,21 @@ final class AppModel: ObservableObject {
     }
     var connectionRequested: Bool { sessionActivationRequested || wakeRecovery.isRecovering }
     var isReconnectPending: Bool { wakeRecovery.isRecovering }
+    var isBackgroundRecovery: Bool {
+        isReconnectPending || (sessionActivationRequested && [.stopping, .failed].contains(boltStatus.phase))
+    }
+    var connectionMessage: String {
+        guard isBackgroundRecovery else {
+            return boltStatus.phase == .enabled ? "Bindings enabled." : boltStatus.message
+        }
+        return boltStatus.deviceResponding
+            ? "Mouse detected. Restoring saved settings."
+            : "Mouse unavailable. Saved settings will apply when it returns."
+    }
+    var connectionPresentationPhase: BoltPhase {
+        guard isBackgroundRecovery else { return boltStatus.phase }
+        return boltStatus.deviceResponding ? .discovering : .idle
+    }
     var canEnableBindings: Bool {
         !isRestarting && !isLoading && hasUsableConfiguration &&
             permission == .granted && boltStatus.phase == .ready && !boltStatus.cleanupUncertain &&
@@ -442,7 +464,7 @@ final class AppModel: ObservableObject {
     }
 
     var connectionTitle: String {
-        if isReconnectPending { return "Reconnecting" }
+        if isBackgroundRecovery { return boltStatus.deviceResponding ? "Reconnecting" : "Disconnected" }
         return switch boltStatus.phase {
         case .idle: "Disconnected"
         case .discovering: "Discovering"
@@ -455,7 +477,7 @@ final class AppModel: ObservableObject {
     }
 
     var connectionColor: NSColor {
-        if isReconnectPending { return .systemOrange }
+        if isBackgroundRecovery { return boltStatus.deviceResponding ? .systemOrange : .tertiaryLabelColor }
         return switch boltStatus.phase {
         case .ready: .systemGreen
         case .enabled: actionsEnabled ? .systemGreen : .systemOrange
@@ -576,6 +598,7 @@ final class AppModel: ObservableObject {
     func setRestarting(_ restarting: Bool) {
         isRestarting = restarting
         d200x.suspendDelivery(restarting)
+        flowLite.setSuspended(restarting)
         synchronizeD200X()
         if restarting {
             cancelRecording()
@@ -1097,6 +1120,7 @@ final class AppModel: ObservableObject {
     func systemWillSleep() {
         guard !wakeRecovery.sleeping else { return }
         d200x.sleep()
+        flowLite.sleep()
         let reconnect = connectionRequested && !isRestarting
         prepareForLifecycleStop()
         sleepCleanupSequence = statusSequence
@@ -1112,6 +1136,7 @@ final class AppModel: ObservableObject {
 
     func systemDidWake() {
         d200x.wake()
+        flowLite.wake()
         wakeRecovery.wake { [weak self] in
             guard let self else { return .stop }
             return await self.performRecoveryAttempt()
@@ -1123,6 +1148,7 @@ final class AppModel: ObservableObject {
         cancelRecording()
         prepareForLifecycleStop()
         let saved = await flushPendingSave()
+        await flowLite.stop()
         await d200x.stop()
         await bolt.stop(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
         return saved
@@ -1132,6 +1158,7 @@ final class AppModel: ObservableObject {
         cancelRecording()
         prepareForLifecycleStop()
         let saved = await flushPendingSave()
+        await flowLite.stop()
         await d200x.stop()
         let cleaned = await bolt.stopForRestart(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
         return saved && cleaned
@@ -1207,7 +1234,10 @@ final class AppModel: ObservableObject {
 
         guard !startupConnectionDecisionConsumed else { return }
         startupConnectionDecisionConsumed = true
-        if !isRestarting, loadedConfiguration?.connectOnLaunch == true { d200x.connect(configureIfNeeded: false) }
+        if !isRestarting, loadedConfiguration?.connectOnLaunch == true {
+            d200x.connect(configureIfNeeded: false)
+            flowLite.connectOnLaunch()
+        }
         guard !isRestarting,
               let startupIntent,
               lifecycleIntent == startupIntent,
@@ -1347,11 +1377,11 @@ final class AppModel: ObservableObject {
             )
             if attemptedWheelRequest != wheel {
                 let previous = attemptedWheelRequest
-                attemptedWheelRequest = wheel
                 if boltStatus.wheel.support == .supported &&
                     (wheel.inverted != nil || wheel.highResolution != nil || wheel.amount != nil || previous?.amount != nil || boltStatus.wheel.isOwned ||
                      previous?.inverted != nil || previous?.highResolution != nil ||
                      wheel.restorePreviousSettingsOnDisconnect || previous?.restorePreviousSettingsOnDisconnect == true) {
+                    attemptedWheelRequest = wheel
                     isWheelApplyPending = true
                     await bolt.applyWheelPreferences(
                         inverted: wheel.inverted,
@@ -1376,7 +1406,6 @@ final class AppModel: ObservableObject {
             )
             if attemptedThumbwheelRequest != thumbwheel {
                 let previous = attemptedThumbwheelRequest
-                attemptedThumbwheelRequest = thumbwheel
                 let hasIntent = thumbwheel.inverted != nil || thumbwheel.amount != nil ||
                     previous?.inverted != nil || previous?.amount != nil || boltStatus.thumbwheel.isOwned ||
                     thumbwheel.restorePreviousSettingsOnDisconnect || previous?.restorePreviousSettingsOnDisconnect == true
@@ -1384,6 +1413,7 @@ final class AppModel: ObservableObject {
                 let canApply = boltStatus.thumbwheel.support == .supported ||
                     (boltStatus.thumbwheel.support == .unknown && hasConfiguredValue)
                 if hasIntent && canApply {
+                    attemptedThumbwheelRequest = thumbwheel
                     isThumbwheelApplyPending = true
                     await bolt.applyThumbwheelPreferences(
                         inverted: thumbwheel.inverted,
@@ -1543,6 +1573,11 @@ final class AppModel: ObservableObject {
         switch event {
         case .status(let status):
             guard status.generation >= boltStatus.generation else { return }
+            if status.phase == .discovering, boltStatus.phase != .discovering {
+                attemptedWheelRequest = nil
+                attemptedThumbwheelRequest = nil
+                attemptedButtonState = nil
+            }
             statusSequence &+= 1
             boltStatus = status
             if [.idle, .failed, .discovering].contains(status.phase) {

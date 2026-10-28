@@ -74,7 +74,17 @@ public actor LocalAutomationServer {
             do {
                 let frame = try socket.readFrame()
                 if let request = try? AutomationFrame.decodeRequest(frame) {
-                    let response = await handler(request)
+                    let response: AutomationResponse
+                    do {
+                        try request.validated()
+                        response = await handler(request)
+                    } catch {
+                        response = .failure(
+                            requestID: request.requestID,
+                            code: "invalid_request",
+                            message: "Invalid local automation request."
+                        )
+                    }
                     guard !Task.isCancelled else { throw CancellationError() }
                     let encoded: Data
                     do {

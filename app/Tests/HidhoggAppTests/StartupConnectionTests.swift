@@ -3,12 +3,69 @@ import Foundation
 import HidhoggConfiguration
 import HidhoggDomain
 import LogitechBolt
+import LofreeFlowLite84
 import MacOSActions
 import XCTest
 @testable import HidhoggApp
 
 @MainActor
 final class StartupConnectionTests: XCTestCase {
+    func testKeyboardConnectsOnLaunchWithoutInputPostingPermission() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let keyboard = StartupKeyboardSession()
+        let model = makeModel(
+            url: url, session: StartupBindingSession(), eventPostingAllowed: false,
+            flowLite: FlowLite84Model(session: keyboard)
+        )
+
+        let connected = await eventually { !model.isLoading && model.flowLite.isConnected && !model.flowLite.isBusy }
+        XCTAssertTrue(connected)
+        let count = await keyboard.connectCount
+        XCTAssertEqual(count, 1)
+        XCTAssertEqual(model.permission, .denied)
+        await model.flowLite.stop()
+        model.disconnect()
+    }
+
+    func testKeyboardDoesNotConnectOnLaunchWhenPreferenceIsDisabled() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        var configuration = AppConfiguration.empty
+        configuration.connectOnLaunch = false
+        try await writeConfiguration(configuration, to: url)
+        let keyboard = StartupKeyboardSession()
+        let model = makeModel(url: url, session: StartupBindingSession(), flowLite: FlowLite84Model(session: keyboard))
+
+        let loaded = await eventually { !model.isLoading }
+        XCTAssertTrue(loaded)
+        await drainMainActorTasks()
+        let count = await keyboard.connectCount
+        XCTAssertEqual(count, 0)
+        XCTAssertFalse(model.flowLite.connectionRequested)
+        await model.flowLite.stop()
+    }
+
+    func testExplicitKeyboardDisconnectBeforeConfigurationLoadsSuppressesAutoConnect() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let keyboard = StartupKeyboardSession()
+        let model = makeModel(url: url, session: StartupBindingSession(), flowLite: FlowLite84Model(session: keyboard))
+        model.flowLite.disconnect()
+
+        let loaded = await eventually { !model.isLoading }
+        XCTAssertTrue(loaded)
+        await drainMainActorTasks()
+        let count = await keyboard.connectCount
+        XCTAssertEqual(count, 0)
+        XCTAssertFalse(model.flowLite.connectionRequested)
+        await model.flowLite.stop()
+        model.disconnect()
+    }
+
     func testMissingConfigurationDefaultsToOneDiscoveryWithoutInputPermission() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -403,7 +460,8 @@ final class StartupConnectionTests: XCTestCase {
         url: URL,
         session: StartupBindingSession,
         eventPostingAllowed: Bool = true,
-        wakeDelay: @escaping WakeRecoveryCoordinator.Delay = { try await Task.sleep(for: $0) }
+        wakeDelay: @escaping WakeRecoveryCoordinator.Delay = { try await Task.sleep(for: $0) },
+        flowLite: FlowLite84Model? = nil
     ) -> AppModel {
         AppModel(
             configurationURL: url,
@@ -414,6 +472,7 @@ final class StartupConnectionTests: XCTestCase {
                 request: { eventPostingAllowed },
                 postPair: { _ in }
             ),
+            flowLite: flowLite,
             loadImmediately: true,
             observeSleep: false,
             wakeDelay: wakeDelay
@@ -443,6 +502,32 @@ final class StartupConnectionTests: XCTestCase {
 
     private func drainMainActorTasks() async {
         for _ in 0..<8 { await Task.yield() }
+    }
+}
+
+private actor StartupKeyboardSession: FlowLite84SessionProtocol {
+    nonisolated let events: AsyncStream<FlowLite84Event>
+    private let continuation: AsyncStream<FlowLite84Event>.Continuation
+    private(set) var connectCount = 0
+
+    init() {
+        let stream = AsyncStream<FlowLite84Event>.makeStream(bufferingPolicy: .unbounded)
+        events = stream.stream
+        continuation = stream.continuation
+    }
+
+    func connect() async throws {
+        connectCount += 1
+        let identity = FlowLite84Identity(cid: 1, mid: 1, connectionType: 0)
+        continuation.yield(.status(.connected(identity), generation: 1))
+        continuation.yield(.snapshot(FlowLite84Snapshot(identity: identity, online: true), generation: 1))
+    }
+
+    func refresh() async throws {}
+    func refreshBattery() async throws {}
+
+    func disconnect() async {
+        continuation.yield(.status(.disconnected, generation: 1))
     }
 }
 

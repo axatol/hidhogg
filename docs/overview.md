@@ -1,10 +1,10 @@
 # HIDHogg overview
 
-Updated 26 October 2026. This describes the current native implementation; dated implementation reports retain their original evidence.
+Updated 28 October 2026. This describes the current native implementation; dated implementation reports retain their original evidence.
 
 ## Product
 
-One macOS application configures Logitech MX Master 3S over a Bolt receiver and Ulanzi D200X. The workspace, menu-bar item and local CLI share the same in-process model and device sessions. Hardware acceptance is recorded per feature; an implemented feature is not automatically a claim of complete device compatibility.
+One macOS application configures Logitech MX Master 3S over a Bolt receiver and Ulanzi D200X, and reads Lofree Flow Lite84 status through its receiver. The workspace, menu-bar item and local CLI share the same in-process model and device sessions. Hardware acceptance is recorded per feature; an implemented feature is not automatically a claim of complete device compatibility.
 
 ## Architecture
 
@@ -15,6 +15,8 @@ Native workspace / menu
           |                 validated TOML + atomic autosave
           |
           +-- BoltController -------- Logitech HID++ / IOHID
+          |
+          +-- FlowLite84Model -------- read-only FlowLite84Session / IOHID
           |
           +-- D200XModel ------------- D200XSession / IOHID
                  |
@@ -56,3 +58,6 @@ Settings is one scrollable page. Accessibility and Notifications have compact pe
 The active package targets Apple Silicon and macOS 26+, with Swift tools 6.2. The build script signs a fixed-path Hidhogg.app and adjacent hidhoggctl without launching either or operating devices. Build output and provenance are local ignored artifacts.
 
 Use [the roadmap](roadmap.md) for current scope, [the structure](structure.md) for module ownership, and [check-in preparation](checkin-preparation.md) for the frozen review/test record. Pairing, Bluetooth, firmware installation, vendor plugins/cloud, physical multi-page support and notification-payload execution are outside the current implementation boundary.
+
+
+Seven built-in wide modes and clock format, static installed-app icon notifications, explicit screensaver image upload and temporary preview are implemented. The last sent screensaver JPEG is retained locally behind a collapsed preview. The owner confirmed the latest wide-mode/retained-preview follow-up working on28October2026; other hardware gates remain separate. Now Playing is a synthetic feasibility spike, not a production reader. Additive icon/text, badges and MCP are the requested next slice and are not implemented.

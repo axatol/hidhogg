@@ -10,6 +10,7 @@ struct NotificationsView: View {
     @State private var topicFilter = "*"
     @State private var testTopic = "hidhogg.test"
     @State private var testText = "Test notification"
+    @State private var testAppID = ""
     @State private var isTestPublisherPresented = false
     @State private var isPublishing = false
     @State private var publishFeedback: String?
@@ -40,6 +41,7 @@ struct NotificationsView: View {
                 id: entry.id,
                 notificationID: entry.notificationID,
                 topic: entry.topic,
+                appID: entry.appID,
                 receivedAt: entry.committedAt,
                 profile: entry.profile,
                 controls: entry.controls,
@@ -57,6 +59,7 @@ struct NotificationsView: View {
                 id: event.id,
                 notificationID: event.notificationID,
                 topic: event.topic,
+                appID: event.appID,
                 receivedAt: event.receivedAt,
                 profile: event.profile,
                 controls: event.controls,
@@ -77,12 +80,17 @@ struct NotificationsView: View {
         guard NotificationTopic.isValidTopic(testTopic) else {
             return "Use a concrete topic of up to 64 ASCII characters; published topics cannot contain *."
         }
-        guard !testText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return "Enter notification text."
+        let hasText = !testText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let appID = testAppID.isEmpty ? nil : testAppID
+        guard hasText || appID != nil else {
+            return "Enter notification text or an application bundle ID."
         }
-        guard testText.unicodeScalars.count <= 64, testText.utf8.count <= 256,
-              !testText.contains(where: { $0.isNewline }) else {
-            return "Use one line of at most 64 characters and 256 UTF-8 bytes."
+        if let appID, !NativeAction.isValidBundleIdentifier(appID) {
+            return "Enter a valid application bundle ID."
+        }
+        if hasText, (testText.unicodeScalars.count > 64 || testText.utf8.count > 256
+            || testText.unicodeScalars.contains(where: Self.isForbiddenNotificationTextScalar)) {
+            return "Use one line of at most 64 characters and 256 UTF-8 bytes without control characters."
         }
         return nil
     }
@@ -92,7 +100,7 @@ struct NotificationsView: View {
             HStack(spacing: 8) {
                 Toggle("Listen", isOn: listeningBinding)
                     .fixedSize()
-                    .help("Keep recent notification text in memory while listening is on")
+                    .help("Keep recent notification details in memory while listening is on")
 
                 TextField("Filter", text: $topicFilter)
                     .textFieldStyle(.roundedBorder)
@@ -115,7 +123,7 @@ struct NotificationsView: View {
                 }
             }
 
-            Text("Notification text stays in memory only while Listen is on; history stores metadata.")
+            Text("Notification text stays in memory while Listen is on. History keeps metadata and an optional app bundle ID.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -157,7 +165,10 @@ struct NotificationsView: View {
             TextField("Concrete topic", text: $testTopic)
                 .textFieldStyle(.roundedBorder)
                 .disabled(isPublishing)
-            TextField("Notification text", text: $testText)
+            TextField("Application bundle ID (optional)", text: $testAppID)
+                .textFieldStyle(.roundedBorder)
+                .disabled(isPublishing)
+            TextField("Notification text (optional)", text: $testText)
                 .textFieldStyle(.roundedBorder)
                 .disabled(isPublishing)
 
@@ -219,6 +230,14 @@ struct NotificationsView: View {
                         .textSelection(.enabled)
                 }
 
+                if let appID = row.appID {
+                    Text(appID)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help("Application bundle ID: \(appID)")
+                }
+
                 Spacer(minLength: 4)
                 Text(row.receivedAt.formatted(date: .omitted, time: .shortened))
                     .font(.caption)
@@ -259,12 +278,13 @@ struct NotificationsView: View {
     private func publishTestNotification() {
         guard model.isListening, testPublisherError == nil, !isPublishing else { return }
         let topic = testTopic
-        let text = testText
+        let text = testText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : testText
+        let appID = testAppID.isEmpty ? nil : testAppID
         isPublishing = true
         publishFeedback = nil
 
         Task { @MainActor in
-            let response = await model.publishNotification(topic: topic, text: text, ttlSeconds: 10)
+            let response = await model.publishNotification(topic: topic, text: text, ttlSeconds: 10, appID: appID)
             isPublishing = false
             if let error = response.error {
                 publishSucceeded = false
@@ -287,6 +307,11 @@ struct NotificationsView: View {
 
     private func firstValidControlIdentifier(_ identifiers: [String]) -> String? {
         identifiers.first { D200XControl(rawValue: $0) != nil }
+    }
+
+    private static func isForbiddenNotificationTextScalar(_ scalar: Unicode.Scalar) -> Bool {
+        scalar.properties.generalCategory == .control || [0x85, 0x2028, 0x2029, 0x061C, 0x200E, 0x200F,
+            0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069].contains(scalar.value)
     }
 
     @ViewBuilder
@@ -327,6 +352,7 @@ private struct NotificationHistoryRow: Identifiable {
     let id: UUID
     let notificationID: UUID?
     let topic: String
+    let appID: String?
     let receivedAt: Date
     let profile: String?
     let controls: [String]

@@ -50,15 +50,18 @@ struct DevicesView: View {
     private var deviceHeader: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "computermouse.fill")
-                    .font(.system(size: 28))
+                Image("DeviceMouse")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 28, height: 28)
                     .foregroundStyle(AppAppearance.accent)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Logitech device")
+                    Text("MX Master 3S")
                         .font(.title2.weight(.semibold))
-                    Text(model.boltStatus.message)
+                    Text(model.connectionMessage)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -71,12 +74,18 @@ struct DevicesView: View {
             DeviceBatteryOverviewView()
 
             HStack(spacing: 18) {
-                LabeledContent("Connection", value: model.connectionTitle)
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color(nsColor: model.connectionColor))
+                        .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
+                    Text(model.connectionTitle)
+                }
                 LabeledContent("Button handling", value: model.buttonReadiness)
             }
             .font(.callout)
 
-            if model.boltStatus.cleanupUncertain {
+            if model.boltStatus.cleanupUncertain && !model.isBackgroundRecovery {
                 Label(
                     model.connectionRequested
                         ? "Mouse settings could not be verified. Reconnecting automatically."
@@ -109,7 +118,10 @@ struct DevicesView: View {
 
     @ViewBuilder
     private var connectionAction: some View {
-        if model.boltStatus.phase == .discovering || model.boltStatus.phase == .enabling {
+        if model.isBackgroundRecovery {
+            Button("Cancel", systemImage: "xmark.circle", role: .destructive) { model.disconnect() }
+                .help("Stop automatic connection recovery")
+        } else if model.boltStatus.phase == .discovering || model.boltStatus.phase == .enabling {
             Button("Cancel", systemImage: "xmark.circle") { model.disconnect() }
         } else if [.ready, .enabled, .stopping].contains(model.boltStatus.phase) {
             Button("Disconnect", systemImage: "xmark.circle", role: .destructive) {

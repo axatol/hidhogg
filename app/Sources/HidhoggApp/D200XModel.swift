@@ -19,10 +19,32 @@ final class D200XModel: ObservableObject {
     @Published var applicationID: String?
     @Published private(set) var activeApplicationID: String?
     @Published private(set) var brightnessMessage: String?
+    @Published private(set) var wideDisplayMessage: String?
+    @Published private(set) var displayMetrics = D200XMetricsSnapshot()
+    @Published private(set) var screensaverMessage: String?
+    @Published private(set) var isApplyingScreensaver = false
+    @Published private(set) var isPreviewingScreensaver = false
+    let screensaverPreviewStore = D200XScreensaverPreviewStore()
+    private var screensaverRevision: UInt64 = 0
+    private var screensaverTimer: Task<Void, Never>?
+    private var screensaverMaintenancePaused = false
+    private var screensaverNeedsPageRestore = false
+    private var screensaverLocked = false
+    private var screensaverRestoreAfterUnlock = false
+    private var screensaverLockObservations: [AnyCancellable] = []
+    private let screensaverDelay: @Sendable (Duration) async throws -> Void
+    private var displayTask: Task<Void, Never>?
+    private var displayRevision: UInt64 = 0
+    private var lastWideMode: Int?
+    private var lastWideNotification = false
+    private let sampleMetrics: @MainActor () -> D200XMetricsSnapshot
+    private let displayNow: @MainActor () -> Date
+    private let displayDelay: @Sendable (Duration) async throws -> Void
+    private let iconResolver: any D200XApplicationIconResolving
     private(set) var assetDirectory: URL?
     private let configuredActionRunner: ConfiguredActionRunner
     private let nativeRuntime: AppNativeActionRunner
-    private lazy var automation = D200XAutomationCoordinator(model: self, runner: configuredActionRunner)
+    private lazy var automation = D200XAutomationCoordinator(model: self, runner: configuredActionRunner, iconResolver: iconResolver)
     private var automationObservation: AnyCancellable?
     private var foregroundObservation: AnyCancellable?
     private var brightnessTask: Task<Void, Never>?
@@ -37,6 +59,7 @@ final class D200XModel: ObservableObject {
 
     var notificationHistory: [NotificationHistoryEntry] { automation.notificationHistory }
     var notificationLabels: [String: String] { automation.labels }
+    var notificationIcons: [String: Data] { automation.iconOverrides }
     var actionHistory: [ConfiguredActionRecord] { automation.actionHistory }
     var automationMessage: String? { automation.message }
     var isListening: Bool { automation.isListening }
@@ -80,11 +103,23 @@ final class D200XModel: ObservableObject {
     init(session: (any D200XSessionProtocol)? = nil, sender: ShortcutSender,
          frontmostApplication: @escaping @MainActor () -> String? = { NSWorkspace.shared.frontmostApplication?.bundleIdentifier },
          delay: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-         actionRunner: ConfiguredActionRunner? = nil, nativePlatform: (any NativeActionPerforming)? = nil) {
+         actionRunner: ConfiguredActionRunner? = nil, nativePlatform: (any NativeActionPerforming)? = nil,
+         sampleMetrics: (@MainActor () -> D200XMetricsSnapshot)? = nil,
+         displayNow: @escaping @MainActor () -> Date = Date.init,
+         displayDelay: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+         iconResolver: any D200XApplicationIconResolving = D200XApplicationIconResolver(),
+         observeScreenLock: Bool = false,
+         screensaverDelay: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+        self.screensaverDelay = screensaverDelay
         self.session = session
         self.sender = sender
         self.frontmostApplication = frontmostApplication
         self.delay = delay
+        let hostMetrics = D200XHostMetrics()
+        self.sampleMetrics = sampleMetrics ?? { hostMetrics.sample() }
+        self.displayNow = displayNow
+        self.displayDelay = displayDelay
+        self.iconResolver = iconResolver
         let nativeRuntime = AppNativeActionRunner(platform: nativePlatform)
         self.nativeRuntime = nativeRuntime
         self.configuredActionRunner = actionRunner ?? ConfiguredActionRunner(nativeRunner: nativeRuntime)
@@ -95,6 +130,17 @@ final class D200XModel: ObservableObject {
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in self?.refreshActiveApplication() }
             }
+        if observeScreenLock {
+            let center = DistributedNotificationCenter.default()
+            screensaverLockObservations = [
+                center.publisher(for: Notification.Name("com.apple.screenIsLocked")).sink { [weak self] _ in
+                    Task { @MainActor [weak self] in self?.setScreensaverPreviewLocked(true) }
+                },
+                center.publisher(for: Notification.Name("com.apple.screenIsUnlocked")).sink { [weak self] _ in
+                    Task { @MainActor [weak self] in self?.setScreensaverPreviewLocked(false) }
+                }
+            ]
+        }
         if let session {
             eventTask = Task { [weak self] in
                 for await event in session.events {
@@ -111,6 +157,8 @@ final class D200XModel: ObservableObject {
         renderTask?.cancel()
         stopTask?.cancel()
         brightnessTask?.cancel()
+        displayTask?.cancel()
+        screensaverTimer?.cancel()
     }
 
     var isConfigured: Bool { configuration != nil }
@@ -147,6 +195,9 @@ final class D200XModel: ObservableObject {
     func synchronize(_ configuration: D200XConfiguration?, canEdit: Bool, blocker: String? = nil) {
         let configurationChanged = runtimeConfiguration != configuration?.resolved(application: activeApplicationID)
         let brightnessChanged = self.configuration?.brightnessPercent != configuration?.brightnessPercent
+        let displayChanged = self.configuration?.wideDisplayMode != configuration?.wideDisplayMode ||
+            self.configuration?.clockFormat != configuration?.clockFormat
+        if displayChanged { stopDisplayUpdates() }
         if configurationChanged { automation.reset() }
         self.configuration = configuration
         self.canEdit = canEdit
@@ -159,6 +210,110 @@ final class D200XModel: ObservableObject {
     func enableConfiguration() {
         guard canEdit, configuration == nil else { return }
         onEdit?(.empty)
+    }
+
+    func setWideDisplayMode(_ mode: D200XWideDisplayMode) {
+        guard canEdit, var next = configuration else { return }
+        next.wideDisplayMode = mode
+        onEdit?(next)
+    }
+
+    func setClockFormat(_ format: D200XClockFormat) {
+        guard canEdit, var next = configuration else { return }
+        next.clockFormat = format
+        onEdit?(next)
+    }
+
+    func setScreensaverPreviewLocked(_ locked: Bool) {
+        screensaverLocked = locked
+        if locked {
+            guard isPreviewingScreensaver || screensaverMaintenancePaused else { return }
+            screensaverRestoreAfterUnlock = true
+            invalidateScreensaverPreview()
+            stopDisplayUpdates()
+        } else if screensaverRestoreAfterUnlock {
+            screensaverRestoreAfterUnlock = false
+            finishScreensaverPreview()
+        }
+    }
+
+    func holdScreensaverPreview() {
+        screensaverRevision &+= 1
+        screensaverTimer?.cancel()
+        screensaverTimer = nil
+    }
+
+    func finishScreensaverPreview() {
+        guard isPreviewingScreensaver || screensaverNeedsPageRestore else { return }
+        invalidateScreensaverPreview()
+        guard !screensaverLocked, canDeliverNotification else { return }
+        lastPage = nil
+        lastWideMode = nil
+        scheduleRender()
+    }
+
+    private func invalidateScreensaverPreview() {
+        if isPreviewingScreensaver || screensaverMaintenancePaused {
+            lastPage = nil
+            lastWideMode = nil
+        }
+        holdScreensaverPreview()
+        isPreviewingScreensaver = false
+        isApplyingScreensaver = false
+    }
+
+    func applyScreensaver(_ jpeg: Data, confirmedPersistentOverwrite: Bool) async throws {
+        guard confirmedPersistentOverwrite, !screensaverLocked, canDeliverNotification, let session else { throw CancellationError() }
+        let screensaver = D200XScreensaver(jpeg: jpeg)
+        _ = try screensaver.archive()
+        holdScreensaverPreview()
+        let revision = screensaverRevision
+        isPreviewingScreensaver = true
+        screensaverNeedsPageRestore = true
+        isApplyingScreensaver = true
+        stopDisplayUpdates()
+        let intent = epoch
+        let previous = pageOperation
+        let id = UUID()
+        let operation = Task { @MainActor [weak self] () throws -> PageWriteOutcome in
+            if let previous { _ = try? await previous.value }
+            guard let self, self.screensaverIsCurrent(revision, intent: intent) else { return .rejected }
+            self.screensaverMaintenancePaused = true
+            try await session.setKeepAwakeEnabled(false)
+            guard self.screensaverIsCurrent(revision, intent: intent) else { return .rejected }
+            try await session.applyScreensaver(screensaver)
+            self.screensaverPreviewStore.recordSent(jpeg)
+            guard self.screensaverIsCurrent(revision, intent: intent) else { return .rejected }
+            try await session.showScreensaver()
+            guard self.screensaverIsCurrent(revision, intent: intent) else { return .rejected }
+            return .written
+        }
+        pageOperation = operation
+        pageOperationID = id
+        defer {
+            if pageOperationID == id { pageOperation = nil; pageOperationID = nil }
+            if screensaverRevision == revision { isApplyingScreensaver = false }
+        }
+        do {
+            guard try await operation.value == .written else { throw CancellationError() }
+            screensaverMessage = "Screensaver saved."
+            screensaverTimer = Task { @MainActor [weak self] in
+                guard let wait = self?.screensaverDelay else { return }
+                do { try await wait(.seconds(5)) } catch { return }
+                guard let self, !Task.isCancelled, self.screensaverIsCurrent(revision, intent: intent) else { return }
+                self.finishScreensaverPreview()
+            }
+        } catch {
+            if screensaverRevision == revision {
+                screensaverMessage = "The screensaver image could not be previewed."
+                finishScreensaverPreview()
+            }
+            throw error
+        }
+    }
+
+    private func screensaverIsCurrent(_ revision: UInt64, intent: UInt64) -> Bool {
+        screensaverRevision == revision && epoch == intent && !screensaverLocked && isPreviewingScreensaver && canDeliverNotification
     }
 
     func setBinding(_ binding: D200XBinding?) {
@@ -193,6 +348,7 @@ final class D200XModel: ObservableObject {
 
     func configureStorage(configurationURL: URL) {
         assetDirectory = configurationURL.deletingLastPathComponent().appendingPathComponent("assets", isDirectory: true)
+        screensaverPreviewStore.configure(directory: assetDirectory)
     }
 
     func applyAppearanceToOtherTiles(properties: Set<D200XAppearanceProperty>) {
@@ -376,9 +532,9 @@ final class D200XModel: ObservableObject {
     func clearActiveNotifications() async { await automation.clearActiveNotifications() }
     func handleAutomation(_ request: AutomationRequest) async -> AutomationResponse { await automation.handle(request) }
     func setListening(_ enabled: Bool) { automation.setListening(enabled) }
-    func publishNotification(topic: String, text: String, ttlSeconds: Int?) async -> AutomationResponse {
+    func publishNotification(topic: String, text: String = "", ttlSeconds: Int? = nil, appID: String? = nil) async -> AutomationResponse {
         await handleAutomation(AutomationRequest(method: .notificationsEmit,
-            params: AutomationParameters(topic: topic, text: text, ttlSeconds: ttlSeconds)))
+            params: AutomationParameters(topic: topic, text: text.isEmpty ? nil : text, ttlSeconds: ttlSeconds, appID: appID)))
     }
 
     func addApplication(_ identifier: String) {
@@ -432,6 +588,10 @@ final class D200XModel: ObservableObject {
 
     func disconnect() {
         wanted = false
+        invalidateScreensaverPreview()
+        screensaverMaintenancePaused = false
+        screensaverNeedsPageRestore = false
+        stopDisplayUpdates()
         epoch &+= 1
         lifecycleRevision &+= 1
         lifecycleTransitionPending = false
@@ -473,6 +633,9 @@ final class D200XModel: ObservableObject {
     func sleep() {
         guard !systemSleeping else { return }
         systemSleeping = true
+        invalidateScreensaverPreview()
+        screensaverMaintenancePaused = false
+        stopDisplayUpdates()
         lifecycleTransitionPending = false
         wakeRestorePending = false
         sleepSettingsPending = wanted && connectionTask != nil
@@ -495,16 +658,19 @@ final class D200XModel: ObservableObject {
     func suspendDelivery(_ suspended: Bool) {
         self.suspended = suspended
         if suspended {
+            invalidateScreensaverPreview()
+            stopDisplayUpdates()
             pressed.removeAll()
             automation.reset()
             brightnessTask?.cancel()
             brightnessTask = nil
             nativeRuntime.stop()
         } else if automationStarted, automation.isStopped {
-            automation = D200XAutomationCoordinator(model: self, runner: ConfiguredActionRunner(nativeRunner: nativeRuntime))
+            automation = D200XAutomationCoordinator(model: self, runner: ConfiguredActionRunner(nativeRunner: nativeRuntime), iconResolver: iconResolver)
             automationObservation = automation.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
             automation.start()
         }
+        if !suspended, isConnected { scheduleRender() }
     }
 
     func stop() async {
@@ -667,10 +833,13 @@ final class D200XModel: ObservableObject {
 
     private func beginConnection(retry: Bool = false) {
         guard let session, wanted, !suspended, !systemSleeping, connectionTask == nil else { return }
+        stopDisplayUpdates()
         epoch &+= 1
         renderTask?.cancel()
         renderTask = nil
         lastPage = nil
+        lastWideMode = nil
+        lastWideNotification = false
         let intent = epoch
         status = .connecting
         message = retry ? "Reconnecting to D200X…" : "Discovering D200X…"
@@ -733,11 +902,15 @@ final class D200XModel: ObservableObject {
                     scheduleBrightness()
                 }
             case .failed(let failure):
+                invalidateScreensaverPreview()
+                screensaverMaintenancePaused = false
                 lastPage = nil
                 if systemSleeping { sleepSettingsPending = false }
                 fail(failure.userMessage)
                 retryConnection()
             case .disconnected:
+                invalidateScreensaverPreview()
+                screensaverMaintenancePaused = false
                 message = "Disconnected."
                 if systemSleeping { sleepSettingsPending = false }
                 if lifecycleTransitionPending, !systemSleeping, wanted {
@@ -801,28 +974,31 @@ final class D200XModel: ObservableObject {
     }
 
     private func scheduleRender() {
-        guard configuration != nil, let session, wanted, !suspended, !systemSleeping,
+        guard !(screensaverLocked && screensaverRestoreAfterUnlock), !isPreviewingScreensaver, configuration != nil, let session, wanted, !suspended, !systemSleeping,
               !lifecycleTransitionPending, canEdit else { return }
+        startDisplayUpdates()
         renderRevision &+= 1
         guard renderTask == nil else { return }
         let intent = epoch
         renderTask = Task { [weak self] in
             do {
                 while let self, self.epoch == intent, self.wanted, !self.suspended,
-                      !self.systemSleeping, !self.lifecycleTransitionPending, self.canEdit,
+                      !self.systemSleeping, !self.lifecycleTransitionPending, !self.isPreviewingScreensaver, self.canEdit,
                       let configuration = self.runtimeConfiguration {
                     try Task.checkCancellation()
                     let revision = self.renderRevision
                     try await Task.sleep(for: .milliseconds(150))
                     if revision != self.renderRevision { continue }
                     let labels = self.automation.labels
+                    let icons = self.automation.iconOverrides
                     let assetDirectory = self.assetDirectory
                     let page = try await Task.detached(priority: .utility) {
-                        try D200XPageRenderer.page(configuration: configuration, labelOverrides: labels, assetDirectory: assetDirectory)
+                        try D200XPageRenderer.page(configuration: configuration, labelOverrides: labels, assetDirectory: assetDirectory, notificationIcons: icons)
                     }.value
                     guard !Task.isCancelled, self.epoch == intent else { return }
                     if revision != self.renderRevision { continue }
-                    let applied = try await self.writePage(page, session: session, intent: intent) { [weak self] in
+                    let applied = try await self.writePage(page, session: session, intent: intent,
+                        wideNotification: labels["key13"] != nil || icons["key13"] != nil) { [weak self] in
                         self?.renderRevision == revision
                     }
                     if applied == .written {
@@ -846,7 +1022,7 @@ final class D200XModel: ObservableObject {
         }
     }
 
-    func applyNotificationLabels(_ labels: [String: String], authorize: @escaping @MainActor () -> Bool = { true }) async throws {
+    func applyNotificationLabels(_ labels: [String: String], notificationIcons: [String: Data] = [:], authorize: @escaping @MainActor () -> Bool = { true }) async throws {
         let expectedConfiguration = runtimeConfiguration
         let expectedProfile = activeProfileName
         let intent = epoch
@@ -858,10 +1034,11 @@ final class D200XModel: ObservableObject {
         let revision = renderRevision
         let assetDirectory = assetDirectory
         let page = try await Task.detached(priority: .utility) {
-            try D200XPageRenderer.page(configuration: configuration, labelOverrides: labels, assetDirectory: assetDirectory)
+            try D200XPageRenderer.page(configuration: configuration, labelOverrides: labels, assetDirectory: assetDirectory, notificationIcons: notificationIcons)
         }.value
         guard !Task.isCancelled, canDeliverNotification, authorize(), epoch == intent, renderRevision == revision, activeProfileName == expectedProfile else { throw CancellationError() }
-        let applied = try await writePage(page, session: session, intent: intent) { [weak self] in
+        let applied = try await writePage(page, session: session, intent: intent,
+            wideNotification: labels["key13"] != nil || notificationIcons["key13"] != nil) { [weak self] in
             guard let self else { return false }
             return authorize() && self.activeProfileName == expectedProfile && self.renderRevision == revision
         }
@@ -870,6 +1047,7 @@ final class D200XModel: ObservableObject {
     }
 
     private func writePage(_ page: D200XPage, session: any D200XSessionProtocol, intent: UInt64,
+                           wideNotification: Bool = false,
                            authorize: @escaping @MainActor () -> Bool) async throws -> PageWriteOutcome {
         let previous = pageOperation
         let id = UUID()
@@ -877,19 +1055,118 @@ final class D200XModel: ObservableObject {
             if let previous { _ = try? await previous.value }
             guard let self, self.epoch == intent, self.wanted, !self.suspended,
                   !self.systemSleeping, !self.lifecycleTransitionPending, self.canEdit, authorize() else { return .rejected }
+            if self.isPreviewingScreensaver || (self.screensaverLocked && self.screensaverRestoreAfterUnlock) { return .unchanged }
+            var slots = page.slots
+            if self.configuration?.wideDisplayMode.firmwareMode != nil || self.lastWideMode != nil,
+               let wide = slots["3_2"] {
+                slots["3_2"] = D200XSlot(image: wide.image, format: wide.format, text: wide.text, smallViewMode: 2)
+            }
+            let desiredPage = D200XPage(slots: slots)
             let oldPage = self.lastPage
-            let changed = page.slots.filter { oldPage?.slots[$0.key] != $0.value }
+            let changed = desiredPage.slots.filter { oldPage?.slots[$0.key] != $0.value }
             if !changed.isEmpty {
                 try await session.applyPage(D200XPage(slots: changed), update: oldPage == nil ? .replace : .incremental)
             }
-            guard self.epoch == intent else { return .rejected }
-            self.lastPage = page
+            guard self.epoch == intent, self.canDeliverNotification,
+                  !(self.screensaverLocked && self.screensaverRestoreAfterUnlock) else { return .rejected }
+            self.lastPage = desiredPage
+            guard !self.isPreviewingScreensaver, !(self.screensaverLocked && self.screensaverRestoreAfterUnlock),
+                  self.canDeliverNotification, authorize() else { return .rejected }
+            try await self.applyWideDisplay(session: session, intent: intent, wideNotification: wideNotification)
+            guard self.epoch == intent, !self.isPreviewingScreensaver, !(self.screensaverLocked && self.screensaverRestoreAfterUnlock),
+                  self.canDeliverNotification, authorize() else { return .rejected }
+            self.lastWideNotification = wideNotification
+            if self.screensaverMaintenancePaused {
+                try await session.setKeepAwakeEnabled(true)
+                guard self.epoch == intent, self.canDeliverNotification, !self.isPreviewingScreensaver,
+                      !(self.screensaverLocked && self.screensaverRestoreAfterUnlock) else { return .rejected }
+                self.screensaverMaintenancePaused = false
+            }
+            self.screensaverNeedsPageRestore = false
             return changed.isEmpty ? .unchanged : .written
         }
         pageOperation = operation
         pageOperationID = id
         defer { if pageOperationID == id { pageOperation = nil; pageOperationID = nil } }
         return try await operation.value
+    }
+
+    private func applyWideDisplay(session: any D200XSessionProtocol, intent: UInt64, wideNotification: Bool) async throws {
+        guard let configuration else { return }
+        let selected = configuration.wideDisplayMode
+        var mode = selected == .custom && lastWideMode == nil && !screensaverNeedsPageRestore ? nil : (wideNotification ? 2 : selected.firmwareMode)
+        if selected == .systemStatus, !wideNotification, !displayMetrics.isComplete {
+            mode = 2
+            wideDisplayMessage = "System status is unavailable until CPU, RAM and GPU readings are valid. Showing the custom tile."
+        } else {
+            wideDisplayMessage = wideNotification ? "Notification temporarily uses the custom tile." : nil
+        }
+        if mode == nil, lastWideMode != nil || screensaverNeedsPageRestore { mode = 2 }
+        guard let mode else { return }
+        let status = D200XDisplayStatus.make(mode: mode, format: configuration.clockFormat,
+                                            date: displayNow(), metrics: displayMetrics)
+        try await session.setWideDisplay(status)
+        guard epoch == intent, canDeliverNotification else { return }
+        lastWideMode = mode
+    }
+
+    private func startDisplayUpdates() {
+        guard !(screensaverLocked && screensaverRestoreAfterUnlock), !isPreviewingScreensaver, displayTask == nil, configuration?.wideDisplayMode != .custom else { return }
+        if configuration?.wideDisplayMode == .systemStatus { displayMetrics = sampleMetrics() }
+        let revision = displayRevision
+        let intent = epoch
+        displayTask = Task { @MainActor [weak self] in
+            var tick = 0
+            while !Task.isCancelled {
+                guard let wait = self?.displayDelay else { return }
+                do { try await wait(.seconds(1)) } catch { return }
+                guard !Task.isCancelled, let self, self.displayRevision == revision, self.epoch == intent else { return }
+                guard self.canDeliverNotification,
+                      self.configuration?.wideDisplayMode != .custom else {
+                    self.displayTask = nil
+                    return
+                }
+                tick += 1
+                if tick.isMultiple(of: 2), self.configuration?.wideDisplayMode == .systemStatus {
+                    self.displayMetrics = self.sampleMetrics()
+                }
+                if tick.isMultiple(of: 5) { await self.refreshWideDisplay() }
+            }
+        }
+    }
+
+    private func refreshWideDisplay() async {
+        guard !(screensaverLocked && screensaverRestoreAfterUnlock), !isPreviewingScreensaver, canDeliverNotification, renderTask == nil, lastPage != nil,
+              configuration?.wideDisplayMode != .custom, let session else { return }
+        let intent = epoch
+        let revision = renderRevision
+        let expectedConfiguration = runtimeConfiguration
+        let expectedProfile = activeProfileName
+        let previous = pageOperation
+        let id = UUID()
+        let operation = Task { @MainActor [weak self] () throws -> PageWriteOutcome in
+            if let previous { _ = try? await previous.value }
+            guard let self, !(self.screensaverLocked && self.screensaverRestoreAfterUnlock), !self.isPreviewingScreensaver, self.epoch == intent, self.canDeliverNotification,
+                  self.renderRevision == revision, self.runtimeConfiguration == expectedConfiguration,
+                  self.activeProfileName == expectedProfile else { return .rejected }
+            try await self.applyWideDisplay(session: session, intent: intent, wideNotification: self.lastWideNotification)
+            return .unchanged
+        }
+        pageOperation = operation
+        pageOperationID = id
+        defer { if pageOperationID == id { pageOperation = nil; pageOperationID = nil } }
+        do { _ = try await operation.value }
+        catch {
+            guard epoch == intent, canDeliverNotification else { return }
+            wideDisplayMessage = "The wide display could not be updated."
+        }
+    }
+
+    private func stopDisplayUpdates() {
+        displayRevision &+= 1
+        displayTask?.cancel()
+        displayTask = nil
+        displayMetrics = D200XMetricsSnapshot()
     }
 
     func reportAutomationFailure(_ message: String) {

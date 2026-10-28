@@ -94,7 +94,8 @@ struct D200XDeckView: View {
                         appearance: appearance,
                         wide: isWide,
                         labelOverride: notificationLabel,
-                        assetDirectory: model.assetDirectory
+                        assetDirectory: model.assetDirectory,
+                        notificationIcon: model.notificationIcons[control.rawValue]
                     )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }

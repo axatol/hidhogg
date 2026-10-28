@@ -1,87 +1,47 @@
-# Check-in preparation
+# Check-in preparation — 28 October 2026
 
-26 October 2026. Working branch: next/d200x-slice; baseline: e2744ad. The owner authorised committing and publishing this verified checkpoint to the repository mainline on 26 October 2026. GitHub confirms the default branch is master and there is no main branch.
+Branch `next/lofree-flow-lite84`; baseline `f5bb00f0d1eed275e719b66b5a0e4a0d21820238`. Owner approved checking in the completed checkpoint and merging locally into the existing `master` mainline. Both local and GitHub master were verified at that baseline. No branch rename or push is part of the current request.
 
-## Scope
+## Included implementation
 
-| Group | Included work |
-|---|---|
-| D200X workspace and automation | Appearance, application profiles, notifications/topics, local API/CLI, static native/executable actions, independent portable presets and direct control assignments |
-| D200X lifecycle and rendering | Retained-connection sleep trial, brightness reapplication and accepted 458×196 wide rendering |
-| Logitech recovery | Retained connection intent, fresh verified routing, bounded retries and explicit cancellation |
-| Native presentation | Compact permission rows, device sidebar assets, menus and workspace inspector refinements |
-| Documentation and packaging | Current overview/structure/roadmap, preserved checkpoint history, signing of app plus CLI and targeted local-artifact ignores |
+- Native receiver-based Lofree Flow Lite84 read-only status, useful battery-event handling, connection on launch, event-driven hourly-throttled battery refresh and manual full refresh.
+- Logitech disappearance/recovery refinements, stable retry presentation, clearer device menu statuses and Open Settings.
+- D200X built-in wide modes/clock format and host metrics, explicit screensaver crop/upload with temporary on-device preview, lifecycle guards, retained collapsed last-sent image, and numeric-field/scheduler mode-transition corrections.
+- Static app-icon notifications through API/CLI/actions/presets with text fallback. Icon plus visible text composition and count badges are not implemented.
+- Default screensaver artwork and isolated synthetic Now Playing feasibility/probe artifacts; no live media provider.
+- Verified decisions, owner checklists and roadmap/handoff updates.
 
-The feature groups share AppModel, D200XModel, package and configuration changes. A single complete checkpoint is safer than pretending the current file boundaries are independent commits. Smaller commits require reviewed hunk separation and validation of each intermediate tree.
+The package/model/configuration and UI changes share dependencies; this is one complete checkpoint, not independently buildable feature commits. The candidate paths are listed in `checkin-files-2026-10-28.txt`. Local environment/configuration, caches and dist products remain excluded.
 
-## Standards
+## Verification
 
-One medium-severity, high-confidence issue was identified and resolved: the executable editor previously joined arguments with newlines when loading and split them when saving, changing empty or embedded-newline arguments during unrelated edits. The owner approved the fix on 26 October 2026. The editor now uses stable, separate argument rows and passes their raw values directly to existing validation/save logic. Round-trip regressions cover empty and multiline values, timeout-only edits, row editing/removal and the 64-argument cap. Independent re-review closed the blocker; no further blocking standards or security defect was substantiated.
+Signed app/CLI build `fec36149ac455d36e8187bc8c9b878a5d06e8bce140f76ca21218cbf20f2a66d` has strict signatures and229input hashes. Latest targeted independent gate:38checks with25matching pre/post/build hashes; /tmp/dx-wide-store-independent.log. Earlier206display/icon,69battery and75activity gates retain their dated evidence and are not summed as disjoint cases.
 
-## Specification
+Consolidated merge-readiness suite passed635/635 checks (351XCTest and284SwiftTesting cases). Independent correctness/specification review found no remaining blocker after the two owner-approved corrections. This run excludes WakeConnectionTests (known historical fake-delay orphan hazard) and opt-in NativeWorkspaceWindowTests; it must not be described as an unrestricted full suite. No live app, devices, real endpoint, platform effects or permissions are exercised.
 
-No additional concrete specification blocker was found. Implemented scope is represented in the current plans; proposed idle dimming, lock/screensaver policy and payload execution remain unimplemented/unclaimed. Hardware and platform-effect acceptance remain separate. Shared model/configuration/package files couple the candidate commit groups.
+## Acceptance and remaining work
 
-Review totals: Standards/correctness 1 issue found and resolved; Specification 0 additional blockers. Current blocking findings: 0.
+Owner confirms the latest wide-mode switching and retained screensaver preview appear to work. Earlier notification/scripts/media/rendering and UI/recovery confirmations remain scoped to their dated reports. Device screensaver activation/timing/power-cycle persistence/lock/sleep, keyboard battery precision/lighting/OS mapping, receiver reply origins and some platform effects retain separate owner gates. These do not imply incomplete code in the approved checkpoint.
 
-## Final verified checkpoint
+New work is paused until check-in completes: additive app icon plus text with above/below placement and fitting; optional per-profile/tile notification badges with acknowledgment/expiry/duplicate-ID semantics; MCP read/configuration/refresh coverage of user-editable UI fields. MCP transport/access design and detailed implementation plan remain to be settled. No source changes for these new features are included.
 
-- Signed app/CLI build: 873e84a8bb590aa1f887da82754ecc9dc8aa2c3a3b7d90ed78f54708813346bc.
-- Full offline package: 345 XCTest cases, including five intentional native skips, plus 221 Swift Testing cases; zero failures. This is 561 passing ordinary checks.
-- Explicit background native-window suite: 5/5 passed. Combined unique passing cases: 566. The focused argument/usability run passed 10 cases, overlapping the full run.
-- The new 320×560 native case renders separate empty, multiline and normal argument rows without saving or executing anything. Pointer-driven editing is not claimed by that rendering check.
-- Logs: /Volumes/Data/tmp/hidhogg-argv-fix-full-2026-10-26.log, /Volumes/Data/tmp/hidhogg-argv-fix-native-2026-10-26.log and /Volumes/Data/tmp/hidhogg-checkin-argv-release-20261026.log.
-- Strict signatures and CLI help passed. Local provenance has 198 matching source/resource/test hashes plus signed artifact and log hashes. Only the approved editor and native test changed among the prior 196 inputs; two new draft/regression files were added.
-- Remaining physical/platform checks below do not become accepted solely because this offline checkpoint passed.
+The previous publication record is preserved in [26 October check-in preparation](checkin-preparation-2026-10-26.md).
 
-## Frozen baseline verification
 
-- Full offline package: 340 XCTest cases, including four intentional native skips, plus 221 Swift Testing cases; zero failures. This is 557 passing ordinary checks.
-- Explicit background native-window suite: 4/4 passed. Combined unique passing cases: 561.
-- Logs: /Volumes/Data/tmp/hidhogg-checkin-frozen-full-2026-10-26.log and /Volumes/Data/tmp/hidhogg-checkin-frozen-native-2026-10-26.log.
-- Signed build 3a7adfa11f7b: all 196 source hashes, app/CLI hashes, referenced log hashes and signatures verified against dist/build-info.json. CLI help exits without contacting a service.
-- Tests use synthetic configuration, devices and services. No production app, HID, real scripts, platform effects, clipboard or permission prompts were exercised.
+## Consolidated-gate correction
 
-This is the preserved pre-fix baseline; the final checkpoint above supersedes it for current source verification.
+First ordinary run executed635checks (351XCTest,284SwiftTesting):634passed, one Logitech parameter case failed. The isolated two-case rerun passed. Review identified a recorder synchronization race introduced by the new intermediate discovering event: ownership false could satisfy the wait before ready arrived. Owner approved a test-only correction; the eventual predicate now checks ownership and phase from one recorder snapshot. Production code is unchanged. Targeted and consolidated reruns are pending; the first failing log remains preserved.
 
-## Reproduce the offline gates
+First log: /Volumes/Data/cache/hidhogg-workspace-independent/CHECKIN-VERIFY-20261028T133458Z-3fed1a03/logs/swift-test.log. Isolated rerun: same directory/logs/targeted-rerun.log. The failure is not discarded by an isolated pass; commit/merge waits for the corrected consolidated gate.
 
-```sh
-swift test --package-path app --scratch-path /Volumes/Data/cache/hidhogg-workspace-independent --disable-sandbox --build-system native
-swift test --package-path app --scratch-path /Volumes/Data/cache/hidhogg-workspace-independent --disable-sandbox --build-system native --filter NativeWorkspaceWindowTests
-```
 
-Run these sequentially. The explicit native gate uses fake services and non-key background windows. The native build-system option is the verified local invocation; SwiftPM currently warns that it is deprecated.
+Second consolidated run again executed635checks: all284SwiftTesting cases passed, while one of351XCTest cases failed at the immediate empty action-history assertion. The method passed once in isolation. Source review found baseline f5bb00f already had the same publication race: a concurrent refresh can supersede clear's refresh, allowing Clear to return before the published array updates. Owner approved the two-line correction after runner clearing: invalidate earlier reads again and set the published history empty, retaining the subsequent refresh for newly admitted actions. No assertion was weakened. Current targeted/consolidated rerun and signed rebuild are pending.
 
-## Excluded files
+Second failing log: same gate directory/logs/consolidated-after-testfix.log. Both failures and their isolated passes are retained as evidence; neither is hidden by a later pass.
 
-Local .envrc, .codex, Xcode xcuserdata, Python bytecode caches, the generated D200X probe executable and dist products are excluded. Targeted ignore rules protect these paths; their contents were not read or altered. Source SVG assets and asset-catalog metadata are included.
 
-The explicit path list is [checkin-files.txt](checkin-files.txt): 116 reviewed files were included in checkpoint ca60802841fa0616c24840a2771d3720d878abf7. Source blob hashes were verified against the reviewed tree and signed-artifact manifest. Local environment/user artifacts and dist stayed excluded. The checkpoint was fast-forwarded and pushed to master; remote head equality was verified.
+## Final merge-ready gate
 
-## Remaining owner gates
+Final635/635ordinarychecks pass, with only the two named suite exclusions. The targeted Bolt parameter cases and action-history method also passed; these overlap the consolidated count. After signed rebuild,284input hashes match pre/post/build (aggregate59f5fbbd6f5451c88d91f95efab462f7daccd932c297b4c723b710fbb7bc4fcc). No owned test/compiler processes remain. Strict app/CLI signatures and CLI help pass; no live endpoint was contacted. Final log: gate directory/logs/consolidated-after-coordinator-fix.log; final manifest: gate directory/post-signed-build-manifest.json. Build log: /Volumes/Data/tmp/hidhogg-checkin-release-20261028.log. Earlier pending/failure notes above preserve chronology; this final gate supersedes their status.
 
-- D200X sleep: whether 0% stays black after the normal screensaver delay and restores on wake.
-- Logitech recovery after real receiver/mouse disappearance and return, including both wheels and Cancel Reconnect.
-- Remaining volume/output, sound/opener, permission-flow, profile and preset cases. Media, baseline notifications/scripts, action search and improved wide rendering have owner confirmations.
-- Actual login-after-boot, overnight resources and exceptional cleanup retain separate limits.
-
-## Preparation checklist
-
-- [x] Audit the current change set and excluded local artifacts.
-- [x] Review standards/correctness and approved specification scope independently.
-- [x] Verify the frozen source, signed artifacts and background native windows.
-- [x] Consolidate the current overview, structure and roadmap; preserve dated checkpoint evidence.
-- [x] Resolve the argument-editor blocker with approval, then verify/package the final source.
-- [x] Reconcile final tracker/handoff facts and stage the explicit reviewed file set.
-- [x] Owner authorises the actual check-in and mainline push.
-
-## Suggested checkpoint commit
-
-Title: Add D200X automation and verified device recovery
-
-Include the profile-aware deck actions, notifications/CLI, portable presets, lossless executable editor, higher-resolution wide rendering, retained-connection sleep trial, Logitech recovery, native permissions/assets and current documentation as one dependency-complete checkpoint. Validation: 566 unique offline/background tests and signed build873e84a8bb59 with198matching source inputs. Remaining manual gates stay documented.
-
-## Publication completed
-
-The owner-authorised source checkpoint is [ca60802](https://github.com/axatol/hidhogg/commit/ca60802841fa0616c24840a2771d3720d878abf7). Remote master was verified at that SHA after a normal, non-force push. The earlier local e2744ad checkpoint is retained in its ancestry. This publication record is a documentation-only follow-up; the signed build and198verifiedsource inputs are unchanged.
+Final explicit checkpoint scope is99files. The approved production history correction and test-only recorder synchronization correction are included. The index will be audited against working bytes and the229-input signed-build manifest before committing; master integration uses fast-forward only. No new feature code or remote publication is included.

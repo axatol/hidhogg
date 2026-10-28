@@ -6,15 +6,26 @@ struct D200XTilePreview: View {
     let appearance: D200XTileAppearance
     let wide: Bool
     let labelOverride: String?
+    let notificationIcon: Data?
     let assetDirectory: URL?
 
     @State private var renderedImage: NSImage?
+
+    init(appearance: D200XTileAppearance, wide: Bool, labelOverride: String?, assetDirectory: URL?,
+         notificationIcon: Data? = nil) {
+        self.appearance = appearance
+        self.wide = wide
+        self.labelOverride = labelOverride
+        self.assetDirectory = assetDirectory
+        self.notificationIcon = notificationIcon
+    }
 
     private var renderKey: RenderKey {
         RenderKey(
             appearance: appearance,
             wide: wide,
             labelOverride: labelOverride,
+            notificationIcon: notificationIcon,
             assetDirectory: assetDirectory
         )
     }
@@ -69,7 +80,8 @@ struct D200XTilePreview: View {
                 wide: key.wide,
                 labelOverride: key.labelOverride,
                 assetDirectory: key.assetDirectory,
-                destination: .preview
+                destination: .preview,
+                notificationIcon: key.notificationIcon
             )
         }
 
@@ -115,6 +127,7 @@ struct D200XTilePreview: View {
         let appearance: D200XTileAppearance
         let wide: Bool
         let labelOverride: String?
+        let notificationIcon: Data?
         let assetDirectory: URL?
     }
 }

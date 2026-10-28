@@ -11,6 +11,9 @@ public actor BoltController {
     private nonisolated let admission: BoltPressAdmission
     private var transport: (any BoltTransport)?
     private var observer: Task<Void, Never>?
+    private var connectionMonitor: Task<Void, Never>?
+    private var connectionProbeNonce: UInt8 = 0
+    private var deviceResponding = false
     private var operationHeld = false
     private var operationWaiters: [CheckedContinuation<Void, Never>] = []
     private var operationRevision: UInt64 = 0
@@ -143,6 +146,7 @@ public actor BoltController {
         terminalFailure = nil
         connection &+= 1
         let current = connection
+        deviceResponding = false
         publish(.discovering, "Discovering a Bolt candidate; model identity is unverified.")
         await performDiscovery(connection: current)
         await reconcileTerminalFailure()
@@ -560,6 +564,8 @@ public actor BoltController {
         do {
             try await openCandidate(connection: current)
             try checkConnectActive(revision: revision)
+            deviceResponding = true
+            publish(.discovering, "Mouse detected; verifying capabilities and restoring the session.")
             let table = try await readCapabilities()
             capabilityTable = table
             available = table.controls
@@ -568,6 +574,7 @@ public actor BoltController {
             try checkConnectActive(revision: revision)
             uncertain = false
             publish(.ready, "Connected Bolt candidate; model identity is unverified. Keep competing mouse software closed while Hidhogg manages this device.")
+            startConnectionMonitor(connection: current)
         } catch {
             guard phase != .stopping else { return }
             await fail(error, stage: (error as? BoltFailure) == .cancelled ? nil : stage)
@@ -1447,6 +1454,7 @@ public actor BoltController {
     }
 
     private func fail(_ error: Error, stage: BoltFailureStage? = nil, sourceFileID: String = #fileID, sourceLine: UInt = #line) async {
+        deviceResponding = false
         admission.invalidate()
         invalidateScrollAdmission()
         invalidateThumbwheelAdmission()
@@ -1464,6 +1472,9 @@ public actor BoltController {
     }
 
     private func closeTransport() async {
+        connectionMonitor?.cancel()
+        connectionMonitor = nil
+        deviceResponding = false
         observer?.cancel()
         observer = nil
         if let transport { await transport.close() }
@@ -1471,6 +1482,44 @@ public actor BoltController {
         deviceInformation = .init()
         batteryFeature = nil
         batteryEventRevision &+= 1
+    }
+
+    private func startConnectionMonitor(connection current: UInt64) {
+        connectionMonitor?.cancel()
+        connectionMonitor = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                guard let self else { return }
+                guard await self.checkConnection(connection: current) else { return }
+            }
+        }
+    }
+
+    private func checkConnection(connection current: UInt64) async -> Bool {
+        guard !Task.isCancelled, current == connection, transport != nil,
+              !shutdownRequested, terminalFailure == nil else { return false }
+        guard !operationHeld, !disableRequested,
+              phase == .ready || phase == .enabled else { return true }
+        await acquireOperation()
+        defer { releaseOperation() }
+        let revision = operationRevision
+        connectionProbeNonce &+= 1
+        let nonce = connectionProbeNonce
+        do {
+            let reply = try await request(feature: 0, function: 1, parameters: [0, 0, nonce])
+            guard current == connection, !shutdownRequested, !Task.isCancelled else { return false }
+            guard revision == operationRevision else { return true }
+            try checkActive()
+            guard reply.count >= 3, reply[2] == nonce else { throw BoltFailure.stale }
+            guard reply[0] == 2 || reply[0] == 4 else { throw BoltFailure.unsupported }
+            return true
+        } catch {
+            guard current == connection, !shutdownRequested, !Task.isCancelled else { return false }
+            guard revision == operationRevision else { return true }
+            _ = recordFailure(error, connection: current)
+            await reconcileTerminalFailure()
+            return false
+        }
     }
 
     private func receive(_ event: BoltTransportEvent, connection current: UInt64) async {
@@ -1613,7 +1662,7 @@ public actor BoltController {
         statusMessage = message
         statusFailure = failure
         refreshWheelCaptureStatus()
-        let result = continuation.yield(.status(BoltStatus(phase: phase, message: message, availableControls: available, generation: generation, cleanupUncertain: uncertain, wheel: wheel, thumbwheel: thumbwheel.status, failure: failure, deviceInformation: deviceInformation)))
+        let result = continuation.yield(.status(BoltStatus(phase: phase, message: message, availableControls: available, generation: generation, cleanupUncertain: uncertain, wheel: wheel, thumbwheel: thumbwheel.status, failure: failure, deviceInformation: deviceInformation, deviceResponding: deviceResponding)))
         if case .dropped(let event) = result {
             switch event {
             case .status: return

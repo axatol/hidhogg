@@ -4,6 +4,8 @@ enum DiagnosticCode: String, CaseIterable, Equatable, Hashable, Identifiable, Se
     case applicationStarted = "app.process.started"
     case applicationError = "app.error"
     case d200xStatus = "d200x.status"
+    case flowLiteStatus = "lofree.status"
+    case flowLiteFailure = "lofree.session.failed"
     case d200xFailure = "d200x.session.failed"
     case d200xPageSent = "d200x.page.sent"
     case d200xActionFailed = "d200x.action.failed"

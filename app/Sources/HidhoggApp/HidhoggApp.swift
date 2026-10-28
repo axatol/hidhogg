@@ -60,8 +60,9 @@ struct HidhoggApp: App {
         } label: {
             MultiDeviceMenuBarStatusLabel(
                 deck: model.d200x,
-                phase: model.boltStatus.phase,
-                cleanupUncertain: model.boltStatus.cleanupUncertain,
+                keyboard: model.flowLite,
+                phase: model.connectionPresentationPhase,
+                cleanupUncertain: model.boltStatus.cleanupUncertain && !model.isBackgroundRecovery,
                 permissionChecks: model.permissionChecks
             )
                 .background {

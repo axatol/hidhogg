@@ -843,8 +843,10 @@ func enableReusesOwnedWheelHandleWhileDiscoverySettlesBeforeReplacement(enable: 
     #expect(await fixture.opens == (enable ? [0] : [0, 0]))
     #expect(await fixture.writes == (enable ? [[4]] : [[4], [0]]))
     #expect(await fixture.mode == (enable ? 4 : 0))
-    #expect(await wheelEventually { await recorder.last?.wheel.isOwned == enable })
-    #expect(await recorder.last?.phase == (enable ? .enabled : .ready))
+    #expect(await wheelEventually {
+        guard let status = await recorder.last else { return false }
+        return status.wheel.isOwned == enable && status.phase == (enable ? .enabled : .ready)
+    })
     await controller.stop()
 }
 

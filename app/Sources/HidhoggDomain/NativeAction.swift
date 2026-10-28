@@ -14,11 +14,13 @@ public struct NativeAction: Codable, Equatable, Sendable {
     public var target: String?
     public var topic: String?
     public var text: String?
+    public var appID: String?
     public var ttlSeconds: Int?
     public var shortcut: KeyboardShortcut?
 
     public init(kind: Kind, media: Media? = nil, volume: Volume? = nil, percent: Int? = nil,
-                target: String? = nil, topic: String? = nil, text: String? = nil, ttlSeconds: Int? = nil,
+                target: String? = nil, topic: String? = nil, text: String? = nil, appID: String? = nil,
+                ttlSeconds: Int? = nil,
                 shortcut: KeyboardShortcut? = nil) {
         self.kind = kind
         self.media = media
@@ -27,6 +29,7 @@ public struct NativeAction: Codable, Equatable, Sendable {
         self.target = target
         self.topic = topic
         self.text = text
+        self.appID = appID
         self.ttlSeconds = ttlSeconds
         self.shortcut = shortcut
     }
@@ -35,7 +38,7 @@ public struct NativeAction: Codable, Equatable, Sendable {
         let fields: Set<String> = Set([
             media.map { _ in "media" }, volume.map { _ in "volume" }, percent.map { _ in "percent" },
             target.map { _ in "target" }, topic.map { _ in "topic" }, text.map { _ in "text" },
-            ttlSeconds.map { _ in "ttlSeconds" }, shortcut.map { _ in "shortcut" }
+            appID.map { _ in "appID" }, ttlSeconds.map { _ in "ttlSeconds" }, shortcut.map { _ in "shortcut" }
         ].compactMap { $0 })
         let valid: Bool
         switch kind {
@@ -53,8 +56,12 @@ public struct NativeAction: Codable, Equatable, Sendable {
                 return !host.isEmpty && url.user == nil && url.password == nil
             } == true
         case .deckNotification:
-            valid = fields.isSubset(of: ["topic", "text", "ttlSeconds"]) && topic.map(NotificationTopic.isValidTopic) == true
-                && text.map(Self.isValidNotificationText) == true && (ttlSeconds.map { (1...86_400).contains($0) } ?? true)
+            valid = fields.isSubset(of: ["topic", "text", "appID", "ttlSeconds"])
+                && topic.map(NotificationTopic.isValidTopic) == true
+                && (text != nil || appID != nil)
+                && (text.map(Self.isValidNotificationText) ?? true)
+                && (appID.map(Self.isValidBundleIdentifier) ?? true)
+                && (ttlSeconds.map { (1...86_400).contains($0) } ?? true)
         case .shortcut:
             valid = fields == ["shortcut"] && shortcut.map { ConfigurationValueValidation.isValid(binding: .key($0)) } == true
         }
@@ -71,7 +78,20 @@ public struct NativeAction: Codable, Equatable, Sendable {
         }
     }
 
-    private enum CodingKeys: String, CodingKey { case kind, media, volume, percent, target, topic, text, ttlSeconds, shortcut }
+    public static func isValidBundleIdentifier(_ value: String) -> Bool {
+        let components = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard value.utf8.count <= 255, components.count >= 2 else { return false }
+        return components.allSatisfy { component in
+            guard let first = component.utf8.first, isASCIIAlphanumeric(first) else { return false }
+            return component.utf8.allSatisfy { isASCIIAlphanumeric($0) || $0 == 45 }
+        }
+    }
+
+    private static func isASCIIAlphanumeric(_ byte: UInt8) -> Bool {
+        (48...57).contains(byte) || (65...90).contains(byte) || (97...122).contains(byte)
+    }
+
+    private enum CodingKeys: String, CodingKey { case kind, media, volume, percent, target, topic, text, appID, ttlSeconds, shortcut }
 
     private struct FieldKey: CodingKey {
         let stringValue: String
@@ -89,6 +109,7 @@ public struct NativeAction: Codable, Equatable, Sendable {
             target: try c.decodeIfPresent(String.self, forKey: .target),
             topic: try c.decodeIfPresent(String.self, forKey: .topic),
             text: try c.decodeIfPresent(String.self, forKey: .text),
+            appID: try c.decodeIfPresent(String.self, forKey: .appID),
             ttlSeconds: try c.decodeIfPresent(Int.self, forKey: .ttlSeconds),
             shortcut: try c.decodeIfPresent(KeyboardShortcut.self, forKey: .shortcut))
         let allowed: Set<String>
@@ -97,7 +118,7 @@ public struct NativeAction: Codable, Equatable, Sendable {
         case .volume: allowed = volume == .set ? ["kind", "volume", "percent"] : ["kind", "volume"]
         case .bell: allowed = ["kind"]
         case .playSound, .openFile, .openApplication, .openURL: allowed = ["kind", "target"]
-        case .deckNotification: allowed = ["kind", "topic", "text", "ttlSeconds"]
+        case .deckNotification: allowed = ["kind", "topic", "text", "appID", "ttlSeconds"]
         case .shortcut: allowed = ["kind", "shortcut"]
         }
         let fields = try decoder.container(keyedBy: FieldKey.self)

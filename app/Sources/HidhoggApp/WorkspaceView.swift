@@ -51,6 +51,9 @@ struct WorkspaceView: View {
                     NavigationLink(value: WorkspaceRoute.d200x) {
                         D200XSidebarLabel(model: model.d200x)
                     }
+                    NavigationLink(value: WorkspaceRoute.flowLite) {
+                        FlowLite84SidebarLabel(model: model.flowLite)
+                    }
                 }
                 Section("Workspace") {
                     ForEach([WorkspaceRoute.actions, .notifications, .tilePresets]) { route in
@@ -81,6 +84,8 @@ struct WorkspaceView: View {
                             model: model.d200x,
                             isInspectorPresented: $isD200XInspectorPresented
                         )
+                    case .flowLite:
+                        FlowLite84DeviceView(model: model.flowLite)
                     case .actions:
                         ActionsView(model: model.d200x, onOpenTile: openD200XTile)
                     case .notifications:
@@ -175,7 +180,7 @@ struct WorkspaceView: View {
             isDevicesInspectorPresented
         case .d200x:
             isD200XInspectorPresented
-        case .actions, .notifications, .tilePresets, .settings:
+        case .flowLite, .actions, .notifications, .tilePresets, .settings:
             false
         }
     }
@@ -232,6 +237,7 @@ fileprivate extension WorkspaceRoute {
         switch self {
         case .devices: "Devices"
         case .d200x: "Ulanzi D200X"
+        case .flowLite: "Lofree Flow Lite84"
         case .actions: "Actions"
         case .notifications: "Notifications"
         case .tilePresets: "Tile Presets"
@@ -243,11 +249,44 @@ fileprivate extension WorkspaceRoute {
         switch self {
         case .devices: "rectangle.connected.to.line.below"
         case .d200x: "square.grid.3x3"
+        case .flowLite: "keyboard"
         case .actions: "bolt.fill"
         case .notifications: "bell.badge"
         case .tilePresets: "square.grid.2x2"
         case .settings: "gearshape"
         }
+    }
+}
+
+private struct FlowLite84SidebarLabel: View {
+    @ObservedObject var model: FlowLite84Model
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Lofree Flow Lite84")
+                HStack(spacing: 4) {
+                    Circle().fill(model.isKeyboardOnline ? Color.green : Color.secondary)
+                        .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
+                    Text(model.isConnected && !model.isKeyboardOnline ? "Keyboard offline" : model.connectionTitle)
+                    if model.isKeyboardOnline, let level = model.snapshot?.battery?.reportedLevel {
+                        Image(systemName: model.snapshot?.battery?.charging == true ? "battery.100percent.bolt" : "battery.100percent")
+                        Text("\(level)")
+                            .help("Reported battery level")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: "keyboard")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                .accessibilityHidden(true)
+        }
+        .labelStyle(SidebarLabelStyle())
     }
 }
 

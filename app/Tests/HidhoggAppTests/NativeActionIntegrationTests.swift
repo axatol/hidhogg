@@ -34,11 +34,13 @@ final class NativeActionIntegrationTests: XCTestCase {
 
     func testDeckNotificationNativeActionPublishesWithoutNativeQueueCycleOrTextHistory() async throws {
         let platform = RecordingNativeActionPlatform()
-        let model = makeModel(platform: platform)
+        let iconResolver = FixedD200XApplicationIconResolver(pngData: try D200XIconTestFixture.png())
+        let model = makeModel(platform: platform, iconResolver: iconResolver)
         let action = NativeAction(
             kind: .deckNotification,
             topic: "build.finished",
             text: "private synthetic notification text",
+            appID: "com.example.Builder",
             ttlSeconds: 60
         )
         model.synchronize(D200XConfiguration(nativeActions: ["notify-build": action]), canEdit: true)
@@ -59,9 +61,16 @@ final class NativeActionIntegrationTests: XCTestCase {
 
         XCTAssertTrue(model.liveNotifications.isEmpty, "Notification text must not be retained when listening is off.")
         XCTAssertEqual(model.notificationHistory.last?.topic, "build.finished")
+        XCTAssertEqual(model.notificationHistory.last?.appID, "com.example.Builder")
         XCTAssertEqual(model.notificationHistory.last?.outcome, "unhandled")
         let trigger = model.actionHistory.first?.trigger
         XCTAssertEqual(trigger, ConfiguredActionTrigger(kind: .localAPI))
+        let historyResponse = await model.handleAutomation(AutomationRequest(method: .notificationsHistory))
+        guard case .array(let history)? = historyResponse.result,
+              case .object(let first)? = history.last else {
+            return XCTFail("Notification history should include the app bundle ID.")
+        }
+        XCTAssertEqual(first["app_id"], .string("com.example.Builder"))
         await model.stop()
         XCTAssertEqual(platform.stopCount, 1)
     }
@@ -196,7 +205,8 @@ final class NativeActionIntegrationTests: XCTestCase {
         await model.stop()
     }
 
-    private func makeModel(platform: RecordingNativeActionPlatform) -> D200XModel {
+    private func makeModel(platform: RecordingNativeActionPlatform,
+                           iconResolver: (any D200XApplicationIconResolving)? = nil) -> D200XModel {
         D200XModel(
             sender: ShortcutSender(preflight: { false }, request: {
                 XCTFail("Native action integration tests must not request input permission.")
@@ -205,7 +215,8 @@ final class NativeActionIntegrationTests: XCTestCase {
                 XCTFail("Native action integration tests must not post keyboard events.")
             }),
             frontmostApplication: { nil },
-            nativePlatform: platform
+            nativePlatform: platform,
+            iconResolver: iconResolver ?? FixedD200XApplicationIconResolver()
         )
     }
 

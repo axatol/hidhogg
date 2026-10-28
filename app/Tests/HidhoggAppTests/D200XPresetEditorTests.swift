@@ -126,7 +126,7 @@ final class D200XPresetEditorTests: XCTestCase {
         let encodedExecutable = try executable.encoded()
         XCTAssertEqual(try D200XTilePresetPackage.decode(encodedExecutable, assetDirectory: assetDirectory), executable)
 
-        let nativeAction = NativeAction(kind: .deckNotification, topic: "build.finished", text: "Complete", ttlSeconds: 60)
+        let nativeAction = NativeAction(kind: .deckNotification, topic: "build.finished", appID: "com.example.Builder")
         let nativePreset = D200XTilePreset(
             name: "Build notice",
             appearance: .init(label: "Build"),
@@ -139,6 +139,17 @@ final class D200XPresetEditorTests: XCTestCase {
         let nativeVersionTwo = D200XTilePresetPackage(version: 2, preset: nativePreset, image: nil)
         let encodedNative = try nativeVersionTwo.encoded()
         XCTAssertEqual(try D200XTilePresetPackage.decode(encodedNative, assetDirectory: assetDirectory), nativeVersionTwo)
+
+        var unknownNativeActionPackage = try XCTUnwrap(JSONSerialization.jsonObject(with: encodedNative) as? [String: Any])
+        var unknownNativePreset = try XCTUnwrap(unknownNativeActionPackage["preset"] as? [String: Any])
+        var nativeActions = try XCTUnwrap(unknownNativePreset["nativeActions"] as? [String: Any])
+        var unknownNativeAction = try XCTUnwrap(nativeActions["notify"] as? [String: Any])
+        unknownNativeAction["unrecognized"] = true
+        nativeActions["notify"] = unknownNativeAction
+        unknownNativePreset["nativeActions"] = nativeActions
+        unknownNativeActionPackage["preset"] = unknownNativePreset
+        let unknownNativeActionData = try JSONSerialization.data(withJSONObject: unknownNativeActionPackage)
+        XCTAssertThrowsError(try D200XTilePresetPackage.decode(unknownNativeActionData, assetDirectory: assetDirectory))
 
         let unsupported = D200XTilePresetPackage(version: 3, preset: nativePreset, image: nil)
         XCTAssertThrowsError(try D200XTilePresetPackage.decode(try unsupported.encoded(), assetDirectory: assetDirectory))

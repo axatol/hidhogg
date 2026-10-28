@@ -30,8 +30,13 @@ final class AppNativeActionRunner: ConfiguredNativeActionRunning {
                 }
             }
             if action.kind == .deckNotification {
-                guard let model, let topic = action.topic, let text = action.text else { throw NativeActionFailure.unsupported }
-                let response = await model.publishNotification(topic: topic, text: text, ttlSeconds: action.ttlSeconds)
+                guard let model, let topic = action.topic else { throw NativeActionFailure.unsupported }
+                let response = await model.publishNotification(
+                    topic: topic,
+                    text: action.text ?? "",
+                    ttlSeconds: action.ttlSeconds,
+                    appID: action.appID
+                )
                 try Task.checkCancellation()
                 guard response.error == nil else {
                     return .init(status: .failed, failureMessage: "The deck notification could not be delivered.")

@@ -1,5 +1,13 @@
 # Automatic Logitech recovery — 2026-10-26
 
+## 27 October 2026 follow-up — wireless loss detection
+
+The owner reported that wireless mouse loss left the app showing connected and prevented recovery. USB receiver removal alone does not cover that case. A controller-owned monitor now sends the existing read-only root protocol/nonce query every three seconds while ready or enabled, skipping busy operations. Request failure invalidates delivery and enters existing cleanup and recovery. Closing the transport cancels the monitor; results from superseded connection or lifecycle operations cannot fail the new session.
+
+The app also clears attempted settings reconciliation on fresh discovery and records wheel requests only when dispatched. These changes are built and signed, but physical disconnect/reconnect and restored settings remain unverified. The owner requested regression tests after physical confirmation; no new tests were added or run for this follow-up. The verification table below describes the earlier checkpoint only. Current build provenance is in `dist/build-info.json`; final build log: `/Volumes/Data/tmp/hidhogg-mouse-connection-monitor-final-20261027.log`.
+
+The owner subsequently reported recovery works better and approved background retry presentation. Waiting and unsuccessful probes show Disconnected; Reconnecting requires a responsive mouse undergoing capability/session recovery. Header copy, the Cancel control and the menu-bar mouse indicator remain stable across unavailable-device probes. Detailed retry and cleanup messages remain in Diagnostics. This presentation change still requires owner visual confirmation.
+
 Implemented under the owner-approved exclusive mouse ownership policy. Unexpected loss and unsuccessful initial discovery now retain connection intent and retry automatically. Explicit Disconnect cancels that intent; sidebar navigation does not affect ownership.
 
 ## Completion checklist

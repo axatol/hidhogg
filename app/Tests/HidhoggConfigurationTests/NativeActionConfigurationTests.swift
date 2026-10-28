@@ -48,6 +48,7 @@ final class NativeActionConfigurationTests: XCTestCase {
         XCTAssertTrue(source.contains("native_actions"))
         XCTAssertTrue(source.contains("kind = \"play_sound\""))
         XCTAssertTrue(source.contains("kind = \"open_application\""))
+        XCTAssertTrue(source.contains("app_id = \"com.example.Builder\""))
         XCTAssertTrue(source.contains("ttl_seconds = 86400"))
         XCTAssertTrue(source.contains("nativeActions") == false)
         XCTAssertEqual(decoded, configuration)
@@ -73,6 +74,8 @@ final class NativeActionConfigurationTests: XCTestCase {
             NativeAction(kind: .volume, volume: .set, percent: 100),
             NativeAction(kind: .openFile, target: longestPath),
             NativeAction(kind: .openURL, target: longestURL),
+            NativeAction(kind: .deckNotification, topic: "build.finished", appID: "com.example.Builder"),
+            NativeAction(kind: .deckNotification, topic: "build.finished", appID: "a" + String(repeating: ".b", count: 127)),
             NativeAction(kind: .deckNotification, topic: longestTopic, text: maximumText, ttlSeconds: 1),
             NativeAction(kind: .deckNotification, topic: "build.finished", text: "Ready", ttlSeconds: 86_400)
         ]
@@ -120,6 +123,12 @@ final class NativeActionConfigurationTests: XCTestCase {
             NativeAction(kind: .openURL, target: "https://user:password@example.test/"),
             NativeAction(kind: .openURL, target: tooLongURL),
             NativeAction(kind: .deckNotification, topic: "build.*", text: "Ready"),
+            NativeAction(kind: .deckNotification, topic: "build.finished"),
+            NativeAction(kind: .deckNotification, topic: "build.finished", appID: "../Example.app"),
+            NativeAction(kind: .deckNotification, topic: "build.finished", appID: "https://example.test/app"),
+            NativeAction(kind: .deckNotification, topic: "build.finished", appID: "com.example\nBuilder"),
+            NativeAction(kind: .deckNotification, topic: "build.finished", appID: String(repeating: "a", count: 256) + ".app"),
+            NativeAction(kind: .deckNotification, topic: "build.finished", text: "Ready", appID: "invalid id"),
             NativeAction(kind: .deckNotification, topic: "build.finished", text: "\n"),
             NativeAction(kind: .deckNotification, topic: "build.finished", text: "Ready", ttlSeconds: 0),
             NativeAction(kind: .deckNotification, topic: "build.finished", text: String(repeating: "💾", count: 65)),
@@ -213,7 +222,8 @@ final class NativeActionConfigurationTests: XCTestCase {
             "open-application": .init(kind: .openApplication, target: "/Applications/Synthetic.app"),
             "open-file": .init(kind: .openFile, target: "/synthetic/document.txt"),
             "open-url": .init(kind: .openURL, target: "https://example.test/path"),
-            "deck-notification": .init(kind: .deckNotification, topic: "build.finished", text: "Complete", ttlSeconds: 86_400),
+            "deck-notification": .init(kind: .deckNotification, topic: "build.finished", appID: "com.example.Builder"),
+            "deck-notification-text": .init(kind: .deckNotification, topic: "build.finished", text: "Complete", appID: "com.example.Builder", ttlSeconds: 86_400),
             "shortcut": .init(kind: .shortcut, shortcut: KeyboardShortcut(keyCode: 4, modifiers: [.command]))
         ]
     }

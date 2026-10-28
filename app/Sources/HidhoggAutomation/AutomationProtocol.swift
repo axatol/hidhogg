@@ -34,20 +34,23 @@ public enum AutomationMethod: String, Codable, Sendable {
 public struct AutomationParameters: Codable, Sendable, Equatable {
     public var topic: String?
     public var text: String?
+    public var appID: String?
     public var ttlSeconds: Int?
     public var notificationID: UUID?
     public var actionID: String?
 
-    public init(topic: String? = nil, text: String? = nil, ttlSeconds: Int? = nil, notificationID: UUID? = nil, actionID: String? = nil) {
+    public init(topic: String? = nil, text: String? = nil, ttlSeconds: Int? = nil, notificationID: UUID? = nil,
+                actionID: String? = nil, appID: String? = nil) {
         self.topic = topic
         self.text = text
+        self.appID = appID
         self.ttlSeconds = ttlSeconds
         self.notificationID = notificationID
         self.actionID = actionID
     }
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case topic, text, ttlSeconds = "ttl_seconds", notificationID = "notification_id", actionID = "action_id"
+        case topic, text, appID = "app_id", ttlSeconds = "ttl_seconds", notificationID = "notification_id", actionID = "action_id"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -55,6 +58,7 @@ public struct AutomationParameters: Codable, Sendable, Equatable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         topic = try values.optional(String.self, forKey: .topic)
         text = try values.optional(String.self, forKey: .text)
+        appID = try values.optional(String.self, forKey: .appID)
         ttlSeconds = try values.optional(Int.self, forKey: .ttlSeconds)
         notificationID = try values.optional(UUID.self, forKey: .notificationID)
         actionID = try values.optional(String.self, forKey: .actionID)
@@ -93,18 +97,18 @@ public struct AutomationRequest: Codable, Sendable, Equatable {
         let fields = params ?? AutomationParameters()
         switch method {
         case .notificationsEmit:
-            guard let topic = fields.topic, NotificationTopic.isValidTopic(topic), let text = fields.text,
-                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  text.utf8.count <= 256, text.unicodeScalars.count <= 64,
-                  text.unicodeScalars.allSatisfy(Self.permittedText),
+            guard let topic = fields.topic, NotificationTopic.isValidTopic(topic),
+                  fields.text != nil || fields.appID != nil,
+                  fields.text.map(Self.isValidNotificationText) ?? true,
+                  fields.appID.map(NativeAction.isValidBundleIdentifier) ?? true,
                   fields.ttlSeconds.map({ (1...86400).contains($0) }) ?? true,
                   fields.notificationID == nil, fields.actionID == nil else { throw AutomationProtocolError.invalidRequest }
         case .notificationsClear:
             guard fields.notificationID != nil, fields.topic == nil, fields.text == nil,
-                  fields.ttlSeconds == nil, fields.actionID == nil else { throw AutomationProtocolError.invalidRequest }
+                  fields.appID == nil, fields.ttlSeconds == nil, fields.actionID == nil else { throw AutomationProtocolError.invalidRequest }
         case .actionsInvoke:
             guard let actionID = fields.actionID, AutomationIdentifier.isValid(actionID), fields.topic == nil,
-                  fields.text == nil, fields.ttlSeconds == nil, fields.notificationID == nil else { throw AutomationProtocolError.invalidRequest }
+                  fields.text == nil, fields.appID == nil, fields.ttlSeconds == nil, fields.notificationID == nil else { throw AutomationProtocolError.invalidRequest }
         case .notificationsHistory, .actionsHistory, .status:
             guard fields == AutomationParameters() else { throw AutomationProtocolError.invalidRequest }
         }
@@ -114,6 +118,13 @@ public struct AutomationRequest: Codable, Sendable, Equatable {
         !CharacterSet.controlCharacters.contains(scalar) && !CharacterSet.newlines.contains(scalar)
             && scalar.value != 0x061C && scalar.value != 0x200E && scalar.value != 0x200F
             && !(0x202A...0x202E).contains(scalar.value) && !(0x2066...0x2069).contains(scalar.value)
+    }
+
+    private static func isValidNotificationText(_ text: String) -> Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && text.utf8.count <= 256
+            && text.unicodeScalars.count <= 64
+            && text.unicodeScalars.allSatisfy(permittedText)
     }
 }
 

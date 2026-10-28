@@ -2,6 +2,7 @@ import AppKit
 import HidhoggAutomation
 import HidhoggConfiguration
 import HidhoggDomain
+import LofreeFlowLite84
 import LogitechBolt
 import MacOSActions
 import SwiftUI
@@ -128,6 +129,103 @@ final class NativeWorkspaceWindowTests: XCTestCase {
 
         let snapshot = try harness.captureWorkspace(named: "hidhogg-configured-argument-rows-320x560.png")
         print("Synthetic configured executable argument editor snapshot: \(snapshot.path)")
+    }
+
+    func testFlowLite84StatusPageRendersSyntheticSnapshotAtMinimumAndDefaultWidths() async throws {
+        try requireExplicitSelection()
+
+        let snapshot = FlowLite84Snapshot(
+            identity: FlowLite84Identity(cid: 1, mid: 1, connectionType: 0),
+            online: true,
+            keyboardVersion: "v91.42",
+            receiverVersion: "v93.17",
+            battery: FlowLite84Battery(reportedLevel: 74, charging: true, voltageMillivolts: 3_980),
+            lighting: FlowLite84Lighting(mode: 15, enabled: true, idleOffUnits: 30, brightnessLevel: 4, speedLevel: 2),
+            systemMode: 1,
+            readAt: Date(timeIntervalSince1970: 1_798_000_000)
+        )
+        let session = NativeWindowFlowLite84Session(snapshot: snapshot)
+        let model = FlowLite84Model(session: session)
+        let environment = NativeWorkspaceEnvironment(flowLite: model)
+        environment.model.navigate(to: .flowLite)
+        let windowSizes = [
+            (NSSize(width: 820, height: 560), "minimum"),
+            (NSSize(width: 1280, height: 800), "default")
+        ]
+
+        let initialWindow = try XCTUnwrap(windowSizes.first)
+        let initialHarness = NativeWindowHarness(
+            rootView: environment.injectingEnvironmentObjects(
+                WorkspaceView(presentationCoordinator: environment.presentationCoordinator)
+            ),
+            contentSize: initialWindow.0
+        )
+        initialHarness.window.orderBack(nil)
+        initialHarness.driveLayout(seconds: 0.25)
+
+        XCTAssertTrue(initialHarness.window.isVisible)
+        XCTAssertFalse(initialHarness.window.isKeyWindow)
+        XCTAssertEqual(environment.model.navigation.current.route, .flowLite)
+        XCTAssertEqual(model.connectionTitle, "Disconnected")
+        XCTAssertNil(model.snapshot)
+        let beforeExplicitConnect = await session.callCounts()
+        XCTAssertEqual(beforeExplicitConnect.connect, 0, "Showing the status page must not auto-connect.")
+        XCTAssertEqual(beforeExplicitConnect.refresh, 0)
+        XCTAssertEqual(beforeExplicitConnect.disconnect, 0)
+
+        model.connect()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while model.snapshot == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        XCTAssertTrue(model.isConnected)
+        XCTAssertTrue(model.isKeyboardOnline)
+        XCTAssertEqual(model.snapshot, snapshot)
+        XCTAssertEqual(model.batteryText, "Reported level 74 · Charging")
+        XCTAssertEqual(model.snapshot?.battery?.reportedLevel, 74)
+        XCTAssertEqual(model.snapshot?.battery?.charging, true)
+        XCTAssertEqual(model.snapshot?.unavailableFields, [])
+
+        for (index, (size, label)) in windowSizes.enumerated() {
+            let harness = index == 0
+                ? initialHarness
+                : NativeWindowHarness(
+                    rootView: environment.injectingEnvironmentObjects(
+                        WorkspaceView(presentationCoordinator: environment.presentationCoordinator)
+                    ),
+                    contentSize: size
+                )
+            defer { harness.close() }
+
+            if index > 0 { harness.window.orderBack(nil) }
+            harness.driveLayout(seconds: 0.35)
+            XCTAssertTrue(harness.window.isVisible, "The \(label)-width status page must remain visible.")
+            XCTAssertFalse(harness.window.isKeyWindow, "The \(label)-width status page must remain non-key.")
+            XCTAssertEqual(environment.model.navigation.current.route, .flowLite)
+            XCTAssertEqual(harness.hostingView.bounds.width, size.width, accuracy: 1)
+            XCTAssertGreaterThanOrEqual(harness.hostingView.bounds.height, size.height)
+            XCTAssertEqual(model.snapshot?.battery?.voltageMillivolts, 3_980)
+            XCTAssertEqual(model.snapshot?.lighting?.enabled, true)
+            XCTAssertEqual(model.snapshot?.lighting?.mode, 15)
+            XCTAssertEqual(model.snapshot?.lighting?.idleOffUnits, 30)
+            XCTAssertEqual(model.snapshot?.lighting?.brightnessLevel, 4)
+            XCTAssertEqual(model.snapshot?.lighting?.speedLevel, 2)
+            XCTAssertEqual(model.snapshot?.systemMode, 1)
+            XCTAssertEqual(model.snapshot?.keyboardVersion, "v91.42")
+            XCTAssertEqual(model.snapshot?.receiverVersion, "v93.17")
+
+            let image = try harness.captureWorkspace(
+                named: "hidhogg-flow-lite84-status-\(label)-\(Int(size.width))x\(Int(size.height)).png"
+            )
+            print("Synthetic native Flow Lite84 status page (\(label)): \(image.path)")
+        }
+
+        let afterRendering = await session.callCounts()
+        XCTAssertEqual(afterRendering.connect, 1)
+        XCTAssertEqual(afterRendering.refresh, 0, "Rendering the page must not issue a second status read.")
+        XCTAssertEqual(afterRendering.disconnect, 0)
+        await model.stop()
     }
 
     private func exerciseTileGeometry(width: CGFloat, editedControl: D200XControl) throws {
@@ -572,7 +670,7 @@ private final class NativeWorkspaceEnvironment {
     let loginItemController = LoginItemController(service: NativeWindowNoopLoginItemService())
     let diagnostics: DiagnosticsStore
 
-    init() {
+    init(flowLite: FlowLite84Model? = nil) {
         let notificationCenter = NativeWindowNoopNotificationCenter(authorizationState: .notDetermined)
         self.notificationCenter = notificationCenter
         let bindingSession = NativeWindowNoopBindingSession()
@@ -603,6 +701,7 @@ private final class NativeWorkspaceEnvironment {
                 latchStore: NativeWindowNoopAlertLatchStore()
             ),
             d200x: d200x,
+            flowLite: flowLite,
             loadImmediately: false,
             observeSleep: false
         )
@@ -970,4 +1069,45 @@ private final class NativeWindowNoopLoginItemService: LoginItemServiceAdapter {
     func register() async throws {}
     func unregister() async throws {}
     func openLoginItemsSettings() {}
+}
+
+private actor NativeWindowFlowLite84Session: FlowLite84SessionProtocol {
+    nonisolated let events: AsyncStream<FlowLite84Event>
+    private let continuation: AsyncStream<FlowLite84Event>.Continuation
+    private let snapshot: FlowLite84Snapshot
+    private var connectCount = 0
+    private var refreshCount = 0
+    private var disconnectCount = 0
+
+    init(snapshot: FlowLite84Snapshot) {
+        let stream = AsyncStream<FlowLite84Event>.makeStream(bufferingPolicy: .unbounded)
+        events = stream.stream
+        continuation = stream.continuation
+        self.snapshot = snapshot
+    }
+
+    func connect() async throws {
+        connectCount += 1
+        continuation.yield(.status(.connecting, generation: 1))
+        continuation.yield(.status(.connected(snapshot.identity), generation: 1))
+        continuation.yield(.snapshot(snapshot, generation: 1))
+    }
+
+    func refresh() async throws {
+        refreshCount += 1
+        continuation.yield(.snapshot(snapshot, generation: 1))
+    }
+
+    func refreshBattery() async throws {
+        try await refresh()
+    }
+
+    func disconnect() async {
+        disconnectCount += 1
+        continuation.yield(.status(.disconnected, generation: 1))
+    }
+
+    func callCounts() -> (connect: Int, refresh: Int, disconnect: Int) {
+        (connectCount, refreshCount, disconnectCount)
+    }
 }

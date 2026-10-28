@@ -1,4 +1,5 @@
 import SwiftUI
+import HidhoggDomain
 
 struct D200XDeviceView: View {
     @ObservedObject var model: D200XModel
@@ -47,8 +48,11 @@ struct D200XDeviceView: View {
     private var deviceHeader: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "square.grid.3x3.fill")
-                    .font(.system(size: 28))
+                Image("DeviceDeck")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 28, height: 28)
                     .foregroundStyle(AppAppearance.accent)
                     .accessibilityHidden(true)
 
@@ -66,8 +70,14 @@ struct D200XDeviceView: View {
                 connectionAction
             }
 
-            LabeledContent("Connection", value: model.connectionTitle)
-                .font(.callout)
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(model.isConnected ? Color.green : Color.secondary)
+                    .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
+                Text(model.connectionTitle)
+            }
+            .font(.callout)
 
             if let configurationBlocker = model.configurationBlocker {
                 Label(configurationBlocker, systemImage: "exclamationmark.circle")
@@ -196,6 +206,42 @@ struct D200XDeviceView: View {
                 )
                 .disabled(!canEditBrightness || model.configuration?.brightnessPercent == nil)
                 .accessibilityLabel("D200X brightness preference")
+
+                Divider().padding(.vertical, 6)
+                Text("Wide display").font(.headline)
+                Picker("Display", selection: Binding(
+                    get: { model.configuration?.wideDisplayMode ?? .custom },
+                    set: { model.setWideDisplayMode($0) }
+                )) {
+                    ForEach(D200XWideDisplayMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .disabled(!canEditBrightness)
+                Picker("Clock format", selection: Binding(
+                    get: { model.configuration?.clockFormat ?? .twentyFourHour },
+                    set: { model.setClockFormat($0) }
+                )) {
+                    Text("24 hour").tag(D200XClockFormat.twentyFourHour)
+                    Text("12 hour").tag(D200XClockFormat.twelveHour)
+                }
+                .disabled(!canEditBrightness)
+                Text("Applies to the device across application profiles. Notifications temporarily show the custom wide tile. CPU uses host tick deltas; RAM is active, wired and compressed memory. GPU availability depends on the host.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let displayMessage = model.wideDisplayMessage {
+                    Text(displayMessage).font(.callout).foregroundStyle(.secondary)
+                }
+                if model.configuration?.wideDisplayMode == .systemStatus {
+                    HStack {
+                        Text(metricDescription("CPU", model.displayMetrics.cpu))
+                        Text(metricDescription("RAM", model.displayMetrics.memory))
+                        Text(metricDescription("GPU", model.displayMetrics.gpu))
+                    }
+                    .font(.caption).monospacedDigit()
+                }
+                Divider().padding(.vertical, 6)
+                D200XScreensaverEditorView(model: model)
+                    .disabled(!canEditBrightness)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
@@ -204,6 +250,10 @@ struct D200XDeviceView: View {
 
     private var canEditBrightness: Bool {
         model.canEdit && model.isConfigured
+    }
+
+    private func metricDescription(_ label: String, _ value: Double?) -> String {
+        value.map { "\(label) \(Int($0.rounded()))%" } ?? "\(label) unavailable"
     }
 
     private var brightnessValueDescription: String {

@@ -17,7 +17,8 @@ enum D200XPageRenderer {
     static func page(
         configuration: D200XConfiguration,
         labelOverrides: [String: String] = [:],
-        assetDirectory: URL? = nil
+        assetDirectory: URL? = nil,
+        notificationIcons: [String: Data] = [:]
     ) throws -> D200XPage {
         var slots: [String: D200XSlot] = [:]
         for (index, control) in D200XControl.allCases.filter(\.isTile).enumerated() {
@@ -27,7 +28,8 @@ enum D200XPageRenderer {
                     appearance: appearance,
                     wide: index == 13,
                     labelOverride: labelOverrides[control.rawValue],
-                    assetDirectory: assetDirectory
+                    assetDirectory: assetDirectory,
+                    notificationIcon: notificationIcons[control.rawValue]
                 )
             )
         }
@@ -39,25 +41,41 @@ enum D200XPageRenderer {
         wide: Bool,
         labelOverride: String? = nil,
         assetDirectory: URL? = nil,
-        destination: Destination = .device
+        destination: Destination = .device,
+        notificationIcon: Data? = nil
     ) throws -> Data {
         try Task.checkCancellation()
-        let image = loadAsset(appearance.imageAsset, directory: assetDirectory)
+        let icon = loadNotificationIcon(notificationIcon)
+        let image = icon == nil ? loadAsset(appearance.imageAsset, directory: assetDirectory) : nil
         try Task.checkCancellation()
         let title = labelOverride.flatMap { $0.isEmpty ? nil : $0 } ?? appearance.label
-        let showTitle = appearance.showTitle || labelOverride != nil ||
+        let showTitle = icon == nil && (appearance.showTitle || labelOverride != nil ||
             (appearance.imageAsset != nil && image == nil)
+        )
         let result = try png(
             appearance: appearance,
             title: title,
             showTitle: showTitle,
             image: image,
+            notificationIcon: icon,
             wide: wide,
             destination: destination,
-            notification: labelOverride != nil
+            notification: labelOverride != nil || icon != nil
         )
         try Task.checkCancellation()
         return result
+    }
+
+    private static func loadNotificationIcon(_ data: Data?) -> CGImage? {
+        guard let data, data.count <= D200XApplicationIconResolver.maximumPNGBytes,
+              let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: true] as CFDictionary),
+              CGImageSourceGetCount(source) == 1,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              (1...D200XApplicationIconResolver.iconPixelDimension).contains(width),
+              (1...D200XApplicationIconResolver.iconPixelDimension).contains(height) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 
     private static func loadAsset(_ reference: String?, directory: URL?) -> CGImage? {
@@ -73,6 +91,7 @@ enum D200XPageRenderer {
         title: String,
         showTitle: Bool,
         image: CGImage?,
+        notificationIcon: CGImage?,
         wide: Bool,
         destination: Destination,
         notification: Bool
@@ -98,7 +117,19 @@ enum D200XPageRenderer {
         context.setFillColor(CGColor(red: background.red, green: background.green, blue: background.blue, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
 
-        if let image {
+        if let notificationIcon {
+            let iconSize = min(CGFloat(width), CGFloat(height)) * 0.62
+            drawAspectContained(
+                notificationIcon,
+                in: context,
+                bounds: CGRect(
+                    x: (CGFloat(width) - iconSize) / 2,
+                    y: (CGFloat(height) - iconSize) / 2,
+                    width: iconSize,
+                    height: iconSize
+                )
+            )
+        } else if let image {
             drawAspectContained(
                 image,
                 in: context,

@@ -67,7 +67,7 @@ struct D200XTilePresetPackage: Codable, Equatable, Sendable {
         }
         if let actions = preset["nativeActions"] as? [String: Any] {
             for action in actions.values {
-                try validateKeys(action, allowed: ["kind", "media", "volume", "percent", "target", "topic", "text", "ttlSeconds", "shortcut"])
+                try validateKeys(action, allowed: ["kind", "media", "volume", "percent", "target", "topic", "text", "appID", "ttlSeconds", "shortcut"])
                 if let shortcut = (action as? [String: Any])?["shortcut"] {
                     try validateKeys(shortcut, allowed: ["keyCode", "modifiers"])
                 }

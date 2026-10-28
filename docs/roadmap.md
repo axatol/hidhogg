@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated 26 October 2026. TaskView Personal / HIDhogg project 5 owns stable task IDs, dependencies and completion status. This file is the concise implementation/acceptance index. [Earlier dated checkpoints](roadmap-history-2026-10-26.md) are historical evidence.
+Updated 28 October 2026. TaskView Personal / HIDhogg project 5 owns stable task IDs, dependencies and completion status. This file is the concise implementation/acceptance index. [Earlier dated checkpoints](roadmap-history-2026-10-26.md) are historical evidence.
 
 ## Current checkpoint
 
@@ -19,10 +19,10 @@ The owner has confirmed baseline notifications/scripts, native media controls, a
 | DX-01 / DX-02 | 444 / 445 | Native identity/transport, one page and incremental updates implemented | Broader device/lifecycle acceptance |
 | DX-03 | 446 | Keys, front buttons and direct dial gesture assignments implemented | Remaining physical control/profile cases |
 | DX-04 | 447 | Independent maintenance/recovery plus retained-connection sleep trial implemented | Whether brightness 0 stays black through screensaver delay and restores on wake |
-| DX-05 | 448 | Brightness, image/title styling and accepted wide rendering implemented | Wider telemetry/screensaver scope is incomplete |
+| DX-05 | 448 | Brightness/image/title baseline plus signed seven wide modes and explicit screensaver controls; Now Playing spike complete | Owner hardware gates, metrics availability and screensaver placement/persistence; production media provider is separate |
 | DX-06 | 449 | Research/evidence gap; TODO | Encoder layout command/mapping verification before implementation |
 | DX-07 | 454 | Local notifications, CLI/API and executable triggers implemented; baseline owner-confirmed | Remaining lifecycle, timeout and history cases |
-| DX-08 | 470 | App profiles, topics, portable independent presets and management pages implemented | Remaining profile/preset/physical checks |
+| DX-08 | 470 | App profiles/topics/presets plus signed static app-icon notification API/CLI/action/render flow | Owner icon/fallback/TTL/preset/physical checks; flashing deferred |
 | DX-09 | 475 | Deferred safety spike; TODO | Approve the spike, compare literal arguments/JSON stdin/restricted templates, then separately approve implementation |
 | DX-10 | 476 | Static native action catalog/templates implemented; media owner-confirmed | Volume/output, sound, openers and remaining native effects |
 
@@ -42,19 +42,39 @@ Automatic recovery is implemented under exclusive mouse ownership: retain intent
 | NX-17–20 | 433–436 | Superseded historical icon work |
 | NX-21 / NX-22 | 437 / 438 | Permission-aware status and Dock/app-switcher behaviour accepted |
 
+## Next device: Flow Lite84
+
+Requested and FL-01 approved 26 October 2026. The native receiver-based read-only status slice is implemented, locally signed and tested; a bounded receiver status read succeeded. Owner app/hardware acceptance remains open. Lighting/OS writes remain separately gated. [Feasibility and evidence](lofree-flow-lite-feasibility.md).
+
+| Stable ID | TaskView | Proposed deliverable | State |
+|---|---:|---|---|
+| FL-M1 | 492 | Native status and controls milestone | In progress; FL-01 approved 26 October 2026 |
+| FL-01 | 493 | Battery/charging, keyboard/receiver versions and read-only lighting/OS state | Signed status/activity-refresh and useful battery-event handling;69 current focused checks pass; owner acceptance of intermittent-reply fix is pending; unanswered-read retries remain unapproved; [evidence](flow-lite84-implementation.md) |
+| FL-02 | 494 | White-backlight effects/state, brightness, speed and idle-off | Blocked by FL-01, physical semantics and reversible-write approval |
+| FL-03 | 495 | Explicit Mac/Windows mode control | Blocked by FL-01 and physical selector validation/write approval |
+
+Battery precision is not yet measured. The vendor's host estimate has a known boundary defect, so do not copy it as an accuracy guarantee. Firmware installation, pairing/reset, macros and keymap changes are outside this slice. The new receiver-specific module is independent of Logitech/D200X; the signed dist artifact now includes FL-01, with physical/app acceptance still open.
+
+27 October 2026 approved follow-up is implemented and signed: include the keyboard in Connect on launch and refresh battery/status on keyboard activity at most hourly. Passive global/local event monitors do not access key contents; there is no polling timer. Sleep/Disconnect pause monitoring, and manual full Refresh remains. Independent offline verification passes 75 focused checks. Live event registration, battery consumption and secure-input/permission behaviour remain unmeasured; owner validation is open. Existing vendor status-change refreshes remain separate from the keyboard-activity throttle. General reply-routing/read-retry changes remain separately unapproved.
+
+28 October 2026 reliability follow-up is implemented and signed, with 69 independent focused checks passing: fully validated, identity-confirmed unsolicited battery updates are accepted without completing/extending unrelated queries, and globally valid off-current ordinary replies are ignored. Newer battery observations survive batch completion; their timestamp is labelled received-at. Owner physical acceptance remains open. This supersedes the earlier Part A approval status; read retransmission (Part B) remains unapproved. [Revised scope](flow-lite84-read-reliability-plan.md).
+
 ## Next work
 
-The [check-in checkpoint](checkin-preparation.md) is published.
+The current [check-in checkpoint](checkin-preparation.md) records local mainline integration and the preserved26October publication history. Flow Lite84 FL-01 is ready for owner validation.
 
-1. Run the short remaining owner checks for D200X sleep and Logitech recovery; test the other native effects and app-profile/preset paths as needed.
-2. Review the proposed idle-brightness and lock/screensaver policy after the sleep trial; those behaviours remain unimplemented.
-3. DX-09 is the next recommended research slice: safely pass notification data into actions. No production interpolation is currently implemented or approved.
+1. Perform the FL-01 owner checklist, assess battery granularity/charging and physical light/system mapping, and observe any repeated invalid responses; review separate FL-02/03 write boundaries afterwards. [Owner checklist](flow-lite84-implementation.md).
+2. Retain the remaining owner checks for D200X sleep and Logitech recovery; test the other native effects and app-profile/preset paths as needed.
+3. Review the proposed idle-brightness and lock/screensaver policy after the sleep trial; those behaviours remain unimplemented.
+4. DX-09 remains a deferred research slice for safe notification data passing. No production interpolation is currently implemented or approved.
 
 ## Proposed and deferred
 
 - Active/idle brightness defaults of 100% / 10% with a 10-second timer, and lock-to-screensaver policy remain proposed. The accepted sleep trial alone does not implement either.
 - Physical multiple pages remain deferred.
-- Wide telemetry, custom screensaver management and unresolved encoder displays require separate evidence and scope.
+- Unresolved encoder displays (mode100/command17), screensaver timeout/original restoration and flashing effects require further evidence and scope.
+
+28 October 2026: the earlier display/icon baseline passed206 independent fake-only tests plus5 isolated CLI smoke cases. The current signed mode-switch/retained-preview follow-up passed38 focused checks and received owner confirmation. The [display controls plan](d200x-display-controls-plan.md) records decisions/evidence, and the [Now Playing spike](d200x-now-playing-spike.md) includes synthetic rendered previews and public API compile probes. No live player is connected. Screensaver timeout/original restoration, mode100/command17, flashing and universal production media support remain outside this initial slice. Owner hardware gates remain; no agent-operated device changes were performed.
 - Text insertion, ordered multi-actions, third-party integrations/plugins, Bluetooth, firmware installation and cloud services are outside the current slice.
 - Actual login-after-boot, overnight resource use, abrupt-removal cleanup and other-device isolation retain their distinct acceptance limits.
 - Additional device types and MCP remain future work.
@@ -67,3 +87,10 @@ The [check-in checkpoint](checkin-preparation.md) is published.
 - [Logitech recovery](logitech-reconnection.md)
 - [Compact permissions](settings-permissions-plan.md)
 - [Historical checkpoint index](roadmap-history-2026-10-26.md)
+
+
+28 October 2026 follow-up implemented, hardware acceptance pending (DX-05): owner approved five-second on-device screensaver preview with latest crop/zoom timer reset, then restoration of current active tiles. New-source confirmation retained; lock/sleep/disconnect invalidate pending preview. Default artwork repositioned and inspected inside wide screen window. See docs/d200x-display-controls-plan.md; hardware acceptance remains pending.
+
+28 October 2026 DX-05 follow-up implemented: numeric command6 fields and scheduler transitions corrected for reported stuck CPU/RAM/GPU mode; retained/collapsible last-sent screensaver preview added. Independent38focusedchecks and signed build pass; owner confirms this reported issue appears resolved. Other hardware gates remain separate.
+
+28 October 2026 owner confirmation: latest wide-mode switching and retained screensaver preview appear to work. Earlier screensaver timing/persistence/lock/sleep gates remain separate.

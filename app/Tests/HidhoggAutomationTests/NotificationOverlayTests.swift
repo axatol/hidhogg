@@ -97,6 +97,7 @@ final class NotificationOverlayTests: XCTestCase {
         let first = try store.prepareEmit(
             topic: "first",
             text: "First",
+            appID: "com.example.First",
             ttlSeconds: 5,
             subscriptions: ["first": ["tile.a"]],
             now: start
@@ -107,6 +108,7 @@ final class NotificationOverlayTests: XCTestCase {
         let second = try store.prepareEmit(
             topic: "second",
             text: "Second",
+            appID: "com.example.Second",
             ttlSeconds: nil,
             subscriptions: ["second": ["tile.b"]],
             now: secondPreparedAt
@@ -172,6 +174,7 @@ final class NotificationOverlayTests: XCTestCase {
         let second = try store.prepareEmit(
             topic: "second",
             text: "Second",
+            appID: "com.example.Second",
             ttlSeconds: nil,
             subscriptions: ["second": ["tile"]],
             now: replacementTime
@@ -188,6 +191,7 @@ final class NotificationOverlayTests: XCTestCase {
         XCTAssertEqual(repeatedClear.clearedCount, 0)
         try store.commit(repeatedClear, committedAt: replacementTime)
         XCTAssertEqual(store.labelOverrides(at: replacementTime), ["tile": "Second"])
+        XCTAssertEqual(store.notificationAppIDs(at: replacementTime), ["tile": "com.example.Second"])
         XCTAssertEqual(store.notificationID(for: "tile", at: replacementTime), second.notificationID)
     }
 
@@ -210,11 +214,87 @@ final class NotificationOverlayTests: XCTestCase {
         XCTAssertTrue(store.labelOverrides(at: start).isEmpty)
     }
 
+    func testIconOnlyOverlayKeepsItsMarkerUntilClearAndExpiry() throws {
+        var store = NotificationOverlayStore()
+        let prepared = try store.prepareEmit(
+            topic: "build.finished",
+            appID: "com.example.Builder",
+            ttlSeconds: 1,
+            subscriptions: ["build.*": ["tile.key0"]],
+            now: start
+        )
+
+        XCTAssertEqual(prepared.labelOverrides, ["tile.key0": "com.example.Builder"])
+        XCTAssertEqual(prepared.notificationAppIDs, ["tile.key0": "com.example.Builder"])
+        try store.commit(prepared, committedAt: start)
+        XCTAssertEqual(store.notificationAppIDs(at: start), ["tile.key0": "com.example.Builder"])
+        XCTAssertEqual(store.history().first?.appID, "com.example.Builder")
+
+        let expiryDate = start.addingTimeInterval(1)
+        let expiry = store.prepareExpiry(now: expiryDate)
+        XCTAssertTrue(expiry.notificationAppIDs.isEmpty)
+        try store.commit(expiry, committedAt: expiryDate)
+        XCTAssertTrue(store.notificationAppIDs(at: expiryDate).isEmpty)
+
+        let replacement = try store.prepareEmit(
+            topic: "build.finished",
+            text: "Complete",
+            appID: "com.example.Builder",
+            ttlSeconds: nil,
+            subscriptions: ["build.*": ["tile.key0"]],
+            now: start.addingTimeInterval(2)
+        )
+        XCTAssertEqual(replacement.labelOverrides, ["tile.key0": "Complete"])
+        XCTAssertEqual(replacement.notificationAppIDs, ["tile.key0": "com.example.Builder"])
+        try store.commit(replacement, committedAt: start.addingTimeInterval(2))
+
+        let clear = store.prepareClear(notificationID: try XCTUnwrap(replacement.notificationID), now: start.addingTimeInterval(3))
+        XCTAssertTrue(clear.notificationAppIDs.isEmpty)
+        try store.commit(clear, committedAt: start.addingTimeInterval(3))
+        XCTAssertTrue(store.notificationAppIDs(at: start.addingTimeInterval(3)).isEmpty)
+
+        let iconOnly = try store.prepareEmit(
+            topic: "build.finished",
+            appID: "com.example.Builder",
+            ttlSeconds: nil,
+            subscriptions: ["build.*": ["tile.key0"]],
+            now: start.addingTimeInterval(4)
+        )
+        try store.commit(iconOnly, committedAt: start.addingTimeInterval(4))
+
+        let textOnlyReplacement = try store.prepareEmit(
+            topic: "build.finished",
+            text: "Text only",
+            ttlSeconds: nil,
+            subscriptions: ["build.*": ["tile.key0"]],
+            now: start.addingTimeInterval(5)
+        )
+        XCTAssertEqual(textOnlyReplacement.labelOverrides, ["tile.key0": "Text only"])
+        XCTAssertTrue(textOnlyReplacement.notificationAppIDs.isEmpty)
+        try store.commit(textOnlyReplacement, committedAt: start.addingTimeInterval(5))
+        XCTAssertTrue(store.notificationAppIDs(at: start.addingTimeInterval(5)).isEmpty)
+    }
+
+    func testNotificationRequiresTextOrValidBoundedBundleIdentifier() {
+        var store = NotificationOverlayStore()
+        XCTAssertThrowsError(try store.prepareEmit(
+            topic: "valid", ttlSeconds: nil, subscriptions: [:], now: start
+        )) { XCTAssertEqual($0 as? NotificationOverlayStoreError, .missingContent) }
+
+        for appID in ["/Applications/Builder.app", "https://example.test", "com..example", "invalid id",
+                      "com.example\nBuilder", String(repeating: "a", count: 256) + ".app"] {
+            XCTAssertThrowsError(try store.prepareEmit(
+                topic: "valid", appID: appID, ttlSeconds: nil, subscriptions: [:], now: start
+            )) { XCTAssertEqual($0 as? NotificationOverlayStoreError, .invalidAppID) }
+        }
+    }
+
     func testDismissUsesCapturedIDAndOnlyClearsSelectedControl() throws {
         var store = NotificationOverlayStore()
         let first = try store.prepareEmit(
             topic: "alert",
             text: "Alert",
+            appID: "com.example.Alert",
             ttlSeconds: nil,
             subscriptions: ["alert": ["tile.a", "tile.b"]],
             now: start
@@ -226,6 +306,7 @@ final class NotificationOverlayTests: XCTestCase {
         let replacement = try store.prepareEmit(
             topic: "replacement",
             text: "New alert",
+            appID: "com.example.Replacement",
             ttlSeconds: nil,
             subscriptions: ["replacement": ["tile.a"]],
             now: replacementTime
@@ -250,6 +331,7 @@ final class NotificationOverlayTests: XCTestCase {
         try store.commit(dismissal, committedAt: replacementTime)
         XCTAssertNil(store.notificationID(for: "tile.b", at: replacementTime))
         XCTAssertEqual(store.notificationID(for: "tile.a", at: replacementTime), replacement.notificationID)
+        XCTAssertEqual(store.notificationAppIDs(at: replacementTime), ["tile.a": "com.example.Replacement"])
     }
 
     func testHistoryIsBoundedAndContainsOnlyNotificationMetadata() throws {
@@ -498,6 +580,7 @@ final class NotificationOverlayTests: XCTestCase {
         let prepared = try store.prepareEmit(
             topic: "status",
             text: "Ready",
+            appID: "com.example.Status",
             ttlSeconds: nil,
             subscriptions: ["status": ["tile"]],
             now: start
@@ -508,6 +591,7 @@ final class NotificationOverlayTests: XCTestCase {
         store.reset(now: start.addingTimeInterval(1))
 
         XCTAssertTrue(store.labelOverrides(at: start).isEmpty)
+        XCTAssertTrue(store.notificationAppIDs(at: start).isEmpty)
         XCTAssertEqual(store.history().count, 1)
         XCTAssertEqual(store.history().first?.topic, "status")
         XCTAssertFalse(String(describing: store.history()).contains("Ready"))

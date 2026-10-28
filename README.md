@@ -17,11 +17,17 @@ A native Swift macOS app for configuring **Logitech MX Master 3S over a Bolt rec
 
 The D200X implementation includes one editable page, key/front-button/dial bindings, brightness 1–100, imported key images and title styling, automatic app profiles and independently editable tile presets. Named actions include media, volume, bell/sound, app/file/URL opening, deck notifications, shortcuts and custom executables. Actions, Tile presets and compact notification history have dedicated workspace pages. Topic filters support a simple `*` wildcard. It retains incremental updates and independent session maintenance. See the [workspace decisions and validation checklist](docs/d200x-workspace-evolution-plan.md) for current verification status.
 
+Device-wide controls now include seven built-in wide-display modes, 12/24-hour time and an explicitly applied custom screensaver image. Notifications can display an installed application's icon using optional `app_id` / CLI `--app-id`, with text fallback; static notification actions and presets retain it. The earlier [display/icon baseline](docs/d200x-display-controls-plan.md) passed206 independent offline checks; the current mode/retained-preview follow-up passed38 focused checks. Other physical appearance, metrics availability and screensaver persistence remain [owner checks](docs/d200x-parity-owner-checks.md). The [Now Playing spike](docs/d200x-now-playing-spike.md) is a synthetic prototype and provider investigation, not a live player integration.
+
 The signed `dist/hidhoggctl` supports notification emission/clearing/history and named action invocation. See the [D200X owner checks](docs/d200x-parity-owner-checks.md) for commands, execution limits and verification.
 
 Wide-tile device images render at 458×196; the owner has confirmed improved physical text rendering. The current sleep trial retains the D200X connection, pauses maintenance and sets transient brightness to zero, then restores brightness on wake. Its physical sleep behaviour remains an owner check.
 
-Multiple physical pages, notification-payload passing into actions, multi-actions, wider telemetry/screensaver controls, Bluetooth transport, Lofree Flow Lite and MCP remain deferred or proposed. See the [roadmap](docs/roadmap.md) and [check-in preparation](docs/checkin-preparation.md).
+Multiple physical pages, notification-payload passing into actions, multi-actions, remaining telemetry/screensaver controls, Bluetooth transport and MCP remain deferred or proposed. See the [roadmap](docs/roadmap.md) and [check-in preparation](docs/checkin-preparation.md).
+
+The original [Lofree Flow Lite84](docs/lofree-flow-lite-feasibility.md) now has signed receiver-based read-only status: battery/charging/voltage, keyboard firmware and lighting/OS snapshots. Routine refresh omits the unreliable receiver-firmware query. Offline/background checks pass; a full initial receiver read and later two receiver-status reads succeeded. Physical/app acceptance, battery accuracy, receiver firmware and the current keyboard-online flag discrepancy remain open. See the [evidence and owner checklist](docs/flow-lite84-implementation.md). Lighting and OS-mode editing remain later, separately gated slices.
+
+The keyboard follows Connect on launch and supports keyboard-activity-triggered battery refresh at most hourly, with no polling timer. Activity from any keyboard qualifies; key contents are not accessed. Manual Refresh still reads the full status. The activity feature passes offline checks; live monitoring and battery impact remain owner checks.
 
 ## Build and run
 
@@ -49,3 +55,6 @@ See [build and signing instructions](docs/build.md) for cache paths, packaging a
 | Historical implementation | [D200X/v2 archive](docs/archive/v2/README.md) |
 
 The native Logitech and D200X implementation is maintained on `master`. The previous implementation is preserved at checkpoint `4b3248d` on `v2`.
+
+
+The latest screensaver controls include a temporary five-second deck preview and a retained, collapsible last-sent image. Wide-mode switching and retained preview have owner confirmation. Additive icon-and-text notifications, badge counts and MCP configuration/device-state tools are requested next work, not current capabilities.

@@ -6,11 +6,13 @@ public struct D200XSlot: Equatable, Sendable {
     public let image: Data
     public let format: ImageFormat
     public let text: String
+    public let smallViewMode: Int?
 
-    public init(image: Data, format: ImageFormat = .png, text: String = "") {
+    public init(image: Data, format: ImageFormat = .png, text: String = "", smallViewMode: Int? = nil) {
         self.image = image
         self.format = format
         self.text = text
+        self.smallViewMode = smallViewMode
     }
 }
 
@@ -27,7 +29,8 @@ public struct D200XPage: Equatable, Sendable {
         var total = 0
         for coordinate in slots.keys.sorted() {
             guard Self.coordinates.contains(coordinate), let slot = slots[coordinate],
-                  slot.text.utf8.count <= 4096, !slot.image.isEmpty else { throw D200XFailure.invalidPage }
+                  slot.text.utf8.count <= 4096, !slot.image.isEmpty,
+                  slot.smallViewMode == nil || (coordinate == "3_2" && slot.smallViewMode == 2) else { throw D200XFailure.invalidPage }
             total += slot.image.count
             guard total <= D200XCodec.maximumPayloadSize else { throw D200XFailure.oversized }
             let signature = slot.format == .png ? Data([137, 80, 78, 71, 13, 10, 26, 10]) : Data("GIF8".utf8)
@@ -35,7 +38,7 @@ public struct D200XPage: Equatable, Sendable {
             let hash = SHA256.hash(data: slot.image).map { String(format: "%02x", $0) }.joined()
             let path = "Images/\(hash).\(slot.format.rawValue)"
             if assets.insert(path).inserted { files.append((path, slot.image)) }
-            manifest[coordinate] = ManifestSlot(State: 0, ViewParam: [View(Icon: path, Text: slot.text)])
+            manifest[coordinate] = ManifestSlot(State: 0, ViewParam: [View(Icon: path, Text: slot.text)], SmallViewMode: slot.smallViewMode)
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -45,7 +48,7 @@ public struct D200XPage: Equatable, Sendable {
 
     private static let coordinates = Set((0..<14).map { "\($0 % 5)_\($0 / 5)" })
     private struct View: Encodable { let Icon: String; let Text: String }
-    private struct ManifestSlot: Encodable { let State: Int; let ViewParam: [View] }
+    private struct ManifestSlot: Encodable { let State: Int; let ViewParam: [View]; let SmallViewMode: Int? }
 }
 
 public enum D200XPageUpdate: Sendable { case replace, incremental }

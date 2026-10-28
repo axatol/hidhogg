@@ -1,6 +1,8 @@
 # Native UI and D200X roadmap
 
-Requested on 2026-10-21. TaskView Personal / HIDhogg project 5 is the task source of truth. These are planned milestones, not authorization to start either implementation now.
+28 October 2026 checkpoint: [wide modes, screensaver Apply and static app-icon notifications](d200x-display-controls-plan.md) are owner-approved and implemented. The earlier baseline passed206 independent fake-only checks; current signed buildd26b3a0 passes38 focused follow-up checks, and the owner confirms the reported mode-switch/retained-preview issue appears resolved. The [Now Playing spike](d200x-now-playing-spike.md) is complete; no live player provider is shipped. The historical proposed DX-05 scope below is now partially implemented; hardware/persistence/availability acceptance and unverified encoder controls remain open. TaskView448/470 stay In Progress for those remaining gates.
+
+Original proposal requested on 21 October 2026. TaskView Personal / HIDhogg project 5 is the task source of truth. The historical milestone list below does not authorize unapproved follow-ups; the 28 October checkpoint and current display plan record the approved delivered scope.
 
 ```text
 Current Logitech checkpoint + NX22 window behavior

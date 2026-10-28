@@ -6,7 +6,8 @@ import HidhoggDomain
 struct LiveNotificationEvent: Identifiable, Equatable {
     let id: UUID
     let topic: String
-    let text: String
+    let text: String?
+    let appID: String?
     let receivedAt: Date
     let profile: String
     var notificationID: UUID?
@@ -23,6 +24,7 @@ final class D200XAutomationCoordinator: ObservableObject {
     @Published private(set) var liveNotifications: [LiveNotificationEvent] = []
     private weak var model: D200XModel?
     private let runner: ConfiguredActionRunner
+    private let iconResolver: any D200XApplicationIconResolving
     private let server = LocalAutomationServer()
     private var store = NotificationOverlayStore()
     private var operation: Task<AutomationResponse, Never>?
@@ -37,9 +39,11 @@ final class D200XAutomationCoordinator: ObservableObject {
     private let clockOrigin = ContinuousClock.now
     private let dateOrigin = Date.now
 
-    init(model: D200XModel, runner: ConfiguredActionRunner) {
+    init(model: D200XModel, runner: ConfiguredActionRunner,
+         iconResolver: any D200XApplicationIconResolving = D200XApplicationIconResolver()) {
         self.model = model
         self.runner = runner
+        self.iconResolver = iconResolver
         historyTask = Task { [weak self, events = runner.events] in
             for await _ in events {
                 guard let self, !Task.isCancelled else { return }
@@ -60,6 +64,9 @@ final class D200XAutomationCoordinator: ObservableObject {
         return dateOrigin.addingTimeInterval(Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18)
     }
     var labels: [String: String] { store.labelOverrides(at: clockDate) }
+    var iconOverrides: [String: Data] {
+        store.notificationAppIDs(at: clockDate).compactMapValues { iconResolver.pngData(for: $0) }
+    }
     var isStopped: Bool { isStopping }
 
     func start() {
@@ -97,6 +104,8 @@ final class D200XAutomationCoordinator: ObservableObject {
     func clearActionHistory() async {
         historyReadRevision &+= 1
         await runner.clearHistory()
+        historyReadRevision &+= 1
+        actionHistory = []
         await refreshHistory()
     }
 
@@ -187,15 +196,21 @@ final class D200XAutomationCoordinator: ObservableObject {
                 return .success(requestID: request.requestID, result: try .encoding(Array(await runner.history().suffix(40))))
             case .notificationsHistory:
                 return .success(requestID: request.requestID, result: .array(notificationHistory.suffix(40).map { entry in
-                    .object(["event_id": .string(entry.id.uuidString), "notification_id": .string(entry.notificationID.uuidString), "topic": .string(entry.topic),
-                             "profile": .string(entry.profile ?? "Default"),
-                             "outcome": .string(entry.outcome), "controls": .array(entry.controls.map(AutomationValue.string)),
-                             "matched_count": .integer(entry.matchedCount), "committed_at": .string(entry.committedAt.ISO8601Format())])
+                    var values: [String: AutomationValue] = [
+                        "event_id": .string(entry.id.uuidString), "notification_id": .string(entry.notificationID.uuidString),
+                        "topic": .string(entry.topic), "profile": .string(entry.profile ?? "Default"),
+                        "outcome": .string(entry.outcome), "controls": .array(entry.controls.map(AutomationValue.string)),
+                        "matched_count": .integer(entry.matchedCount), "committed_at": .string(entry.committedAt.ISO8601Format())
+                    ]
+                    if let appID = entry.appID { values["app_id"] = .string(appID) }
+                    return .object(values)
                 }))
             case .notificationsEmit:
-                guard let params = request.params, let topic = params.topic, let text = params.text else {
+                guard let params = request.params, let topic = params.topic else {
                     throw AutomationUnavailable()
                 }
+                let text = params.text
+                let appID = params.appID
                 model?.refreshActiveApplication()
                 let capturedTopics = model?.runtimeConfiguration?.notificationTopics ?? [:]
                 let eventID = UUID()
@@ -203,16 +218,16 @@ final class D200XAutomationCoordinator: ObservableObject {
                     $0.value.contains { NotificationTopic.matches(topic, filter: $0) }
                 }.keys.sorted()
                 if isListening {
-                    liveNotifications.append(LiveNotificationEvent(id: eventID, topic: topic, text: text,
+                    liveNotifications.append(LiveNotificationEvent(id: eventID, topic: topic, text: text, appID: appID,
                         receivedAt: .now, profile: model?.activeProfileName ?? "Default", notificationID: nil, controls: recipients, outcome: "received"))
                     if liveNotifications.count > 100 { liveNotifications.removeFirst(liveNotifications.count - 100) }
                 }
-                let response = await enqueue(requestID: request.requestID, topic: topic, outcome: "delivered") { [weak self] store in
+                let response = await enqueue(requestID: request.requestID, topic: topic, outcome: "delivered", appID: appID) { [weak self] store in
                     var subscriptions: [String: [String]] = [:]
                     for (control, topics) in capturedTopics {
                         for topic in topics { subscriptions[topic, default: []].append(control) }
                     }
-                    return try store.prepareEmit(topic: topic, text: text, ttlSeconds: params.ttlSeconds,
+                    return try store.prepareEmit(topic: topic, text: text, appID: appID, ttlSeconds: params.ttlSeconds,
                                           subscriptions: subscriptions, now: self?.clockDate ?? .now)
                 }
                 if let index = liveNotifications.firstIndex(where: { $0.id == eventID }) {
@@ -232,6 +247,7 @@ final class D200XAutomationCoordinator: ObservableObject {
     }
 
     private func enqueue(requestID: String, topic: String = "local", outcome: String = "cleared", notificationID: UUID? = nil,
+                         appID: String? = nil,
                          authorize: (@MainActor () -> Bool)? = nil,
                          prepare: @escaping @MainActor (NotificationOverlayStore) throws -> PreparedNotificationMutation) async -> AutomationResponse {
         guard !isStopping, pendingCount < 8 else {
@@ -252,7 +268,10 @@ final class D200XAutomationCoordinator: ObservableObject {
                 let mutation = try prepare(self.store)
                 if mutation.matchedCount > 0 || mutation.clearedCount > 0 {
                     guard let model = self.model, model.canDeliverNotification else { throw AutomationUnavailable() }
-                    try await model.applyNotificationLabels(mutation.labelOverrides, authorize: { [weak self] in
+                    let candidateIcons = mutation.notificationAppIDs.compactMapValues {
+                        self.iconResolver.pngData(for: $0)
+                    }
+                    try await model.applyNotificationLabels(mutation.labelOverrides, notificationIcons: candidateIcons, authorize: { [weak self] in
                         self?.revision == intent && (authorize?() ?? true)
                     })
                 }
@@ -263,14 +282,15 @@ final class D200XAutomationCoordinator: ObservableObject {
                     : previousControls.subtracting(mutation.labelOverrides.keys).sorted()
                 self.recordNotification(topic: topic, outcome: outcome == "delivered" && mutation.matchedCount == 0 ? "unhandled" : outcome,
                                         notificationID: mutation.notificationID ?? notificationID,
-                                        count: max(mutation.matchedCount, mutation.clearedCount), controls: controls, profile: profile)
+                                        appID: appID, count: max(mutation.matchedCount, mutation.clearedCount), controls: controls, profile: profile)
                 var result: [String: AutomationValue] = ["matched_count": .integer(mutation.matchedCount), "cleared_count": .integer(mutation.clearedCount)]
                 if let id = mutation.notificationID { result["notification_id"] = .string(id.uuidString) }
                 return .success(requestID: requestID, result: .object(result))
             } catch {
                 self.message = "The notification was not delivered. Check the device connection and request."
                 self.model?.reportAutomationFailure("A tile notification could not be committed to the device.")
-                self.recordNotification(topic: topic, outcome: "failed", notificationID: notificationID, count: 0, controls: [], profile: profile)
+                self.recordNotification(topic: topic, outcome: "failed", notificationID: notificationID, appID: appID,
+                                        count: 0, controls: [], profile: profile)
                 return .failure(requestID: requestID, code: "not_delivered", message: "The notification could not be committed to the device.")
             }
         }
@@ -294,12 +314,13 @@ final class D200XAutomationCoordinator: ObservableObject {
         }
     }
 
-    private func recordNotification(topic: String, outcome: String, notificationID: UUID?, count: Int, controls: [String], profile: String) {
+    private func recordNotification(topic: String, outcome: String, notificationID: UUID?, appID: String?, count: Int,
+                                    controls: [String], profile: String) {
         if let notificationID, let index = liveNotifications.firstIndex(where: { $0.notificationID == notificationID }) {
             liveNotifications[index].outcome = outcome
         }
         notificationHistory.append(NotificationHistoryEntry(notificationID: notificationID ?? UUID(), topic: topic,
-                                                            committedAt: clockDate, expiresAt: nil, matchedCount: count,
+                                                            appID: appID, committedAt: clockDate, expiresAt: nil, matchedCount: count,
                                                             outcome: outcome, controls: controls, profile: profile))
         if notificationHistory.count > 100 { notificationHistory.removeFirst(notificationHistory.count - 100) }
     }

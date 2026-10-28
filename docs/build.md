@@ -1,6 +1,6 @@
 # Local application build
 
-The Swift package contains the native Logitech/D200X workspace and the local automation CLI. Builds do not launch them, enumerate HID devices or request permissions. Physical acceptance remains separate from compilation.
+The Swift package contains the native Logitech/D200X/Flow Lite84 workspace and the local automation CLI. Builds do not launch them, enumerate HID devices or request permissions. Physical acceptance remains separate from compilation.
 
 ## Requirements
 
@@ -12,6 +12,8 @@ bash scripts/build-app.sh \
 ```
 
 Outputs: signed `dist/Hidhogg.app` and adjacent `dist/hidhoggctl`. The app retains the fixed path and identifier `com.hidhogg.app`. Permission retention is not guaranteed by path alone. Do not use an ad-hoc identity for local updates; the script rejects `-` and requires an explicit identity.
+
+`flowlite84-status` is a separate developer-only SwiftPM executable, excluded from app packaging. Without arguments it prints usage without opening HID. Explicit `--read-only` opens only the exact Flow Lite84 receiver, reads one approved status snapshot, closes it and prints safe decoded fields. Optional `--refresh-once` performs one explicit refresh after connecting, bounded to two snapshots and the same deadline. Diagnostics retain only bounded semantic query-stage names. Its allowed commands and live-test boundary are recorded in [FL-01](flow-lite84-implementation.md); it does not change lighting, mode or firmware.
 
 The script defaults its SwiftPM scratch directory to `/Volumes/Data/cache/hidhogg-swift-build`. Use `--scratch-path` for another directory beneath `/Volumes/Data/cache` or `/Volumes/Data/tmp`; its parent must already exist. Use `--output /absolute/path/Hidhogg.app` for an isolated verification product. Signing and verification occur on a sibling stage before replacing any existing output; a failed build or sign leaves it untouched. Replacement has a brief gap while an old bundle is moved aside. Do not build concurrent copies to the same output path.
 

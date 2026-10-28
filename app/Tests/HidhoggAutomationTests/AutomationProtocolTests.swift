@@ -4,7 +4,8 @@ import Testing
 
 struct AutomationProtocolTests {
     @Test func requestRoundTripUsesVersionedNestedSnakeCaseEnvelope() throws {
-        let request = AutomationRequest(requestID: "request-1", method: .notificationsEmit, params: .init(topic: "build.done", text: "Completed", ttlSeconds: 30))
+        let request = AutomationRequest(requestID: "request-1", method: .notificationsEmit,
+            params: .init(topic: "build.done", text: "Completed", ttlSeconds: 30, appID: "com.example.Builder"))
         let encoded = try AutomationFrame.encode(request)
         #expect(try AutomationFrame.decodeRequest(encoded) == request)
         let text = String(decoding: encoded, as: UTF8.self)
@@ -13,6 +14,7 @@ struct AutomationProtocolTests {
         #expect(text.contains("\"topic\":\"build.done\""))
         #expect(!text.contains("\"source\""))
         #expect(text.contains("\"ttl_seconds\":30"))
+        #expect(text.contains("\"app_id\":\"com.example.Builder\""))
         #expect(encoded.last == 10)
     }
 
@@ -23,6 +25,9 @@ struct AutomationProtocolTests {
         #"{"protocol_version":1,"request_id":"r","method":"notifications.emit","params":{"source":"a","source":"b","text":"ok"}}"#,
         #"{"protocol_version":1,"request_id":"r","method":"notifications.emit","params":{"source":"a","text":"ok"}}"#,
         #"{"protocol_version":1,"request_id":"r","method":"notifications.emit","params":{"topic":"a","text":"ok","unknown":1}}"#,
+        #"{"protocol_version":1,"request_id":"r","method":"notifications.emit","params":{"topic":"a","app_id":"../Example.app"}}"#,
+        #"{"protocol_version":1,"request_id":"r","method":"notifications.emit","params":{"topic":"a","app_id":"com.example.Builder","text":""}}"#,
+        #"{"protocol_version":1,"request_id":"r","method":"notifications.emit","params":{"topic":"a"}}"#,
         #"{"protocol_version":1,"request_id":"r","method":"status","params":null}"#,
         #"{"protocol_version":1,"request_id":"r","method":"notifications.emit","params":{"topic":"a","text":"ok","ttl_seconds":null}}"#,
         #"{"protocol_version":1,"request_id":"r","method":"notifications.emit","params":{"topic":"a","text":"ok","ttl_seconds":1.5}}"#,
@@ -47,6 +52,9 @@ struct AutomationProtocolTests {
             let request = AutomationRequest(method: .notificationsEmit, params: .init(topic: "valid", text: text))
             #expect(throws: (any Error).self) { try request.validated() }
         }
+        let iconOnlyRequest = AutomationRequest(method: .notificationsEmit,
+            params: .init(topic: "valid", appID: "com.example.Builder"))
+        try iconOnlyRequest.validated()
         let response = AutomationResponse.success(requestID: "r", result: .object(["matched_count": .integer(0)]))
         #expect(try AutomationFrame.decodeResponse(AutomationFrame.encode(response)) == response)
         #expect(!String(decoding: try AutomationFrame.encode(response), as: UTF8.self).contains("text"))
