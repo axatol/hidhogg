@@ -23,10 +23,16 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
     private var pending: Pending?
     private var receiptSequence: UInt64 = 0
     private var latestBattery: BatteryObservation?
+    private var originalLighting: [UInt16: [UInt8]] = [:]
+    private var lightingMutationToken: UInt64?
+    private var originalSystemMode: [UInt8]?
+    private var systemModeMutationToken: UInt64?
 
     private enum BatchScope: Equatable {
         case full
         case battery
+        case lighting
+        case systemMode
     }
 
     private struct Pending {
@@ -82,6 +88,8 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
         publish(.connecting)
         lastSnapshot = nil
         latestBattery = nil
+        originalLighting = [:]
+        originalSystemMode = nil
         let task = startBatch(initial: true, scope: .full, token: token)
         try await wait(for: task, token: token)
     }
@@ -92,7 +100,7 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
         let token = generation
         let task: Task<Void, Error>
         if let batch {
-            if batchScope == .battery { refreshRequested = true }
+            if batchScope != .full { refreshRequested = true }
             task = batch
         } else {
             task = startBatch(initial: false, scope: .full, token: token)
@@ -104,12 +112,277 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
         try Task.checkCancellation()
         guard case .connected = status, transport != nil else { throw FlowLite84Failure.disconnected }
         let token = generation
+        if batchScope == .lighting || batchScope == .systemMode { refreshRequested = true }
         let task = batch ?? startBatch(initial: false, scope: .battery, token: token)
         try await wait(for: task, token: token)
     }
 
     public func disconnect() async {
         await stop(failure: nil, token: generation)
+    }
+
+    public func applyLighting(_ edit: FlowLite84LightingEdit) async throws -> FlowLite84Snapshot {
+        guard edit.isValid, !edit.isEmpty else { throw FlowLite84Failure.invalidRequest }
+        return try await startLighting(edit: edit)
+    }
+
+    public func restoreOriginalLighting() async throws -> FlowLite84Snapshot {
+        guard !originalLighting.isEmpty else { throw FlowLite84Failure.noOriginalLighting }
+        return try await startLighting(edit: nil)
+    }
+
+    public func applySystemMode(_ mode: FlowLite84SystemMode) async throws -> FlowLite84Snapshot {
+        try await startSystemMode(mode: mode)
+    }
+
+    public func restoreOriginalSystemMode() async throws -> FlowLite84Snapshot {
+        guard originalSystemMode != nil else { throw FlowLite84Failure.noOriginalSystemMode }
+        return try await startSystemMode(mode: nil)
+    }
+
+    private func startSystemMode(mode: FlowLite84SystemMode?) async throws -> FlowLite84Snapshot {
+        try Task.checkCancellation()
+        guard case .connected = status, transport != nil, identity != nil else {
+            throw FlowLite84Failure.disconnected
+        }
+        guard batch == nil else { throw FlowLite84Failure.busy }
+        batchSequence &+= 1
+        let sequence = batchSequence
+        let token = generation
+        let task = Task { try await performSystemMode(mode: mode, token: token, sequence: sequence) }
+        batch = task
+        batchScope = .systemMode
+        try await wait(for: task, token: token)
+        try checkActive(token)
+        guard let snapshot = lastSnapshot else { throw FlowLite84Failure.disconnected }
+        return snapshot
+    }
+
+    private func performSystemMode(mode: FlowLite84SystemMode?, token: UInt64, sequence: UInt64) async throws {
+        var changed = false
+        do {
+            let current = try await exchange(.setting(.systemMode), token: token).fields
+            let intended: [UInt8]
+            let request: FlowLite84Request
+            if let mode {
+                intended = [mode.rawValue, 0x55 &- mode.rawValue]
+                request = .systemModeWrite(mode)
+            } else {
+                guard let originalSystemMode else { throw FlowLite84Failure.noOriginalSystemMode }
+                intended = originalSystemMode
+                request = .restoreSystemMode(originalSystemMode)
+            }
+            if current != intended {
+                try checkActive(token)
+                if originalSystemMode == nil { originalSystemMode = current }
+                systemModeMutationToken = token
+                changed = true
+                _ = try await exchange(request, token: token)
+            }
+            let observed = try await exchange(.setting(.systemMode), token: token).fields
+            guard observed == intended else { throw FlowLite84Failure.systemModeReadbackMismatch }
+            try checkActive(token)
+            if mode == nil { originalSystemMode = nil }
+            try publishSystemMode(observed[0], token: token)
+            if systemModeMutationToken == token { systemModeMutationToken = nil }
+            finishMutation(token: token, sequence: sequence)
+        } catch {
+            let failure = Self.failure(error)
+            let reported: FlowLite84Failure = changed && failure != .systemModeReadbackMismatch && !Self.isRejectedWrite(failure)
+                ? .systemModeOutcomeUnknown : failure
+            if token == generation, transport != nil,
+               let observed = try? await exchange(.setting(.systemMode), token: token) {
+                try? publishSystemMode(observed.fields[0], token: token)
+            }
+            if systemModeMutationToken == token { systemModeMutationToken = nil }
+            finishMutation(token: token, sequence: sequence)
+            throw reported
+        }
+    }
+
+    private func publishSystemMode(_ mode: UInt8, token: UInt64) throws {
+        try checkActive(token)
+        guard let latest = lastSnapshot else { throw FlowLite84Failure.disconnected }
+        let snapshot = FlowLite84Snapshot(
+            identity: latest.identity, online: latest.online,
+            keyboardVersion: latest.keyboardVersion, receiverVersion: latest.receiverVersion,
+            battery: latest.battery, lighting: latest.lighting, systemMode: mode,
+            readAt: latest.readAt, batteryReadAt: latest.batteryReadAt,
+            unavailableFields: latest.unavailableFields.filter { $0 != "systemMode" },
+            canRestoreOriginalLighting: !originalLighting.isEmpty,
+            canRestoreOriginalSystemMode: originalSystemMode != nil
+        )
+        lastSnapshot = snapshot
+        continuation.yield(.snapshot(snapshot, generation: token))
+    }
+
+    private func startLighting(edit: FlowLite84LightingEdit?) async throws -> FlowLite84Snapshot {
+        try Task.checkCancellation()
+        guard case .connected = status, transport != nil, identity != nil else {
+            throw FlowLite84Failure.disconnected
+        }
+        guard batch == nil else { throw FlowLite84Failure.busy }
+        batchSequence &+= 1
+        let sequence = batchSequence
+        let token = generation
+        let task = Task { try await performLighting(edit: edit, token: token, sequence: sequence) }
+        batch = task
+        batchScope = .lighting
+        try await wait(for: task, token: token)
+        try checkActive(token)
+        guard let snapshot = lastSnapshot else { throw FlowLite84Failure.disconnected }
+        return snapshot
+    }
+
+    private func readLightingRegion(_ address: UInt16, token: UInt64) async throws -> [UInt8] {
+        let request: FlowLite84Request
+        if let setting = FlowLite84Setting(rawValue: address), setting != .systemMode {
+            request = .setting(setting)
+        } else {
+            guard address >= 8544, address <= 9024, (address - 8544) % 32 == 0 else {
+                throw FlowLite84Failure.invalidRequest
+            }
+            request = .effect(mode: UInt8((address - 8544) / 32))
+        }
+        return try await exchange(request, token: token).fields
+    }
+
+    private func lightingChanges(_ edit: FlowLite84LightingEdit, token: UInt64) async throws -> [(UInt16, [UInt8], [UInt8])] {
+        var changes: [(UInt16, [UInt8], [UInt8])] = []
+        let scalars: [(FlowLite84Setting, UInt8?)] = [
+            (.lightingEnabled, edit.enabled.map { $0 ? 1 : 0 }),
+            (.idleOff, edit.idleOff?.rawValue),
+        ]
+        if edit.brightnessLevel != nil || edit.speedLevel != nil {
+            let mode: UInt8
+            if let effect = edit.effect { mode = effect.rawValue }
+            else { mode = try await readLightingRegion(FlowLite84Setting.lightingMode.rawValue, token: token)[0] }
+            guard FlowLite84LightingEffect(rawValue: mode) != nil else { throw FlowLite84Failure.lightingUnavailable }
+            let address = 8544 + UInt16(mode) * 32
+            let original = try await readLightingRegion(address, token: token)
+            var intended = original
+            if let speed = edit.speedLevel { intended[1] = speed }
+            if let brightness = edit.brightnessLevel { intended[2] = brightness }
+            intended[3] = 0x55 &- intended.prefix(3).reduce(UInt8(0), &+)
+            changes.append((address, original, intended))
+        }
+        if let effect = edit.effect {
+            let address = FlowLite84Setting.lightingMode.rawValue
+            let original = try await readLightingRegion(address, token: token)
+            let intended = [effect.rawValue, 0x55 &- effect.rawValue]
+            changes.append((address, original, intended))
+        }
+        for (setting, value) in scalars {
+            guard let value else { continue }
+            let original = try await readLightingRegion(setting.rawValue, token: token)
+            let intended = [value, 0x55 &- value]
+            changes.append((setting.rawValue, original, intended))
+        }
+        return changes
+    }
+
+    private func performLighting(edit: FlowLite84LightingEdit?, token: UInt64, sequence: UInt64) async throws {
+        var changed = false
+        do {
+            let changes: [(UInt16, [UInt8], [UInt8])]
+            if let edit {
+                changes = try await lightingChanges(edit, token: token)
+            } else {
+                var restoring: [(UInt16, [UInt8], [UInt8])] = []
+                for address in originalLighting.keys.sorted() {
+                    let current = try await readLightingRegion(address, token: token)
+                    if let original = originalLighting[address] {
+                        restoring.append((address, current, original))
+                    }
+                }
+                changes = restoring
+            }
+            for (address, original, intended) in changes {
+                guard original != intended else { continue }
+                try checkActive(token)
+                if originalLighting[address] == nil { originalLighting[address] = original }
+                lightingMutationToken = token
+                changed = true
+                _ = try await exchange(.lightingWrite(address: address, bytes: intended), token: token)
+                let observed = try await readLightingRegion(address, token: token)
+                guard observed == intended else { throw FlowLite84Failure.lightingReadbackMismatch }
+            }
+            for (address, _, intended) in changes {
+                guard try await readLightingRegion(address, token: token) == intended else {
+                    throw FlowLite84Failure.lightingReadbackMismatch
+                }
+            }
+            try await publishLighting(token: token, clearOriginals: edit == nil)
+            if lightingMutationToken == token { lightingMutationToken = nil }
+            finishMutation(token: token, sequence: sequence)
+        } catch {
+            let failure = Self.failure(error)
+            let reported: FlowLite84Failure
+            if changed, failure != .lightingReadbackMismatch,
+               !Self.isRejectedWrite(failure) {
+                reported = .lightingOutcomeUnknown
+            } else {
+                reported = failure
+            }
+            if token == generation, transport != nil {
+                // Reconciliation reads never retry a write or establish that the failed acknowledgement succeeded.
+                for address in originalLighting.keys.sorted() {
+                    guard (try? await readLightingRegion(address, token: token)) != nil else { break }
+                }
+                try? await publishLighting(token: token)
+            }
+            if lightingMutationToken == token { lightingMutationToken = nil }
+            finishMutation(token: token, sequence: sequence)
+            throw reported
+        }
+    }
+
+    private static func isRejectedWrite(_ failure: FlowLite84Failure) -> Bool {
+        if case .rejected(command: 7, status: _) = failure { return true }
+        return false
+    }
+
+    private func finishMutation(token: UInt64, sequence: UInt64) {
+        guard token == generation, sequence == batchSequence else { return }
+        let shouldRefresh = refreshRequested
+        finishBatch(token: token, sequence: sequence)
+        if shouldRefresh, transport != nil, case .connected = status {
+            _ = startBatch(initial: false, scope: .full, token: token)
+        }
+    }
+
+    private func publishLighting(token: UInt64, clearOriginals: Bool = false) async throws {
+        guard let previous = lastSnapshot else { throw FlowLite84Failure.disconnected }
+        let mode = try await readLightingRegion(8496, token: token)[0]
+        let enabled = try await readLightingRegion(8498, token: token)[0]
+        let idle = try await readLightingRegion(8500, token: token)[0]
+        var speed: UInt8?
+        var brightness: UInt8?
+        if mode <= 15 {
+            let effect = try await readLightingRegion(8544 + UInt16(mode) * 32, token: token)
+            speed = effect[1]
+            brightness = effect[2]
+        }
+        try checkActive(token)
+        if clearOriginals { originalLighting = [:] }
+        let lighting = enabled <= 1 ? FlowLite84Lighting(
+            mode: mode, enabled: enabled == 1, idleOffUnits: idle, brightnessLevel: brightness, speedLevel: speed
+        ) : nil
+        let latest = lastSnapshot ?? previous
+        var unavailable = latest.unavailableFields.filter { $0 != "lighting" && !$0.hasPrefix("lighting.") }
+        if lighting == nil { unavailable.append("lighting") }
+        if speed == nil { unavailable.append("lighting.speedLevel") }
+        if brightness == nil { unavailable.append("lighting.brightnessLevel") }
+        let snapshot = FlowLite84Snapshot(
+            identity: previous.identity, online: previous.online,
+            keyboardVersion: previous.keyboardVersion, receiverVersion: previous.receiverVersion,
+            battery: latest.battery, lighting: lighting, systemMode: latest.systemMode,
+            readAt: latest.readAt, batteryReadAt: latest.batteryReadAt,
+            unavailableFields: unavailable, canRestoreOriginalLighting: !originalLighting.isEmpty,
+            canRestoreOriginalSystemMode: originalSystemMode != nil
+        )
+        lastSnapshot = snapshot
+        continuation.yield(.snapshot(snapshot, generation: token))
     }
 
     private func wait(for task: Task<Void, Error>, token: UInt64) async throws {
@@ -151,6 +424,7 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
                 var snapshot = switch nextScope {
                 case .full: try await readSnapshot(token: token)
                 case .battery: try await readBatterySnapshot(token: token)
+                case .lighting, .systemMode: throw FlowLite84Failure.invalidRequest
                 }
                 try checkActive(token)
                 if let latestBattery, latestBattery.sequence > batteryBoundary {
@@ -222,7 +496,7 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
                     try await link.write(report)
                     await self?.written(token: token, sequence: sequence)
                 } catch {
-                    await self?.stop(failure: Self.failure(error), token: token)
+                    await self?.writeFailed(error, token: token, sequence: sequence)
                 }
             }
         }
@@ -236,7 +510,23 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
 
     private func timedOut(token: UInt64, sequence: UInt64) async {
         guard token == generation, pending?.sequence == sequence else { return }
+        if let failure = pending?.request.writeOutcomeUnknown, pending?.written == true {
+            pending?.result = .failure(failure)
+            completePending()
+            return
+        }
         await stop(failure: .timeout, token: token)
+    }
+
+    private func writeFailed(_ error: Error, token: UInt64, sequence: UInt64) async {
+        guard token == generation, pending?.sequence == sequence else { return }
+        if let failure = pending?.request.writeOutcomeUnknown {
+            pending?.written = true
+            pending?.result = .failure(failure)
+            completePending()
+            return
+        }
+        await stop(failure: Self.failure(error), token: token)
     }
 
     private func receive(_ data: Data, token: UInt64) async {
@@ -276,6 +566,11 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
                    reply.fields == [identity.cid, identity.mid, identity.connectionType] { return }
                 if let current = pending { try reply.validate(for: current.request) }
                 throw FlowLite84Failure.invalidResponse(.unexpectedReply(command: reply.command))
+            }
+            if reply.command == 7, let failure = pending?.request.writeOutcomeUnknown {
+                pending?.result = .failure(failure)
+                completePending()
+                return
             }
             guard reply.command == 4, identity != nil, reply.status == 0 else { return }
             let observation = batteryObservation(reply)
@@ -335,7 +630,9 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
             keyboardVersion: snapshot.keyboardVersion, receiverVersion: snapshot.receiverVersion,
             battery: battery, lighting: snapshot.lighting, systemMode: snapshot.systemMode,
             readAt: snapshot.readAt, batteryReadAt: observation.receivedAt,
-            unavailableFields: unavailable + observation.unavailableFields
+            unavailableFields: unavailable + observation.unavailableFields,
+            canRestoreOriginalLighting: !originalLighting.isEmpty,
+            canRestoreOriginalSystemMode: originalSystemMode != nil
         )
     }
 
@@ -349,7 +646,9 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
             unavailable += ["keyboardVersion", "battery", "lighting", "systemMode"]
             return FlowLite84Snapshot(
                 identity: identity, online: false,
-                readAt: timing.now(), unavailableFields: unavailable
+                readAt: timing.now(), unavailableFields: unavailable,
+                canRestoreOriginalLighting: !originalLighting.isEmpty,
+                canRestoreOriginalSystemMode: originalSystemMode != nil
             )
         }
 
@@ -366,8 +665,8 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
         if let mode, mode <= 15,
            let effect = try await optional(.effect(mode: mode), field: "lighting.parameters", unavailable: &unavailable, token: token) {
             guard effect.fields.reduce(UInt8(0), &+) == 0x55 else { throw FlowLite84Failure.invalidResponse(.effectChecksum) }
-            speed = effect.fields[1] <= 4 ? effect.fields[1] : nil
-            brightness = effect.fields[2] <= 4 ? effect.fields[2] : nil
+            speed = effect.fields[1]
+            brightness = effect.fields[2]
         }
         if speed == nil { unavailable.append("lighting.speedLevel") }
         if brightness == nil { unavailable.append("lighting.brightnessLevel") }
@@ -381,7 +680,9 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
         return FlowLite84Snapshot(
             identity: identity, online: true, keyboardVersion: keyboardVersion,
             lighting: lighting,
-            systemMode: system, readAt: timing.now(), unavailableFields: unavailable
+            systemMode: system, readAt: timing.now(), unavailableFields: unavailable,
+            canRestoreOriginalLighting: !originalLighting.isEmpty,
+            canRestoreOriginalSystemMode: originalSystemMode != nil
         )
     }
 
@@ -402,7 +703,9 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
                 lighting: previous?.lighting,
                 systemMode: previous?.systemMode,
                 readAt: previous?.readAt ?? timing.now(),
-                unavailableFields: retainedUnavailable + ["battery"]
+                unavailableFields: retainedUnavailable + ["battery"],
+                canRestoreOriginalLighting: !originalLighting.isEmpty,
+                canRestoreOriginalSystemMode: originalSystemMode != nil
             )
         }
 
@@ -415,7 +718,8 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
             lighting: previous?.lighting,
             systemMode: previous?.systemMode,
             readAt: previous?.readAt ?? timing.now(),
-            unavailableFields: unavailable
+            unavailableFields: unavailable, canRestoreOriginalLighting: !originalLighting.isEmpty,
+            canRestoreOriginalSystemMode: originalSystemMode != nil
         )
     }
 
@@ -439,6 +743,11 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
 
     private func stop(failure: FlowLite84Failure?, token: UInt64) async {
         guard token == generation else { return }
+        let failure: FlowLite84Failure? = if failure != nil, lightingMutationToken == token {
+            .lightingOutcomeUnknown
+        } else if failure != nil, systemModeMutationToken == token {
+            .systemModeOutcomeUnknown
+        } else { failure }
         if failure == nil { terminalFailure = nil }
         guard let link = transport else {
             if let closing { await closing.value }
@@ -451,6 +760,10 @@ public actor FlowLite84Session: FlowLite84SessionProtocol {
         identity = nil
         lastSnapshot = nil
         latestBattery = nil
+        originalLighting = [:]
+        lightingMutationToken = nil
+        originalSystemMode = nil
+        systemModeMutationToken = nil
         refreshRequested = false
         batchSequence &+= 1
         batch?.cancel()

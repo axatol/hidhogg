@@ -1,6 +1,6 @@
 # Roadmap
 
-Updated 28 October 2026. TaskView Personal / HIDhogg project 5 owns stable task IDs, dependencies and completion status. This file is the concise implementation/acceptance index. [Earlier dated checkpoints](roadmap-history-2026-10-26.md) are historical evidence.
+Updated 31 October 2026. TaskView Personal / HIDhogg project 5 owns stable task IDs, dependencies and completion status. This file is the concise implementation/acceptance index. [Earlier dated checkpoints](roadmap-history-2026-10-26.md) are historical evidence.
 
 ## Current checkpoint
 
@@ -44,14 +44,14 @@ Automatic recovery is implemented under exclusive mouse ownership: retain intent
 
 ## Next device: Flow Lite84
 
-Requested and FL-01 approved 26 October 2026. The native receiver-based read-only status slice is implemented, locally signed and tested; a bounded receiver status read succeeded. Owner app/hardware acceptance remains open. Lighting/OS writes remain separately gated. [Feasibility and evidence](lofree-flow-lite-feasibility.md).
+Requested and FL-01 approved 26 October 2026. The native receiver-based read-only status slice is implemented, locally signed and tested; a bounded receiver status read succeeded. Owner app/hardware acceptance remains open. Lighting and explicit system-mode writes are implemented in the approved slices below; physical acceptance remains open. [Feasibility and evidence](lofree-flow-lite-feasibility.md).
 
 | Stable ID | TaskView | Proposed deliverable | State |
 |---|---:|---|---|
 | FL-M1 | 492 | Native status and controls milestone | In progress; FL-01 approved 26 October 2026 |
 | FL-01 | 493 | Battery/charging, keyboard/receiver versions and read-only lighting/OS state | Signed status/activity-refresh and useful battery-event handling;69 current focused checks pass; owner acceptance of intermittent-reply fix is pending; unanswered-read retries remain unapproved; [evidence](flow-lite84-implementation.md) |
-| FL-02 | 494 | White-backlight effects/state, brightness, speed and idle-off | Blocked by FL-01, physical semantics and reversible-write approval |
-| FL-03 | 495 | Explicit Mac/Windows mode control | Blocked by FL-01 and physical selector validation/write approval |
+| FL-02 | 494 | White-backlight effects/state, brightness, speed and idle-off | Implemented and signed; 128 focused tests pass before the final view-only grid change; 200 ms auto-apply, readback and separate Undo; owner reports controls/grid work; persistence edge cases remain; [plan](flow-lite84-lighting-plan.md) |
+| FL-03 | 495 | Explicit Mac/Windows mode control | Implemented and signed; 200 ms automatic mode selection/readback and separate Undo; owner reports working; broader physical mapping/persistence checks remain; [plan](flow-lite84-system-mode-plan.md) |
 
 Battery precision is not yet measured. The vendor's host estimate has a known boundary defect, so do not copy it as an accuracy guarantee. Firmware installation, pairing/reset, macros and keymap changes are outside this slice. The new receiver-specific module is independent of Logitech/D200X; the signed dist artifact now includes FL-01, with physical/app acceptance still open.
 
@@ -94,3 +94,9 @@ The current [check-in checkpoint](checkin-preparation.md) records local mainline
 28 October 2026 DX-05 follow-up implemented: numeric command6 fields and scheduler transitions corrected for reported stuck CPU/RAM/GPU mode; retained/collapsible last-sent screensaver preview added. Independent38focusedchecks and signed build pass; owner confirms this reported issue appears resolved. Other hardware gates remain separate.
 
 28 October 2026 owner confirmation: latest wide-mode switching and retained screensaver preview appear to work. Earlier screensaver timing/persistence/lock/sleep gates remain separate.
+
+## Approved next direction — 31 October 2026
+
+Hardware-focused coverage replaces general Options+ parity. Sequence: (1) dynamic device registry and per-device UUID configuration files with migration; (2) generic discovery of already-paired Bluetooth devices and optional battery monitoring; (3) Logitech Bluetooth transport/capability and cross-transport identity investigation; (4) MX Master 3S Bluetooth configuration; (5) middle-click, thumb-rest direct press, wheel-mode button, DPI and SmartShift; (6) MX Master 4 support. Pairing stays in macOS. Disable retains configuration but stops management/monitoring; Remove leaves OS pairing intact. Do not automatically merge transport identities without evidence. Actions Ring, Flow, directional gestures and software-only parity are excluded. This direction is approved; no new registry/Bluetooth implementation has started.
+
+Lofree startup timeout: one close/reopen attempt timed out, manual Connect succeeded. Owner has not reproduced it as of31October2026 and approved checkpointing. No cause or fix claimed; no retry policy changed.

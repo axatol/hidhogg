@@ -15,6 +15,9 @@ enum FlowLite84Request: Equatable, Sendable {
     case receiverVersion
     case setting(FlowLite84Setting)
     case effect(mode: UInt8)
+    case lightingWrite(address: UInt16, bytes: [UInt8])
+    case systemModeWrite(FlowLite84SystemMode)
+    case restoreSystemMode([UInt8])
 
     var command: UInt8 {
         switch self {
@@ -22,6 +25,7 @@ enum FlowLite84Request: Equatable, Sendable {
         case .online: 3
         case .battery: 4
         case .setting, .effect: 8
+        case .lightingWrite, .systemModeWrite, .restoreSystemMode: 7
         case .keyboardVersion: 18
         case .receiverVersion: 29
         }
@@ -31,6 +35,8 @@ enum FlowLite84Request: Equatable, Sendable {
         switch self {
         case .setting(let setting): setting.rawValue
         case .effect(let mode): 8544 + UInt16(mode) * 32
+        case .lightingWrite(let address, _): address
+        case .systemModeWrite, .restoreSystemMode: FlowLite84Setting.systemMode.rawValue
         default: 0
         }
     }
@@ -40,7 +46,17 @@ enum FlowLite84Request: Equatable, Sendable {
         case .identify: 8
         case .setting: 2
         case .effect: 4
+        case .lightingWrite(_, let bytes): UInt8(clamping: bytes.count)
+        case .systemModeWrite, .restoreSystemMode: 2
         default: 0
+        }
+    }
+
+    var writeOutcomeUnknown: FlowLite84Failure? {
+        switch self {
+        case .lightingWrite: .lightingOutcomeUnknown
+        case .systemModeWrite, .restoreSystemMode: .systemModeOutcomeUnknown
+        default: nil
         }
     }
 }
@@ -53,16 +69,16 @@ struct FlowLite84Reply: Equatable, Sendable {
     let fields: [UInt8]
 
     func matches(_ request: FlowLite84Request) -> Bool {
-        command == request.command && (command != 8 || (address == request.address && count & 0x7f == request.count))
+        command == request.command && (![7, 8].contains(command) || (address == request.address && count & 0x7f == request.count))
     }
 
     func validate(for request: FlowLite84Request) throws {
         guard command == request.command else {
             throw FlowLite84Failure.invalidResponse(.replyCommand(expected: request.command, received: command))
         }
-        if command == 8 {
+        if command == 8 || command == 7 {
             guard address == request.address, count & 0x7f == request.count else {
-                throw FlowLite84Failure.invalidResponse(.readHeader)
+                throw FlowLite84Failure.invalidResponse(command == 7 ? .writeHeader : .readHeader)
             }
         }
         guard status == 0 else { throw FlowLite84Failure.rejected(command: command, status: status) }
@@ -84,6 +100,16 @@ enum FlowLite84Codec {
             (count == 4 && address >= 8544 && address <= 9024 && (address - 8544) % 32 == 0)
     }
 
+    static func isAllowedLightingWrite(address: UInt16, count: UInt8) -> Bool {
+        (count == 2 && [UInt16(8496), 8498, 8500].contains(address)) ||
+            (count == 4 && address >= 8672 && address <= 8864 && (address - 8544) % 32 == 0)
+    }
+
+    private static func isAllowedWrite(address: UInt16, count: UInt8) -> Bool {
+        isAllowedLightingWrite(address: address, count: count) ||
+            (address == FlowLite84Setting.systemMode.rawValue && count == 2)
+    }
+
     static func hasConfigurationCollection(_ descriptor: Data) -> Bool {
         descriptor.range(of: Data(configurationCollection)) != nil
     }
@@ -100,6 +126,20 @@ enum FlowLite84Codec {
             payload.replaceSubrange(5..<9, with: challenge)
         case .effect(let mode):
             guard mode <= 15 else { throw FlowLite84Failure.invalidRequest }
+        case .lightingWrite(_, let bytes):
+            guard isAllowedLightingWrite(address: request.address, count: request.count),
+                  bytes.count == Int(request.count), bytes.reduce(UInt8(0), &+) == 0x55 else {
+                throw FlowLite84Failure.invalidRequest
+            }
+            payload.replaceSubrange(5..<(5 + bytes.count), with: bytes)
+        case .systemModeWrite(let mode):
+            payload[5] = mode.rawValue
+            payload[6] = 0x55 &- mode.rawValue
+        case .restoreSystemMode(let bytes):
+            guard bytes.count == 2, bytes.reduce(UInt8(0), &+) == 0x55 else {
+                throw FlowLite84Failure.invalidRequest
+            }
+            payload.replaceSubrange(5..<7, with: bytes)
         default: break
         }
         payload[15] = checksum(payload)
@@ -127,6 +167,12 @@ enum FlowLite84Codec {
             }
         case 8:
             guard isAllowedRead(address: address, count: count), payload[5..<15].allSatisfy({ $0 == 0 }) else {
+                throw FlowLite84Failure.invalidRequest
+            }
+        case 7:
+            guard isAllowedWrite(address: address, count: count),
+                  payload[5..<(5 + Int(count))].reduce(UInt8(0), &+) == 0x55,
+                  payload[(5 + Int(count))..<15].allSatisfy({ $0 == 0 }) else {
                 throw FlowLite84Failure.invalidRequest
             }
         default: throw FlowLite84Failure.invalidRequest
@@ -163,6 +209,12 @@ enum FlowLite84Codec {
                 throw FlowLite84Failure.invalidResponse(.readHeader)
             }
             fields = Array(payload[5..<(5 + count)])
+        case 7:
+            let address = UInt16(payload[2]) << 8 | UInt16(payload[3])
+            guard isAllowedWrite(address: address, count: payload[4] & 0x7f) else {
+                throw FlowLite84Failure.invalidResponse(.writeHeader)
+            }
+            fields = []
         default: throw FlowLite84Failure.invalidResponse(.unsupportedCommand)
         }
         return FlowLite84Reply(
@@ -179,19 +231,25 @@ enum FlowLite84Codec {
         guard bytes[offset..<bytes.count].reduce(Self.reportID, &+) == 0x55 else { throw FlowLite84Failure.invalidResponse(.packetChecksum) }
         var safe = [UInt8](repeating: 0, count: payloadSize)
         for index in 0...4 { safe[index] = bytes[offset + index] }
-        let range: ClosedRange<Int>
+        let range: Range<Int>
         switch safe[0] {
-        case 1: range = 9...11
-        case 3, 10: range = 5...5
-        case 4: range = 5...8
-        case 18, 29: range = 5...6
+        case 1: range = 9..<12
+        case 3, 10: range = 5..<6
+        case 4: range = 5..<9
+        case 18, 29: range = 5..<7
+        case 7:
+            let address = UInt16(safe[2]) << 8 | UInt16(safe[3])
+            guard isAllowedWrite(address: address, count: safe[4] & 0x7f) else {
+                throw FlowLite84Failure.invalidResponse(.writeHeader)
+            }
+            range = 5..<5
         case 8:
             let address = UInt16(safe[2]) << 8 | UInt16(safe[3])
             let count = safe[4] & 0x7f
             guard isAllowedRead(address: address, count: count) else {
                 throw FlowLite84Failure.invalidResponse(.readHeader)
             }
-            range = 5...(4 + Int(count))
+            range = 5..<(5 + Int(count))
         default: throw FlowLite84Failure.invalidResponse(.unsupportedCommand)
         }
         for index in range { safe[index] = bytes[offset + index] }

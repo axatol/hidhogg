@@ -1,5 +1,15 @@
 # FL-01 — native read-only status implementation
 
+## Current controls follow-up — 29 October 2026
+
+Current signed build `4a69b2f6ecfff88a2820ce8d56f56553a3a38ea347f9d28a50ddda0410e1730d` includes 200 ms automatic lighting and Mac/Windows application, separate Undo, consistent section padding/collapsed details, and a fixed4×2 lighting grid with Off eighth. Independent92module+36model checks passed before the final view-only grid change; all220 non-view test inputs still match. Final grid compiled, signed and visually inspected offscreen. Owner reports it works. One startup timeout followed by successful manual Connect is not reproduced; no causal fix or retry change. Physical persistence and broader edge cases remain separate. Earlier checkpoints below are historical.
+
+
+## Current lighting follow-up — 29 October 2026
+
+The approved [FL-02 lighting slice](flow-lite84-lighting-plan.md) is implemented and signed in build `b0c380a6e45b999f632b95e1230b6f6d236675a390f852822e03cd4284826f6a`. Human-readable lighting state and explicit edits cover known white-light effects, enabled state, levels1–5 and mapped idle-off durations; unknown values remain explicit. Writes preserve original affected bytes, validate strict acknowledgements and exact readback, and support session-local restoration. Independent74module+18model tests pass. Physical writes/effects/timing/persistence remain owner checks; no agent-operated device writes occurred. The read-only baseline below remains historical; OS/keymap/macro/firmware changes are still excluded.
+
+
 ## 28 October 2026 — useful battery events and reply correlation
 
 The owner reported an intermittent `unexpected command 4 reply` and approved keeping useful battery data rather than dropping it. The old reader failed closed for a battery reply arriving without a pending query or during a different read; both cases were reproduced with fake receivers before the fix.

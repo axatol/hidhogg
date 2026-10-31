@@ -2719,3 +2719,65 @@ SecondCHECKINgate635executed/634pass: Boltallpass, D200XUsability.clearActionHis
 
 
 CHECKIN finalgate passed635/635 (351XCTest,284SwiftTesting cases); authorizedWakeConnectionTests/NativeWorkspaceWindowTests excluded, not counted as passes. Final284filepre/post/buildaggregate59f5fbbd6f5451c88d91f95efab462f7daccd932c297b4c723b710fbb7bc4fcc. Gateartifacts /Volumes/Data/cache/hidhogg-workspace-independent/CHECKIN-VERIFY-20261028T133458Z-3fed1a03/; finalconsolidatedlog logs/consolidated-after-coordinator-fix.log, finalmanifest post-signed-build-manifest.json. Noownedtest/compilerprocessesremain. Signedrebuild fec36149ac455d36e8187bc8c9b878a5d06e8bce140f76ca21218cbf20f2a66d, strictapp/CLI signatures+CLIhelp pass;229sourcehashes refreshed inignored build-info. Rootnextaudits99explicitindexpaths andcommits/fastforwardsmaster. No unresolvedsourceblocker, hardwaregatesstillseparate, newnotif/MCPcodeunstarted, nopushrequested.
+
+
+## 29 October 2026 — FL-02 lighting implementation in progress
+
+Ownerapproved readablelighting/writes scoped afterproposal; no agent-operatedhardwarewrites. Continuinglocalmaster9d9b2c2, no new branch. Plan docs/flow-lite84-lighting-plan.md; rootupdatedFL-02/Task494roadmap inprogress. Backendagent owns module/tests, UIagent ownskeyboardmodel/view/modeltests; rootdocs/integration/release. KnownIDs4..10 named, enabled, rawlevels0..4display1..5, idleknownunits map10s..15m. Unknownidle0notNever, no unsupportedstaticmodeIDguess orphysicallevel1offclaim. Whitelightonly.
+
+Typedpartialedits, strict7ack+8readback, affectedoriginals capture, explicitApply andin-sessionrestore, no auto-retry/reconnectwrites; preservecolor/unrelatedbytes. Onlineflagfalseknownambiguous won'taloneblockwrites; confirmedidentity/connectedfreshreadbackgates. No fullconfig/macro/keymapreads, OS/firmware/reset/pair/RGBwrites. PublicAPI coordinated: lightingEffect/IdleOff enums, LightingEdit, applyLighting/restoreOriginalLighting; snapshotcanRestoreOriginalLightingdefaultfalse. Backendcheckingstrictsuccessack evidence andtimeoutreconcile. UIclean-draftsynconidlefreshsnapshot, dirtydraftpreserved, successresyncverifiedvalues. Fakebackgroundtests+signedbuild pending; originalnewnotificationlayout/badge/MCPworkremainsunstarted.
+
+
+## Delivery checkpoint — 29 October 2026: FL-02 delivered for owner validation
+
+Local master base9d9b2c2, newlighting source uncommitted; no push. Ownerapproved human-readablelighting and explicitwrites, fakebackgroundtests andsignedbuild only. Implementation complete; signed dist/Hidhogg.app and dist/hidhoggctl build `71076e8c6b0e04b4c7db9b5cff76e0191491c0adec4aabc42020e89f67763968`, strictsignaturespass,230source/resource/testhashes inignored dist/build-info.json. Rootdidnotlaunchproductionapp orsenddevicewrites.
+
+Independentgate74module+18model tests passes;15scopedhashes unchanged pre/post/build, manifest /Volumes/Data/tmp/hidhogg-fl02-verify-20261029-postbuild.sha256 digest5c1b54c0bf3c1d955d1b78903a7956c09aca723e7ad251eeaa255604463d9031. Logs /Volumes/Data/tmp/hidhogg-fl02-verify-20261029-module.log,-model.log and /Volumes/Data/tmp/hidhogg-fl02-release-20261029.log. Earlier635broadcheck checkpoint is historical, not rerun forlighting. UIknown/unavailablelayout inspected withsyntheticmodel/noopactions andnever-shownnon-keywindow plusGroupBoxstyleoverride; notactualnativeappearance/interactionproof.
+
+Scope: namedIDs4..10, enabled, raw0..4display1..5 brightness/speed, idleknownunits→humandurations; unknown0notNever andlevel1notclaimedphysicaloff. Explicitdraft/Apply only; no writesonslider/render/reconnect. Sessioncapturesonlyaffectedoriginals, strict7ack+8readback, preservesunrelated/colorbytes, noretry; explicitpreviouslightingrestoreconnection-local. Globalinvalidframes closeunknown; no sessionreuse/furtherwrites. Apply/restore returnconfirmed snapshots; modelpreservesnewerbatteryreceipt/value/availabilityflags. Unknownonlineflagdoesn'tblockscalarwrites; knownselectedeffectneededforbrightness/speed. NoOS/keymap/macro/fullconfig/firmware/pair/reset/RGBwrites.
+
+Next: ownerrestartnewapp, Applysmalllightingchange, comparephysicalreadback/effect thenRestorewithinconnection; testidle/persistence separately. Hardwareackform/successstatus0, physicaleffect/levelmapping/idletiming/persistence remainunverified. TaskView494/project5 remainsInProgress14. Sourceplan/checklist docs/flow-lite84-lighting-plan.md. Additiveicon+text/badges and MCP requirements preserved butnotstarted; lighting iscurrentsteering. No furthercodeworkrequired inapprovedlighting slice unlessownerfindsdefect.
+
+---
+
+
+
+29October FL-02 finalaudit caught unknownlevelacceptancemismatch: readSnapshot/publishLighting clippedrawlevels>4tonil, thoughviewandapprovedscope expectexplicitunknown. RootreopenedbackendSession+moduletests; existing71076build/74+18gate historicaluntilcorrection. Preservechecksum-validrawlevels, allowuserwritesonly0..4, checkwhether0xffhasprimarysentinelmeaningbeforemappingnil. Verifierclose/no-reuseassertionsprotected. No hardwarewrites. Repeatfocusedchecks/rebuild pending, userupdated.
+
+
+29October FL-02 finalauditeddelivery: unknownrawlevelsnowpreservedthroughinitial/apply/restore (real-session201/255regression); useredit0..4boundsunchanged. Independent74+18 tests passagain;15pre/post/buildhashesmatch930e4564757a4e0ecf402eb5c8d25093628eb085d27c4fc66880400d12228932. Finalbuild b0c380a6e45b999f632b95e1230b6f6d236675a390f852822e03cd4284826f6a; strictapp/CLI signaturespass. Final log /Volumes/Data/tmp/hidhogg-fl02-final-release-20261029.log, independent -r2-module.log/-r2-model.log and-r2-postbuild.sha256. Rootverifiedall15currenthashes, refreshed230inputprovenance. This supersedes71076andpendingauditnotes. Sourceuncommittedonmaster, no agenthardwarewrite/no fullsuite rerun. OwnerfirstphysicalApply/Restore/effect/idle/persistencegates open; Task494notcomplete.
+
+
+## 29 October 2026 — FL-03 and debounced accessible lighting in progress
+
+Ownerapproved Mac/Windows explicitApply+separateRestore, icon/text effectradiochoices, discretebrightness/speedsliders, and500mslightingautoapply. Lightingonly; no autoOSswitch. Workinglocalmasterbase9d9b2c2 stilldirtyFL02, buildb0c380historicalfrozeninitiallighting. Backendflowlite_system_mode owns module/tests, UIflowlite_controls_ui ownsmodel/view/modeltests; previousUIheavyagent interruptedbeforeimplementation (onlyoneheavyactive). Rootdocs/release; plan docs/flow-lite84-system-mode-plan.md. TaskView495/project5verified, nowInProgress14.
+
+BackendAPI typedwindows/mac0/1, current9416 pairedscalar; originals/restoreflagindependentfromlighting andpropagatedallSnapshotconstructors. BackendreadyawaitingUIcompilefreeze; no testsstarted. UI500mslatestintentqueue mustnotcanceltransportwrites, rebaseoldsuccessandoverlayonlypost-submituseredits (avoidclobberdestinationeffectstoredparams), cancelunsentintentonsleep/disconnect/error, noautoretry. UsereditsaftererrororRetryexplicitlyreauthorize; explicitSystemApply/Restoreneverautotrigger. No agentdevicewrites, privateconfig/env/nativeplatformeffects. Unknownvaluesunclamped/unwrittenuntiluseradjusts. Existingrawunknown201/255levelpreservationmustremain.
+
+
+## Delivery checkpoint — 29 October 2026: FL-03 and debounced lighting delivered
+
+Localmasterbase9d9b2c2; FL02/03sourceuncommitted, nopush. Current signed dist/Hidhogg.app/CLI build `b874794ee483170c425e0a777962baed19cc3a5a00f59a5ac8ced767b2854111`, strictsignaturespass,231source/resource/testhashes inignored build-info. No agentproductionapp/HID/devicewrites. OwnerapprovedMac/Windows explicitApply/separateRestore, icon-radiolightingchoices/five-stopsliders and500ms lightingautoapply. PhysicalOS/lighting/effect/ack/persistence acceptance open. Plans docs/flow-lite84-system-mode-plan.md and lighting-plan.md. TaskView494/495project5 remainInProgress14.
+
+Independent92module+25model tests pass; log /Volumes/Data/tmp/hidhogg-fl03-debounce-independent-20261029.log. Functional15inputmanifestunchangedthroughtests; View-onlylayoutfollowupaftertests changedonlyFlowLite84DeviceView, other14remainidentical. Final15pre/postbuildmanifest /Volumes/Data/tmp/hidhogg-fl03-debounce-release-postbuild.sha256. Viewhash ecf0bc01689a981b32d6f072ca0851af6b83918faf9c2a4d390a793ef5ebc692. FinalViewcompiled+offscreenknown/unknown800/430px+error430pxchecked withfakemodel/noopactions/never-shownwindow/GroupBoxstyleoverride. No broad635suite rerun (historicalbaseline only).
+
+Backendwritesonlytyped0/1to9416orcapturedoriginalpairforrestore, strict7ack/8readback, separateoriginals+flags forlighting/OS, noretry/reconnectwrite. User OSselectiondraftneverautowrites. Lightinglatestintent500msqueue doesn'tcancelinflightwrites; rebaseonlypost-submituserchangesontoconfirmedreadback preventsclobberuneditedeffectparams. Anydevicewritefailurecancelsunsentlighting, preservingvisibleerror/draft; noautoretryuntilnewadjustment/Retry. Sleep/disconnectcancelunsentintent. Unknownrawlevels201/255 preserved; onlyknown0..4editable. Receiveronlinefalsealone notwritegate. Backendtests+modelNackregressionverifyclosure/readback/restoreindependence/serialization.
+
+Nextownerrestartapp, trylighting500ms andrapidchanges, explicitlyApplyMac/Winandtestmodifiers,Restoreeachindependently, checkpersistence. No firmware/keymap/macro/fullstate/RGB/pair/reset scope. Newnotificationicon+text/badges andMCP remainrequestedbutunstarted; latestuserprioritykeyboardcontrolscompletependingownerchecks. Do notauto-commit/pushtheseunverifiedphysicalchanges.
+
+---
+
+
+## 29 October 2026 — 200ms automatic settings and page consolidation
+
+Owner reports previouscontrolsworkwell; approves200msautoapplylightingANDMac/Windows, consistent16ptcards, compactsummary, separateMode/Lightingcontrols andcollapsedDeviceinformation(voltage/timestamps/firmware), separateUndo lighting/mode. Userfirstwritesonly; noagentHID. Modelworkerflowlite_200ms_auto ownsmodel/tests; viewworkerflowlite_settings_layout ownsView. Modeldesignindependentdebouncetimers+max2FIFOduekinds, latestintentreplaceperkind, oneexistingwriter, no transportcancelonnewedits. Modeconfirmmustpreservenewerchoice/revert; anyfailureclearsallunsentqueues; Undoonlycancelsownkind. Oldbuildb874794currenthistoricalpendingnewsourcefreeze/gate/build. Sourceonmasterdirtyafterbase9d9b2c2; backendmoduleunchanged. Currentplan docs/flow-lite84-system-mode-plan.md topfollowup.
+
+## 31 October 2026 — lighting grid and startup issue
+
+Signed build `4a69b2f6ecfff88a2820ce8d56f56553a3a38ea347f9d28a50ddda0410e1730d` adds a fixed four-column/two-row lighting grid: seven effects and Off eighth. Off changes enabled state only; selecting an effect enables lighting. Separate Backlight picker removed; unknown enabled state remains visible. Background release build and strict app/CLI signatures pass. Synthetic800px offscreen layout inspected; no production app/device operations. All220 non-view inputs match the previous128-test manifest; focused tests were not repeated for this view-only change. Build provenance refreshed.
+
+Startup remains unresolved: owner reports a timeout after close/reopen, followed by successful manual Connect. No cause established and no automatic retry added. Bounded app diagnostic-log access requested; awaiting answer. Do not describe this as fixed. Existing Lofree controls have general owner acceptance, with physical persistence/edge cases separate. Changes remain uncommitted on master.
+
+## Check-in acceptance — 31 October 2026
+
+Owner reports the final lighting grid works and cannot reproduce the startup timeout; approves check-in now. Startup issue remains an observation, not a diagnosed/fixed bug. No retry changes or live agent device operations. Final build4a69b2f6 passes strict signatures; prior128 focused tests plus final view-only compile/offscreen review. Latest source manifest checked before commit. Documentation reconciled to200ms automatic lighting/system mode and4×2 grid. Registry/Bluetooth/hardware-focused roadmap recorded, implementation not started. No push authorized.
