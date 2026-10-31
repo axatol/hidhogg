@@ -13,6 +13,21 @@ enum MenuBarStatus: String, Equatable {
     case cleanupUncertain = "Cleanup uncertain"
     case partiallyConnected = "Some devices disconnected"
 
+    init(managedDevices: [MenuBarStatus]) {
+        guard let first = managedDevices.first else { self = .disconnected; return }
+        self = managedDevices.dropFirst().reduce(first) { MenuBarStatus(base: $0, additional: $1) }
+    }
+
+    init(deck: D200XStatus) {
+        switch deck {
+        case .connected: self = .connected
+        case .disconnected: self = .disconnected
+        case .connecting: self = .connecting
+        case .disconnecting: self = .disconnecting
+        case .failed: self = .failed
+        }
+    }
+
     init(base: MenuBarStatus, additional: MenuBarStatus?) {
         guard let additional else { self = base; return }
         let states = [base, additional]

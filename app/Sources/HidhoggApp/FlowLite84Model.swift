@@ -45,6 +45,7 @@ final class FlowLite84Model: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var isRefreshing = false
     @Published private(set) var connectionRequested = false
+    @Published private(set) var managementEnabled = true
     @Published private(set) var isApplyingLighting = false
     @Published private(set) var isRestoringLighting = false
     @Published private(set) var hasLightingWriteError = false
@@ -284,6 +285,7 @@ final class FlowLite84Model: ObservableObject {
     }
 
     func connect() {
+        guard managementEnabled else { return }
         guard !isStopped, !isSleeping, !isSuspended else { return }
         hasExplicitConnectionIntent = true
         guard session != nil else {
@@ -389,6 +391,12 @@ final class FlowLite84Model: ObservableObject {
         releaseSession()
     }
 
+    func setManagementEnabled(_ enabled: Bool) {
+        guard managementEnabled != enabled else { return }
+        managementEnabled = enabled
+        if !enabled { disconnect() }
+    }
+
     func sleep() {
         guard !isSleeping else { return }
         isSleeping = true
@@ -405,7 +413,9 @@ final class FlowLite84Model: ObservableObject {
         guard !isStopped, isSuspended != suspended else { return }
         isSuspended = suspended
         if suspended {
-            if !isSleeping { releaseSession() }
+            if !isSleeping, connectionRequested || isConnected || isBusy || isMonitoringKeyboardActivity {
+                releaseSession()
+            }
         } else {
             scheduleConnectionAfterLifecycle()
         }
@@ -427,7 +437,7 @@ final class FlowLite84Model: ObservableObject {
     }
 
     private func startConnection() {
-        guard !isStopped, !isSleeping, !isSuspended,
+        guard managementEnabled, !isStopped, !isSleeping, !isSuspended,
               connectionRequested, !isConnected, !isBusy,
               let target = session else { return }
         cancelAutoApplies()
@@ -601,7 +611,7 @@ final class FlowLite84Model: ObservableObject {
     }
 
     private func beginDeviceWrite(_ write: DeviceWrite) {
-        guard !isStopped, !isSleeping, !isSuspended, !isBusy,
+        guard managementEnabled, !isStopped, !isSleeping, !isSuspended, !isBusy,
               hasCurrentLightingConnection, let session else { return }
 
         nextOperationID &+= 1

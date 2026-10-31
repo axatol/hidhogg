@@ -1,5 +1,6 @@
 import SwiftUI
 import LofreeFlowLite84
+import HidhoggDomain
 
 struct FlowLite84DeviceView: View {
     @ObservedObject var model: FlowLite84Model
@@ -40,6 +41,8 @@ struct FlowLite84DeviceView: View {
                 }
 
                 connectionActions
+
+                DeviceManagementControls(family: .flowLite84)
 
                 if let errorMessage = model.errorMessage {
                     Label(errorMessage, systemImage: "exclamationmark.triangle.fill")

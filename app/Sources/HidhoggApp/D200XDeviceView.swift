@@ -70,6 +70,8 @@ struct D200XDeviceView: View {
                 connectionAction
             }
 
+            DeviceManagementControls(family: .d200x)
+
             HStack(spacing: 6) {
                 Circle()
                     .fill(model.isConnected ? Color.green : Color.secondary)

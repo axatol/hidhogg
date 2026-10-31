@@ -100,3 +100,13 @@ The current [check-in checkpoint](checkin-preparation.md) records local mainline
 Hardware-focused coverage replaces general Options+ parity. Sequence: (1) dynamic device registry and per-device UUID configuration files with migration; (2) generic discovery of already-paired Bluetooth devices and optional battery monitoring; (3) Logitech Bluetooth transport/capability and cross-transport identity investigation; (4) MX Master 3S Bluetooth configuration; (5) middle-click, thumb-rest direct press, wheel-mode button, DPI and SmartShift; (6) MX Master 4 support. Pairing stays in macOS. Disable retains configuration but stops management/monitoring; Remove leaves OS pairing intact. Do not automatically merge transport identities without evidence. Actions Ring, Flow, directional gestures and software-only parity are excluded. This direction is approved; no new registry/Bluetooth implementation has started.
 
 Lofree startup timeout: one close/reopen attempt timed out, manual Connect succeeded. Owner has not reproduced it as of31October2026 and approved checkpointing. No cause or fix claimed; no retry policy changed.
+
+## REG-01 — In progress, 31 October 2026
+
+Dynamic device registration and versioned per-device configuration migration is the active approved slice. See [plan/checklist](device-registry-plan.md). Generic Bluetooth discovery/battery monitoring remains next; no Bluetooth scanning, new Logitech controls or live-device operations in REG-01. Existing drivers retain one live endpoint per supported family pending targetable discovery.
+
+REG-01 delivered31October2026 for owner acceptance: UUID registry, dynamic sidebar/menu, Add/Disable/Remove and legacy backup/per-device migration implemented. Independent733offline checks and signed build `dd887ea4d396f757794e6cf40d526269eb3542d44b18694a4c1062d41b2f4a08` pass; native/physical owner checks remain. One registration per existing supported family; generic Bluetooth next. No commit/push of this new slice. [Evidence](device-registry-plan.md).
+
+REG-FS-03 delivered31October2026: flat family/UUID/shortSHA filenames, nested migration and safe postpublication cleanup; independent97focused checks and signed build `a9dab2eb3641c0292bd9fb8d263a60e166e64dc27b75bf5d91c9589b9bf889f7` pass. Registration IDs preserved. Owner live migration/cleanup acceptance pending. See [registry evidence](device-registry-plan.md).
+
+Accepted registry/UI/hashed-storage checkpoint committed locally on master31October2026; no push. Generic paired Bluetooth discovery and battery monitoring is next.

@@ -11,6 +11,8 @@ final class D200XModel: ObservableObject {
     @Published private(set) var configuration: D200XConfiguration?
     @Published private(set) var status: D200XStatus = .disconnected
     @Published private(set) var canEdit = false
+    @Published private(set) var managementEnabled = true
+    private var lifecycleSuspended = false
     @Published private(set) var configurationBlocker: String?
     @Published private(set) var message = "Disconnected. Connect to discover D200X."
     @Published private(set) var errorMessage: String?
@@ -162,6 +164,7 @@ final class D200XModel: ObservableObject {
     }
 
     var isConfigured: Bool { configuration != nil }
+    var connectionRequested: Bool { wanted }
     var isConnected: Bool { if case .connected = status { true } else { false } }
     var isBusy: Bool { if case .connecting = status { true } else if case .disconnecting = status { true } else { false } }
     var connectionTitle: String {
@@ -531,7 +534,7 @@ final class D200XModel: ObservableObject {
     }
     func clearActiveNotifications() async { await automation.clearActiveNotifications() }
     func handleAutomation(_ request: AutomationRequest) async -> AutomationResponse { await automation.handle(request) }
-    func setListening(_ enabled: Bool) { automation.setListening(enabled) }
+    func setListening(_ enabled: Bool) { automation.setListening(enabled && managementEnabled) }
     func publishNotification(topic: String, text: String = "", ttlSeconds: Int? = nil, appID: String? = nil) async -> AutomationResponse {
         await handleAutomation(AutomationRequest(method: .notificationsEmit,
             params: AutomationParameters(topic: topic, text: text.isEmpty ? nil : text, ttlSeconds: ttlSeconds, appID: appID)))
@@ -555,6 +558,7 @@ final class D200XModel: ObservableObject {
     }
 
     func connect(configureIfNeeded: Bool = true) {
+        guard managementEnabled else { return }
         guard session != nil, !suspended, !systemSleeping, !isConnected, !isBusy else { return }
         if configuration == nil, !configureIfNeeded { return }
         guard canEdit else {
@@ -655,7 +659,19 @@ final class D200XModel: ObservableObject {
         enqueueDevicePowerTransition(.wake)
     }
 
-    func suspendDelivery(_ suspended: Bool) {
+    func setManagementEnabled(_ enabled: Bool) {
+        guard managementEnabled != enabled else { return }
+        managementEnabled = enabled
+        suspendDelivery(lifecycleSuspended)
+        if !enabled {
+            setListening(false)
+            disconnect()
+        }
+    }
+
+    func suspendDelivery(_ lifecycleSuspended: Bool) {
+        self.lifecycleSuspended = lifecycleSuspended
+        let suspended = lifecycleSuspended || !managementEnabled
         self.suspended = suspended
         if suspended {
             invalidateScreensaverPreview()

@@ -1,19 +1,25 @@
 import AppKit
 import SwiftUI
+import HidhoggDomain
 
 struct MenuBarView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        let information = DeviceInformationPresentation(status: model.boltStatus)
-        Button(
-            "MX Master 3S: \(mouseStatusText(information))",
-            systemImage: information.isConnected ? information.batterySymbol : "circle"
-        ) {
-            openDevice(.devices)
+        ForEach(model.registeredDevices) { registration in
+            switch registration.family {
+            case .mxMaster3S:
+                let information = DeviceInformationPresentation(status: model.boltStatus)
+                Button(
+                    "\(registration.displayName): \(registration.isEnabled ? mouseStatusText(information) : "Disabled")",
+                    systemImage: registration.isEnabled && information.isConnected ? information.batterySymbol : "circle"
+                ) { openDevice(.devices) }
+            case .d200x:
+                D200XMenuSection(model: model.d200x, registration: registration) { openDevice(.d200x) }
+            case .flowLite84:
+                FlowLite84MenuSection(model: model.flowLite, registration: registration) { openDevice(.flowLite) }
+            }
         }
-        D200XMenuSection(model: model.d200x) { openDevice(.d200x) }
-        FlowLite84MenuSection(model: model.flowLite) { openDevice(.flowLite) }
 
         Divider()
 
@@ -66,11 +72,12 @@ struct MenuBarView: View {
 
 private struct FlowLite84MenuSection: View {
     @ObservedObject var model: FlowLite84Model
+    let registration: RegisteredDevice
     let openDevice: () -> Void
 
     var body: some View {
         Button(
-            "Flow Lite84: \(statusText)",
+            "\(registration.displayName): \(registration.isEnabled ? statusText : "Disabled")",
             systemImage: "keyboard",
             action: openDevice
         )
@@ -86,11 +93,12 @@ private struct FlowLite84MenuSection: View {
 
 private struct D200XMenuSection: View {
     @ObservedObject var model: D200XModel
+    let registration: RegisteredDevice
     let openDevice: () -> Void
 
     var body: some View {
         Button(
-            "D200X: \(model.isConnected ? "Connected" : "Disconnected")",
+            "\(registration.displayName): \(!registration.isEnabled ? "Disabled" : model.isConnected ? "Connected" : "Disconnected")",
             systemImage: "square.grid.3x3",
             action: openDevice
         )

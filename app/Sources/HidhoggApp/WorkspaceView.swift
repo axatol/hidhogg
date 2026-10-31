@@ -10,6 +10,7 @@ struct WorkspaceView: View {
     @State private var isDevicesInspectorPresented = true
     @State private var isD200XInspectorPresented = true
     @State private var inspectorContentID = UUID()
+    @State private var pendingRemoval: RegisteredDevice?
 
     var body: some View {
         NavigationSplitView {
@@ -18,42 +19,27 @@ struct WorkspaceView: View {
                 set: { if let route = $0 { model.navigate(to: route) } }
             )) {
                 Section("Devices") {
-                    NavigationLink(value: WorkspaceRoute.devices) {
-                        Label {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("MX Master 3S")
-
-                                HStack(spacing: 9) {
-                                    HStack(spacing: 4) {
-                                        Circle()
-                                            .fill(Color(nsColor: model.connectionColor))
-                                            .frame(width: 7, height: 7)
-                                            .accessibilityHidden(true)
-                                        Text(model.connectionTitle)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-
-                                    sidebarBatteryLabel
-                                }
-                            }
-                        } icon: {
-                            Image("DeviceMouse")
-                                .renderingMode(.template)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 18, height: 18)
-                                .accessibilityHidden(true)
+                    ForEach(model.registeredDevices) { registration in
+                        NavigationLink(value: AppModel.route(for: registration.family)) {
+                            registeredDeviceLabel(registration)
                         }
-                        .labelStyle(SidebarLabelStyle())
+                        .contextMenu {
+                            Button(registration.isEnabled ? "Disable Device" : "Enable Device") {
+                                model.setDeviceEnabled(registration.id, enabled: !registration.isEnabled)
+                            }
+                            Button("Remove Device…", role: .destructive) { pendingRemoval = registration }
+                        }
                     }
-                    NavigationLink(value: WorkspaceRoute.d200x) {
-                        D200XSidebarLabel(model: model.d200x)
+                    if model.registeredDevices.isEmpty {
+                        Text("No registered devices").foregroundStyle(.secondary)
                     }
-                    NavigationLink(value: WorkspaceRoute.flowLite) {
-                        FlowLite84SidebarLabel(model: model.flowLite)
+                    Menu("Add Device", systemImage: "plus") {
+                        ForEach(model.availableDeviceFamilies, id: \.self) { family in
+                            Button(family.title) { model.addDevice(family) }
+                        }
                     }
+                    .disabled(!model.canEditConfiguration || model.availableDeviceFamilies.isEmpty)
+                    .help("One device per supported model. Add registers settings for an existing supported adapter.")
                 }
                 Section("Workspace") {
                     ForEach([WorkspaceRoute.actions, .notifications, .tilePresets]) { route in
@@ -75,27 +61,7 @@ struct WorkspaceView: View {
             .navigationTitle("Hidhogg")
         } detail: {
             HSplitView {
-                Group {
-                    switch model.navigation.current.route {
-                    case .devices:
-                        DevicesView(isInspectorPresented: $isDevicesInspectorPresented)
-                    case .d200x:
-                        D200XDeviceView(
-                            model: model.d200x,
-                            isInspectorPresented: $isD200XInspectorPresented
-                        )
-                    case .flowLite:
-                        FlowLite84DeviceView(model: model.flowLite)
-                    case .actions:
-                        ActionsView(model: model.d200x, onOpenTile: openD200XTile)
-                    case .notifications:
-                        NotificationsView(model: model.d200x, onOpenTile: openD200XTile)
-                    case .tilePresets:
-                        TilePresetsView(model: model.d200x)
-                    case .settings:
-                        SettingsView()
-                    }
-                }
+                workspaceContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .layoutPriority(1)
 
@@ -150,6 +116,19 @@ struct WorkspaceView: View {
             }
         }
         .confirmationDialog(
+            "Remove device and its settings?",
+            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Remove Device", role: .destructive) {
+                if let registration = pendingRemoval { model.removeDevice(registration.id) }
+                pendingRemoval = nil
+            }
+            Button("Cancel", role: .cancel) { pendingRemoval = nil }
+        } message: {
+            Text("This removes the registration and its saved settings from Hidhogg. macOS pairing is retained. Older configuration files remain on disk for recovery.")
+        }
+        .confirmationDialog(
             "Discard unsaved changes?",
             isPresented: Binding(
                 get: { model.isReloadConfirmationPresented },
@@ -174,8 +153,62 @@ struct WorkspaceView: View {
         }
     }
 
+    @ViewBuilder
+    private var workspaceContent: some View {
+        if currentDeviceMissing {
+            ContentUnavailableView("Device Removed", systemImage: "keyboard.badge.ellipsis",
+                                   description: Text("Add a supported device from the sidebar to configure it."))
+        } else {
+            switch model.navigation.current.route {
+            case .devices: DevicesView(isInspectorPresented: $isDevicesInspectorPresented)
+            case .d200x: D200XDeviceView(model: model.d200x, isInspectorPresented: $isD200XInspectorPresented)
+            case .flowLite: FlowLite84DeviceView(model: model.flowLite)
+            case .actions: ActionsView(model: model.d200x, onOpenTile: openD200XTile)
+            case .notifications: NotificationsView(model: model.d200x, onOpenTile: openD200XTile)
+            case .tilePresets: TilePresetsView(model: model.d200x)
+            case .settings: SettingsView()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func registeredDeviceLabel(_ registration: RegisteredDevice) -> some View {
+        switch registration.family {
+        case .d200x: D200XSidebarLabel(model: model.d200x, registration: registration)
+        case .flowLite84: FlowLite84SidebarLabel(model: model.flowLite, registration: registration)
+        case .mxMaster3S:
+            Label {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(registration.displayName)
+                    HStack(spacing: 9) {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(registration.isEnabled ? Color(nsColor: model.connectionColor) : .secondary)
+                                .frame(width: 7, height: 7)
+                                .accessibilityHidden(true)
+                            Text(registration.isEnabled ? model.connectionTitle : "Disabled")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        if registration.isEnabled { sidebarBatteryLabel }
+                    }
+                }
+            } icon: {
+                Image("DeviceMouse")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 18, height: 18)
+                    .accessibilityHidden(true)
+            }
+            .labelStyle(SidebarLabelStyle())
+        }
+    }
+
     private var isInspectorPresentedForCurrentRoute: Bool {
-        switch model.navigation.current.route {
+        if currentDeviceMissing { return false }
+        return switch model.navigation.current.route {
         case .devices:
             isDevicesInspectorPresented
         case .d200x:
@@ -184,6 +217,21 @@ struct WorkspaceView: View {
             false
         }
     }
+
+    private var currentFamily: DeviceFamily? {
+        switch model.navigation.current.route {
+        case .devices: .mxMaster3S
+        case .d200x: .d200x
+        case .flowLite: .flowLite84
+        default: nil
+        }
+    }
+
+    private var currentRegistration: RegisteredDevice? {
+        currentFamily.flatMap { model.registration(for: $0) }
+    }
+
+    private var currentDeviceMissing: Bool { currentFamily != nil && currentRegistration == nil }
 
     private var sidebarBatteryLabel: some View {
         let information = DeviceInformationPresentation(status: model.boltStatus)
@@ -260,16 +308,17 @@ fileprivate extension WorkspaceRoute {
 
 private struct FlowLite84SidebarLabel: View {
     @ObservedObject var model: FlowLite84Model
+    let registration: RegisteredDevice
 
     var body: some View {
         Label {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Lofree Flow Lite84")
+                Text(registration.displayName)
                 HStack(spacing: 4) {
                     Circle().fill(model.isKeyboardOnline ? Color.green : Color.secondary)
                         .frame(width: 7, height: 7)
                         .accessibilityHidden(true)
-                    Text(model.isConnected && !model.isKeyboardOnline ? "Keyboard offline" : model.connectionTitle)
+                    Text(!registration.isEnabled ? "Disabled" : model.isConnected && !model.isKeyboardOnline ? "Keyboard offline" : model.connectionTitle)
                     if model.isKeyboardOnline, let level = model.snapshot?.battery?.reportedLevel {
                         Image(systemName: model.snapshot?.battery?.charging == true ? "battery.100percent.bolt" : "battery.100percent")
                         Text("\(level)")
@@ -292,16 +341,17 @@ private struct FlowLite84SidebarLabel: View {
 
 private struct D200XSidebarLabel: View {
     @ObservedObject var model: D200XModel
+    let registration: RegisteredDevice
 
     var body: some View {
         Label {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Ulanzi D200X")
+                Text(registration.displayName)
                 HStack(spacing: 4) {
                     Circle().fill(model.isConnected ? Color.green : Color.secondary)
                         .frame(width: 7, height: 7)
                         .accessibilityHidden(true)
-                    Text(model.connectionTitle).font(.caption).foregroundStyle(.secondary)
+                    Text(registration.isEnabled ? model.connectionTitle : "Disabled").font(.caption).foregroundStyle(.secondary)
                 }
             }
         } icon: {

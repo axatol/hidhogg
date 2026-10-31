@@ -130,6 +130,8 @@ final class AppModel: ObservableObject {
 
     @Published private(set) var navigation = NavigationHistory(initialRoute: WorkspaceLocation())
     @Published private(set) var document = ConfigurationDraft()
+    @Published private(set) var workspace = WorkspaceConfiguration(legacy: .empty)
+    private var savedWorkspace: WorkspaceConfiguration?
     @Published private(set) var boltStatus = BoltStatus(
         phase: .idle,
         message: "Disconnected. Connect to discover a Bolt candidate.",
@@ -272,6 +274,7 @@ final class AppModel: ObservableObject {
         self.frontmostApplication = frontmostApplication
         self.wakeDelay = wakeDelay
         self.wakeStatusTimeout = wakeStatusTimeout
+        self.savedWorkspace = self.workspace
         permissionChecks = sender.permissionChecks
         self.d200x.onEdit = { [weak self] deckConfiguration in
             guard let self else { return }
@@ -312,6 +315,7 @@ final class AppModel: ObservableObject {
         }
 
         if loadImmediately {
+            self.flowLite.setSuspended(true)
             let initialLifecycleIntent = lifecycleIntent
             initialConfigurationLoadPending = true
             Task { [weak self] in
@@ -337,7 +341,94 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var isDirty: Bool { document.isDirty }
+    var isDirty: Bool { document.isDirty || savedWorkspace.map { $0 != workspace.applying(document.draft) } == true }
+    var registeredDevices: [RegisteredDevice] { workspace.devices }
+    var availableDeviceFamilies: [DeviceFamily] {
+        DeviceFamily.allCases.filter { family in !registeredDevices.contains { $0.family == family } }
+    }
+
+    func registration(for family: DeviceFamily) -> RegisteredDevice? {
+        registeredDevices.first { $0.family == family }
+    }
+
+    func isDeviceEnabled(_ family: DeviceFamily) -> Bool {
+        let matches = registeredDevices.filter { $0.family == family }
+        return matches.count == 1 && matches[0].isEnabled
+    }
+
+    func addDevice(_ family: DeviceFamily) {
+        guard canEditConfiguration, availableDeviceFamilies.contains(family) else { return }
+        let previous = workspace.applying(document.draft)
+        workspace = workspace.applying(document.draft)
+        workspace.devices.append(.make(family: family))
+        document.updateDraft(workspace.configuration)
+        synchronizeRegistrations(previous: previous)
+        navigate(to: Self.route(for: family))
+        scheduleAutosave()
+    }
+
+    func setDeviceEnabled(_ id: UUID, enabled: Bool) {
+        guard canEditConfiguration, let index = workspace.devices.firstIndex(where: { $0.id == id }),
+              workspace.devices[index].isEnabled != enabled else { return }
+        let previous = workspace.applying(document.draft)
+        workspace.devices[index].isEnabled = enabled
+        synchronizeRegistrations(previous: previous)
+        scheduleAutosave()
+    }
+
+    func removeDevice(_ id: UUID) {
+        guard canEditConfiguration, let removed = workspace.devices.first(where: { $0.id == id }) else { return }
+        let previous = workspace.applying(document.draft)
+        workspace = workspace.applying(document.draft)
+        workspace.devices.removeAll { $0.id == id }
+        document.updateDraft(workspace.configuration)
+        synchronizeRegistrations(previous: previous)
+        if navigation.current.route == Self.route(for: removed.family) {
+            navigate(to: registeredDevices.first.map { Self.route(for: $0.family) } ?? .settings)
+        }
+        scheduleAutosave()
+    }
+
+    static func route(for family: DeviceFamily) -> WorkspaceRoute {
+        switch family {
+        case .mxMaster3S: .devices
+        case .d200x: .d200x
+        case .flowLite84: .flowLite
+        }
+    }
+
+    private func synchronizeRegistrations(previous: WorkspaceConfiguration) {
+        let previousMouse = previous.devices.first { $0.family == .mxMaster3S }
+        let currentMouse = registration(for: .mxMaster3S)
+        let mouseWasManaged = sessionActivationRequested || wakeRecovery.isRecovering ||
+            ![BoltPhase.idle, .failed].contains(boltStatus.phase)
+        if previousMouse?.id != currentMouse?.id || !isDeviceEnabled(.mxMaster3S) {
+            cancelRecording()
+            if mouseWasManaged {
+                prepareForLifecycleStop()
+                let previousCleanup = sleepCleanupTask
+                sleepCleanupSequence = statusSequence
+                let restore = previous.configuration.mouse?.restorePreviousSettingsOnDisconnect ?? false
+                sleepCleanupTask = Task { [bolt] in
+                    if let previousCleanup { _ = await previousCleanup.value }
+                    return await bolt.stopForRestart(restorePreviousSettingsOnDisconnect: restore)
+                }
+            }
+        }
+        if previous.devices.first(where: { $0.family == .d200x })?.id != registration(for: .d200x)?.id,
+           d200x.connectionRequested || d200x.isConnected || d200x.isBusy {
+            d200x.setManagementEnabled(false)
+        }
+        if previous.devices.first(where: { $0.family == .flowLite84 })?.id != registration(for: .flowLite84)?.id,
+           flowLite.connectionRequested || flowLite.isConnected || flowLite.isBusy {
+            flowLite.setManagementEnabled(false)
+        }
+        d200x.setManagementEnabled(isDeviceEnabled(.d200x))
+        flowLite.setManagementEnabled(isDeviceEnabled(.flowLite84))
+        synchronizeD200X()
+        synchronizeLowBatteryPreference()
+        refreshDeliveryAdmission()
+    }
     var permission: InputPermission { permissionChecks.eventPostingAllowed ? .granted : .denied }
     var selectedApplicationID: String? { navigation.current.applicationID }
     var selectedControl: MouseControl { navigation.current.control }
@@ -437,7 +528,7 @@ final class AppModel: ObservableObject {
         }
     }
     var canDiscover: Bool {
-        !isRestarting && !isLoading && !discoveryPending && canStartDiscovery
+        isDeviceEnabled(.mxMaster3S) && !isRestarting && !isLoading && !discoveryPending && canStartDiscovery
     }
     var connectionRequested: Bool { sessionActivationRequested || wakeRecovery.isRecovering }
     var isReconnectPending: Bool { wakeRecovery.isRecovering }
@@ -457,7 +548,7 @@ final class AppModel: ObservableObject {
         return boltStatus.deviceResponding ? .discovering : .idle
     }
     var canEnableBindings: Bool {
-        !isRestarting && !isLoading && hasUsableConfiguration &&
+        isDeviceEnabled(.mxMaster3S) && !isRestarting && !isLoading && hasUsableConfiguration &&
             permission == .granted && boltStatus.phase == .ready && !boltStatus.cleanupUncertain &&
             boltStatus.availableControls == Set(MouseControl.allCases) &&
             (try? document.draft.validated()) != nil
@@ -535,6 +626,7 @@ final class AppModel: ObservableObject {
     }
 
     func connect() {
+        guard isDeviceEnabled(.mxMaster3S) else { return }
         cancelWakeRecovery()
         guard !isRestarting else { return }
         if let cleanup = sleepCleanupTask {
@@ -598,7 +690,7 @@ final class AppModel: ObservableObject {
     func setRestarting(_ restarting: Bool) {
         isRestarting = restarting
         d200x.suspendDelivery(restarting)
-        flowLite.setSuspended(restarting)
+        flowLite.setSuspended(restarting || initialConfigurationLoadPending || configurationLoadFailed)
         synchronizeD200X()
         if restarting {
             cancelRecording()
@@ -712,7 +804,7 @@ final class AppModel: ObservableObject {
     }
 
     var canRefreshDeviceInformation: Bool {
-        !isRestarting && !boltStatus.cleanupUncertain &&
+        isDeviceEnabled(.mxMaster3S) && !isRestarting && !boltStatus.cleanupUncertain &&
             [.ready, .enabled].contains(boltStatus.phase) &&
             !boltStatus.deviceInformation.isRefreshing
     }
@@ -736,7 +828,7 @@ final class AppModel: ObservableObject {
 
     private func synchronizeLowBatteryPreference() {
         guard let notifications = lowBatteryNotifications else { return }
-        notifications.synchronizeEnabled(hasUsableConfiguration && !configurationLoadFailed &&
+        notifications.synchronizeEnabled(isDeviceEnabled(.mxMaster3S) && hasUsableConfiguration && !configurationLoadFailed &&
             document.draft.mouse?.lowBatteryNotificationsEnabled == true)
     }
 
@@ -824,7 +916,7 @@ final class AppModel: ObservableObject {
     }
 
     func beginRecording(for control: MouseControl, applicationID: String? = nil) {
-        guard canEditConfiguration else { return }
+        guard isDeviceEnabled(.mxMaster3S), canEditConfiguration else { return }
         captureSessionID = UUID()
         recordingTarget = ShortcutRecordingTarget(control: control, applicationID: applicationID)
         refreshDeliveryAdmission()
@@ -938,7 +1030,8 @@ final class AppModel: ObservableObject {
     func updateDraft(_ configuration: AppConfiguration) {
         guard canEditConfiguration else { return }
         do {
-            let validated = try configuration.validated()
+            let input = try configuration.validated()
+            let validated = workspace.applying(input).configuration
             guard document.draft != validated else { return }
             if document.draft.mouse?.wheelInverted != validated.mouse?.wheelInverted ||
                 document.draft.mouse?.wheelHighResolution != validated.mouse?.wheelHighResolution ||
@@ -954,6 +1047,7 @@ final class AppModel: ObservableObject {
                 attemptedThumbwheelRequest = nil
             }
             document.updateDraft(validated)
+            workspace = workspace.applying(validated)
             synchronizeD200X()
             synchronizeLowBatteryPreference()
             scheduleAutosave()
@@ -1002,6 +1096,7 @@ final class AppModel: ObservableObject {
         guard !isLoading, !initialConfigurationLoadPending, !configurationLoadFailed else { return !isDirty }
         guard isDirty || !fileRevision.exists else { return true }
         let submittedConfiguration = document.draft
+        let submittedWorkspace = workspace.applying(submittedConfiguration)
         let revision = fileRevision
         isSaving = true
         let task = Task { @MainActor [self] in
@@ -1010,9 +1105,10 @@ final class AppModel: ObservableObject {
                 saveTask = nil
             }
             do {
-                let snapshot = try await store.save(submittedConfiguration, expecting: revision)
+                let snapshot = try await store.save(submittedWorkspace, expecting: revision)
                 fileRevision = snapshot.revision
                 document.acceptSaved(snapshot.configuration)
+                savedWorkspace = snapshot.workspace
                 configurationSaveError = nil
                 configurationFailureKind = nil
                 return true
@@ -1202,7 +1298,11 @@ final class AppModel: ObservableObject {
         switch result {
         case .success(let snapshot):
             fileRevision = snapshot.revision
+            let previous = workspace.applying(document.draft)
+            workspace = snapshot.workspace
+            savedWorkspace = snapshot.workspace
             document.acceptReload(snapshot.configuration)
+            synchronizeRegistrations(previous: previous)
             configurationLoadFailed = false
             configurationLoadError = nil
             configurationFailureKind = nil
@@ -1223,6 +1323,7 @@ final class AppModel: ObservableObject {
 
         isLoading = false
         initialConfigurationLoadPending = false
+        flowLite.setSuspended(isRestarting || configurationLoadFailed)
         synchronizeD200X()
         synchronizeLowBatteryPreference()
         refreshNotificationAuthorization()
@@ -1235,8 +1336,8 @@ final class AppModel: ObservableObject {
         guard !startupConnectionDecisionConsumed else { return }
         startupConnectionDecisionConsumed = true
         if !isRestarting, loadedConfiguration?.connectOnLaunch == true {
-            d200x.connect(configureIfNeeded: false)
-            flowLite.connectOnLaunch()
+            if isDeviceEnabled(.d200x) { d200x.connect(configureIfNeeded: false) }
+            if isDeviceEnabled(.flowLite84) { flowLite.connectOnLaunch() }
         }
         guard !isRestarting,
               let startupIntent,
@@ -1255,12 +1356,17 @@ final class AppModel: ObservableObject {
                 return
             }
             fileRevision = snapshot.revision
+            let previous = workspace.applying(document.draft)
+            workspace = snapshot.workspace
+            savedWorkspace = snapshot.workspace
             document.acceptReload(snapshot.configuration)
+            synchronizeRegistrations(previous: previous)
             configurationSaveError = nil
             configurationFailureKind = nil
             configurationLoadFailed = false
             configurationLoadError = nil
             hasUsableConfiguration = true
+            flowLite.setSuspended(isRestarting)
             cancelRecording()
             synchronizeLowBatteryPreference()
             refreshNotificationAuthorization()
@@ -1314,12 +1420,14 @@ final class AppModel: ObservableObject {
         } else {
             blocker = nil
         }
-        d200x.synchronize(document.draft.d200x, canEdit: canEditConfiguration, blocker: blocker)
+        d200x.synchronize(document.draft.d200x,
+                          canEdit: canEditConfiguration && isDeviceEnabled(.d200x),
+                          blocker: isDeviceEnabled(.d200x) ? blocker : "This device is disabled or removed.")
     }
 
     var canEditConfiguration: Bool { !isRestarting && !isLoading && !configurationLoadFailed }
     private var canStartWheelApply: Bool {
-        !isRestarting && !isLoading && hasUsableConfiguration &&
+        isDeviceEnabled(.mxMaster3S) && !isRestarting && !isLoading && hasUsableConfiguration &&
             [.ready, .enabled].contains(boltStatus.phase) &&
             !boltStatus.cleanupUncertain && boltStatus.wheel.support == .supported &&
             !boltStatus.wheel.isApplying && (try? document.draft.validated()) != nil
@@ -1332,13 +1440,13 @@ final class AppModel: ObservableObject {
     }
 
     private var shouldEnableButtons: Bool {
-        sessionActivationRequested && !isRestarting && !isLoading && !boltStatus.cleanupUncertain && hasUsableConfiguration &&
+        isDeviceEnabled(.mxMaster3S) && sessionActivationRequested && !isRestarting && !isLoading && !boltStatus.cleanupUncertain && hasUsableConfiguration &&
             permission == .granted && hasConfiguredShortcut &&
             boltStatus.availableControls == Set(MouseControl.allCases)
     }
 
     private func refreshDeliveryAdmission() {
-        let canDeliver = permission == .granted && sessionActivationRequested && !isRestarting &&
+        let canDeliver = isDeviceEnabled(.mxMaster3S) && permission == .granted && sessionActivationRequested && !isRestarting &&
             !boltStatus.cleanupUncertain && [.ready, .enabling, .enabled].contains(boltStatus.phase)
         if !canDeliver {
             bolt.invalidateScrollAdmission()
@@ -1364,7 +1472,7 @@ final class AppModel: ObservableObject {
     private func reconcileSession() async {
         while reconciliationRequested {
             reconciliationRequested = false
-            guard sessionActivationRequested, !isRestarting, !isLoading, hasUsableConfiguration,
+            guard isDeviceEnabled(.mxMaster3S), sessionActivationRequested, !isRestarting, !isLoading, hasUsableConfiguration,
                   !discoveryPending, [.ready, .enabled].contains(boltStatus.phase),
                   !boltStatus.cleanupUncertain else { continue }
             let intent = lifecycleIntent
@@ -1462,7 +1570,7 @@ final class AppModel: ObservableObject {
     }
 
     private func startConnectionRecovery() {
-        guard sessionActivationRequested, !isRestarting, !wakeRecovery.sleeping else { return }
+        guard isDeviceEnabled(.mxMaster3S), sessionActivationRequested, !isRestarting, !wakeRecovery.sleeping else { return }
         wakeRecovery.retry { [weak self] in
             guard let self else { return .stop }
             return await self.performRecoveryAttempt()
@@ -1470,6 +1578,7 @@ final class AppModel: ObservableObject {
     }
 
     private func performRecoveryAttempt() async -> WakeRecoveryCoordinator.Outcome {
+        guard isDeviceEnabled(.mxMaster3S) else { return .stop }
         if let cleanup = sleepCleanupTask {
             let cleanupIntent = lifecycleIntent
             _ = await cleanup.value

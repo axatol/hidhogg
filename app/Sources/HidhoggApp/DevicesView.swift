@@ -1,4 +1,5 @@
 import SwiftUI
+import HidhoggDomain
 
 struct DevicesView: View {
     @EnvironmentObject private var model: AppModel
@@ -70,6 +71,8 @@ struct DevicesView: View {
 
                 connectionAction
             }
+
+            DeviceManagementControls(family: .mxMaster3S)
 
             DeviceBatteryOverviewView()
 

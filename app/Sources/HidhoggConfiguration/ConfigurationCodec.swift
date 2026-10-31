@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import HidhoggDomain
 import TOML
@@ -571,7 +572,7 @@ private struct ShortcutDocument: Codable {
     }
 }
 
-private struct AnyCodingKey: CodingKey {
+struct AnyCodingKey: CodingKey {
     let stringValue: String
     let intValue: Int?
 
@@ -590,11 +591,256 @@ private struct AnyCodingKey: CodingKey {
     }
 }
 
-private extension KeyedDecodingContainer where Key == AnyCodingKey {
+extension KeyedDecodingContainer where Key == AnyCodingKey {
     func rejectUnknownKeys(_ allowed: Set<String>) throws {
         guard let key = allKeys.first(where: { !allowed.contains($0.stringValue) }) else {
             return
         }
         throw ConfigurationError.unknownKey(key.stringValue)
+    }
+}
+
+struct RegistryManifest: Codable {
+    var schemaVersion: Int = WorkspaceConfiguration.currentVersion
+    let connectOnLaunch: Bool
+    let devices: [RegistryReference]
+
+    init(connectOnLaunch: Bool, devices: [RegistryReference]) {
+        self.connectOnLaunch = connectOnLaunch
+        self.devices = devices
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        try container.rejectUnknownKeys(["schema_version", "connect_on_launch", "devices"])
+        schemaVersion = try container.decode(Int.self, forKey: AnyCodingKey("schema_version"))
+        guard schemaVersion == WorkspaceConfiguration.currentVersion else {
+            throw ConfigurationError.unsupportedVersion(schemaVersion)
+        }
+        connectOnLaunch = try container.decode(Bool.self, forKey: AnyCodingKey("connect_on_launch"))
+        devices = try container.decode([RegistryReference].self, forKey: AnyCodingKey("devices"))
+        guard devices.count <= DeviceFamily.allCases.count,
+              Set(devices.map(\.id)).count == devices.count,
+              Set(devices.map(\.family)).count == devices.count else {
+            throw ConfigurationError.invalidDocument
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version", connectOnLaunch = "connect_on_launch", devices
+    }
+}
+
+enum RegistryPayloadRevision: Equatable {
+    case contentHash(String)
+    case legacy(UUID)
+
+    init(serializedValue: String) throws {
+        if Self.isContentHash(serializedValue) {
+            self = .contentHash(serializedValue)
+            return
+        }
+
+        guard Self.isCanonicalUUID(serializedValue), let uuid = UUID(uuidString: serializedValue) else {
+            throw ConfigurationError.invalidDocument
+        }
+        self = .legacy(uuid)
+    }
+
+    var serializedValue: String {
+        switch self {
+        case .contentHash(let hash): hash
+        case .legacy(let uuid): uuid.uuidString
+        }
+    }
+
+    static func isContentHash(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        return bytes.count == 12 && bytes.allSatisfy {
+            (48...57).contains($0) || (97...102).contains($0)
+        }
+    }
+
+    private static func isCanonicalUUID(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        guard bytes.count == 36 else { return false }
+        for index in bytes.indices {
+            if [8, 13, 18, 23].contains(index) {
+                guard bytes[index] == 45 else { return false }
+                continue
+            }
+            let byte = bytes[index]
+            guard (48...57).contains(byte) || (65...70).contains(byte) || (97...102).contains(byte) else {
+                return false
+            }
+        }
+        return true
+    }
+}
+
+struct RegistryReference: Codable {
+    let id: UUID
+    let family: DeviceFamily
+    let displayName: String
+    let isEnabled: Bool
+    let revision: RegistryPayloadRevision
+    var usesLegacyPath: Bool {
+        if case .legacy = revision { return true }
+        return false
+    }
+    var relativePath: String {
+        switch revision {
+        case .contentHash(let hash): "devices/\(family.rawValue).\(id.uuidString).\(hash).toml"
+        case .legacy(let uuid): "devices/\(id.uuidString)/\(uuid.uuidString).toml"
+        }
+    }
+
+    init(device: RegisteredDevice, contentHash: String) {
+        id = device.id
+        family = device.family
+        displayName = device.displayName
+        isEnabled = device.isEnabled
+        revision = .contentHash(contentHash)
+    }
+
+    init(device: RegisteredDevice, legacyRevision: UUID) {
+        id = device.id
+        family = device.family
+        displayName = device.displayName
+        isEnabled = device.isEnabled
+        revision = .legacy(legacyRevision)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        try container.rejectUnknownKeys(["id", "family", "display_name", "enabled", "revision"])
+        id = try container.decode(UUID.self, forKey: AnyCodingKey("id"))
+        family = try container.decode(DeviceFamily.self, forKey: AnyCodingKey("family"))
+        displayName = try container.decode(String.self, forKey: AnyCodingKey("display_name"))
+        isEnabled = try container.decode(Bool.self, forKey: AnyCodingKey("enabled"))
+        revision = try RegistryPayloadRevision(
+            serializedValue: container.decode(String.self, forKey: AnyCodingKey("revision"))
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: AnyCodingKey.self)
+        try container.encode(id, forKey: AnyCodingKey("id"))
+        try container.encode(family, forKey: AnyCodingKey("family"))
+        try container.encode(displayName, forKey: AnyCodingKey("display_name"))
+        try container.encode(isEnabled, forKey: AnyCodingKey("enabled"))
+        try container.encode(revision.serializedValue, forKey: AnyCodingKey("revision"))
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, family, displayName = "display_name", isEnabled = "enabled", revision
+    }
+}
+
+private struct RegisteredPayload: Codable {
+    let schemaVersion: Int
+    let id: UUID
+    let family: DeviceFamily
+    let mouse: DeviceDocument?
+    let d200x: D200XDocument?
+
+    init(device: RegisteredDevice) {
+        schemaVersion = 1
+        id = device.id
+        family = device.family
+        if case .mouse(let bindings) = device.configuration { mouse = DeviceDocument(configuration: bindings) }
+        else { mouse = nil }
+        if case .d200x(let deck) = device.configuration { d200x = deck.map(D200XDocument.init(configuration:)) }
+        else { d200x = nil }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        try container.rejectUnknownKeys(["schema_version", "id", "family", "mouse", "d200x"])
+        schemaVersion = try container.decode(Int.self, forKey: AnyCodingKey("schema_version"))
+        guard schemaVersion == 1 else { throw ConfigurationError.unsupportedVersion(schemaVersion) }
+        id = try container.decode(UUID.self, forKey: AnyCodingKey("id"))
+        family = try container.decode(DeviceFamily.self, forKey: AnyCodingKey("family"))
+        mouse = try container.decodeIfPresent(DeviceDocument.self, forKey: AnyCodingKey("mouse"))
+        d200x = try container.decodeIfPresent(D200XDocument.self, forKey: AnyCodingKey("d200x"))
+        switch family {
+        case .mxMaster3S: guard mouse != nil, d200x == nil else { throw ConfigurationError.invalidDocument }
+        case .d200x: guard mouse == nil else { throw ConfigurationError.invalidDocument }
+        case .flowLite84: guard mouse == nil, d200x == nil else { throw ConfigurationError.invalidDocument }
+        }
+    }
+
+    enum CodingKeys: String, CodingKey { case schemaVersion = "schema_version", id, family, mouse, d200x }
+}
+
+enum RegistryCodec {
+    static func version(_ data: Data) throws -> Int {
+        struct Header: Decodable { let schema_version: Int }
+        return try decode(Header.self, data: data).schema_version
+    }
+
+    static func manifest(_ data: Data) throws -> RegistryManifest { try decode(RegistryManifest.self, data: data) }
+
+    static func device(_ data: Data, reference: RegistryReference) throws -> RegisteredDevice {
+        let payload = try decode(RegisteredPayload.self, data: data)
+        guard payload.id == reference.id, payload.family == reference.family else {
+            throw ConfigurationError.invalidDocument
+        }
+        let configuration = try deviceConfiguration(payload)
+        return RegisteredDevice(id: reference.id, displayName: reference.displayName,
+                                isEnabled: reference.isEnabled, configuration: configuration)
+    }
+
+    static func encode(device: RegisteredDevice) throws -> Data { try encode(RegisteredPayload(device: device)) }
+
+    static func shortSHA256(_ data: Data) -> String {
+        String(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined().prefix(12))
+    }
+
+    static func recognizesManagedPayload(_ data: Data, id: UUID, family: DeviceFamily?) -> Bool {
+        guard let payload = try? decode(RegisteredPayload.self, data: data),
+              payload.id == id,
+              family == nil || payload.family == family,
+              let configuration = try? deviceConfiguration(payload) else {
+            return false
+        }
+
+        let device = RegisteredDevice(id: id, displayName: "Managed payload", isEnabled: true,
+                                      configuration: configuration)
+        return (try? WorkspaceConfiguration(connectOnLaunch: false, devices: [device]).validated()) != nil
+    }
+
+    static func encode<T: Encodable>(_ value: T) throws -> Data {
+        let encoder = TOMLEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        do {
+            let data = try encoder.encode(value)
+            guard data.count <= ConfigurationCodec.maximumFileSize else { throw ConfigurationError.fileTooLarge }
+            return data
+        } catch let error as ConfigurationError { throw error }
+        catch { throw ConfigurationError.encodingFailed }
+    }
+
+    private static func decode<T: Decodable>(_ type: T.Type, data: Data) throws -> T {
+        guard data.count <= ConfigurationCodec.maximumFileSize else { throw ConfigurationError.fileTooLarge }
+        let decoder = TOMLDecoder()
+        decoder.limits = .init(maxInputSize: ConfigurationCodec.maximumFileSize, maxDepth: 12,
+                               maxTableKeys: 512, maxArrayLength: 256,
+                               maxStringLength: ConfigurationCodec.maximumFileSize)
+        do { return try decoder.decode(type, from: data) }
+        catch let error as ConfigurationError { throw error }
+        catch { throw ConfigurationError.invalidDocument }
+    }
+
+    private static func deviceConfiguration(_ payload: RegisteredPayload) throws -> RegisteredDeviceConfiguration {
+        switch payload.family {
+        case .mxMaster3S:
+            guard let mouse = payload.mouse else { throw ConfigurationError.invalidDocument }
+            return .mouse(mouse.configuration)
+        case .d200x:
+            return .d200x(payload.d200x?.configuration)
+        case .flowLite84:
+            return .flowLite84
+        }
     }
 }

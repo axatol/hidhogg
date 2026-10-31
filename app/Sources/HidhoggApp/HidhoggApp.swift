@@ -63,7 +63,8 @@ struct HidhoggApp: App {
                 keyboard: model.flowLite,
                 phase: model.connectionPresentationPhase,
                 cleanupUncertain: model.boltStatus.cleanupUncertain && !model.isBackgroundRecovery,
-                permissionChecks: model.permissionChecks
+                permissionChecks: model.permissionChecks,
+                mouseEnabled: model.isDeviceEnabled(.mxMaster3S)
             )
                 .background {
                     WorkspaceActivationAdapter(presentationCoordinator: workspacePresentationCoordinator)

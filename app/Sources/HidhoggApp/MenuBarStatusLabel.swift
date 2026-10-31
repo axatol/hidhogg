@@ -30,17 +30,19 @@ struct MultiDeviceMenuBarStatusLabel: View {
     let phase: BoltPhase
     let cleanupUncertain: Bool
     let permissionChecks: PermissionChecks
+    var mouseEnabled = true
 
     var body: some View {
-        let mouse = MenuBarStatus(phase: phase, cleanupUncertain: cleanupUncertain, permissionChecks: permissionChecks)
-        let devices = MenuBarStatus(mouse: mouse, deck: deck.isConfigured ? deck.status : nil)
-        let status = MenuBarStatus(base: devices, additional: keyboardStatus)
+        let mouse: MenuBarStatus? = mouseEnabled
+            ? MenuBarStatus(phase: phase, cleanupUncertain: cleanupUncertain, permissionChecks: permissionChecks) : nil
+        let deckStatus = deck.managementEnabled && deck.isConfigured ? MenuBarStatus(deck: deck.status) : nil
+        let status = MenuBarStatus(managedDevices: [mouse, deckStatus, keyboardStatus].compactMap { $0 })
         MenuBarStatusLabel(phase: phase, cleanupUncertain: cleanupUncertain, permissionChecks: permissionChecks,
                            overrideStatus: status)
     }
 
     private var keyboardStatus: MenuBarStatus? {
-        guard keyboard.connectionRequested else { return nil }
+        guard keyboard.managementEnabled, keyboard.connectionRequested else { return nil }
         switch keyboard.status {
         case .disconnected: return .disconnected
         case .connecting: return .connecting

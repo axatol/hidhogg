@@ -1,3 +1,39 @@
+# Accepted registry checkpoint — committed on master
+
+REG-01, REG-UI-02 and REG-FS-03 are checked in with owner acceptance of Add/Disable/Remove, card placement and flat hashed configuration/cleanup. Resolve the current commit from Git; no push was authorized. Worktree should be clean after this checkpoint. Signed build a9dab2eb3641c0292bd9fb8d263a60e166e64dc27b75bf5d91c9589b9bf889f7 matches all234 source inputs. Next planned task: generic discovery of already-paired Bluetooth devices and battery monitoring; no implementation started. Earlier uncommitted/pending notes below are historical.
+
+# Latest owner acceptance
+
+## Owner acceptance — 31 October 2026
+
+Owner reports the simplified device filename/cleanup change looks good and Add, Disable and Remove work as expected. Earlier card placement also received acceptance. These confirmations cover the reported user flows; fault-injection cases remain offline evidence, not additional hardware claims. REG-01/REG-UI-02/REG-FS-03 are ready for a separately authorized check-in. Changes remain uncommitted on master; no push authorized. Generic paired Bluetooth discovery/battery monitoring is the next planned implementation slice.
+
+# Latest storage checkpoint — REG-FS-03
+
+## REG-FS-03 verified delivery — 31 October 2026
+
+Signed app/CLI build `a9dab2eb3641c0292bd9fb8d263a60e166e64dc27b75bf5d91c9589b9bf889f7` passes strict signatures. Flat payload names are devices/<family>.<registration UUID>.<12lowercase SHA256>.toml. Registration IDs/settings are retained; legacy UUID-based nested refs migrate on load after durable publication. Original legacy-v1 backup remains. Cleanup keeps current refs and only removes recognizable obsolete managed files after root sync; ignores unrelated/symlink/corrupt/manual-edited hash-mismatched files. Failed cleanup doesn't invalidate the committed config and retries on a later successful publication. No history UI or universal external-editor transaction guarantee.
+
+Worker73config tests and independent97focused tests (73configuration+24AppModelIntegration) pass; no failures. Independent log /Volumes/Data/tmp/hidhogg-regfs03-focused-20261031-170329.log.21-file pre/post/postbuild manifests match SHA2569892c4cefb54295b122e82ca2a3e853859d8cc83f14ebfd7ad68484e42d1156b; final manifest /Volumes/Data/tmp/hidhogg-regfs03-postbuild.sha256. Existing733-registry gate is historical; not repeated for this scoped backend change. Release log /Volumes/Data/tmp/hidhogg-regfs03-release-20261031.log;234current build input hashes in ignored build-info. No app/HID/private configuration or live cleanup/migration performed. Changes remain uncommitted on master after027bf69. Owner next: restart updated app, confirm IDs/settings unchanged and flat files, obsolete recognized files removed; no agent actual-directory inspection.
+
+## Earlier handoffs
+
+# Latest UI follow-up — 31 October 2026
+
+## REG-UI-02 — 31 October 2026
+
+Owner approved moving management controls from the top bar into each device settings card. Added shared DeviceManagementControls; all3header cards now contain Enable/Disable, Remove confirmation and disabled-only status. Sidebar context menu retained; standalone banner removed. Runtime/model handlers unchanged. Signed app/CLI build `d2d61c8eaff18b09834eafcae7cbc42de4de2108d5b5ff69574650b5656af625` passes strict signatures;234current input hashes recorded. Prior733-test registry gate not repeated for view-only relocation. Shared component visually inspected offscreen at320/760px, enabled/disabled, synthetic models/no-op actions and never-shown windows. No production app/device/configuration operations. Native whole-workspace acceptance remains owner check. Release /Volumes/Data/tmp/hidhogg-reg-card-release-20261031.log. Changes uncommitted.
+
+# Current handoff — REG-01 delivered, 31 October 2026
+
+Base master027bf69; registry implementation uncommitted, no push. Signed dist build `dd887ea4d396f757794e6cf40d526269eb3542d44b18694a4c1062d41b2f4a08` app/CLI strict signatures pass;233current input hashes in ignored build-info. Independent733offline checks pass (app326,configuration65,automation38,Logitech149,Lofree92,Ulanzi36,MacOSActions27); log /tmp/hidhogg-reg01-broader-test.log. Excludes WakeConnectionTests/NativeWorkspaceWindowTests. Root20changed-input postbuild aggregate f3ac907679a7d71e7a4094c56f6ba74a7616ed76d0f17d44179b5a027c7e997e matches posttest; packages unchanged. No production app/HID/private config operations. Test exec exited0; OS process enumeration unavailable.
+
+Implemented: stable UUID registrations; typed family payloads; schema2root and devices/UUID/revisionUUID.toml files; valid legacy migration with exact config.toml.legacy-v1.backup; lock+aggregate conflict checks+staging/root publication; unchanged payload reuse; failure leaves prior root authoritative; postpublication durability uncertainty explicit. Archives retained, no GC/secure erase. D200X actions/presets and config-root assets preserved. Registry-driven sidebar/menu, Add/Enable/Disable/Remove with confirmation, empty route handling and runtime gates across all families. Disable/removal revokes captures/input/refresh/autoapply/listening/recovery, including disconnected capture case. Initial registry load suspends keyboard. Current adapters only one registration per supported family; no physical identity implied by UUID.
+
+Next: owner launch/migration/UI/lifecycle checks in docs/device-registry-plan.md, then separately approved check-in. Generic paired Bluetooth discovery/battery is next planned slice; defer Logitech Bluetooth config/identity and mousehardware controls. TaskView network error prevented sync; repo roadmap/checklist updated. No overall milestone closed before owner acceptance. Older Lofree startup timeout was not reproduced; no retry fix claimed.
+
+## Historical handoffs
+
 
 ## Check-in acceptance — 31 October 2026
 
@@ -374,3 +410,7 @@ BackendAPI typedwindows/mac0/1, current9416 pairedscalar; originals/restoreflagi
 ## 29 October 2026 — 200ms automatic settings and page consolidation
 
 Owner reports previouscontrolsworkwell; approves200msautoapplylightingANDMac/Windows, consistent16ptcards, compactsummary, separateMode/Lightingcontrols andcollapsedDeviceinformation(voltage/timestamps/firmware), separateUndo lighting/mode. Userfirstwritesonly; noagentHID. Modelworkerflowlite_200ms_auto ownsmodel/tests; viewworkerflowlite_settings_layout ownsView. Modeldesignindependentdebouncetimers+max2FIFOduekinds, latestintentreplaceperkind, oneexistingwriter, no transportcancelonnewedits. Modeconfirmmustpreservenewerchoice/revert; anyfailureclearsallunsentqueues; Undoonlycancelsownkind. Oldbuildb874794currenthistoricalpendingnewsourcefreeze/gate/build. Sourceonmasterdirtyafterbase9d9b2c2; backendmoduleunchanged. Currentplan docs/flow-lite84-system-mode-plan.md topfollowup.
+
+REG-01 started31October2026 after027bf69 clean checkpoint. Owner approved overall sequence and asks implementation now. docs/device-registry-plan.md is active checklist. Root reading foundational source; registry_boundary_audit read-only explorer and registry_architecture read-only architect investigating storage/runtime seams. No implementation yet; no private configuration/device/env reads. Bluetooth and Logitech hardware expansion deferred. Need coherent migration transaction boundary before edits; existing controllers singleton and selectors model/receiver specific.
+
+REG-FS-03 approved31October2026: flatten payload paths to family.registrationUUID.shortSHA256.toml, migrate nested paths, cleanup obsolete owned files only after successful durable root publication. Worker hashed_device_files owns config backend/tests; root docs/release. Preserve current dirty REG01/UI changes. No app/device/private-config access; manual reload semantics preserved. docs/device-registry-plan.md holds checklist.

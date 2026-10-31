@@ -7,6 +7,24 @@ import UlanziD200X
 
 @MainActor
 final class D200XConnectSetupTests: XCTestCase {
+    func testDisabledManagementBlocksManualConnectionAndActionsWhileKeepingConfiguration() async {
+        let session = ConnectSetupSession()
+        let model = makeModel(session: session)
+        model.synchronize(.empty, canEdit: true)
+        model.setListening(true)
+        model.setManagementEnabled(false)
+        model.connect()
+        model.suspendDelivery(false)
+        model.sleep()
+        model.wake()
+        let count = await session.connectionCount()
+        XCTAssertEqual(count, 0)
+        XCTAssertFalse(model.canRunConfiguredActions)
+        XCTAssertFalse(model.isListening)
+        XCTAssertEqual(model.configuration, .empty)
+        await model.stop()
+    }
+
     func testManualConnectCreatesConfigurationSynchronouslyAndConnects() async {
         let session = ConnectSetupSession()
         let model = makeModel(session: session)

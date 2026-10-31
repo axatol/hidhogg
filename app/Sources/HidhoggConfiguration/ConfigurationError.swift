@@ -11,9 +11,15 @@ public enum ConfigurationError: Error, Equatable, LocalizedError, Sendable {
     case symbolicLinkNotAllowed
     case filesystemAccessFailed
     case encodingFailed
+    case payloadHashCollision
+    case publicationDurabilityUncertain
 
     public var errorDescription: String? {
         switch self {
+        case .payloadHashCollision:
+            "A device payload hash path already contains different bytes."
+        case .publicationDurabilityUncertain:
+            "Configuration was published, but its durability could not be confirmed. Reload before saving again."
         case .invalidLocation:
             "Configuration must use an absolute file URL."
         case .fileTooLarge:

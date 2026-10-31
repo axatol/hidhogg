@@ -7,6 +7,59 @@ import XCTest
 
 @MainActor
 final class FlowLite84ModelTests: XCTestCase {
+    func testInitialConfigurationSuspensionBlocksConnectWithoutConsumingStartupIntent() async {
+        let session = FixtureFlowLite84Session(snapshot: snapshot())
+        let model = FlowLite84Model(session: session)
+        model.setSuspended(true)
+        model.connect()
+        model.connectOnLaunch()
+        let beforeLoad = await session.connectionCount()
+        XCTAssertEqual(beforeLoad, 0)
+        model.setSuspended(false)
+        model.connectOnLaunch()
+        let connected = await eventually { model.isConnected && !model.isBusy }
+        XCTAssertTrue(connected)
+        let afterLoad = await session.connectionCount()
+        XCTAssertEqual(afterLoad, 1)
+        await model.stop()
+    }
+
+    func testDisableCancelsQueuedAppliesAndActivityAndWakeCannotReconnect() async {
+        let read = snapshot(lighting: FlowLite84Lighting(mode: 10, enabled: false, idleOffUnits: 6, brightnessLevel: 0, speedLevel: 4))
+        let session = FixtureFlowLite84Session(snapshot: read)
+        let monitor = FixtureKeyboardActivityMonitor()
+        var now = ContinuousClock.now
+        let model = FlowLite84Model(session: session, keyboardActivityMonitor: monitor,
+                                    monotonicNow: { now }, lightingAutoApplyDelay: .milliseconds(50))
+        model.connect()
+        let connected = await eventually { model.isConnected && !model.isBusy }
+        XCTAssertTrue(connected)
+        model.draftLightingEnabled = true
+        model.setManagementEnabled(false)
+        model.connect()
+        model.applyLightingDraft()
+        model.refresh()
+        now = now.advanced(by: .seconds(3_600))
+        monitor.sendActivity()
+        model.sleep()
+        model.wake()
+        let disconnected = await eventually { !model.isConnected && !model.isBusy }
+        XCTAssertTrue(disconnected)
+        try? await Task.sleep(for: .milliseconds(80))
+        let connections = await session.connectionCount()
+        let writes = await session.lightingEditCount()
+        let refreshes = await session.refreshCount()
+        let batteryRefreshes = await session.batteryRefreshCount()
+        XCTAssertEqual(connections, 1)
+        XCTAssertEqual(writes, 0)
+        XCTAssertEqual(refreshes, 0)
+        XCTAssertEqual(batteryRefreshes, 0)
+        XCTAssertEqual(monitor.startCount, 1)
+        XCTAssertEqual(monitor.stopCount, 1)
+        XCTAssertFalse(model.connectionRequested)
+        await model.stop()
+    }
+
     func testDefaultModelDoesNotCreateLiveSessionForConnect() {
         let model = FlowLite84Model()
 

@@ -61,3 +61,7 @@ Use [the roadmap](roadmap.md) for current scope, [the structure](structure.md) f
 
 
 Seven built-in wide modes and clock format, static installed-app icon notifications, explicit screensaver image upload and temporary preview are implemented. The last sent screensaver JPEG is retained locally behind a collapsed preview. The owner confirmed the latest wide-mode/retained-preview follow-up working on28October2026; other hardware gates remain separate. Now Playing is a synthetic feasibility spike, not a production reader. Additive icon/text, badges and MCP are the requested next slice and are not implemented.
+
+## Device registry — 31 October 2026
+
+REG-01 replaces fixed device-list composition with UUID registrations and per-device payload files coordinated by a root schema2 registry. Legacy schema1 configuration is backed up before migration publication. The existing strict aggregate remains an editor projection; registry membership/enabled state independently gates runtime activity. Existing native adapters still manage one endpoint per supported family. No new Bluetooth discovery or hardware commands are included. See [registry plan](device-registry-plan.md) for storage transactions, limitations and verification.

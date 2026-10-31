@@ -218,9 +218,11 @@ public enum ConfigurationValidationError: Error, LocalizedError, Sendable {
     case unsupportedVersion, invalidProfile, invalidControls, invalidApplication, invalidShortcut
     case invalidD200XControls, invalidD200XAppearance, invalidD200XAction
     case invalidWheelScrollAmount
+    case invalidRegistry
 
     public var errorDescription: String? {
         switch self {
+        case .invalidRegistry: "Device registrations must have unique UUIDs, one per supported family, and valid names."
         case .unsupportedVersion: "Unsupported configuration version."
         case .invalidProfile: "Expected one Logitech MX Master 3S profile."
         case .invalidControls: "Back and Forward defaults are required; unknown controls are not supported."

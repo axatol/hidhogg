@@ -7,7 +7,7 @@ Updated 26 October 2026. The active implementation is the Swift package under ap
 | Path | Responsibility |
 |---|---|
 | app/Sources/HidhoggDomain | Validated configuration, bindings, profiles, presets, topics and static action definitions |
-| app/Sources/HidhoggConfiguration | Strict TOML codec, configuration paths and revision-aware file persistence |
+| app/Sources/HidhoggConfiguration | Strict legacy/registry TOML codecs, versioned device payloads and coordinated revision-aware publication |
 | app/Sources/LogitechBolt | HID++ framing/correlation, IOHID transport, discovery, routing ownership and verified mouse reconciliation |
 | app/Sources/UlanziD200X | Bounded frames, input/identity codecs, page archives, IOHID transport and generation-bound session maintenance |
 | app/Sources/LofreeFlowLite84 | Receiver-specific read-only status codec, exact non-seizing discovery and serialized session |
@@ -61,3 +61,7 @@ The per-user application lease precedes SwiftUI model construction. WorkspacePre
 Default tests use synthetic configuration, devices and action services. NativeWorkspaceWindowTests is opt-in, uses non-key background windows and fake adapters, and cannot prove physical input or platform effects. Only the main agent edits .agents/log.md and .agents/handoff.md.
 
 Detailed evidence: [D200X decisions](d200x-workspace-evolution-plan.md), [native actions](native-action-catalog-proposal.md), [Logitech recovery](logitech-reconnection.md), [permissions](settings-permissions-plan.md).
+
+## Device registry (REG-01)
+
+WorkspaceConfiguration owns UUID registration metadata and typed per-family payloads. AppModel holds the registry plus the existing strict editor projection; registry membership/enabled state gates runtime management independently of that projection. Existing hardware adapters remain singletons with one registration per supported family. Sidebar and menu enumerate registrations. ConfigurationStore coordinates migration backup, per-device payload publication and root registry publication; FileRevision covers root and every referenced payload. Payload filenames are flat and content-hashed; obsolete recognizable files are collected only after durable registry publication. Legacy nested paths remain readable and migrate on load. The configuration-directory asset base is unchanged.

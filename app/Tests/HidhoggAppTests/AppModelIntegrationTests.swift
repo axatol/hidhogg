@@ -9,6 +9,132 @@ import XCTest
 
 @MainActor
 final class AppModelIntegrationTests: XCTestCase {
+    func testDisableBlocksManualConnectWakeAndDeliveryAndRetainsUUIDAndDraft() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let session = FixtureBindingSession()
+        var posted = [KeyboardShortcut]()
+        let model = AppModel(configurationURL: url, store: ConfigurationStore(url: url), bolt: session,
+                             sender: ShortcutSender(preflight: { true }, request: { true }, postPair: { posted.append($0) }),
+                             loadImmediately: false, observeSleep: false, frontmostApplication: { nil })
+        var configuration = AppConfiguration.empty
+        configuration.devices[0].defaults["back"] = .key(KeyboardShortcut(keyCode: 12))
+        model.updateDraft(configuration)
+        let id = try XCTUnwrap(model.registration(for: .mxMaster3S)?.id)
+        model.connect()
+        let enabled = await eventually { model.isBindingsEnabled }
+        XCTAssertTrue(enabled)
+        model.setDeviceEnabled(id, enabled: false)
+        model.connect()
+        model.refreshDeviceInformation()
+        session.press(.back)
+        model.systemWillSleep()
+        model.systemDidWake()
+        let stopped = await eventually { model.boltStatus.phase == .idle }
+        XCTAssertTrue(stopped)
+        XCTAssertFalse(model.canDiscover)
+        XCTAssertFalse(model.isBindingsEnabled)
+        XCTAssertTrue(posted.isEmpty)
+        XCTAssertEqual(model.document.draft, configuration)
+        XCTAssertEqual(model.registration(for: .mxMaster3S)?.id, id)
+        model.setDeviceEnabled(id, enabled: true)
+        XCTAssertEqual(model.registration(for: .mxMaster3S)?.id, id)
+        let saved = await model.flushPendingSave()
+        XCTAssertTrue(saved)
+        let reloaded = try await ConfigurationStore(url: url).load()
+        XCTAssertEqual(reloaded.workspace.devices.first { $0.family == .mxMaster3S }?.id, id)
+    }
+
+    func testRemovalBlocksFallbackMouseAndReAddCreatesFreshRegistration() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let session = FixtureBindingSession()
+        let model = AppModel(configurationURL: url, store: ConfigurationStore(url: url), bolt: session,
+                             sender: ShortcutSender(preflight: { false }, request: { false }, postPair: { _ in }),
+                             loadImmediately: false, observeSleep: false, frontmostApplication: { nil })
+        let id = try XCTUnwrap(model.registration(for: .mxMaster3S)?.id)
+        model.beginRecording(for: .back)
+        model.removeDevice(id)
+        XCTAssertNil(model.recordingTarget)
+        model.connect()
+        model.applySavedWheelPreference()
+        model.confirmEnableBindings()
+        await drainMainActorTasks()
+        XCTAssertNil(model.registration(for: .mxMaster3S))
+        XCTAssertFalse(model.canDiscover)
+        XCTAssertFalse(model.canEnableBindings)
+        XCTAssertEqual(session.enableCount, 0)
+        XCTAssertNotEqual(model.navigation.current.route, .devices)
+        model.addDevice(.mxMaster3S)
+        XCTAssertNotEqual(model.registration(for: .mxMaster3S)?.id, id)
+        XCTAssertEqual(model.registeredDevices.filter { $0.family == .mxMaster3S }.count, 1)
+        model.addDevice(.mxMaster3S)
+        XCTAssertEqual(model.registeredDevices.filter { $0.family == .mxMaster3S }.count, 1)
+        let saved = await model.flushPendingSave()
+        XCTAssertTrue(saved)
+    }
+
+    func testEmptyRegistryRoundTripsAndAddingOneFamilyLeavesOthersUnmanaged() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let store = ConfigurationStore(url: url)
+        _ = try await store.save(WorkspaceConfiguration(connectOnLaunch: false, devices: []), expecting: .missing)
+        let model = AppModel(configurationURL: url, store: store, bolt: FixtureBindingSession(),
+                             sender: ShortcutSender(preflight: { false }, request: { false }, postPair: { _ in }),
+                             loadImmediately: true, observeSleep: false, frontmostApplication: { nil })
+        let loaded = await eventually { !model.isLoading }
+        XCTAssertTrue(loaded)
+        XCTAssertTrue(model.registeredDevices.isEmpty)
+        XCTAssertFalse(model.isDeviceEnabled(.mxMaster3S))
+        XCTAssertFalse(model.d200x.managementEnabled)
+        XCTAssertFalse(model.flowLite.managementEnabled)
+        model.addDevice(.d200x)
+        XCTAssertEqual(model.registeredDevices.count, 1)
+        XCTAssertTrue(model.d200x.managementEnabled)
+        XCTAssertFalse(model.flowLite.managementEnabled)
+        XCTAssertFalse(model.canDiscover)
+        let saved = await model.flushPendingSave()
+        XCTAssertTrue(saved)
+        let reloaded = try await store.load()
+        XCTAssertEqual(reloaded.workspace.devices.map(\.family), [.d200x])
+        XCTAssertEqual(reloaded.workspace.devices.first?.id, model.registeredDevices.first?.id)
+        XCTAssertEqual(model.d200x.assetDirectory, root.appendingPathComponent("assets", isDirectory: true))
+    }
+
+    func testRemovingConnectedMouseRevokesLatePressAndRecordingImmediately() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let session = FixtureBindingSession()
+        var posted = [KeyboardShortcut]()
+        let model = AppModel(configurationURL: url, store: ConfigurationStore(url: url), bolt: session,
+                             sender: ShortcutSender(preflight: { true }, request: { true }, postPair: { posted.append($0) }),
+                             loadImmediately: false, observeSleep: false, frontmostApplication: { nil })
+        var configuration = AppConfiguration.empty
+        configuration.devices[0].defaults["back"] = .key(KeyboardShortcut(keyCode: 12))
+        model.updateDraft(configuration)
+        model.connect()
+        let connected = await eventually { model.isBindingsEnabled }
+        XCTAssertTrue(connected)
+        let id = try XCTUnwrap(model.registration(for: .mxMaster3S)?.id)
+        model.beginRecording(for: .back)
+        model.removeDevice(id)
+        model.beginRecording(for: .back)
+        session.press(.back)
+        model.connect()
+        let stopped = await eventually { model.boltStatus.phase == .idle }
+        XCTAssertTrue(stopped)
+        XCTAssertTrue(posted.isEmpty)
+        XCTAssertNil(model.recordingTarget)
+        XCTAssertFalse(model.canDiscover)
+        XCTAssertEqual(session.discoverCount, 1)
+        let saved = await model.flushPendingSave()
+        XCTAssertTrue(saved)
+    }
+
     func testConnectAndDraftChangesDeliverImmediatelyBeforeAutosave() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

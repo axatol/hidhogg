@@ -4,6 +4,14 @@ import MacOSActions
 @testable import HidhoggApp
 
 final class MenuBarStatusTests: XCTestCase {
+    func testManagedDeviceAggregationHasNoPhantomDisconnectedMouse() {
+        XCTAssertEqual(MenuBarStatus(managedDevices: []), .disconnected)
+        XCTAssertEqual(MenuBarStatus(managedDevices: [.connected]), .connected)
+        XCTAssertEqual(MenuBarStatus(managedDevices: [.connected, .disconnected]), .partiallyConnected)
+        XCTAssertEqual(MenuBarStatus(managedDevices: [.permissionIncomplete, .connected]), .permissionIncomplete)
+        XCTAssertEqual(MenuBarStatus(managedDevices: [.failed, .connected]), .failed)
+    }
+
     func testAdditionalDevicePreservesWarningsAndReportsPartialConnection() {
         XCTAssertEqual(MenuBarStatus(base: .connected, additional: nil), .connected)
         XCTAssertEqual(MenuBarStatus(base: .connected, additional: .disconnected), .partiallyConnected)

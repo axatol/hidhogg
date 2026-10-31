@@ -27,7 +27,7 @@ final class ConfigurationStoreTests: XCTestCase {
         let snapshot = try await ConfigurationStore(url: url).load()
 
         XCTAssertEqual(snapshot.configuration, ConfigurationFixtures.configuration)
-        XCTAssertEqual(try Data(contentsOf: url), bytes)
+        XCTAssertEqual(try Data(contentsOf: url.appendingPathExtension("legacy-v1.backup")), bytes)
     }
 
     func testSaveReloadUsesExactRevisionAndPrivatePermissions() async throws {
@@ -45,7 +45,8 @@ final class ConfigurationStoreTests: XCTestCase {
         XCTAssertEqual(loaded, saved)
         XCTAssertEqual(fileAttributes[.posixPermissions] as? NSNumber, 0o600)
         XCTAssertEqual(directoryAttributes[.posixPermissions] as? NSNumber, 0o700)
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path), ["config.toml"])
+        XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)),
+                       ["config.toml", ".config.toml.lock", "devices"])
     }
 
     func testSaveRejectsStaleMissingRevisionAndPreservesExternalBytes() async throws {
@@ -102,7 +103,7 @@ final class ConfigurationStoreTests: XCTestCase {
         let invalidBytes = ConfigurationFixtures.data(
             ConfigurationFixtures.toml.replacingOccurrences(
                 of: "schema_version = 1",
-                with: "schema_version = 2"
+                with: "schema_version = 999"
             )
         )
         try invalidBytes.write(to: url)
@@ -111,7 +112,7 @@ final class ConfigurationStoreTests: XCTestCase {
             _ = try await store.load()
             XCTFail("Expected unsupported document version")
         } catch let error as ConfigurationError {
-            XCTAssertEqual(error, .unsupportedVersion(2))
+            XCTAssertEqual(error, .unsupportedVersion(999))
         }
 
         XCTAssertEqual(try Data(contentsOf: url), invalidBytes)
@@ -125,6 +126,7 @@ final class ConfigurationStoreTests: XCTestCase {
         let originalBytes = try ConfigurationCodec.encode(ConfigurationFixtures.configuration)
         try originalBytes.write(to: url)
         let loaded = try await store.load()
+        let publishedBytes = try Data(contentsOf: url)
         let invalid = AppConfiguration(devices: [
             DeviceBindings(id: AppConfiguration.logitechProfileID, defaults: ["back": .disabled])
         ])
@@ -138,7 +140,7 @@ final class ConfigurationStoreTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(try Data(contentsOf: url), originalBytes)
+        XCTAssertEqual(try Data(contentsOf: url), publishedBytes)
     }
 
     func testLoadRejectsFilesOverTheLimitWithoutChangingThem() async throws {
