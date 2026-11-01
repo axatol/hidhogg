@@ -96,11 +96,14 @@ final class LowBatteryNotificationController: ObservableObject {
     static let notificationIdentifier = "hidhogg.low-battery.logitech.mx-master-3s"
 
     @Published private(set) var isEnabled = false
-    @Published private(set) var authorizationState: LowBatteryNotificationAuthorizationState = .unknown
+    @Published private(set) var authorizationState: LowBatteryNotificationAuthorizationState = .unknown {
+        didSet { onAuthorizationChange?(authorizationState) }
+    }
+    var onAuthorizationChange: (@MainActor (LowBatteryNotificationAuthorizationState) -> Void)?
     @Published private(set) var authorizationError: String?
     @Published private(set) var notificationError: String?
 
-    private let notificationCenter: any LowBatteryNotificationCenterAdapter
+    let notificationCenter: any LowBatteryNotificationCenterAdapter
     private let latchStore: any LowBatteryAlertLatchStore
     private var preferenceGeneration = 0
     private var isRefreshingAuthorization = false

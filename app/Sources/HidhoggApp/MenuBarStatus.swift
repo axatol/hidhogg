@@ -1,3 +1,4 @@
+import GenericBluetooth
 import LogitechBolt
 import MacOSActions
 import UlanziD200X
@@ -5,6 +6,7 @@ import UlanziD200X
 enum MenuBarStatus: String, Equatable {
     case connected = "Connected"
     case permissionIncomplete = "Connected, permissions incomplete"
+    case bluetoothPermissionIncomplete = "Bluetooth permission incomplete"
     case connecting = "Connecting"
     case enablingBindings = "Enabling bindings"
     case disconnecting = "Disconnecting"
@@ -14,8 +16,27 @@ enum MenuBarStatus: String, Equatable {
     case partiallyConnected = "Some devices disconnected"
 
     init(managedDevices: [MenuBarStatus]) {
-        guard let first = managedDevices.first else { self = .disconnected; return }
-        self = managedDevices.dropFirst().reduce(first) { MenuBarStatus(base: $0, additional: $1) }
+        self = Self.aggregate(managedDevices, hasHealthyConnection: managedDevices.contains(.connected))
+    }
+
+    init(managedDeviceStates: [MenuBarDeviceState]) {
+        let statuses = managedDeviceStates.map(\.status)
+        let hasHealthyConnection = managedDeviceStates.contains { $0.isConnected && $0.status == .connected }
+        self = Self.aggregate(statuses, hasHealthyConnection: hasHealthyConnection)
+    }
+
+    private static func aggregate(_ statuses: [MenuBarStatus], hasHealthyConnection: Bool) -> MenuBarStatus {
+        guard !statuses.isEmpty else { return .disconnected }
+        if statuses.contains(.cleanupUncertain) { return .cleanupUncertain }
+        if statuses.contains(.failed) { return .failed }
+        if statuses.contains(.permissionIncomplete) { return .permissionIncomplete }
+        if statuses.contains(.bluetoothPermissionIncomplete) { return .bluetoothPermissionIncomplete }
+        if hasHealthyConnection { return .connected }
+        if statuses.contains(where: { [.connecting, .enablingBindings, .disconnecting].contains($0) }) {
+            return .connecting
+        }
+        if statuses.contains(.partiallyConnected) { return .partiallyConnected }
+        return .disconnected
     }
 
     init(deck: D200XStatus) {
@@ -29,40 +50,13 @@ enum MenuBarStatus: String, Equatable {
     }
 
     init(base: MenuBarStatus, additional: MenuBarStatus?) {
-        guard let additional else { self = base; return }
-        let states = [base, additional]
-        if states.contains(.cleanupUncertain) { self = .cleanupUncertain; return }
-        if states.contains(.failed) { self = .failed; return }
-        if states.contains(where: { [.connecting, .enablingBindings, .disconnecting].contains($0) }) {
-            self = .connecting
-            return
-        }
-        if states.contains(.partiallyConnected) { self = .partiallyConnected; return }
-        if states.contains(.disconnected) {
-            self = states.allSatisfy { $0 == .disconnected } ? .disconnected : .partiallyConnected
-            return
-        }
-        self = states.contains(.permissionIncomplete) ? .permissionIncomplete : .connected
+        let statuses = [base] + (additional.map { [$0] } ?? [])
+        self = Self.aggregate(statuses, hasHealthyConnection: statuses.contains(.connected))
     }
 
     init(mouse: MenuBarStatus, deck: D200XStatus?) {
-        guard let deck else { self = mouse; return }
-        if mouse == .cleanupUncertain || mouse == .failed { self = mouse; return }
-        switch deck {
-        case .failed: self = .failed
-        case .connecting, .disconnecting: self = .connecting
-        case .connected:
-            switch mouse {
-            case .connected, .permissionIncomplete: self = mouse
-            case .connecting, .disconnecting, .enablingBindings: self = .connecting
-            default: self = .partiallyConnected
-            }
-        case .disconnected:
-            switch mouse {
-            case .connected, .permissionIncomplete: self = .partiallyConnected
-            default: self = mouse
-            }
-        }
+        let statuses = [mouse] + (deck.map { [MenuBarStatus(deck: $0)] } ?? [])
+        self = Self.aggregate(statuses, hasHealthyConnection: statuses.contains(.connected))
     }
 
     init(phase: BoltPhase, cleanupUncertain: Bool, permissionChecks: PermissionChecks) {
@@ -89,10 +83,32 @@ enum MenuBarStatus: String, Equatable {
         }
     }
 
+    init(genericBluetooth status: GenericBluetoothStatus) {
+        if let failure = status.failure {
+            switch failure {
+            case .permissionRequired:
+                self = .bluetoothPermissionIncomplete
+                return
+            case .batteryUnavailable, .cancelled:
+                break
+            case .inventoryUnavailable, .unsupportedReport, .reportFailed, .timedOut, .outputLimit:
+                self = .failed
+                return
+            @unknown default:
+                self = .failed
+                return
+            }
+        }
+
+        self = status.connection == .connected ? .connected : .disconnected
+    }
+
     var accessibilityLabel: String {
         switch self {
         case .permissionIncomplete:
             "Hidhogg, Connected. One or more input permissions are incomplete; check Accessibility trust and event posting access in System Settings."
+        case .bluetoothPermissionIncomplete:
+            "Hidhogg, One or more Bluetooth devices need Bluetooth access. Check Bluetooth in System Settings."
         default:
             "Hidhogg, \(rawValue)"
         }
@@ -101,7 +117,7 @@ enum MenuBarStatus: String, Equatable {
     var iconColor: MenuBarIcon.StatusColor {
         switch self {
         case .connected: .connected
-        case .permissionIncomplete, .partiallyConnected: .permissionIncomplete
+        case .permissionIncomplete, .bluetoothPermissionIncomplete, .partiallyConnected: .permissionIncomplete
         case .connecting, .enablingBindings, .disconnecting: .transitioning
         case .disconnected: .disconnected
         case .failed, .cleanupUncertain: .failed

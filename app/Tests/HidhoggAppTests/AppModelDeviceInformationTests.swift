@@ -1,4 +1,5 @@
 import Foundation
+import GenericBluetooth
 import HidhoggConfiguration
 import HidhoggDomain
 import LogitechBolt
@@ -8,6 +9,43 @@ import XCTest
 
 @MainActor
 final class AppModelDeviceInformationTests: XCTestCase {
+    func testGenericAlertEditsRequestSharedPermissionWithoutEnablingMouseAndPreservePreferences() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let endpoint = BluetoothEndpoint(address: "AA:00:00:00:00:01")!
+        let device = RegisteredDevice(configuration: .genericBluetooth(endpoint))
+        let store = ConfigurationStore(url: url)
+        _ = try await store.save(WorkspaceConfiguration(devices: [device]), expecting: .missing)
+        let inventory = SyntheticBluetoothInventory()
+        inventory.access = .allowed
+        inventory.devices = [PairedBluetoothDevice(endpoint: endpoint, name: "Synthetic", isConnected: true)]
+        let report = SyntheticBluetoothReport(results: Array(repeating: .success(Data("{\"SPBluetoothDataType\":[]}".utf8)), count: 4))
+        let bluetooth = GenericBluetoothModel(inventory: inventory, report: report)
+        let center = DeviceInformationNotificationCenter()
+        let notifications = LowBatteryNotificationController(notificationCenter: center, latchStore: DeviceInformationAlertLatchStore())
+        let model = makeModel(url: url, session: DeviceInformationBindingSession(), notifications: notifications,
+                              bluetooth: bluetooth, loadImmediately: true)
+        let loaded = await eventually { !model.isLoading }
+        XCTAssertTrue(loaded)
+        model.setBluetoothBatteryThreshold(25, for: device.id)
+        model.setBluetoothIconOverride(.glasses, for: device.id)
+        model.setBluetoothBatteryAlerts(true, for: device.id)
+        let requested = await eventually { center.authorizationRequestCount == 1 }
+        XCTAssertTrue(requested)
+        XCTAssertFalse(notifications.isEnabled)
+        XCTAssertFalse(model.document.draft.mouse?.lowBatteryNotificationsEnabled == true)
+        XCTAssertEqual(model.registration(id: device.id)?.bluetoothConfiguration?.lowBatteryThreshold, 25)
+        XCTAssertEqual(model.registration(id: device.id)?.bluetoothConfiguration?.iconOverride, .glasses)
+        XCTAssertEqual(model.registration(id: device.id)?.bluetoothConfiguration?.lowBatteryAlertsEnabled, true)
+        model.setBluetoothBatteryThreshold(101, for: device.id)
+        model.setBluetoothBatteryThreshold(0, for: device.id)
+        XCTAssertEqual(model.registration(id: device.id)?.bluetoothConfiguration?.lowBatteryThreshold, 25)
+        model.setDeviceEnabled(device.id, enabled: false)
+        XCTAssertEqual(model.registration(id: device.id)?.bluetoothConfiguration?.lowBatteryAlertsEnabled, true)
+        XCTAssertTrue(center.enqueuedRequests.isEmpty)
+    }
+
     func testAutomaticRefreshRunsOncePerConnectionAndManualRefreshRequiresConnection() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -115,6 +153,7 @@ final class AppModelDeviceInformationTests: XCTestCase {
         url: URL,
         session: DeviceInformationBindingSession,
         notifications: LowBatteryNotificationController? = nil,
+        bluetooth: GenericBluetoothModel? = nil,
         loadImmediately: Bool = false
     ) -> AppModel {
         AppModel(
@@ -123,6 +162,7 @@ final class AppModelDeviceInformationTests: XCTestCase {
             bolt: session,
             sender: ShortcutSender(preflight: { false }, request: { false }, postPair: { _ in }),
             lowBatteryNotifications: notifications,
+            bluetooth: bluetooth,
             loadImmediately: loadImmediately,
             observeSleep: false
         )

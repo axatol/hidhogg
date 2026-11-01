@@ -233,6 +233,8 @@ cat > "$stage_app/Contents/Info.plist" <<'PLIST'
     <string>AccentColor</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>HidHogg reads connection and battery information for Bluetooth devices you choose to monitor.</string>
 </dict>
 </plist>
 PLIST

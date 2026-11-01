@@ -587,8 +587,14 @@ final class FlowLite84ModelTests: XCTestCase {
         let model = FlowLite84Model(session: session, lightingAutoApplyDelay: .milliseconds(10))
         model.connect()
 
-        let connected = await eventually { model.isConnected && !model.isBusy }
-        XCTAssertTrue(connected)
+        let readyToEdit = await eventually {
+            model.isConnected &&
+                !model.isBusy &&
+                model.snapshot == initialRead &&
+                model.canEditLighting &&
+                model.canEditSystemMode
+        }
+        XCTAssertTrue(readyToEdit)
         model.draftSystemMode = .windows
         model.draftLightingEffect = .breathing
         model.applySystemModeDraft()

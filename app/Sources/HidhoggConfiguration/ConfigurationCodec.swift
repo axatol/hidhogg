@@ -619,9 +619,10 @@ struct RegistryManifest: Codable {
         }
         connectOnLaunch = try container.decode(Bool.self, forKey: AnyCodingKey("connect_on_launch"))
         devices = try container.decode([RegistryReference].self, forKey: AnyCodingKey("devices"))
-        guard devices.count <= DeviceFamily.allCases.count,
+        let nativeFamilies = devices.map(\.family).filter { $0 != .genericBluetooth }
+        guard devices.count <= 256,
               Set(devices.map(\.id)).count == devices.count,
-              Set(devices.map(\.family)).count == devices.count else {
+              Set(nativeFamilies).count == nativeFamilies.count else {
             throw ConfigurationError.invalidDocument
         }
     }
@@ -743,6 +744,10 @@ private struct RegisteredPayload: Codable {
     let family: DeviceFamily
     let mouse: DeviceDocument?
     let d200x: D200XDocument?
+    let bluetoothEndpoint: BluetoothEndpoint?
+    let bluetoothLowBatteryAlertsEnabled: Bool?
+    let bluetoothLowBatteryThreshold: Int?
+    let bluetoothIconOverride: BluetoothDeviceKind?
 
     init(device: RegisteredDevice) {
         schemaVersion = 1
@@ -752,25 +757,44 @@ private struct RegisteredPayload: Codable {
         else { mouse = nil }
         if case .d200x(let deck) = device.configuration { d200x = deck.map(D200XDocument.init(configuration:)) }
         else { d200x = nil }
+        bluetoothEndpoint = device.bluetoothConfiguration?.endpoint
+        bluetoothLowBatteryAlertsEnabled = device.bluetoothConfiguration?.lowBatteryAlertsEnabled
+        bluetoothLowBatteryThreshold = device.bluetoothConfiguration?.lowBatteryThreshold
+        bluetoothIconOverride = device.bluetoothConfiguration?.iconOverride
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
-        try container.rejectUnknownKeys(["schema_version", "id", "family", "mouse", "d200x"])
+        try container.rejectUnknownKeys(["schema_version", "id", "family", "mouse", "d200x", "bluetooth_endpoint",
+            "bluetooth_low_battery_alerts_enabled", "bluetooth_low_battery_threshold", "bluetooth_icon_override"])
         schemaVersion = try container.decode(Int.self, forKey: AnyCodingKey("schema_version"))
         guard schemaVersion == 1 else { throw ConfigurationError.unsupportedVersion(schemaVersion) }
         id = try container.decode(UUID.self, forKey: AnyCodingKey("id"))
         family = try container.decode(DeviceFamily.self, forKey: AnyCodingKey("family"))
         mouse = try container.decodeIfPresent(DeviceDocument.self, forKey: AnyCodingKey("mouse"))
         d200x = try container.decodeIfPresent(D200XDocument.self, forKey: AnyCodingKey("d200x"))
+        bluetoothEndpoint = try container.decodeIfPresent(BluetoothEndpoint.self, forKey: AnyCodingKey("bluetooth_endpoint"))
+        bluetoothLowBatteryAlertsEnabled = try container.decodeIfPresent(Bool.self, forKey: AnyCodingKey("bluetooth_low_battery_alerts_enabled"))
+        bluetoothLowBatteryThreshold = try container.decodeIfPresent(Int.self, forKey: AnyCodingKey("bluetooth_low_battery_threshold"))
+        bluetoothIconOverride = try container.decodeIfPresent(BluetoothDeviceKind.self, forKey: AnyCodingKey("bluetooth_icon_override"))
+        guard bluetoothLowBatteryThreshold.map({ (1...100).contains($0) }) ?? true else { throw ConfigurationError.invalidDocument }
+        guard family == .genericBluetooth || (bluetoothEndpoint == nil && bluetoothLowBatteryAlertsEnabled == nil &&
+            bluetoothLowBatteryThreshold == nil && bluetoothIconOverride == nil) else { throw ConfigurationError.invalidDocument }
         switch family {
         case .mxMaster3S: guard mouse != nil, d200x == nil else { throw ConfigurationError.invalidDocument }
         case .d200x: guard mouse == nil else { throw ConfigurationError.invalidDocument }
         case .flowLite84: guard mouse == nil, d200x == nil else { throw ConfigurationError.invalidDocument }
+        case .genericBluetooth: guard mouse == nil, d200x == nil, bluetoothEndpoint != nil else { throw ConfigurationError.invalidDocument }
         }
     }
 
-    enum CodingKeys: String, CodingKey { case schemaVersion = "schema_version", id, family, mouse, d200x }
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version", id, family, mouse, d200x
+        case bluetoothEndpoint = "bluetooth_endpoint"
+        case bluetoothLowBatteryAlertsEnabled = "bluetooth_low_battery_alerts_enabled"
+        case bluetoothLowBatteryThreshold = "bluetooth_low_battery_threshold"
+        case bluetoothIconOverride = "bluetooth_icon_override"
+    }
 }
 
 enum RegistryCodec {
@@ -841,6 +865,12 @@ enum RegistryCodec {
             return .d200x(payload.d200x?.configuration)
         case .flowLite84:
             return .flowLite84
+        case .genericBluetooth:
+            guard let endpoint = payload.bluetoothEndpoint else { throw ConfigurationError.invalidDocument }
+            return .genericBluetooth(GenericBluetoothConfiguration(endpoint: endpoint,
+                lowBatteryAlertsEnabled: payload.bluetoothLowBatteryAlertsEnabled ?? false,
+                lowBatteryThreshold: payload.bluetoothLowBatteryThreshold ?? 10,
+                iconOverride: payload.bluetoothIconOverride))
         }
     }
 }

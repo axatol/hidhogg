@@ -340,7 +340,7 @@ final class D200XModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
     }
 
-    func testAggregateMenuBarStatusPreservesMouseAndDeckOutcomes() throws {
+    func testAggregateMenuBarStatusPrioritizesHealthyConnectionsAndPreservesFailures() throws {
         let permissions = PermissionChecks(accessibilityTrusted: true, eventPostingAllowed: true)
         let connectedMouse = MenuBarStatus(
             phase: .enabled,
@@ -355,13 +355,13 @@ final class D200XModelTests: XCTestCase {
         let connectedDeck = D200XStatus.connected(try identity())
         let cases: [(MenuBarStatus, D200XStatus?, MenuBarStatus)] = [
             (connectedMouse, nil, .connected),
-            (connectedMouse, .disconnected, .partiallyConnected),
-            (disconnectedMouse, connectedDeck, .partiallyConnected),
+            (connectedMouse, .disconnected, .connected),
+            (disconnectedMouse, connectedDeck, .connected),
             (connectedMouse, connectedDeck, .connected),
             (.failed, connectedDeck, .failed),
             (connectedMouse, .failed(.transport), .failed),
-            (.connecting, connectedDeck, .connecting),
-            (connectedMouse, .connecting, .connecting)
+            (.connecting, connectedDeck, .connected),
+            (connectedMouse, .connecting, .connected)
         ]
 
         for (mouse, deck, expected) in cases {
@@ -369,7 +369,7 @@ final class D200XModelTests: XCTestCase {
         }
         XCTAssertEqual(
             MenuBarStatus(mouse: connectedMouse, deck: .disconnected).iconColor,
-            .permissionIncomplete
+            .connected
         )
     }
 

@@ -8,6 +8,7 @@ import LogitechBolt
 import MacOSActions
 import UlanziD200X
 import LofreeFlowLite84
+import GenericBluetooth
 
 protocol BindingSession: Sendable {
     var events: AsyncStream<BoltEvent> { get }
@@ -74,10 +75,11 @@ extension BindingSession {
     }
 }
 
-enum WorkspaceRoute: String, CaseIterable, Hashable, Identifiable {
+enum WorkspaceRoute: Hashable, Identifiable {
     case devices
     case d200x
     case flowLite
+    case genericBluetooth(UUID)
     case actions
     case notifications
     case tilePresets
@@ -127,6 +129,8 @@ final class AppModel: ObservableObject {
     let lowBatteryNotifications: LowBatteryNotificationController?
     let d200x: D200XModel
     let flowLite: FlowLite84Model
+    let bluetooth: GenericBluetoothModel
+    let genericBluetoothAlerts: GenericBluetoothAlertCoordinator?
 
     @Published private(set) var navigation = NavigationHistory(initialRoute: WorkspaceLocation())
     @Published private(set) var document = ConfigurationDraft()
@@ -203,6 +207,7 @@ final class AppModel: ObservableObject {
     private var eventTask: Task<Void, Never>?
     private var sleepObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
+    private var bluetoothAuthorizationObserver: NSObjectProtocol?
     private let wakeDelay: WakeRecoveryCoordinator.Delay
     private let wakeStatusTimeout: WakeRecoveryCoordinator.Delay
     private lazy var wakeRecovery = WakeRecoveryCoordinator(delay: wakeDelay) { [weak self] code, message in
@@ -237,6 +242,9 @@ final class AppModel: ObservableObject {
             lowBatteryNotifications: LowBatteryNotificationController(),
             d200x: D200XModel(session: UlanziD200X.D200XSession(), sender: ShortcutSender(), nativePlatform: NativeActionSender(), observeScreenLock: true),
             flowLite: FlowLite84Model(session: FlowLite84Session(), keyboardActivityMonitor: AppKitKeyboardActivityMonitor()),
+            bluetooth: GenericBluetoothModel(inventory: SystemPairedBluetoothInventory(),
+                                             registryReport: SystemIORegistryBatteryReport(),
+                                             scheduler: BluetoothCheckScheduler()),
             loadImmediately: true,
             observeSleep: true
         )
@@ -253,6 +261,8 @@ final class AppModel: ObservableObject {
         lowBatteryNotifications: LowBatteryNotificationController? = nil,
         d200x: D200XModel? = nil,
         flowLite: FlowLite84Model? = nil,
+        bluetooth: GenericBluetoothModel? = nil,
+        genericBluetoothAlerts: GenericBluetoothAlertCoordinator? = nil,
         loadImmediately: Bool = true,
         observeSleep: Bool = true,
         wakeDelay: @escaping WakeRecoveryCoordinator.Delay = { try await Task.sleep(for: $0) },
@@ -270,12 +280,20 @@ final class AppModel: ObservableObject {
         self.lowBatteryNotifications = lowBatteryNotifications
         self.d200x = d200x ?? D200XModel(sender: sender, frontmostApplication: frontmostApplication)
         self.flowLite = flowLite ?? FlowLite84Model()
+        self.bluetooth = bluetooth ?? GenericBluetoothModel()
+        self.genericBluetoothAlerts = genericBluetoothAlerts ?? lowBatteryNotifications.map {
+            GenericBluetoothAlertCoordinator(notificationCenter: $0.notificationCenter)
+        }
         self.d200x.configureStorage(configurationURL: configurationURL)
         self.frontmostApplication = frontmostApplication
         self.wakeDelay = wakeDelay
         self.wakeStatusTimeout = wakeStatusTimeout
         self.savedWorkspace = self.workspace
         permissionChecks = sender.permissionChecks
+        self.bluetooth.onStateChange = { [weak self] in self?.updateGenericBluetoothAlerts() }
+        lowBatteryNotifications?.onAuthorizationChange = { [weak self] authorization in
+            self?.updateGenericBluetoothAlerts(authorization: authorization)
+        }
         self.d200x.onEdit = { [weak self] deckConfiguration in
             guard let self else { return }
             var configuration = self.document.draft
@@ -295,6 +313,14 @@ final class AppModel: ObservableObject {
         }
 
         if observeSleep {
+            bluetoothAuthorizationObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.bluetooth.recheckAccess()
+                    self?.refreshNotificationAuthorization()
+                }
+            }
             sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.willSleepNotification,
                 object: nil,
@@ -328,6 +354,7 @@ final class AppModel: ObservableObject {
     }
 
     isolated deinit {
+        if let bluetoothAuthorizationObserver { NotificationCenter.default.removeObserver(bluetoothAuthorizationObserver) }
         eventTask?.cancel()
         autosaveTask?.cancel()
         reconciliationTask?.cancel()
@@ -344,7 +371,7 @@ final class AppModel: ObservableObject {
     var isDirty: Bool { document.isDirty || savedWorkspace.map { $0 != workspace.applying(document.draft) } == true }
     var registeredDevices: [RegisteredDevice] { workspace.devices }
     var availableDeviceFamilies: [DeviceFamily] {
-        DeviceFamily.allCases.filter { family in !registeredDevices.contains { $0.family == family } }
+        DeviceFamily.allCases.filter { family in family != .genericBluetooth && !registeredDevices.contains { $0.family == family } }
     }
 
     func registration(for family: DeviceFamily) -> RegisteredDevice? {
@@ -357,14 +384,77 @@ final class AppModel: ObservableObject {
     }
 
     func addDevice(_ family: DeviceFamily) {
-        guard canEditConfiguration, availableDeviceFamilies.contains(family) else { return }
+        guard canEditConfiguration, registeredDevices.count < 256, availableDeviceFamilies.contains(family),
+              let registration = RegisteredDevice.make(family: family) else { return }
         let previous = workspace.applying(document.draft)
         workspace = workspace.applying(document.draft)
-        workspace.devices.append(.make(family: family))
+        workspace.devices.append(registration)
         document.updateDraft(workspace.configuration)
         synchronizeRegistrations(previous: previous)
-        navigate(to: Self.route(for: family))
+        navigate(to: Self.route(for: registration))
         scheduleAutosave()
+    }
+
+    func addBluetoothDevice(_ candidate: PairedBluetoothDevice) {
+        guard canEditConfiguration, registeredDevices.count < 256,
+              bluetooth.canRegister(candidate.endpoint),
+              !registeredDevices.contains(where: { $0.bluetoothConfiguration?.endpoint == candidate.endpoint }) else { return }
+        let previous = workspace.applying(document.draft)
+        workspace = previous
+        let scalars = candidate.name.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
+        let cleaned = String(String.UnicodeScalarView(scalars)).trimmingCharacters(in: .whitespacesAndNewlines)
+        var name = ""
+        for character in cleaned {
+            guard name.utf8.count + String(character).utf8.count <= 128 else { break }
+            name.append(character)
+        }
+        let registration = RegisteredDevice(displayName: name.isEmpty ? nil : name, configuration: .genericBluetooth(candidate.endpoint))
+        workspace.devices.append(registration)
+        synchronizeRegistrations(previous: previous)
+        navigate(to: Self.route(for: registration))
+        scheduleAutosave()
+    }
+
+    func registration(id: UUID) -> RegisteredDevice? { registeredDevices.first { $0.id == id } }
+
+    func setBluetoothBatteryAlerts(_ enabled: Bool, for id: UUID) {
+        guard updateBluetoothConfiguration(id, { $0.lowBatteryAlertsEnabled = enabled }) else { return }
+        guard enabled, let notifications = lowBatteryNotifications else { return }
+        Task { [weak self] in
+            await notifications.requestAuthorization()
+            self?.bluetooth.refresh()
+        }
+    }
+
+    func setBluetoothBatteryThreshold(_ threshold: Int, for id: UUID) {
+        guard (1...100).contains(threshold) else { return }
+        _ = updateBluetoothConfiguration(id) { $0.lowBatteryThreshold = threshold }
+    }
+
+    func setBluetoothIconOverride(_ kind: BluetoothDeviceKind?, for id: UUID) {
+        _ = updateBluetoothConfiguration(id) { $0.iconOverride = kind }
+    }
+
+    @discardableResult
+    private func updateBluetoothConfiguration(_ id: UUID, _ edit: (inout GenericBluetoothConfiguration) -> Void) -> Bool {
+        guard canEditConfiguration, let index = workspace.devices.firstIndex(where: { $0.id == id }),
+              var configuration = workspace.devices[index].bluetoothConfiguration else { return false }
+        let original = configuration
+        edit(&configuration)
+        guard configuration != original else { return false }
+        let previous = workspace.applying(document.draft)
+        workspace = previous
+        workspace.devices[index].configuration = .genericBluetooth(configuration)
+        synchronizeRegistrations(previous: previous)
+        scheduleAutosave()
+        return true
+    }
+
+    private func updateGenericBluetoothAlerts(authorization: LowBatteryNotificationAuthorizationState? = nil) {
+        genericBluetoothAlerts?.synchronize(devices: registeredDevices, statuses: bluetooth.statuses,
+            authorization: authorization ?? lowBatteryNotifications?.authorizationState ?? .unknown,
+            suspended: bluetooth.isSuspended || isRestarting || isLoading || configurationLoadFailed || wakeRecovery.sleeping,
+            bluetoothAllowed: bluetooth.access == .allowed)
     }
 
     func setDeviceEnabled(_ id: UUID, enabled: Bool) {
@@ -383,17 +473,18 @@ final class AppModel: ObservableObject {
         workspace.devices.removeAll { $0.id == id }
         document.updateDraft(workspace.configuration)
         synchronizeRegistrations(previous: previous)
-        if navigation.current.route == Self.route(for: removed.family) {
-            navigate(to: registeredDevices.first.map { Self.route(for: $0.family) } ?? .settings)
+        if navigation.current.route == Self.route(for: removed) {
+            navigate(to: registeredDevices.first.map { Self.route(for: $0) } ?? .settings)
         }
         scheduleAutosave()
     }
 
-    static func route(for family: DeviceFamily) -> WorkspaceRoute {
-        switch family {
+    static func route(for registration: RegisteredDevice) -> WorkspaceRoute {
+        switch registration.family {
         case .mxMaster3S: .devices
         case .d200x: .d200x
         case .flowLite84: .flowLite
+        case .genericBluetooth: .genericBluetooth(registration.id)
         }
     }
 
@@ -605,6 +696,11 @@ final class AppModel: ObservableObject {
         var next = navigation
         var location = next.current
         location.route = route
+        if initialConfigurationLoadPending {
+            next.replaceCurrent(with: location)
+            navigation = next
+            return
+        }
         next.navigate(to: location)
         navigation = next
     }
@@ -715,6 +811,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshPermission(retryScrollCapture: Bool = false) -> InputPermission {
+        bluetooth.recheckAccess()
         if retryScrollCapture {
             scrollPostingFailed = false
             thumbwheelPostingFailed = false
@@ -1217,6 +1314,7 @@ final class AppModel: ObservableObject {
         guard !wakeRecovery.sleeping else { return }
         d200x.sleep()
         flowLite.sleep()
+        bluetooth.synchronize(registeredDevices, suspended: true)
         let reconnect = connectionRequested && !isRestarting
         prepareForLifecycleStop()
         sleepCleanupSequence = statusSequence
@@ -1233,6 +1331,7 @@ final class AppModel: ObservableObject {
     func systemDidWake() {
         d200x.wake()
         flowLite.wake()
+        bluetooth.synchronize(registeredDevices, suspended: isRestarting || isLoading || configurationLoadFailed)
         wakeRecovery.wake { [weak self] in
             guard let self else { return .stop }
             return await self.performRecoveryAttempt()
@@ -1241,6 +1340,7 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     func stopForTermination() async -> Bool {
+        bluetooth.stop()
         cancelRecording()
         prepareForLifecycleStop()
         let saved = await flushPendingSave()
@@ -1251,6 +1351,7 @@ final class AppModel: ObservableObject {
     }
 
     func stopForRestart() async -> Bool {
+        bluetooth.stop()
         cancelRecording()
         prepareForLifecycleStop()
         let saved = await flushPendingSave()
@@ -1319,6 +1420,10 @@ final class AppModel: ObservableObject {
             configurationFailureKind = .load
             hasUsableConfiguration = false
             loadedConfiguration = nil
+        }
+
+        if case .success = result, initialConfigurationLoadPending {
+            replaceMissingInitialDeviceSelection()
         }
 
         isLoading = false
@@ -1410,6 +1515,7 @@ final class AppModel: ObservableObject {
     }
 
     private func synchronizeD200X() {
+        bluetooth.synchronize(registeredDevices, suspended: isRestarting || isLoading || configurationLoadFailed || wakeRecovery.sleeping)
         let blocker: String?
         if isRestarting {
             blocker = "Hidhogg is restarting."
@@ -1672,10 +1778,34 @@ final class AppModel: ObservableObject {
     }
 
     private func normalized(_ location: WorkspaceLocation) -> WorkspaceLocation {
+        if case .genericBluetooth(let id) = location.route,
+           registration(id: id)?.family != .genericBluetooth {
+            var normalized = location
+            normalized.route = registeredDevices.first.map { Self.route(for: $0) } ?? .settings
+            return normalized
+        }
         guard let applicationID = location.applicationID, !applicationIDs.contains(applicationID) else { return location }
         var normalized = location
         normalized.applicationID = nil
         return normalized
+    }
+
+    private func replaceMissingInitialDeviceSelection() {
+        let route = navigation.current.route
+        let isMissingDeviceRoute: Bool = switch route {
+        case .devices: registration(for: .mxMaster3S) == nil
+        case .d200x: registration(for: .d200x) == nil
+        case .flowLite: registration(for: .flowLite84) == nil
+        case .genericBluetooth(let id): registration(id: id)?.family != .genericBluetooth
+        case .actions, .notifications, .tilePresets, .settings: false
+        }
+        guard isMissingDeviceRoute else { return }
+
+        var location = navigation.current
+        location.route = registeredDevices.first.map { Self.route(for: $0) } ?? .settings
+        var next = navigation
+        next.replaceCurrent(with: location)
+        navigation = next
     }
 
     private func receive(_ event: BoltEvent) {

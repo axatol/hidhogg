@@ -14,6 +14,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "HidhoggDomain"),
+        .target(name: "GenericBluetooth", dependencies: ["HidhoggDomain"]),
         .target(name: "HidhoggConfiguration", dependencies: ["HidhoggDomain", .product(name: "TOML", package: "swift-toml")]),
         .target(name: "LogitechBolt", dependencies: ["HidhoggDomain"]),
         .target(name: "UlanziD200X"),
@@ -22,13 +23,14 @@ let package = Package(
         .target(name: "HidhoggAutomation", dependencies: ["HidhoggDomain"]),
         .executableTarget(name: "HidhoggCLI", dependencies: ["HidhoggAutomation"]),
         .target(name: "MacOSActions", dependencies: ["HidhoggDomain"]),
-        .executableTarget(name: "HidhoggApp", dependencies: ["HidhoggDomain", "HidhoggConfiguration", "LogitechBolt", "MacOSActions", "UlanziD200X", "HidhoggAutomation", "LofreeFlowLite84"]),
+        .executableTarget(name: "HidhoggApp", dependencies: ["HidhoggDomain", "HidhoggConfiguration", "LogitechBolt", "MacOSActions", "UlanziD200X", "HidhoggAutomation", "LofreeFlowLite84", "GenericBluetooth"]),
+        .testTarget(name: "GenericBluetoothTests", dependencies: ["GenericBluetooth", "HidhoggDomain"]),
         .testTarget(name: "LofreeFlowLite84Tests", dependencies: ["LofreeFlowLite84"]),
         .testTarget(name: "HidhoggAutomationTests", dependencies: ["HidhoggAutomation", "HidhoggDomain"]),
         .testTarget(name: "UlanziD200XTests", dependencies: ["UlanziD200X"]),
         .testTarget(name: "HidhoggConfigurationTests", dependencies: ["HidhoggConfiguration", "HidhoggDomain"]),
         .testTarget(name: "LogitechBoltTests", dependencies: ["LogitechBolt", "HidhoggDomain"]),
         .testTarget(name: "MacOSActionsTests", dependencies: ["MacOSActions", "HidhoggDomain"]),
-        .testTarget(name: "HidhoggAppTests", dependencies: ["HidhoggApp", "HidhoggDomain", "HidhoggConfiguration", "LogitechBolt", "MacOSActions", "UlanziD200X", "LofreeFlowLite84"])
+        .testTarget(name: "HidhoggAppTests", dependencies: ["HidhoggApp", "HidhoggDomain", "HidhoggConfiguration", "LogitechBolt", "MacOSActions", "UlanziD200X", "LofreeFlowLite84", "GenericBluetooth"])
     ]
 )

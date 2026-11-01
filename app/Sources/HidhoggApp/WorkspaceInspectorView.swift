@@ -13,7 +13,7 @@ struct WorkspaceInspectorView: View {
                 ScrollView {
                     D200XControlInspectorView(model: d200xModel)
                 }
-            case .flowLite, .actions, .notifications, .tilePresets, .settings:
+            case .flowLite, .genericBluetooth, .actions, .notifications, .tilePresets, .settings:
                 EmptyView()
             }
         }

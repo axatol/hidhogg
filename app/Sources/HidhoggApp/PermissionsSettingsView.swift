@@ -8,6 +8,7 @@ struct PermissionsSettingsView: View {
     var body: some View {
         Section {
             accessibilityPermissionRow
+            BluetoothPermissionSettingsRow(model: model.bluetooth)
 
             if let mismatch = accessibilityMismatchMessage {
                 Label(mismatch, systemImage: "exclamationmark.triangle.fill")

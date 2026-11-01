@@ -446,10 +446,21 @@ func thumbwheelPendingCaptureEventsAreNotReplayedAndPermissionIsFresh(deny: Bool
                                                restorePreviousSettingsOnDisconnect: true, amount: 1, scrollPostingAllowed: true)
         await controller.applyThumbwheelPreferences(inverted: inverted, amount: 1,
                                                    restorePreviousSettingsOnDisconnect: true, scrollPostingAllowed: true)
+        #expect(await thumbEventually {
+            guard let status = await recorder.last else { return false }
+            return status.phase == .ready &&
+                status.thumbwheel.captureActive &&
+                status.wheel.captureActive &&
+                status.thumbwheel.effectiveInverted == inverted &&
+                status.wheel.effectiveInverted == inverted
+        })
     }
-    #expect(await thumbEventually { await recorder.last?.thumbwheel.captureActive == true })
-    #expect(await recorder.last?.wheel.captureActive == true)
-    #expect(await recorder.last?.phase == .ready)
+    #expect(await thumbEventually {
+        guard let status = await recorder.last else { return false }
+        return status.phase == .ready &&
+            status.thumbwheel.captureActive &&
+            status.wheel.captureActive
+    })
     #expect(await fixture.count(feature: 16, function: 1) > 100)
     #expect(await fixture.count(feature: 15, function: 1) > 100)
     #expect(await fixture.closes == 0)

@@ -4,11 +4,16 @@ import HidhoggDomain
 struct DeviceManagementControls: View {
     @EnvironmentObject private var model: AppModel
     @State private var isRemovalConfirmationPresented = false
+    @State private var pendingRemovalID: UUID?
 
-    let family: DeviceFamily
+    let family: DeviceFamily?
+    let registrationID: UUID?
+
+    init(family: DeviceFamily) { self.family = family; registrationID = nil }
+    init(registrationID: UUID) { family = nil; self.registrationID = registrationID }
 
     var body: some View {
-        if let registration = model.registration(for: family) {
+        if let registration = registrationID.flatMap({ model.registration(id: $0) }) ?? family.flatMap({ model.registration(for: $0) }) {
             controls(for: registration)
         }
     }
@@ -42,9 +47,10 @@ struct DeviceManagementControls: View {
             titleVisibility: .visible
         ) {
             Button("Remove Device", role: .destructive) {
-                model.removeDevice(registration.id)
+                if let pendingRemovalID { model.removeDevice(pendingRemovalID) }
+                pendingRemovalID = nil
             }
-            Button("Cancel", role: .cancel) { }
+            Button("Cancel", role: .cancel) { pendingRemovalID = nil }
         } message: {
             Text("This removes the registration and its saved settings from Hidhogg. macOS pairing is retained. Older configuration files remain on disk for recovery.")
         }
@@ -66,6 +72,7 @@ struct DeviceManagementControls: View {
             }
 
             Button("Remove", systemImage: "trash", role: .destructive) {
+                pendingRemovalID = registration.id
                 isRemovalConfirmationPresented = true
             }
         }

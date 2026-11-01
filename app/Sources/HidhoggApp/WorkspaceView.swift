@@ -11,6 +11,7 @@ struct WorkspaceView: View {
     @State private var isD200XInspectorPresented = true
     @State private var inspectorContentID = UUID()
     @State private var pendingRemoval: RegisteredDevice?
+    @State private var isBluetoothPickerPresented = false
 
     var body: some View {
         NavigationSplitView {
@@ -20,7 +21,7 @@ struct WorkspaceView: View {
             )) {
                 Section("Devices") {
                     ForEach(model.registeredDevices) { registration in
-                        NavigationLink(value: AppModel.route(for: registration.family)) {
+                        NavigationLink(value: AppModel.route(for: registration)) {
                             registeredDeviceLabel(registration)
                         }
                         .contextMenu {
@@ -33,13 +34,29 @@ struct WorkspaceView: View {
                     if model.registeredDevices.isEmpty {
                         Text("No registered devices").foregroundStyle(.secondary)
                     }
-                    Menu("Add Device", systemImage: "plus") {
+                    Menu {
                         ForEach(model.availableDeviceFamilies, id: \.self) { family in
                             Button(family.title) { model.addDevice(family) }
                         }
+                        Button("Paired Bluetooth Device…") {
+                            isBluetoothPickerPresented = true
+                            model.bluetooth.beginDiscovery()
+                        }
+                    } label: {
+                        Label {
+                            Text("Add Device")
+                        } icon: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 18))
+                                .foregroundStyle(.primary)
+                                .frame(width: 18, height: 18)
+                                .accessibilityHidden(true)
+                        }
+                        .labelStyle(SidebarLabelStyle())
+                        .padding(.vertical, 4)
                     }
-                    .disabled(!model.canEditConfiguration || model.availableDeviceFamilies.isEmpty)
-                    .help("One device per supported model. Add registers settings for an existing supported adapter.")
+                    .disabled(!model.canEditConfiguration || model.registeredDevices.count >= 256)
+                    .help("Add a supported adapter or an existing paired Bluetooth device for monitoring.")
                 }
                 Section("Workspace") {
                     ForEach([WorkspaceRoute.actions, .notifications, .tilePresets]) { route in
@@ -88,6 +105,10 @@ struct WorkspaceView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .tint(AppAppearance.accent)
+        .sheet(isPresented: $isBluetoothPickerPresented) {
+            BluetoothDevicePicker(model: model.bluetooth) { model.addBluetoothDevice($0) }
+                .environmentObject(model)
+        }
         .disabled(restartCoordinator.inProgress)
         .background {
             WorkspaceWindowLifecycleAdapter(
@@ -155,7 +176,10 @@ struct WorkspaceView: View {
 
     @ViewBuilder
     private var workspaceContent: some View {
-        if currentDeviceMissing {
+        if model.isLoading {
+            ProgressView("Loading devices…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if currentDeviceMissing {
             ContentUnavailableView("Device Removed", systemImage: "keyboard.badge.ellipsis",
                                    description: Text("Add a supported device from the sidebar to configure it."))
         } else {
@@ -163,6 +187,7 @@ struct WorkspaceView: View {
             case .devices: DevicesView(isInspectorPresented: $isDevicesInspectorPresented)
             case .d200x: D200XDeviceView(model: model.d200x, isInspectorPresented: $isD200XInspectorPresented)
             case .flowLite: FlowLite84DeviceView(model: model.flowLite)
+            case .genericBluetooth(let id): GenericBluetoothDeviceView(model: model.bluetooth, registrationID: id)
             case .actions: ActionsView(model: model.d200x, onOpenTile: openD200XTile)
             case .notifications: NotificationsView(model: model.d200x, onOpenTile: openD200XTile)
             case .tilePresets: TilePresetsView(model: model.d200x)
@@ -176,6 +201,7 @@ struct WorkspaceView: View {
         switch registration.family {
         case .d200x: D200XSidebarLabel(model: model.d200x, registration: registration)
         case .flowLite84: FlowLite84SidebarLabel(model: model.flowLite, registration: registration)
+        case .genericBluetooth: GenericBluetoothSidebarLabel(model: model.bluetooth, registration: registration)
         case .mxMaster3S:
             Label {
                 VStack(alignment: .leading, spacing: 4) {
@@ -213,7 +239,7 @@ struct WorkspaceView: View {
             isDevicesInspectorPresented
         case .d200x:
             isD200XInspectorPresented
-        case .flowLite, .actions, .notifications, .tilePresets, .settings:
+        case .flowLite, .genericBluetooth, .actions, .notifications, .tilePresets, .settings:
             false
         }
     }
@@ -228,10 +254,14 @@ struct WorkspaceView: View {
     }
 
     private var currentRegistration: RegisteredDevice? {
-        currentFamily.flatMap { model.registration(for: $0) }
+        if case .genericBluetooth(let id) = model.navigation.current.route { return model.registration(id: id) }
+        return currentFamily.flatMap { model.registration(for: $0) }
     }
 
-    private var currentDeviceMissing: Bool { currentFamily != nil && currentRegistration == nil }
+    private var currentDeviceMissing: Bool {
+        if case .genericBluetooth = model.navigation.current.route { return currentRegistration == nil }
+        return currentFamily != nil && currentRegistration == nil
+    }
 
     private var sidebarBatteryLabel: some View {
         let information = DeviceInformationPresentation(status: model.boltStatus)
@@ -269,23 +299,13 @@ struct WorkspaceView: View {
     }
 }
 
-private struct SidebarLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            configuration.icon
-                .frame(width: 20, height: 20, alignment: .center)
-            configuration.title
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-}
-
 fileprivate extension WorkspaceRoute {
     var title: String {
         switch self {
         case .devices: "Devices"
         case .d200x: "Ulanzi D200X"
         case .flowLite: "Lofree Flow Lite84"
+        case .genericBluetooth: "Bluetooth Device"
         case .actions: "Actions"
         case .notifications: "Notifications"
         case .tilePresets: "Tile Presets"
@@ -298,6 +318,7 @@ fileprivate extension WorkspaceRoute {
         case .devices: "rectangle.connected.to.line.below"
         case .d200x: "square.grid.3x3"
         case .flowLite: "keyboard"
+        case .genericBluetooth: "antenna.radiowaves.left.and.right"
         case .actions: "bolt.fill"
         case .notifications: "bell.badge"
         case .tilePresets: "square.grid.2x2"

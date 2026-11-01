@@ -1,8 +1,16 @@
 # Roadmap
 
-Updated 31 October 2026. TaskView Personal / HIDhogg project 5 owns stable task IDs, dependencies and completion status. This file is the concise implementation/acceptance index. [Earlier dated checkpoints](roadmap-history-2026-10-26.md) are historical evidence.
+Updated 1 November 2026. TaskView Personal / HIDhogg project 5 owns stable task IDs, dependencies and completion status. This file is the concise implementation/acceptance index. [Earlier dated checkpoints](roadmap-history-2026-10-26.md) are historical evidence.
 
 ## Current checkpoint
+
+1 November 2026: owner accepts the Bluetooth/menu/count checkpoint and requests local check-in. The threshold now saves valid typing after 200 ms; Return/focus loss remain immediate. Consolidated 822 offline tests plus final UI-only targeted/probe checks pass. Immediate next focus is D200X feature parity: [fresh review and proposed multi-action slice](d200x-next-parity-review-2026-11-01.md). No new D200X feature implementation is approved by that proposal; Logitech Bluetooth work remains queued.
+
+BT-05 is focused-verified and signed on 1 November 2026: connected/enabled menu-bar count, ordinary disconnections neutral to a healthy aggregate, explicit errors preserved, and editable battery threshold. Nineteen focused tests pass. Owner accepted BT-04 layout; count/threshold native checks remain open. [Evidence](menu-connection-count.md).
+
+BT-04 UI corrections are offline verified and signed on 31 October 2026: shared sidebar/Add Device alignment, wrapping component battery readings, bounded menu sizing with direct child-status observations, and startup selection repair. Full 812 offline tests pass; actual menu/startup/sidebar acceptance remains open. [Evidence](bluetooth-ui-followup.md).
+
+BT-03 is offline verified and signed on 31 October 2026: optional generic Bluetooth battery thresholds, connection dots/class icons and a compact menu popover with right-aligned values and a second component line. Independent focused/full gates and signed delivery pass; results are recorded in the linked checklist and build-info. Actual notification delivery and popover interaction remain owner checks. See [scope/checklist](bluetooth-monitoring-plan.md).
 
 Mainline branch: master. This native Logitech/D200X checkpoint was prepared on next/d200x-slice after e2744ad. The 116-file reviewed source checkpoint ca60802 was published to master on 26 October 2026 and its remote head was verified. Signed checkpoint873e84a8bb59 passed566unique offline/background checks.
 
@@ -110,3 +118,7 @@ REG-01 delivered31October2026 for owner acceptance: UUID registry, dynamic sideb
 REG-FS-03 delivered31October2026: flat family/UUID/shortSHA filenames, nested migration and safe postpublication cleanup; independent97focused checks and signed build `a9dab2eb3641c0292bd9fb8d263a60e166e64dc27b75bf5d91c9589b9bf889f7` pass. Registration IDs preserved. Owner live migration/cleanup acceptance pending. See [registry evidence](device-registry-plan.md).
 
 Accepted registry/UI/hashed-storage checkpoint committed locally on master31October2026; no push. Generic paired Bluetooth discovery and battery monitoring is next.
+
+BT-01 in progress31October2026: generic existing-paired Bluetooth discovery and battery monitoring, multiple generic UUID registrations, public-API evidence first. No Logitech-specific Bluetooth commands, pairing or live agent inventory access. [Plan](bluetooth-monitoring-plan.md).
+
+BT-01/BT-02 delivered31October2026 for owner verification: generic paired discovery, multiple UUID monitoring, System Information battery and DeviceAddress/IORegistry fallback, app-wide permission row, lifecycle fencing. Focused88/full786offline cases pass, signed build `4cd8c060ff105e838591902ae0ea297aa90ddc4d9dea36ecd2574144203638a5` verified; no live device writes. Owner confirms initial discovery/AirPods; updated fallback trial pending. Both existing device readiness-test corrections explicitly approved and verified. See [plan/evidence](bluetooth-monitoring-plan.md). No check-in/push yet.

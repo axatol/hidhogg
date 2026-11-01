@@ -1,4 +1,5 @@
 import Foundation
+import GenericBluetooth
 import Combine
 import HidhoggConfiguration
 import HidhoggDomain
@@ -9,6 +10,172 @@ import XCTest
 
 @MainActor
 final class AppModelIntegrationTests: XCTestCase {
+    func testGenericBluetoothAddPersistenceNativeEditingAndUUIDHistory() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let store = ConfigurationStore(url: url)
+        let endpoints = [BluetoothEndpoint(address: "AA:00:00:00:00:01")!, BluetoothEndpoint(address: "AA:00:00:00:00:02")!]
+        let inventory = SyntheticBluetoothInventory()
+        inventory.access = .allowed
+        inventory.devices = endpoints.map { PairedBluetoothDevice(endpoint: $0, name: "Same Name", isConnected: true) }
+        let report = SyntheticBluetoothReport(results: Array(repeating: .success(Data("{\"SPBluetoothDataType\":[{\"device_connected\":[]}]}".utf8)), count: 20))
+        let bluetooth = GenericBluetoothModel(inventory: inventory, report: report)
+        let model = AppModel(configurationURL: url, store: store, bolt: FixtureBindingSession(),
+                             sender: ShortcutSender(preflight: { false }, request: { false }, postPair: { _ in }),
+                             bluetooth: bluetooth, loadImmediately: false, observeSleep: false, frontmostApplication: { nil })
+        bluetooth.beginDiscovery()
+        let discovered = await eventually { bluetooth.devices.count == 2 && !bluetooth.isRefreshing }
+        XCTAssertTrue(discovered)
+        for candidate in inventory.devices { model.addBluetoothDevice(candidate) }
+        model.addBluetoothDevice(inventory.devices[0])
+        let generic = model.registeredDevices.filter { $0.family == .genericBluetooth }
+        XCTAssertEqual(generic.count, 2)
+        XCTAssertEqual(Set(generic.map(\.id)).count, 2)
+        XCTAssertEqual(model.navigation.current.route, .genericBluetooth(generic[1].id))
+        var configuration = model.document.draft
+        configuration.devices[0].defaults["back"] = .key(KeyboardShortcut(keyCode: 12))
+        model.updateDraft(configuration)
+        model.setDeviceEnabled(generic[0].id, enabled: false)
+        let saved = await model.flushPendingSave()
+        XCTAssertTrue(saved)
+        let loaded = try await store.load()
+        XCTAssertEqual(loaded.workspace.devices.filter { $0.family == .genericBluetooth }.map(\.id), generic.map(\.id))
+        XCTAssertEqual(loaded.configuration.mouse?.defaults["back"], configuration.mouse?.defaults["back"])
+        XCTAssertFalse(try XCTUnwrap(loaded.workspace.devices.first { $0.id == generic[0].id }).isEnabled)
+        model.navigate(to: .genericBluetooth(generic[0].id))
+        model.navigate(to: .genericBluetooth(generic[1].id))
+        model.removeDevice(generic[0].id)
+        XCTAssertEqual(model.navigation.current.route, .genericBluetooth(generic[1].id))
+        model.goBack()
+        XCTAssertNotEqual(model.navigation.current.route, .genericBluetooth(generic[0].id))
+        model.removeDevice(generic[1].id)
+        let removedSaved = await model.flushPendingSave()
+        XCTAssertTrue(removedSaved)
+        let removed = try await store.load()
+        XCTAssertFalse(removed.workspace.devices.contains { $0.family == .genericBluetooth })
+        bluetooth.endDiscovery()
+    }
+
+    func testGenericBluetoothRegistrationSanitizesNamesAndRestartSuspends() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let inventory = SyntheticBluetoothInventory()
+        inventory.access = .allowed
+        inventory.devices = [PairedBluetoothDevice(endpoint: BluetoothEndpoint(address: "AA:00:00:00:00:01")!,
+                                                  name: "\n" + String(repeating: "🧩", count: 60) + "\u{0000}", isConnected: true)]
+        let report = SyntheticBluetoothReport(results: Array(repeating: .success(Data("{\"SPBluetoothDataType\":[{\"device_connected\":[]}]}".utf8)), count: 10))
+        let bluetooth = GenericBluetoothModel(inventory: inventory, report: report)
+        let model = AppModel(configurationURL: url, store: ConfigurationStore(url: url), bolt: FixtureBindingSession(),
+                             sender: ShortcutSender(preflight: { false }, request: { false }, postPair: { _ in }),
+                             bluetooth: bluetooth, loadImmediately: false, observeSleep: false, frontmostApplication: { nil })
+        bluetooth.beginDiscovery()
+        let discovered = await eventually { !bluetooth.devices.isEmpty && !bluetooth.isRefreshing }
+        XCTAssertTrue(discovered)
+        model.addBluetoothDevice(inventory.devices[0])
+        let registered = try XCTUnwrap(model.registeredDevices.first { $0.family == .genericBluetooth })
+        XCTAssertEqual(registered.displayName.utf8.count, 128)
+        XCTAssertNoThrow(try model.workspace.validated())
+        model.setRestarting(true)
+        XCTAssertEqual(bluetooth.status(for: registered.id).connection, .suspended)
+        XCTAssertTrue(inventory.observed.isEmpty)
+        model.setRestarting(false)
+        let resumed = await eventually { bluetooth.status(for: registered.id).connection == .connected && !bluetooth.isRefreshing }
+        XCTAssertTrue(resumed)
+        let saved = await model.flushPendingSave()
+        XCTAssertTrue(saved)
+        bluetooth.endDiscovery()
+        bluetooth.stop()
+    }
+
+    func testInitialLoadReplacesMissingNativeSelectionWithoutHistory() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let store = ConfigurationStore(url: url)
+        let d200x = try XCTUnwrap(RegisteredDevice.make(family: .d200x))
+        _ = try await store.save(WorkspaceConfiguration(connectOnLaunch: false, devices: [d200x]), expecting: .missing)
+
+        let model = AppModel(configurationURL: url, store: store, bolt: FixtureBindingSession(),
+                             sender: ShortcutSender(preflight: { false }, request: { false }, postPair: { _ in }),
+                             loadImmediately: true, observeSleep: false, frontmostApplication: { nil })
+        XCTAssertEqual(model.navigation.current.route, .devices)
+
+        let loaded = await eventually { !model.isLoading }
+        XCTAssertTrue(loaded)
+        XCTAssertEqual(model.navigation.current.route, .d200x)
+        XCTAssertTrue(model.navigation.backRoutes.isEmpty)
+        XCTAssertFalse(model.navigation.canGoBack)
+    }
+
+    func testInitialLoadReplacesMissingGenericSelectionWithoutHistory() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let store = ConfigurationStore(url: url)
+        let d200x = try XCTUnwrap(RegisteredDevice.make(family: .d200x))
+        _ = try await store.save(WorkspaceConfiguration(connectOnLaunch: false, devices: [d200x]), expecting: .missing)
+
+        let model = AppModel(configurationURL: url, store: store, bolt: FixtureBindingSession(),
+                             sender: ShortcutSender(preflight: { false }, request: { false }, postPair: { _ in }),
+                             loadImmediately: true, observeSleep: false, frontmostApplication: { nil })
+        XCTAssertTrue(model.isLoading)
+        model.navigate(to: .genericBluetooth(UUID()))
+
+        let loaded = await eventually { !model.isLoading }
+        XCTAssertTrue(loaded)
+        XCTAssertEqual(model.navigation.current.route, .d200x)
+        XCTAssertTrue(model.navigation.backRoutes.isEmpty)
+        XCTAssertFalse(model.navigation.canGoBack)
+    }
+
+    func testInitialLoadPreservesValidDeviceAndWorkspaceSelections() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let store = ConfigurationStore(url: url)
+        let d200x = try XCTUnwrap(RegisteredDevice.make(family: .d200x))
+        _ = try await store.save(WorkspaceConfiguration(connectOnLaunch: false, devices: [d200x]), expecting: .missing)
+
+        let deviceModel = AppModel(configurationURL: url, store: store, bolt: FixtureBindingSession(),
+                                   sender: ShortcutSender(preflight: { false }, request: { false }, postPair: { _ in }),
+                                   loadImmediately: true, observeSleep: false, frontmostApplication: { nil })
+        XCTAssertTrue(deviceModel.isLoading)
+        deviceModel.navigate(to: .d200x)
+        let deviceLoaded = await eventually { !deviceModel.isLoading }
+        XCTAssertTrue(deviceLoaded)
+        XCTAssertEqual(deviceModel.navigation.current.route, .d200x)
+        XCTAssertFalse(deviceModel.navigation.canGoBack)
+
+        let workspaceModel = AppModel(configurationURL: url, store: store, bolt: FixtureBindingSession(),
+                                       sender: ShortcutSender(preflight: { false }, request: { false }, postPair: { _ in }),
+                                       loadImmediately: true, observeSleep: false, frontmostApplication: { nil })
+        XCTAssertTrue(workspaceModel.isLoading)
+        workspaceModel.navigate(to: .actions)
+        let workspaceLoaded = await eventually { !workspaceModel.isLoading }
+        XCTAssertTrue(workspaceLoaded)
+        XCTAssertEqual(workspaceModel.navigation.current.route, .actions)
+        XCTAssertFalse(workspaceModel.navigation.canGoBack)
+    }
+
+    func testInitialLoadSelectsSettingsWhenRegistryIsEmpty() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let store = ConfigurationStore(url: url)
+        _ = try await store.save(WorkspaceConfiguration(connectOnLaunch: false, devices: []), expecting: .missing)
+
+        let model = AppModel(configurationURL: url, store: store, bolt: FixtureBindingSession(),
+                             sender: ShortcutSender(preflight: { false }, request: { false }, postPair: { _ in }),
+                             loadImmediately: true, observeSleep: false, frontmostApplication: { nil })
+        let loaded = await eventually { !model.isLoading }
+        XCTAssertTrue(loaded)
+        XCTAssertTrue(model.registeredDevices.isEmpty)
+        XCTAssertEqual(model.navigation.current.route, .settings)
+        XCTAssertTrue(model.navigation.backRoutes.isEmpty)
+    }
+
     func testDisableBlocksManualConnectWakeAndDeliveryAndRetainsUUIDAndDraft() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

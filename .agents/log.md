@@ -1,3 +1,46 @@
+## 1 November 2026 — Accepted Bluetooth check-in and D200X focus
+
+Owner accepts BT-01–05 count/layout and authorizes local master check-in; no push. Corrected threshold saving to 200 ms typing debounce before that check-in. Consolidated 822 offline tests passed before only this view edit; final four focused tests, failing-then-passing offscreen typing probe and debounce/invalid-input matrix pass. Signed1446cb3a and252-input final manifests verified (d8114d9995d957a3d74d213a7fc9326ac937bc5259366e401467f7468826e5e9). No production app/device/media/notification operation. Fresh D200X parity review recommends bounded ordered multi-actions, while icon+text/badges remain queued, physical pages deferred and encoder display schema evidence-blocked. Feature implementation awaits scope confirmation. Details: docs/checkin-preparation.md and docs/d200x-next-parity-review-2026-11-01.md.
+
+## BT-05 connected-device count — 1 November 2026
+
+Owner chose a simple connected/enabled count beside the Hidhogg icon instead of per-device menu-bar icons or visibility toggles. Disabled/removed UUIDs are excluded. Connection and health are separate: physically connected devices count even if permissions or battery-report errors are surfaced. Mouse ready/enabling/enabled counts connected; FlowLite requires keyboard-online rather than receiver-only connection. Ordinary disconnections do not degrade a healthy aggregate. All inactive is neutral; explicit inventory/report errors and permission failures remain visible. Missing battery readings and cancellation are neutral. Bluetooth permission warnings identify Bluetooth access rather than incorrectly directing users to input permissions.
+
+Generic battery threshold now supports text entry alongside the Stepper, range 1–100. Return or focus loss commits valid input; invalid input restores the current model value. Control identity is per registration so draft/focus state does not carry across devices. Offscreen actual control rendered clearly at 10% and 100%; native typing/focus interaction remains owner acceptance.
+
+Independent focused gate: 19 XCTest cases pass, zero failures (14 menu status/count, four device-information/model, one D200X aggregation). Tests cover 4/5, disabled/stale IDs, all inactive, error/permission matrices, connection-count independence and aggregation order. No full-suite rerun for this bounded presentation change; prior BT-04 full812 results are historical, not current-change full proof. No production app, OS prompt, inventory/report, actual notification or device operation was exercised.
+
+Signed build `2dfb8047f522721bd9060c6183b02ae2a1185a6eca71251837804825aeb7d7b1` passes strict app/CLI signatures. All 252 Swift/package/script inputs match through final test/build; manifest SHA-256 `7fed0de0bea4e93e923162e1bc49f90ecd6a1016150b195260225dc80b43336e`. Evidence: `/Volumes/Data/tmp/BT-05-focused.log`, `BT-05-verification-result.json`, `BT-05-postbuild.sha256`, `hidhogg-bt05-release-final-20261101.log`. Owner should restart the updated app, check the count and disconnect/error indicator, and type valid/invalid thresholds with Return/focus loss. Source remains uncommitted on master after4bf494a; no push. Preserve all earlier Bluetooth work and approved test readiness fixes. Owner accepted BT-04 layout, but actual notification delivery/cache freshness remain unverified.
+
+
+## Earlier records
+
+## BT-04 UI corrections — 31 October 2026
+
+Owner reported clipped sidebar component readings, inconsistent icon colour/alignment, absent menu status rows and Device Removed at boot. Approved correction includes matching Add Device layout. Generic/sidebar/Add Device now use shared SidebarLabelStyle, primary icon colour and wrapping component text. Actual extracted sidebar rendered offscreen at 210/250-point widths with all synthetic earbud readings visible.
+
+Constrained NSHostingController sizing reproduced menu collapse: zero and five rows both requested 174.24 points before correction. MenuBarDeviceList now measures eager content and sets explicit height capped at 420 points; the same proposal yields 218.24 empty, 394.24 five, 594.24 twenty including fixture footer. Earlier ideal-size-only render missed the constrained case; actual native MenuBarExtra remains owner acceptance. Menu content now explicitly observes each child device model to refresh status values.
+
+Successful initial configuration load replaces a missing native/generic route with the first registered route or Settings for an empty registry, preserving valid routes and avoiding phantom back history. Workspace shows Loading devices during load. Four new regression cases cover this; 30 focused integration cases pass. Final full offline gate passes 812 cases (492 XCTest + 320 Swift Testing), zero failures; WakeConnectionTests and NativeWorkspaceWindowTests excluded. No live app, device, inventory or notifications exercised.
+
+Signed build `711bd1ab404b301654710c43b4fb21a6297a937fb117ed4c33dc8300ab9c9492` passes strict app/CLI signatures. All 250 source/package/script inputs are unchanged across final test/build; manifest `f2b6aa02b445a6e8e275f7a3e991b5bf48ca3894916269d98a7b2e00b5d159d1`. Logs/results: `/Volumes/Data/tmp/BT-04-verification-result.json`, `BT-04-full.log`, `BT-04-focused.log`, `hidhogg-bt04-release-final-20261031.log`. Owner should restart updated app and check first-device selection, sidebar/Add Device alignment, complete component readings, visible/updating menu statuses and navigation. Source remains uncommitted on master after4bf494a; no push. Preserve previous BT work and approved test readiness fixes. BT-03 owner UI acceptance is superseded by this correction trial, not presumed passed.
+
+
+## Earlier records
+
+## BT-03 verified delivery — 31 October 2026
+
+Implemented optional per-device generic Bluetooth battery alerts (default off, threshold 10%, range 1–100, inclusive), component latches and accepted-sample guards. A shared ten-minute cached check processes only enabled, connected registrations with alerts enabled while awake. Manual/discovery refresh retains full scope. Report providers read macOS cache snapshots; no pairing, connection or device writes. Native mouse notification thresholds are unchanged. Charging state for generic devices remains unknown.
+
+Sidebar rows show connection dots and metadata-derived icons with a manual override; unknown kinds use the Bluetooth symbol. The menu is a compact popover with names left, battery values right and earbud/case components on a second line. Main readings remain visible alongside components. Actual row sources rendered correctly offscreen in light/dark mode; fit probe measured natural height for two rows and a 420-point scroll cap for twenty rows. Native menu interaction is not exercised.
+
+Independent offline gate and focused results are recorded in `/Volumes/Data/tmp/BT-03-verification-result.json` and ignored `dist/build-info.json`. Signed build `675ced0e2c93ec3ee7d30192011b6e42292c5ff91e09559454d64610a2f69aa9` passes strict app/CLI signatures. All 248 Swift/package/script inputs match through testing/build: manifest SHA-256 `1e8a12dcccc1a87951a0f7a25ed9e9ebe5d5c9348b9a11e5961926e105c78e07`. Review regressions corrected icon-only pending-alert invalidation and scheduled refresh scope; deterministic tests reproduced both before fixes.
+
+Owner checks: restart updated app, inspect aligned popover/navigation and generic sidebar icons, enable a generic battery threshold and verify actual notification delivery/permission flow, and observe scheduled cached updates. No agent production app launch or real notification delivery occurred. Earlier owner screenshot confirms registry fallback now supplies previously missing battery readings. Source remains uncommitted on master after `4bf494a`; no push. Preserve all BT-01/02/03 work and the two approved test readiness fixes. Next Logitech Bluetooth investigation remains deferred until this checkpoint is accepted.
+
+
+## Earlier records
+
 # Hidhogg decision log
 
 ## 2026-10-03 — Goal resumed
@@ -2809,3 +2852,25 @@ Worker73config tests and independent97focused tests (73configuration+24AppModelI
 Owner reports the simplified device filename/cleanup change looks good and Add, Disable and Remove work as expected. Earlier card placement also received acceptance. These confirmations cover the reported user flows; fault-injection cases remain offline evidence, not additional hardware claims. REG-01/REG-UI-02/REG-FS-03 are ready for a separately authorized check-in. Changes remain uncommitted on master; no push authorized. Generic paired Bluetooth discovery/battery monitoring is the next planned implementation slice.
 
 31 October 2026: owner authorized local check-in of accepted REG-01/REG-UI-02/REG-FS-03. All234signed-build input hashes match current source; strict app/CLI signatures pass. Evidence: earlier733offline registry gate, subsequent97focused storage/app-integration gate and shared-control offscreen layout review. No additional tests needed for documentation-only acceptance updates. No push authorized.
+
+## BT-01 checkpoint — implementation complete, full gate pending
+
+Typed Bluetooth endpoints, multiple generic UUID registrations, paired picker, per-device navigation/cards, menu/sidebar, shared management controls and app-wide Bluetooth permission row implemented. Provider uses paired IOBluetooth authority plus bounded read-only System Information JSON and exact normalized address joins; no nearby scan/connect/pair/HID command. Source report schema/LE coverage unverified at runtime. Worker90focused tests pass. Independent full run failed an unchanged Logitech thumbwheel assertion; isolated case passed. One authorized unchanged-source full retry executed771tests and failed ONE Lofree test on THREE assertions (not three failed test cases); all Bluetooth tests passed. The Lofree case passed isolated. Logs in dist/build-info.json and /Volumes/Data/tmp/hidhogg-bt01-*.log.
+
+Suspected test synchronization defects: Thumbwheel waits only thumb capture before separate scroll capture assertion; Lofree waits connected/notbusy before initial editable snapshot, so setup edits can be ignored in that inter-event gap. No Logitech/Lofree production or test source changes made. Owner approval requested through async question for two test-only readiness corrections, then gate rerun; waiting answer. Do not silently broaden source scope or call full gate green.
+
+Signed build988a88f0252c8094a0e4c455702ccc37a70a1f3bebf6d36db90d2577951c8aaa passes strict app/CLI signatures and includes Bluetooth purpose string.237source/package/script pre/post/postbuild inputs match c20eccb1f1bdebfe4a6af37e2687da0c4b66c2a819a1c06916f57425bc256a53. No production app/inventory/report/permissions/device operation. GenericBluetooth process tests use synthetic executables and cover already-started child cancellation, without direct OS-exit assertion. Source uncommitted on master after4bf494a. Public research/limits recorded above.
+
+BT-01 owner trial: generic paired discovery/AirPods readings work; other two devices unavailable despite macOS showing battery. Owner authorized redacted read-only diagnostics only. System Information has no battery fields for those endpoints; IORegistry BatteryPercent cache has values and explicit addressmatches. No identifying values/rawreports saved or output. Proposed registry fallback (only missing primary reading, preserve AirPods components) plus separate test-only synchronization corrections presented for approval; waiting answers. Do not silently change source before confirmation. No code edits in this diagnosis turn.
+
+## Approved follow-up — BT-02 / VERIFY-02
+
+Owner approved the read-only registry fallback and both existing test-only readiness corrections. registry_battery_fallback owns generic parser/report/model/composition and tests; device_test_readiness owns only BoltThumbwheelTests.swift and FlowLite84ModelTests.swift; bluetooth_verification remains read-only. No further live diagnostic queries are authorized/needed. Root coordinates freeze, independent gate and signed release. Preserve primary AirPods components; fallback only missing endpoint reading. No native device runtime changes in readiness corrections.
+
+## Final verified checkpoint — 31 October 2026
+
+Read-only provider sources: paired IOBluetooth inventory plus bounded System Information JSON. If an enabled/current/paired endpoint has no primary reading, bounded IORegistry plist can supply BatteryPercent using normalized DeviceAddress STRING only. Approved redacted technical diagnostics confirmed that property; BD_ADDR is BYTES and ignored (no byte-order guessing). Unverified aliases/names/serials are not used. Primary main/components remain authoritative; missing/failing data retains earlier observations as stale per endpoint; late callbacks after disable/remove/sleep/stop cannot publish. No polling, pairing, connection or device writes. Generic registrations support multiple UUIDs and preserve native singleton policies/hash config cleanup. App-global Bluetooth permission row and lazy explicit permission request remain.
+
+Two owner-approved test-only synchronization corrections: Lofree fixture waits for editable current-generation snapshot; Bolt wrap fixture waits for one coherent ready/captured/direction state per alternating edit. No Logitech/Lofree production source changed. Earlier one Logitech failure and one Lofree case/three assertion failures are retained as history; final full786gate passes. Logs /Volumes/Data/tmp/BT-02-focused.log and BT-02-full.log; postbuildmanifest /Volumes/Data/tmp/BT-02-postbuild.sha256. Signed build `4cd8c060ff105e838591902ae0ea297aa90ddc4d9dea36ecd2574144203638a5`,249current input hashes in ignored build-info; release /Volumes/Data/tmp/hidhogg-bt02-release-20261031.log. No production app launch or native device input; only separately approved, fully redacted read-only cache diagnostics.
+
+Owner trial: restart updated app, use Refresh on the generic keyboard/glasses entries, verify battery fills in while AirPods components remain intact; check Add/Disable/Remove and app-wide Bluetooth permission flows. macOS cache/LE coverage and underlying report/property schemas remain platform-dependent. No automatic Bolt/Bluetooth merge. Source remains uncommitted on master after4bf494a, no push. Next planned slice remains Logitech Bluetooth investigation after owner acceptance/checkpoint.

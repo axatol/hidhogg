@@ -61,16 +61,17 @@ struct HidhoggApp: App {
             MultiDeviceMenuBarStatusLabel(
                 deck: model.d200x,
                 keyboard: model.flowLite,
+                bluetooth: model.bluetooth,
                 phase: model.connectionPresentationPhase,
                 cleanupUncertain: model.boltStatus.cleanupUncertain && !model.isBackgroundRecovery,
                 permissionChecks: model.permissionChecks,
-                mouseEnabled: model.isDeviceEnabled(.mxMaster3S)
+                registeredDevices: model.registeredDevices
             )
                 .background {
                     WorkspaceActivationAdapter(presentationCoordinator: workspacePresentationCoordinator)
                 }
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
 
         Window("Hidhogg", id: HidhoggWorkspaceWindow.id) {
             WorkspaceView(presentationCoordinator: workspacePresentationCoordinator)

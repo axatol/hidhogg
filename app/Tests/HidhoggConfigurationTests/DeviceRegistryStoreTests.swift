@@ -4,6 +4,103 @@ import XCTest
 @testable import HidhoggConfiguration
 
 final class DeviceRegistryStoreTests: XCTestCase {
+    func testGenericPreferencesRoundTripPreserveNativeProjectionAndCollectSupersededHash() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let store = ConfigurationStore(url: url)
+        let endpoint = BluetoothEndpoint(address: "AA:00:00:00:00:01")!
+        var workspace = WorkspaceConfiguration(legacy: ConfigurationFixtures.configuration)
+        let device = RegisteredDevice(configuration: .genericBluetooth(endpoint))
+        workspace.devices.append(device)
+        let first = try await store.save(workspace, expecting: .missing)
+        let reference = try XCTUnwrap(RegistryCodec.manifest(Data(contentsOf: url)).devices.last)
+        workspace.devices[workspace.devices.count - 1].configuration = .genericBluetooth(GenericBluetoothConfiguration(
+            endpoint: endpoint, lowBatteryAlertsEnabled: true, lowBatteryThreshold: 25, iconOverride: .glasses))
+        let second = try await store.save(workspace, expecting: first.revision)
+        let changed = try XCTUnwrap(RegistryCodec.manifest(Data(contentsOf: url)).devices.last)
+        XCTAssertNotEqual(reference.relativePath, changed.relativePath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(reference.relativePath).path))
+        XCTAssertEqual(second.workspace, workspace)
+        XCTAssertEqual(second.configuration, first.configuration)
+        let loaded = try await store.load()
+        XCTAssertEqual(loaded.workspace, workspace)
+        XCTAssertEqual(loaded.workspace.applying(first.configuration).devices.last?.bluetoothConfiguration?.iconOverride, .glasses)
+        let duplicate = RegisteredDevice(configuration: .genericBluetooth(GenericBluetoothConfiguration(endpoint: endpoint, lowBatteryAlertsEnabled: true)))
+        workspace.devices.append(duplicate)
+        XCTAssertThrowsError(try workspace.validated())
+    }
+
+    func testLegacyGenericPayloadDefaultsAndStrictPreferenceValidation() throws {
+        let device = RegisteredDevice(configuration: .genericBluetooth(BluetoothEndpoint(address: "AA:00:00:00:00:01")!))
+        let old = """
+        schema_version = 1
+        id = "\(device.id.uuidString)"
+        family = "bluetooth.generic"
+        bluetooth_endpoint = "AA:00:00:00:00:01"
+        """
+        let reference = RegistryReference(device: device, contentHash: "012345abcdef")
+        XCTAssertEqual(try RegistryCodec.device(Data(old.utf8), reference: reference), device)
+        for field in ["bluetooth_low_battery_threshold = -1", "bluetooth_low_battery_threshold = 0", "bluetooth_low_battery_threshold = 101",
+                      "bluetooth_low_battery_threshold = 9.5", "bluetooth_low_battery_alerts_enabled = 1",
+                      "bluetooth_icon_override = \"unknown-kind\"", "bluetooth_unrecognized = true"] {
+            XCTAssertThrowsError(try RegistryCodec.device(Data((old + "\n" + field).utf8), reference: reference), field)
+        }
+        let flow = RegisteredDevice(configuration: .flowLite84)
+        let invalidNative = """
+        schema_version = 1
+        id = "\(flow.id.uuidString)"
+        family = "lofree.flow-lite84"
+        bluetooth_low_battery_alerts_enabled = true
+        """
+        XCTAssertThrowsError(try RegistryCodec.device(Data(invalidNative.utf8), reference: RegistryReference(device: flow, contentHash: "012345abcdef")))
+        let invalid = RegisteredDevice(configuration: .genericBluetooth(GenericBluetoothConfiguration(endpoint: device.bluetoothConfiguration!.endpoint, lowBatteryThreshold: 101)))
+        XCTAssertThrowsError(try WorkspaceConfiguration(devices: [invalid]).validated())
+        let zero = RegisteredDevice(configuration: .genericBluetooth(GenericBluetoothConfiguration(endpoint: device.bluetoothConfiguration!.endpoint, lowBatteryThreshold: 0)))
+        XCTAssertThrowsError(try WorkspaceConfiguration(devices: [zero]).validated())
+    }
+
+    func testMultipleGenericBluetoothReferencesSurviveNativeEditsAndCollectRemovedPayload() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let store = ConfigurationStore(url: url)
+        let endpoints = [BluetoothEndpoint(address: "AA:00:00:00:00:01")!, BluetoothEndpoint(address: "AA:00:00:00:00:02")!]
+        var workspace = WorkspaceConfiguration(legacy: ConfigurationFixtures.configuration)
+        workspace.devices += endpoints.map { RegisteredDevice(displayName: "Same Name", configuration: .genericBluetooth($0)) }
+        let first = try await store.save(workspace, expecting: .missing)
+        let firstReferences = try RegistryCodec.manifest(Data(contentsOf: url)).devices.filter { $0.family == .genericBluetooth }
+        XCTAssertEqual(firstReferences.count, 2)
+        XCTAssertTrue(firstReferences.allSatisfy { !$0.usesLegacyPath && $0.relativePath.split(separator: "/").count == 2 })
+        var native = first.configuration
+        native.devices[0].defaults["back"] = .key(KeyboardShortcut(keyCode: 12))
+        let second = try await store.save(first.workspace.applying(native), expecting: first.revision)
+        let secondReferences = try RegistryCodec.manifest(Data(contentsOf: url)).devices.filter { $0.family == .genericBluetooth }
+        XCTAssertEqual(firstReferences.map(\.relativePath), secondReferences.map(\.relativePath))
+        let loaded = try await store.load()
+        XCTAssertEqual(loaded.workspace.devices.filter { $0.family == .genericBluetooth }, workspace.devices.filter { $0.family == .genericBluetooth })
+        XCTAssertEqual(loaded.configuration, native)
+        var removed = second.workspace
+        removed.devices.removeAll { $0.id == firstReferences[0].id }
+        _ = try await store.save(removed, expecting: second.revision)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(firstReferences[0].relativePath).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(firstReferences[1].relativePath).path))
+    }
+
+    func testGenericRegistryRejectsDuplicateEndpointsNativeFamiliesAndMoreThan256Entries() throws {
+        let endpoint = BluetoothEndpoint(address: "AA:00:00:00:00:01")!
+        let duplicateEndpoint = WorkspaceConfiguration(devices: [RegisteredDevice(configuration: .genericBluetooth(endpoint)), RegisteredDevice(configuration: .genericBluetooth(endpoint))])
+        XCTAssertThrowsError(try duplicateEndpoint.validated())
+        let native = try XCTUnwrap(RegisteredDevice.make(family: .mxMaster3S))
+        XCTAssertThrowsError(try WorkspaceConfiguration(devices: [native, try XCTUnwrap(RegisteredDevice.make(family: .mxMaster3S))]).validated())
+        let devices = (0..<256).map { index in
+            RegisteredDevice(configuration: .genericBluetooth(BluetoothEndpoint(address: String(format: "AA:00:00:00:%02X:%02X", index / 256, index % 256))!))
+        }
+        XCTAssertNoThrow(try WorkspaceConfiguration(devices: devices).validated())
+        XCTAssertThrowsError(try WorkspaceConfiguration(devices: devices + [native]).validated())
+        XCTAssertNil(RegisteredDevice.make(family: .genericBluetooth))
+    }
+
     func testLegacyMigrationBacksUpExactBytesAndKeepsUUIDsAcrossReload() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -193,7 +290,7 @@ final class DeviceRegistryStoreTests: XCTestCase {
         let second = try await store.save(removed, expecting: first.revision)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(original.relativePath).path))
         var readded = second.workspace
-        readded.devices.append(.make(family: original.family))
+        readded.devices.append(try XCTUnwrap(RegisteredDevice.make(family: original.family)))
         let third = try await store.save(readded, expecting: second.revision)
         XCTAssertNotEqual(third.workspace.devices.last?.id, original.id)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(original.relativePath).path))
@@ -457,7 +554,7 @@ final class DeviceRegistryStoreTests: XCTestCase {
             } catch {}
         }
         var duplicate = saved.workspace
-        duplicate.devices.append(.make(family: .mxMaster3S))
+        duplicate.devices.append(try XCTUnwrap(RegisteredDevice.make(family: .mxMaster3S)))
         do {
             _ = try await store.save(duplicate, expecting: saved.revision)
             XCTFail("Expected duplicate family rejection")
