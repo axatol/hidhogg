@@ -97,7 +97,7 @@ struct NativeActionEditorView: View {
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
 
             actionFields
@@ -180,7 +180,7 @@ struct NativeActionEditorView: View {
                     Text("Previous Track").tag(NativeAction.Media.previousTrack)
                 }
                 .disabled(!canEdit)
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
         case .volume:
             GroupBox("Volume") {
@@ -215,21 +215,21 @@ struct NativeActionEditorView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
         case .bell:
             GroupBox("Bell") {
                 Text("Plays the system alert sound when this action is assigned and invoked.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .padding(.vertical, 4)
+                    .cardContentPadding()
             }
         case .lockScreen:
             GroupBox("Lock Screen") {
                 Label("Locks this Mac with Control–Command–Q when invoked.", systemImage: "lock")
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, 4)
+                    .cardContentPadding()
             }
         case .playSound, .openApplication, .openFile:
             GroupBox(targetFieldTitle) {
@@ -243,14 +243,14 @@ struct NativeActionEditorView: View {
                     .disabled(!canEdit)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
         case .openURL:
             GroupBox("Website") {
                 TextField("https://example.com", text: targetBinding)
                     .textFieldStyle(.roundedBorder)
                     .disabled(!canEdit)
-                    .padding(.vertical, 4)
+                    .cardContentPadding()
             }
         case .deckNotification:
             GroupBox("Deck notification") {
@@ -280,7 +280,7 @@ struct NativeActionEditorView: View {
                         .disabled(!canEdit)
                     }
                 }
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
         case .shortcut:
             GroupBox("Keyboard shortcut") {
@@ -293,7 +293,7 @@ struct NativeActionEditorView: View {
                     .disabled(!canEdit)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
         }
     }

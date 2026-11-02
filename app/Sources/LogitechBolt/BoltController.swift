@@ -58,6 +58,7 @@ public actor BoltController {
     private var pendingWheelRollback: UInt8?
     private var restorePreviousSettingsOnDisconnect = false
     private var wheelAssociationLost = false
+    private var wheelCapabilities: HIDPP2121V1.Capabilities?
     private var wheelMultiplier: UInt8 = 0
     private var captureOwnership: CaptureOwnership?
     private var captureVerified = false
@@ -433,15 +434,26 @@ public actor BoltController {
 
     public func applyWheelPreferences(inverted: Bool?, highResolution: Bool?, restorePreviousSettingsOnDisconnect: Bool) async {
         physicalWheelRequest = nil
-        await applyWheelPreferences(inverted: inverted, highResolution: highResolution,
-                                   restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect,
-                                   amount: nil, scrollPostingAllowed: false)
+        await reconcileWheelPreferences(inverted: inverted, highResolution: highResolution,
+                                        restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect,
+                                        amount: nil, scrollPostingAllowed: false)
     }
 
     public func applyWheelPreferences(inverted: Bool?, highResolution: Bool?, restorePreviousSettingsOnDisconnect: Bool,
                                       amount: Double?, scrollPostingAllowed: Bool) async {
         guard supportsManagement else {
-            publish(phase, "This Logitech connection is read-only; wheel settings are unavailable.")
+            publish(phase, "Scroll capture is unavailable for this Logitech connection.")
+            return
+        }
+        await reconcileWheelPreferences(inverted: inverted, highResolution: highResolution,
+                                        restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect,
+                                        amount: amount, scrollPostingAllowed: scrollPostingAllowed)
+    }
+
+    private func reconcileWheelPreferences(inverted: Bool?, highResolution: Bool?, restorePreviousSettingsOnDisconnect: Bool,
+                                           amount: Double?, scrollPostingAllowed: Bool) async {
+        guard supportsManagement || (model == .mxMaster4 && amount == nil && !scrollPostingAllowed && wheel.support == .supported) else {
+            publish(phase, "These wheel settings are unavailable for this Logitech connection.")
             return
         }
         let requestedRevision = operationRevision
@@ -454,6 +466,10 @@ public actor BoltController {
         guard requestedRevision == operationRevision, !shutdownRequested, !disableRequested,
               (phase == .ready || phase == .enabled), transport != nil, !uncertain else {
             publish(phase, "A connected device is required to change its wheel preference.")
+            return
+        }
+        if inverted != nil, let capabilities = wheelCapabilities, !capabilities.supportsInversion {
+            publish(phase, "Wheel inversion is unavailable; input resolution remains available.")
             return
         }
         self.restorePreviousSettingsOnDisconnect = restorePreviousSettingsOnDisconnect
@@ -477,7 +493,7 @@ public actor BoltController {
             if physicalChanged {
                 wheel = BoltWheelStatus(support: wheel.support, observedInverted: wheel.observedInverted,
                                        isOwned: wheelOwnership != nil, isApplying: true,
-                                       observedHighResolution: wheel.observedHighResolution)
+                                       observedHighResolution: wheel.observedHighResolution, supportsInversion: wheel.supportsInversion)
                 publish(phase, "Checking the device wheel preferences.")
                 await performWheelPreferences(inverted: inverted, highResolution: highResolution)
                 guard phase == .ready || phase == .enabled else { return }
@@ -886,10 +902,18 @@ public actor BoltController {
             } else {
                 available.removeAll()
                 capabilityTable = nil
-                wheel = BoltWheelStatus(support: .unsupported, message: "Settings management is unavailable for this MX Master 4 connection.")
+                wheelDirection = VerticalWheelDirection(nativeNaturalScrolling: nativeNaturalScrolling())
+                try await discoverWheel()
+                try checkConnectActive(revision: revision)
+                if recoveryRequired, wheelBaseline == nil { throw BoltFailure.foreignState }
+                uncertain = false
+                uncertainTarget = nil
+                freshWheelRoutingRequired = false
                 thumbwheel.support = .unsupported
                 thumbwheel.message = "Settings management is unavailable for this MX Master 4 connection."
-                publish(.ready, "Connected read-only to the saved MX Master 4 association. Settings changes are unavailable.")
+                publish(.ready, wheel.support == .supported
+                    ? "Connected to the saved MX Master 4 association; supported wheel preferences are available."
+                    : "Connected to the saved MX Master 4 association; wheel settings are unavailable for this session.")
             }
 
             startConnectionMonitor(connection: current)
@@ -947,12 +971,13 @@ public actor BoltController {
         if wheelRootSupported {
             let capabilities = try await request(feature: wheelRoot[0], function: 0)
             try checkConnectActive(revision: revision)
-            guard capabilities.count >= 2 else { throw BoltFailure.malformed }
-            guard capabilities[1] & 0x08 != 0 || !freshWheelRoutingRequired else { throw BoltFailure.unsupported }
-            if capabilities[1] & 0x08 != 0 {
+            let decoded = try HIDPP2121V1.Capabilities(capabilities)
+            guard decoded.supportsInversion || !freshWheelRoutingRequired else { throw BoltFailure.unsupported }
+            if decoded.supportsInversion {
+                wheelCapabilities = decoded
+                wheelMultiplier = decoded.multiplier
                 let mode = try await wheelMode(feature: wheelRoot[0])
                 try checkConnectActive(revision: revision)
-                wheelMultiplier = capabilities[0]
                 preflight.append(ConnectReclaim(control: .wheel, feature: wheelRoot[0], root: Array(wheelRoot.prefix(3)),
                     original: [mode], native: [mode & ~0x01]))
             }
@@ -1151,6 +1176,7 @@ public actor BoltController {
         pressed.removeAll()
         wheel = BoltWheelStatus()
         wheelMultiplier = 0
+        wheelCapabilities = nil
         wheelOwnership = nil
         wheelBaseline = nil
         latestVerifiedWheelMode = nil
@@ -1308,15 +1334,30 @@ public actor BoltController {
     }
 
     private func mutateRequest(feature: UInt8, function: UInt8, parameters: [UInt8],
-                               duringCleanup: Bool = false) async throws -> [UInt8] {
+                               duringCleanup: Bool = false, physicalWheelMode: UInt8? = nil) async throws -> [UInt8] {
         let revision = operationRevision
         let currentConnection = connection
         do {
-            guard supportsManagement else { throw BoltFailure.unsupportedModel }
+            let scopedWheelCapabilities = wheelCapabilities
+            if !supportsManagement {
+                guard requiresExplicitAssociation, model == .mxMaster4, wheel.support == .supported,
+                      wheelBaseline?.feature == feature, function == 2, parameters.count == 1,
+                      let physicalWheelMode, let scopedWheelCapabilities,
+                      HIDPP2121V1.permitsPhysicalChange(from: physicalWheelMode, to: parameters[0], capabilities: scopedWheelCapabilities) else {
+                    throw BoltFailure.unsupportedModel
+                }
+            }
             try checkMutationState(revision: revision, connection: currentConnection, duringCleanup: duringCleanup)
             try await verifyActiveTargetIdentityBeforeMutation(revision: revision, connection: currentConnection,
                                                                duringCleanup: duringCleanup)
             try checkMutationState(revision: revision, connection: currentConnection, duringCleanup: duringCleanup)
+            if !supportsManagement {
+                guard try await readWheelFeature(cleanup: duringCleanup) == feature, wheelCapabilities == scopedWheelCapabilities,
+                      try await wheelMode(feature: feature, cleanup: true) == physicalWheelMode else {
+                    throw BoltFailure.foreignState
+                }
+                try checkMutationState(revision: revision, connection: currentConnection, duringCleanup: duringCleanup)
+            }
         } catch let failure as BoltFailure {
             throw BoltMutationPreflightFailure(failure: failure)
         } catch {
@@ -1394,35 +1435,39 @@ public actor BoltController {
         guard reply.count == 16, BoltWire.word(reply, 0) == BoltWire.cid(control) else { throw BoltFailure.malformed }
     }
 
-    private func readWheelFeature() async throws -> UInt8 {
+    private func readWheelFeature(cleanup: Bool = false) async throws -> UInt8 {
         let root = try await request(feature: 0, function: 0, parameters: [0x21, 0x21])
         let usable = root.count >= 3 && root[0] != 0 && root[1] & 0xE0 == 0 && root[2] == 1
         if let ownedFeature = captureOwnership?.feature ?? wheelOwnership?.feature, !usable || root[0] != ownedFeature {
             wheelAssociationLost = true
             throw BoltFailure.foreignState
         }
-        try checkActive()
-        guard usable else { throw BoltFailure.unsupported }
-        let index = root[0]
-        let capabilities = try await request(feature: index, function: 0)
-        guard capabilities.count >= 2, capabilities[1] & 0x08 != 0 else {
+        if !cleanup { try checkActive() }
+        let index = try HIDPP2121V1.featureIndex(root)
+        let reply = try await request(feature: index, function: 0)
+        guard let capabilities = try? HIDPP2121V1.Capabilities(reply) else {
             if wheelOwnership != nil || captureOwnership != nil { wheelAssociationLost = true }
-            throw BoltFailure.unsupported
+            throw BoltFailure.malformed
         }
-        wheelMultiplier = capabilities[0]
-        try checkActive()
+        let requiresInversion = captureOwnership != nil || wheelOwnership.map { supportsManagement || $0.mask & 0x04 != 0 } == true
+        if requiresInversion, !capabilities.supportsInversion {
+            wheelAssociationLost = true
+            throw BoltFailure.foreignState
+        }
+        wheelCapabilities = capabilities
+        wheelMultiplier = capabilities.multiplier
+        if !cleanup { try checkActive() }
         return index
     }
 
     private func wheelMode(feature: UInt8, cleanup: Bool = false) async throws -> UInt8 {
         guard cleanup || remainingNativeTokens(feature: feature, function: 1) > 2 else { throw BoltFailure.tokenExhausted }
         let reply = try await request(feature: feature, function: 1)
-        guard reply.count >= 2, reply[1] == 0, reply[0] & 0xF8 == 0 else { throw BoltFailure.foreignState }
-        return reply[0]
+        return try HIDPP2121V1.Mode(reply).rawValue
     }
 
     private func observeWheel(_ mode: UInt8, applying: Bool = false, message: String? = nil) {
-        wheel = BoltWheelStatus(support: .supported, observedInverted: wheelDirection.naturalScrolling(for: mode), isOwned: wheelOwnership != nil, isApplying: applying, message: message, observedHighResolution: mode & 0x02 != 0)
+        wheel = BoltWheelStatus(support: .supported, observedInverted: wheelDirection.naturalScrolling(for: mode), isOwned: wheelOwnership != nil, isApplying: applying, message: message, observedHighResolution: mode & 0x02 != 0, supportsInversion: wheelCapabilities?.supportsInversion == true)
     }
 
     private func discoverWheel() async throws {
@@ -1437,7 +1482,8 @@ public actor BoltController {
         } catch {
             try checkActive()
             let unsupported = [BoltFailure.unsupported, .foreignState, .malformed].contains(error as? BoltFailure ?? .transport)
-            wheel = BoltWheelStatus(support: unsupported ? .unsupported : .unknown, message: "Device wheel settings are unavailable for this session.")
+            let reason = (error as? BoltFailure)?.errorDescription ?? "The wheel response could not be verified."
+            wheel = BoltWheelStatus(support: unsupported ? .unsupported : .unknown, message: "Device wheel settings are unavailable. " + reason)
         }
     }
 
@@ -1466,15 +1512,15 @@ public actor BoltController {
                       let verifiedMode = latestVerifiedWheelMode,
                       baseline & 0x02 == verifiedMode & 0x02 else { throw BoltFailure.foreignState }
                 let previousMask = wheelOwnership?.mask ?? 0
-                var target = baseline
-                let hardwareInverted = inverted.map { wheelDirection.hardwareInverted(for: $0) }
-                for (desired, mask) in [(hardwareInverted, UInt8(0x04)), (highResolution, UInt8(0x02))] {
-                    if let desired {
-                        target = (target & ~mask) | (desired ? mask : 0)
-                    } else if restorePreviousSettingsOnDisconnect && previousMask & mask != 0 {
-                        target = (target & ~mask) | (captured.mode & mask)
-                    }
+                guard let capabilities = wheelCapabilities else { throw BoltFailure.unsupported }
+                guard inverted == nil || capabilities.supportsInversion else {
+                    observeWheel(baseline, message: "Wheel inversion is unavailable; input resolution remains available.")
+                    return
                 }
+                let target = try HIDPP2121V1.physicalMode(
+                    current: baseline, original: captured.mode, ownedMask: previousMask,
+                    inverted: inverted.map { wheelDirection.hardwareInverted(for: $0) }, highResolution: highResolution,
+                    restoreReleasedFields: restorePreviousSettingsOnDisconnect, capabilities: capabilities)
                 if target != baseline {
                     guard try await wheelMode(feature: index) == baseline else { throw BoltFailure.foreignState }
                     try checkActive()
@@ -1482,7 +1528,7 @@ public actor BoltController {
                     wheelOwnership = WheelOwnership(feature: index, original: captured.mode, target: target, mask: pendingMask)
                     pendingWheelRollback = baseline
                     do {
-                        _ = try await mutateRequest(feature: index, function: 2, parameters: [target])
+                        _ = try await mutateRequest(feature: index, function: 2, parameters: [target], physicalWheelMode: baseline)
                     } catch let preflight as BoltMutationPreflightFailure {
                         throw preflight.failure
                     } catch {
@@ -1505,7 +1551,7 @@ public actor BoltController {
             }
             try checkActive()
             if let mode = latestVerifiedWheelMode { observeWheel(mode) }
-            wheel = BoltWheelStatus(support: wheel.support, observedInverted: wheel.observedInverted, isOwned: wheelOwnership != nil, message: "Device wheel preferences verified.", observedHighResolution: wheel.observedHighResolution)
+            wheel = BoltWheelStatus(support: wheel.support, observedInverted: wheel.observedInverted, isOwned: wheelOwnership != nil, message: "Device wheel preferences verified.", observedHighResolution: wheel.observedHighResolution, supportsInversion: wheel.supportsInversion)
             let activePhase = phase
             guard activePhase == .ready || activePhase == .enabled else { return }
             let message = activePhase == .enabled
@@ -1524,8 +1570,10 @@ public actor BoltController {
             UInt16(feature) << 8 | 1: reads + 2,
             UInt16(feature) << 8 | 2: setters + 1
         ]
-        required[0, default: 0] += rootReads
-        required[UInt16(feature) << 8, default: 0] += capabilityReads
+        let wheelPreflights = supportsManagement ? 0 : setters + 1
+        required[UInt16(feature) << 8 | 1, default: 0] += wheelPreflights
+        required[0, default: 0] += rootReads + wheelPreflights
+        required[UInt16(feature) << 8, default: 0] += capabilityReads + wheelPreflights
         let identityWrites = identityPreflights ?? (setters > 0 ? setters + 1 : 0)
         try addIdentityPreflightRequirements(writes: identityWrites, to: &required)
         try requireNativeTokenCapacity(required)
@@ -1600,7 +1648,7 @@ public actor BoltController {
             return true
         } catch {
             wheel = BoltWheelStatus(support: wheel.support, isOwned: true,
-                                   message: "Scroll capture cleanup is unverified. Fresh discovery must verify native wheel routing before delivery can resume.", captureBlocker: "Native wheel routing could not be verified.")
+                                   message: "Scroll capture cleanup is unverified. Fresh discovery must verify native wheel routing before delivery can resume.", captureBlocker: "Native wheel routing could not be verified.", supportsInversion: wheel.supportsInversion)
             return false
         }
     }
@@ -1611,7 +1659,7 @@ public actor BoltController {
                                message: wheel.message, observedHighResolution: wheel.observedHighResolution,
                                captureActive: captureOwnership != nil && captureVerified && captureBlocker == nil,
                                captureBlocker: captureBlocker ?? (uncertain ? wheel.captureBlocker : nil),
-                               effectiveInverted: captureOwnership.map { $0.direction.naturalScrolling(for: $0.nativeMode) })
+                               effectiveInverted: captureOwnership.map { $0.direction.naturalScrolling(for: $0.nativeMode) }, supportsInversion: wheel.supportsInversion)
     }
 
     private func rejectStaleScrollAdmission(generation requestedGeneration: UInt64) async {
@@ -1623,7 +1671,7 @@ public actor BoltController {
     private func cleanupWheel() async -> Bool {
         if captureOwnership != nil { return await cleanupCapture(final: true) }
         guard let ownership = wheelOwnership else {
-            wheel = BoltWheelStatus(support: wheel.support, observedInverted: wheel.observedInverted, message: wheel.message, observedHighResolution: wheel.observedHighResolution)
+            wheel = BoltWheelStatus(support: wheel.support, observedInverted: wheel.observedInverted, message: wheel.message, observedHighResolution: wheel.observedHighResolution, supportsInversion: wheel.supportsInversion)
             return true
         }
         let restoration: UInt8
@@ -1636,7 +1684,8 @@ public actor BoltController {
             wheel = BoltWheelStatus(
                 support: wheel.support, observedInverted: wheel.observedInverted,
                 message: "Wheel restoration is disabled; the device keeps its current settings.",
-                observedHighResolution: wheel.observedHighResolution
+                observedHighResolution: wheel.observedHighResolution,
+                supportsInversion: wheel.supportsInversion
             )
             return true
         }
@@ -1647,7 +1696,7 @@ public actor BoltController {
             if current != restoration {
                 guard current == ownership.target || pendingWheelRollback == current else { throw BoltFailure.foreignState }
                 do {
-                    _ = try await mutateRequest(feature: ownership.feature, function: 2, parameters: [restoration], duringCleanup: true)
+                    _ = try await mutateRequest(feature: ownership.feature, function: 2, parameters: [restoration], duringCleanup: true, physicalWheelMode: current)
                 } catch let preflight as BoltMutationPreflightFailure {
                     throw preflight.failure
                 } catch {
@@ -1665,7 +1714,7 @@ public actor BoltController {
                 : "Unverified wheel change rolled back.")
             return true
         } catch {
-            wheel = BoltWheelStatus(support: wheel.support, observedInverted: nil, isOwned: true, message: "Wheel cleanup is unverified. Fresh discovery must verify wheel routing before bindings can be enabled.")
+            wheel = BoltWheelStatus(support: wheel.support, observedInverted: nil, isOwned: true, message: "Wheel cleanup is unverified. Fresh discovery must verify wheel routing before bindings can be enabled.", supportsInversion: wheel.supportsInversion)
             return false
         }
     }

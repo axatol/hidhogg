@@ -53,7 +53,7 @@ struct GenericBluetoothDeviceView: View {
                                 }
                             }
                         }
-                        .padding(8)
+                        .cardContentPadding()
                     }
                     Text("Monitoring is read-only. Pairing is managed in macOS System Settings.")
                         .foregroundStyle(.secondary)

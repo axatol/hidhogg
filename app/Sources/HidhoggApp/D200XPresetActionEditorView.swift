@@ -82,7 +82,7 @@ struct D200XPresetActionEditorView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
+            .cardContentPadding()
         }
         .fileImporter(
             isPresented: $isFileImporterPresented,
@@ -129,7 +129,7 @@ struct D200XPresetActionEditorView: View {
                     Text("Next Track").tag(NativeAction.Media.nextTrack)
                     Text("Previous Track").tag(NativeAction.Media.previousTrack)
                 }
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
         case .volume:
             GroupBox("Volume") {
@@ -165,7 +165,7 @@ struct D200XPresetActionEditorView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
         case .bell:
             GroupBox("Bell") {
@@ -173,14 +173,14 @@ struct D200XPresetActionEditorView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, 4)
+                    .cardContentPadding()
             }
         case .lockScreen:
             GroupBox("Lock Screen") {
                 Label("Locks this Mac with Control–Command–Q when invoked.", systemImage: "lock")
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, 4)
+                    .cardContentPadding()
             }
         case .playSound, .openApplication, .openFile:
             GroupBox(targetFieldTitle) {
@@ -192,13 +192,13 @@ struct D200XPresetActionEditorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
         case .openURL:
             GroupBox("Website") {
                 TextField("https://…", text: targetBinding)
                     .textFieldStyle(.roundedBorder)
-                    .padding(.vertical, 4)
+                    .cardContentPadding()
             }
         case .deckNotification:
             GroupBox("Deck notification") {
@@ -226,7 +226,7 @@ struct D200XPresetActionEditorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
         case .shortcut:
             GroupBox("Keyboard shortcut") {
@@ -239,7 +239,7 @@ struct D200XPresetActionEditorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
         }
     }
@@ -279,7 +279,7 @@ struct D200XPresetActionEditorView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
+            .cardContentPadding()
         }
     }
 

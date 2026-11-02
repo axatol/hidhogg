@@ -465,7 +465,7 @@ struct TilePresetsView: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
+                        .cardContentPadding()
                 }
                 Text("The action definitions stay inside the imported preset. Importing does not run them.")
                     .font(.caption)

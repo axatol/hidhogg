@@ -7,8 +7,11 @@ struct WheelSettingsInspector: View {
     let target: DeviceEditorTarget
 
     var body: some View {
+        let physicalMainWheelOnly = model.selectedMouseSettingsAvailability == .physicalMainWheel
         Form {
-            if target == .verticalWheel {
+            if physicalMainWheelOnly {
+                physicalMainWheelSettings
+            } else if target == .verticalWheel {
                 verticalWheelSettings
             } else {
                 thumbWheelSettings
@@ -21,7 +24,9 @@ struct WheelSettingsInspector: View {
                 ))
                 .disabled(!model.canEditConfiguration)
 
-                Text("This restore policy is shared by both wheels and applies across all app contexts.")
+                Text(physicalMainWheelOnly
+                     ? "Restore only main wheel settings changed by Hidhogg."
+                     : "This restore policy is shared by both wheels and applies across all app contexts.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -29,6 +34,53 @@ struct WheelSettingsInspector: View {
         }
         .formStyle(.grouped)
         .navigationTitle(target.title)
+    }
+
+    private var physicalMainWheelSettings: some View {
+        Section("Main wheel · all apps") {
+            Picker("Direction", selection: Binding(
+                get: { model.wheelPreferenceDraft },
+                set: { model.setWheelPreference($0) }
+            )) {
+                Text("Leave unchanged").tag(Optional<Bool>.none)
+                Text("Standard").tag(Optional<Bool>.some(false))
+                Text("Natural").tag(Optional<Bool>.some(true))
+            }
+            .disabled(!model.canEditConfiguration || !model.selectedWheelInversionAvailable)
+
+            Picker("Input resolution", selection: Binding(
+                get: { model.wheelHighResolutionDraft },
+                set: { model.setWheelHighResolution($0) }
+            )) {
+                Text("Leave unchanged").tag(Optional<Bool>.none)
+                Text("Low").tag(Optional<Bool>.some(false))
+                Text("High").tag(Optional<Bool>.some(true))
+            }
+            .disabled(!model.canEditConfiguration)
+
+            LabeledContent("Observed direction", value: model.observedWheelDirection)
+            LabeledContent("Observed resolution", value: model.observedWheelResolution)
+            LabeledContent("Hidhogg change", value: model.wheelSessionChange)
+
+            if !model.selectedWheelInversionAvailable {
+                Text("Direction inversion was not advertised. Any saved direction preference is preserved but not applied.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text("Input resolution changes device reporting granularity. Changes save automatically; restoration follows the existing disconnect preference.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let message = model.selectedMouseStatus.wheel.message {
+                Text(message)
+                    .font(.callout)
+                    .foregroundStyle(model.selectedMouseStatus.cleanupUncertain ? .orange : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private var verticalWheelSettings: some View {

@@ -3088,3 +3088,28 @@ One-line kind nibble correction and five literal MX4 tests reviewed independentl
 ## Owner acceptance and local check-in approval — 2 November 2026
 
 Owner reports latest kind-fix build worked, all working as expected, then asks for loose-thread audit and check-in if clear. Record current MX4 discovery/flow acceptance, without inventing exact previous rawkind or enumerated edgecase results. Independent inventory identifies131 completed/dependency/doc paths, no build/probe/private artifacts. Root will stage explicit allowed app/docs/README/.agents paths and commit the dependency-closed D200X/Logitech checkpoint locally. Nonblocking padding, notification icon and discovery ACK/error-detail hardening remain documented; no new code scope, push or worktree cleanup.
+
+
+## UI-PAD-01 verified; LC-05A backend started — 2 November 2026
+
+User approved padding then small MX4 slice, with eventual full3S/4 hardware capability coverage and agnostic/explicit-version protocol organization. Shared16pt card helper and18 view updates cover41GroupBoxes. Read-only review clear. Two offscreen tests pass; parent viewed12 narrow/wide PNGs from fake inert models, never-shown windows, zero adapter/input/config writes. Preview/deck geometry unchanged. Actual owner visual acceptance stays pending.
+
+Architecture chosen: common HID++ session retains transport, correlation, identity, serialization and cleanup; shared pure2121V1 codec/planner handles actual common wheel contract. Model-specific/feature-version differences get later real adapters rather than copied controllers. Backend owns3protocolsource/testfiles; frontend waits stablebackend to avoid compile races. MX4legacy supportsManagement remainsfalse; wheel.support plus inversioncapability independently admit only physical direction/resolution and owned restore. Narrow centralwriter authorization must retain identity/lifecycle/feature constraints; no genericMX4writegrant or routing/capture changes. Fullhardware matrix captured in plan; earliersoftware/firmware exclusions stay. No liveIO/appactivation/newcommit.
+
+
+## UI-PAD-01 / LC-05A signed offline delivery — 2 November 2026
+
+Implemented approved padding and firstMX4physicalwheel slice aftersharedpure2121V1 codec/planner seam. Capability-specific grant leavesMX4buttons/thumb/capture read-only; actualidentity/root/caps/mode/readback/ownedrestore checked. Existing3Sbehavior preservedincludinglegacy08reclaim policy andcaploss refusal. UIperfeature/save/apply filtersunsupportedstoredprefs; actualrefusalreasonretained. Fullhardwaregoal/sourceversions and exclusions documented.
+
+Independentfocused321/full1,056 passfirstattempts,2existingexclusionsunchanged;326hashesmatch signedbuild `303a3f4139b4b18fa9c45d279fc45b7cafbdb2d9faed4b0af8b972ed9ba48272`, strictsignatures/help pass. Parentreviewed14fakeoffscreenPNGs, no liveIO/appactivation. Ownervisual/MX4write/readback/restore/Bluetooth acceptancepending. No sourcecommit/push, base9eb6e8e. Logs/manifests/artifacthashes in /Volumes/Data/tmp and dist/build-info.json.
+
+Final read-only scope audit:39changed paths (31source/test including5newSwift,8docs), allsourcecoveredby326manifest; cached diffempty/HEAD9eb6e8e unchanged. No build/runtimeartifact/privatefile path in changedset. Fullhardwaregoal remains futureadapters; ownerphysical/visual acceptance open.
+
+
+## Owner accepts initial padding / MX4 behavior — 2 November 2026
+
+Owner reports “Seems to work well” after signed build303a3f. Current padding and initial settings behavior accepted; individual restore/reconnect/Bluetooth/fault results not separately stated. No new source change, commit, push or live operation.
+
+## Commit after manual verification — 2 November 2026
+
+Owner corrected the delayed check-in workflow. After owner manual verification, make a local commit of the verified, dependency-closed scope without waiting for another check-in request. Preserve unrelated or unverified changes; do not push without authorization. Apply this now to the accepted padding and initial MX4 wheel settings. All 326 tested inputs still match the signed build manifest; documentation-only acceptance/policy updates require no source test rerun.

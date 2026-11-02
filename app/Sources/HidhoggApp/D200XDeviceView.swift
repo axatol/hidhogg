@@ -22,6 +22,7 @@ struct D200XDeviceView: View {
                 if let firmware = model.firmware {
                     GroupBox("Firmware") {
                         LabeledContent("Version", value: firmware)
+                            .cardContentPadding()
                     }
                 }
             }
@@ -125,7 +126,7 @@ struct D200XDeviceView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(18)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
     }
@@ -165,7 +166,7 @@ struct D200XDeviceView: View {
                 isInspectorPresented = true
             }
         }
-        .padding(18)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.background, in: RoundedRectangle(cornerRadius: 14))
         .overlay {
@@ -246,7 +247,7 @@ struct D200XDeviceView: View {
                     .disabled(!canEditBrightness)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
+            .cardContentPadding()
         }
     }
 

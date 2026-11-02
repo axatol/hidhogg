@@ -19,8 +19,9 @@ public struct BoltWheelStatus: Equatable, Sendable {
     public let captureActive: Bool
     public let captureBlocker: String?
     public let effectiveInverted: Bool?
+    public let supportsInversion: Bool
 
-    public init(support: Support = .unknown, observedInverted: Bool? = nil, isOwned: Bool = false, isApplying: Bool = false, message: String? = nil, observedHighResolution: Bool? = nil, captureActive: Bool = false, captureBlocker: String? = nil, effectiveInverted: Bool? = nil) {
+    public init(support: Support = .unknown, observedInverted: Bool? = nil, isOwned: Bool = false, isApplying: Bool = false, message: String? = nil, observedHighResolution: Bool? = nil, captureActive: Bool = false, captureBlocker: String? = nil, effectiveInverted: Bool? = nil, supportsInversion: Bool = false) {
         self.support = support
         self.observedInverted = observedInverted
         self.observedHighResolution = observedHighResolution
@@ -30,6 +31,7 @@ public struct BoltWheelStatus: Equatable, Sendable {
         self.captureActive = captureActive
         self.captureBlocker = captureBlocker
         self.effectiveInverted = effectiveInverted
+        self.supportsInversion = supportsInversion
     }
 }
 

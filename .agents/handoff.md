@@ -1,5 +1,21 @@
 # Current handoff
 
+## Owner feedback on padding / LC-05A — 2 November 2026
+
+Owner reports latest build303a3f “Seems to work well.” Treat current padding/initial MX4 settings behavior as owner-accepted. Specific restore/reconnect/Bluetooth/fault cases were not enumerated. The verified padding/MX4 scope is being checked in locally at the owner’s request. Standing workflow: after manual verification, commit the verified, dependency-closed scope without waiting for another check-in request. Preserve unrelated work; push only when authorized. Full3S/4 hardware roadmap remains staged in docs/padding-mx4-settings-plan.md. No live operation performed by agent.
+
+## UI-PAD-01 / LC-05A signed delivery — 2 November 2026
+
+Owner approved padding then a small MX4 settings slice, and asks eventual all3S/4 hardware capability coverage via shared/explicit-version protocol organization. Current signed build `303a3f4139b4b18fa9c45d279fc45b7cafbdb2d9faed4b0af8b972ed9ba48272` is in dist. Base master `9eb6e8e6a86a95617807ea9b44e8c1bf08096ac7`; source remains uncommitted/unstaged, no push. No new commit requested.
+
+Padding: shared16pt content helper across41GroupBoxes/18viewupdates, nativeForms/styles/page/deck geometry preserved. Source review clear; new+existingoffscreen layout2/2 pass. Parent viewedall12paddingPNGs and2finalMX4PNGs, fake models/never-shown/nonkeywindows/noadapter/input/configwrites asserted. Artifacts /Volumes/Data/tmp/hidhogg-padding-offscreen and hidhogg-mx4-settings-offscreen.
+
+Protocol: sharedpure HIDPP2121V1 codec/planner handles caps/mode/owned physicalfield merge; common BoltController retains I/O/identity/serialization/readback/restore. Freshroot/index/version/caps/native-mode revalidation and tokenreserves protect scopedwheel setters/restoration. MX4 supportsManagement staysfalse;3argphysical operation only, capture5arg barred evennilamount/postingtrue. Existing3S reclaim/caploss behavior preserved. AppModel useswheelreadiness+supportsInversion, filtersunsupportedstoredinversion/amount/button/thumbprefs, retainsUUID/lease/lifecycle fences. UIshowsmainwheel direction/resolution/observedstate+existingrestoretoggle only, no3Sart or unsupportedcontrol grants.
+
+Evidence: backendRED12issues beforefix; modelbehaviorRED2tests/10issues beforefrontendroute; authorbackend77target/frontend40targetpass. Independentfocused321 (63XCTest+258SwiftTesting), full1,056 (625+431) passfirstattempts with exactly WakeConnectionTests/NativeWorkspaceWindowTests excluded. No extra skips/retries. Final326input hashes match before/aftertests/signing; manifest /Volumes/Data/tmp/hidhogg-padding-mx4-inputs.json. Wholelogs hidhogg-padding-mx4-{focused,full,release,cli-help}.log. Strictapp/CLI signatures/help pass; metadata dist/build-info.json includesartifact/loghashes. Reviewerbackend/frontendclear; nativeaccessibility/hardwareedgecasesnotproved.
+
+Owner nextreopens signedapp, checkscardspacing, MX4Bolt Standard/Natural andLow/High readback/nativeinput, restoreon/off acrossdisconnect/reconnect. DirectBluetooth separateacceptance. Allhardwaregoal is roadmap, notcomplete: thumbwheel/capture, V5/V6otherbuttons/middle/thumbrest, SmartShift2110/2111, DPI2201, MX4haptic/force, hostchannel capabilities needlateradapters/fixtures. EarlierFlow/ActionsRing/directionalgesturesoftware/firmware-maintenance exclusions stay. Plan docs/padding-mx4-settings-plan.md; oldsingletonconnectivitynote corrected. Notificationicon/discoveryACK/error-detail hardening stilldeferred. No liveHID/systemconfig/privatecaptures or productionlaunchbyagents. Externalread/write racebest-effortnotCAS.
+
 ## Owner-accepted local checkpoint — 2 November 2026
 
 Owner confirms latest signed build504408b “that worked, all working as expected” and authorizes check-in if no blocker. Reported MX4 discovery/current-flow acceptance is closed; original rawkind remains unobserved. Do not extrapolate destructive/fault-injection/multiple-receiver/sleep edgecase acceptance.

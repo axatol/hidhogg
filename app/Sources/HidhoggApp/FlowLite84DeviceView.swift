@@ -133,7 +133,7 @@ struct FlowLite84DeviceView: View {
             } label: {
                 Label("Device information", systemImage: "info.circle")
             }
-            .padding(16)
+            .cardContentPadding()
         }
     }
 
@@ -576,7 +576,7 @@ struct FlowLite84DeviceView: View {
         GroupBox(title) {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
+                .cardContentPadding()
         }
     }
 }

@@ -89,7 +89,7 @@ struct D200XControlInspectorView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
+                    .cardContentPadding()
                 }
             }
         }
@@ -192,7 +192,7 @@ struct D200XControlInspectorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
         }
     }
@@ -334,7 +334,7 @@ struct D200XControlInspectorView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
+            .cardContentPadding()
         }
         .popover(isPresented: $isActionChooserPresented, arrowEdge: .bottom) {
             actionChooserPopover
@@ -437,7 +437,7 @@ struct D200XControlInspectorView: View {
                     .disabled(!canEditControl || topicValidationMessage != nil)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 2)
+            .cardContentPadding()
         }
     }
 

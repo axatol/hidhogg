@@ -55,7 +55,7 @@ struct D200XPresetFieldsView: View {
                 TextField("Name", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .disabled(!model.canEdit)
-                    .padding(.vertical, 4)
+                    .cardContentPadding()
             }
 
             if showsAppearance {

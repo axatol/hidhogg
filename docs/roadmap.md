@@ -1,12 +1,14 @@
 # Roadmap
 
-Check-in readiness (2 November 2026): owner confirms the signed MX4 discovery correction works, with current behavior as expected. No blocker found in accumulated D200X presets/scripts/Lock Screen and Logitech association/pairing/receiver-management source. Nonblocking follow-ups remain padding, notification icons, discovery ACK ordering and numeric error/admission evidence; new Bluetooth pairing remains planned.
+UI-PAD-01 / LC-05A offline verified and signed (2 November 2026): consistent custom-card insets and capability-gated MX4 main-wheel direction/input resolution/restoration. Shared HIDPP2121V1 codec/planner establishes feature-version separation for eventual full3S/4 hardware coverage. Independent focused321/full1,056 pass;326 source hashes and strict signatures match. Owner visual/physical acceptance remains open; other hardware adapters remain later slices. [Scope and coverage roadmap](padding-mx4-settings-plan.md).
+
+Check-in readiness (2 November 2026): owner confirms the signed MX4 discovery correction works, with current behavior as expected. No blocker found in accumulated D200X presets/scripts/Lock Screen and Logitech association/pairing/receiver-management source. That checkpoint deferred padding; UI-PAD-01 now implements it with owner visual acceptance pending. Notification icons, discovery ACK ordering and numeric error/admission evidence remain open; new Bluetooth pairing remains planned.
 
 BOLT-KIND-01 offline verified and signed (2 November 2026): one-line low-nibble device-kind normalization; five independent MX4 tests RED→GREEN, focused304/full1,037 pass. Owner confirms discovery/current flow works on the signed build; actual prior wire value remains unknown. [Evidence/checklist](logitech-discovery-regression-2026-11-02.md).
 
 Pairing recovery offline verified and signed (2 November 2026): stable repeated-advertisement candidates, receiver-driven challenge highlighting and fresh-inventory retry recovery. Focused 299/full 1,032 pass on the final runs; initial thumbwheel-only full failure is preserved with cause unconfirmed. Real pairing remains owner acceptance. [Scope/checklist](logitech-pairing-recovery-plan.md).
 
-Deferred UI polish (2 November 2026): owner reports missing internal padding on several surfaces, including connection cards and Devices rows/groups in the latest Logitech setup screenshots. Audit consistent card/group/row insets later; no padding changes in the pairing diagnosis slice.
+UI padding follow-up (2 November 2026): the missing internal GroupBox/card inset audit is implemented in UI-PAD-01 above, separately from pairing diagnosis; synthetic narrow/wide captures pass, owner visual acceptance remains pending.
 
 
 Notification setup/unified device list implemented, verified and signed (2 November 2026): approved verified temporary notification bits and last-read display retention; owner then requested one Devices list for stored, paired and discovered entries. One Devices list retains last-read rows while stale mutation authority is revoked; verified temporary notification setup precedes discovery, with guarded cleanup. Full1,011 tests pass, strict signatures/help and318 input hashes match. New Bluetooth discovery/pairing remains next; real discovery/cleanup still needs owner verification. [Plan/checklist](logitech-notification-discovery-plan.md).

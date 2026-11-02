@@ -4,7 +4,7 @@ Updated 1 November 2026. This describes the current native implementation; dated
 
 ## Product
 
-One macOS application configures Logitech MX Master 3S and Ulanzi D200X, and reads Lofree Flow Lite84 status through its receiver. Logitech existing-device association covers Bolt and direct Bluetooth, with basic read-only MX Master 4 information support. The workspace, menu-bar item and local CLI share the same in-process model and device sessions. Hardware acceptance is recorded per feature; an implemented feature is not automatically a claim of complete device compatibility.
+One macOS application configures Logitech MX Master 3S and Ulanzi D200X, and reads Lofree Flow Lite84 status through its receiver. Logitech existing-device association covers Bolt and direct Bluetooth, with MX Master 4 information and capability-gated main-wheel direction/input resolution support. The workspace, menu-bar item and local CLI share the same in-process model and device sessions. Hardware acceptance is recorded per feature; an implemented feature is not automatically a claim of complete device compatibility.
 
 ## Architecture
 
@@ -28,6 +28,8 @@ Native workspace / menu
 AppModel owns the canonical editable configuration, navigation and application lifecycle. Each device owns its transport and connection state. UI selection never owns a connection. Editing an application profile is distinct from the foreground application's active runtime profile.
 
 Configuration is resolved from an absolute nonempty XDG_CONFIG_HOME or the standard home configuration location. Loading, revision-aware atomic saving, one-second edit debounce and explicit reload are implemented. Invalid or externally changed files do not silently replace valid state. No filesystem watcher is used. Swift TOML is pinned to 2.0.0 in the package manifest.
+
+The shared `HIDPP2121V1` module decodes and plans wheel preference changes for either model when that feature version is valid. The common controller retains transport, identity, serialization, readback and restoration. Current MX4 access is physical wheel preferences only; button/thumbwheel/capture, SmartShift, DPI and other hardware are subsequent versioned adapters. [Approved coverage roadmap](padding-mx4-settings-plan.md).
 
 ## Logitech ownership and recovery
 
@@ -68,3 +70,5 @@ REG-01 replaces fixed device-list composition with UUID registrations and per-de
 
 
 LC-07 adds explicit Bolt receiver inventory and selected-slot unpairing in Logitech setup, with per-row confirmation, stale-snapshot checks, post-removal verification and retained Hidhogg settings. Offline/signed evidence and physical acceptance limits are recorded in [receiver management](logitech-receiver-management-plan.md).
+
+After owner manual verification, commit the verified, dependency-closed scope locally without waiting for a separate check-in request. Preserve unrelated or unverified work and push only when authorized.

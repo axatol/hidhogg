@@ -166,7 +166,7 @@ struct D200XAppearanceEditorView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
+            .cardContentPadding()
         }
         .sheet(isPresented: $isApplyingToOthers) {
             VStack(alignment: .leading, spacing: 16) {

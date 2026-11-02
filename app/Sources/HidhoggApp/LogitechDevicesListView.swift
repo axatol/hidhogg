@@ -50,7 +50,6 @@ struct LogitechDevicesListView: View {
                    model.boltReceiverManagementMessage == nil {
                     Text("No Logitech devices were found or remembered.")
                         .foregroundStyle(.secondary)
-                        .padding(.vertical, 4)
                 }
 
                 if !pairingCandidates.isEmpty {
@@ -95,6 +94,7 @@ struct LogitechDevicesListView: View {
 
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .cardContentPadding()
         } label: {
             HStack {
                 Label("Devices", systemImage: "computermouse")

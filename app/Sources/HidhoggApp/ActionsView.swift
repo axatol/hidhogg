@@ -39,7 +39,7 @@ struct ActionsView: View {
                             .disabled(!model.canEdit)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 2)
+                        .cardContentPadding()
                     }
                 }
 

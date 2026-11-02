@@ -14,14 +14,7 @@ struct DevicesView: View {
             VStack(alignment: .leading, spacing: 24) {
                 deviceHeader
 
-                if model.selectedMouseSupportsManagement {
-                    DeviceApplicationSelector(isDeviceWide: model.selectedTarget.control == nil)
-                    DeviceControlCanvas(isInspectorPresented: $isInspectorPresented)
-                } else {
-                    Label("Button, wheel and haptic controls are unsupported. Battery, firmware and connection information remain available.",
-                          systemImage: "info.circle")
-                        .foregroundStyle(.secondary)
-                }
+                deviceControls
 
                 configurationStatus
 
@@ -94,7 +87,7 @@ struct DevicesView: View {
 
             DeviceBatteryOverviewView()
 
-            HStack(spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Circle()
                         .fill(Color(nsColor: model.connectionColor))
@@ -103,7 +96,11 @@ struct DevicesView: View {
                     Text(model.connectionTitle)
                 }
                 LabeledContent("Button handling", value: model.buttonReadiness)
+                if model.selectedMouseSettingsAvailability == .physicalMainWheel {
+                    LabeledContent("Main wheel settings", value: model.mainWheelSettingsReadiness)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .font(.callout)
 
             if model.selectedMouseStatus.cleanupUncertain && !model.isBackgroundRecovery {
@@ -135,6 +132,29 @@ struct DevicesView: View {
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    @ViewBuilder
+    private var deviceControls: some View {
+        switch model.selectedMouseSettingsAvailability {
+        case .managed:
+            DeviceApplicationSelector(isDeviceWide: model.selectedTarget.control == nil)
+            DeviceControlCanvas(isInspectorPresented: $isInspectorPresented)
+        case .physicalMainWheel:
+            Label(
+                "Main wheel settings are available in the inspector. Button settings, thumb-wheel controls, and scroll capture are not available yet.",
+                systemImage: "info.circle"
+            )
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        case .informationOnly:
+            Label(
+                "\(model.selectedDeviceCapabilitySummary). Battery, firmware and connection information remain available.",
+                systemImage: "info.circle"
+            )
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     @ViewBuilder

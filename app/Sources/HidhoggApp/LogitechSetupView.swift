@@ -82,6 +82,7 @@ struct LogitechSetupView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .cardContentPadding()
         } label: {
             Label("Bluetooth", systemImage: "antenna.radiowaves.left.and.right")
         }

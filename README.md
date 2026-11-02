@@ -4,7 +4,7 @@
 
 # HIDHogg
 
-A native Swift macOS app for configuring **Logitech MX Master 3S** and **Ulanzi D200X** from one workspace. Existing Logitech connections can be associated over Bolt or direct Bluetooth; MX Master 4 has an initial read-only identity, battery and firmware path. The mainline branch is `master`; acceptance is recorded per feature rather than claiming complete hardware compatibility. See the [LC-02 scope and hardware checks](docs/logitech-lc02-plan.md).
+A native Swift macOS app for configuring **Logitech MX Master 3S** and **Ulanzi D200X** from one workspace. Existing Logitech connections can be associated over Bolt or direct Bluetooth; MX Master 4 has identity, battery and firmware information plus capability-gated main-wheel direction and input-resolution settings. The mainline branch is `master`; acceptance is recorded per feature rather than claiming complete hardware compatibility. See the [LC-02 scope and hardware checks](docs/logitech-lc02-plan.md).
 
 **Add Device → Logitech Mouse…** shows Bolt/Bluetooth options and existing mice on one centre-pane page. Add a verified existing mouse or pair through Bolt inline; the app saves and opens the device without a model-first placeholder or completion step. **Change Connection…** retains an existing registration's settings. New Bluetooth pairing remains unavailable. Offline checks and signing pass; native usability, receiver allocation, authentication and input continuity remain owner checks. See [compact setup](docs/logitech-compact-setup-plan.md) and [Bolt scope and assumptions](docs/logitech-bolt-pairing-plan.md).
 
@@ -12,12 +12,15 @@ One **Devices** list combines ready-to-pair Bolt results, verified Bolt/Bluetoot
 
 Pairing candidates retain one identity across repeated discovery counters. Authentication highlights the current receiver-confirmed click, then the separate both-button confirmation. After a failed or uncertain attempt, **Refresh Devices** rechecks connections and receiver inventory before Add or an explicit retry; it does not resend Pair automatically. Offline tests and signing pass; physical pairing remains an owner check. See [recovery evidence and checks](docs/logitech-pairing-recovery-plan.md).
 
-Discovery has an expandable **Discovery details** section with anonymous per-attempt event counts and native callback/filter counts, retained after timeout. The disclosure uses one adaptive view tree and loading follows pairing phases. Physical discovery timeout remains under investigation; see [UI follow-up and evidence](docs/logitech-discovery-ui-followup.md).
+Discovery has an expandable **Discovery details** section with anonymous per-attempt event counts and native callback/filter counts, retained after timeout. The disclosure uses one adaptive view tree and loading follows pairing phases. The owner confirmed the reported MX4 discovery failure resolved after the researched device-kind correction; additional acknowledgment/error-detail hardening remains planned. See [discovery evidence](docs/logitech-discovery-regression-2026-11-02.md).
+
+Custom card content uses consistent internal spacing. Logitech wheel mode decoding/change planning now lives in a shared `HIDPP2121V1` module; further model differences will use explicit feature-version adapters rather than copied controllers. The padding and first MX4 settings slice are signed/offline verified; physical write/readback/restoration still needs owner acceptance. [Plan and hardware roadmap](docs/padding-mx4-settings-plan.md).
 
 ## Current capabilities
 
-- Back and Forward shortcut bindings, with defaults for all apps and per-app overrides.
-- Vertical and thumb-wheel direction and custom scroll amount controls.
+- MX Master 3S Back and Forward shortcut bindings, with defaults for all apps and per-app overrides.
+- MX Master 3S vertical and thumb-wheel direction and custom scroll amount controls.
+- MX Master 4 main-wheel direction/input resolution when the connected feature contract permits, with readback and optional owned-field restoration. Other MX4 controls remain later work.
 - Battery status, firmware information and optional low-battery notifications.
 - A native device editor, menu-bar connection status, launch-at-login support and background operation.
 - TOML configuration under `$XDG_CONFIG_HOME/hidhogg/` or `~/.config/hidhogg/`, automatic saving and manual reload.

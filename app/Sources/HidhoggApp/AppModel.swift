@@ -97,6 +97,12 @@ enum WorkspaceRoute: Hashable, Identifiable {
     var id: Self { self }
 }
 
+enum MouseSettingsAvailability: Equatable {
+    case managed
+    case physicalMainWheel
+    case informationOnly
+}
+
 struct WorkspaceLocation: Hashable {
     var route: WorkspaceRoute
     var applicationID: String?
@@ -706,6 +712,46 @@ final class AppModel: ObservableObject {
     var selectedMouseSupportsManagement: Bool {
         selectedMouseID.flatMap { registration(id: $0)?.mouseModel } != .mxMaster4 && selectedMouseStatus.supportsManagement
     }
+    var selectedMouseSettingsAvailability: MouseSettingsAvailability {
+        if selectedMouseSupportsManagement { return .managed }
+        return selectedMouseStatus.wheel.support == .supported ? .physicalMainWheel : .informationOnly
+    }
+    var selectedWheelInversionAvailable: Bool {
+        selectedMouseSupportsManagement || selectedMouseStatus.wheel.supportsInversion
+    }
+    private var unverifiedMainWheelSettingsMessage: String {
+        if let message = selectedMouseStatus.wheel.message { return message }
+        if selectedMouseStatus.phase == .discovering { return "Checking wheel feature support" }
+        if selectedMouseStatus.phase == .idle { return "Connect to check wheel settings" }
+        return "Wheel settings have not been verified for this connection"
+    }
+    var mainWheelSettingsReadiness: String {
+        switch selectedMouseStatus.wheel.support {
+        case .unknown: unverifiedMainWheelSettingsMessage
+        case .unsupported: selectedMouseStatus.wheel.message ?? "Main wheel settings are unavailable for this connection"
+        case .supported where !selectedMouseStatus.wheel.supportsInversion:
+            "Input resolution available; direction inversion unsupported"
+        case .supported: "Direction and input resolution available"
+        }
+    }
+    var selectedDeviceCapabilitySummary: String {
+        switch selectedMouseSettingsAvailability {
+        case .managed:
+            "Buttons and supported wheel controls"
+        case .physicalMainWheel where selectedMouseStatus.wheel.supportsInversion:
+            "Main wheel direction and input resolution; other controls are not available yet"
+        case .physicalMainWheel:
+            "Main wheel input resolution; direction inversion unavailable; other controls are not available yet"
+        case .informationOnly:
+            if let message = selectedMouseStatus.wheel.message {
+                "\(message); other controls are not available yet"
+            } else if selectedMouseStatus.wheel.support == .unknown {
+                "\(unverifiedMainWheelSettingsMessage); other controls are not available yet"
+            } else {
+                "Main wheel settings are unavailable for this connection; other controls are not available yet"
+            }
+        }
+    }
 
     var presentedMouseOwnerID: UUID? {
         guard let lease = activeMouseLease, runtimeIdentityVerified,
@@ -849,7 +895,7 @@ final class AppModel: ObservableObject {
     var isBindingsEnabled: Bool { isSelectedMouseRuntimeTarget && boltStatus.phase == .enabled && actionsEnabled }
 
     var buttonReadiness: String {
-        if !selectedMouseSupportsManagement { return "Unsupported by this mouse; basic information is available" }
+        if !selectedMouseSupportsManagement { return "Button settings are not available yet" }
         if recordingTarget != nil { return "Shortcuts paused while recording" }
         if !hasUsableConfiguration { return "Shortcuts blocked: configuration unavailable" }
         if !containsConfiguredShortcut(in: document.draft.mouse) { return "No shortcuts configured" }
@@ -2624,7 +2670,9 @@ final class AppModel: ObservableObject {
         guard activeMouseLease != nil else { return }
         sessionActivationRequested = true
         attemptedWheelRequest = nil
-        isWheelApplyPending = document.draft.mouse?.wheelInverted != nil || wheelHighResolutionDraft != nil || boltStatus.wheel.isOwned
+        let canApplyDirection = boltStatus.supportsManagement || boltStatus.wheel.supportsInversion
+        isWheelApplyPending = (canApplyDirection && document.draft.mouse?.wheelInverted != nil) ||
+            wheelHighResolutionDraft != nil || boltStatus.wheel.isOwned
         requestReconciliation()
     }
 
@@ -2801,15 +2849,16 @@ final class AppModel: ObservableObject {
             guard document.draft != validated else { return }
             revokeLogitechSetup()
             revokeBoltPairing()
-            if document.draft.mouse?.wheelInverted != validated.mouse?.wheelInverted ||
+            let updatesActiveMouse = selectedMouseID != nil && selectedMouseID == activeMouseLease?.ownerID
+            if updatesActiveMouse && (document.draft.mouse?.wheelInverted != validated.mouse?.wheelInverted ||
                 document.draft.mouse?.wheelHighResolution != validated.mouse?.wheelHighResolution ||
-                (document.draft.mouse?.wheelScrollAmount != nil && validated.mouse?.wheelScrollAmount == nil) {
+                (document.draft.mouse?.wheelScrollAmount != nil && validated.mouse?.wheelScrollAmount == nil)) {
                 bolt.suspendScrollAdmission()
                 scrollSender.reset()
                 attemptedWheelRequest = nil
             }
-            if document.draft.mouse?.thumbwheelInverted != validated.mouse?.thumbwheelInverted ||
-                document.draft.mouse?.thumbwheelScrollAmount != validated.mouse?.thumbwheelScrollAmount {
+            if updatesActiveMouse && (document.draft.mouse?.thumbwheelInverted != validated.mouse?.thumbwheelInverted ||
+                document.draft.mouse?.thumbwheelScrollAmount != validated.mouse?.thumbwheelScrollAmount) {
                 bolt.suspendThumbwheelAdmission()
                 thumbwheelScrollSender.reset()
                 attemptedThumbwheelRequest = nil
@@ -3218,7 +3267,7 @@ final class AppModel: ObservableObject {
 
     var canEditConfiguration: Bool { !isRestarting && !isLoading && !configurationLoadFailed }
     private var canStartWheelApply: Bool {
-        canClaimConnectedMouse && isSelectedMouseRuntimeTarget && admissibleMouseID != nil && runtimeIdentityVerified && boltStatus.supportsManagement && !isRestarting && !isLoading && hasUsableConfiguration &&
+        canClaimConnectedMouse && isSelectedMouseRuntimeTarget && admissibleMouseID != nil && runtimeIdentityVerified && !isRestarting && !isLoading && hasUsableConfiguration &&
             [.ready, .enabled].contains(boltStatus.phase) &&
             !boltStatus.cleanupUncertain && boltStatus.wheel.support == .supported &&
             !boltStatus.wheel.isApplying && (try? document.draft.validated()) != nil
@@ -3273,70 +3322,86 @@ final class AppModel: ObservableObject {
             guard !isBoltReceiverManagementActive, boltReceiverManagementCloseTask == nil else { continue }
             guard let lease = activeMouseLease, sessionActivationRequested, !isRestarting, !isLoading, hasUsableConfiguration,
                   !discoveryPending, [.ready, .enabled].contains(boltStatus.phase),
-                  !boltStatus.cleanupUncertain, runtimeIdentityVerified, boltStatus.supportsManagement, boltStatus.generation > lease.statusGenerationFloor else { continue }
+                  !boltStatus.cleanupUncertain, runtimeIdentityVerified,
+                  (boltStatus.supportsManagement || boltStatus.wheel.support == .supported),
+                  boltStatus.generation > lease.statusGenerationFloor else { continue }
             let intent = lifecycleIntent
+            let physicalMainWheelOnly = !boltStatus.supportsManagement
             let wheel = WheelRequest(
-                inverted: runtimeMouse?.wheelInverted,
+                inverted: physicalMainWheelOnly && !boltStatus.wheel.supportsInversion ? nil : runtimeMouse?.wheelInverted,
                 highResolution: runtimeMouse?.wheelHighResolution,
-                amount: runtimeMouse?.wheelScrollAmount,
-                postingAllowed: !scrollReleasePending && !scrollPostingFailed && permission == .granted && (runtimeMouse?.wheelScrollAmount == nil || scrollSender.canPostEvents()),
+                amount: physicalMainWheelOnly ? nil : runtimeMouse?.wheelScrollAmount,
+                postingAllowed: !physicalMainWheelOnly && !scrollReleasePending && !scrollPostingFailed && permission == .granted &&
+                    (runtimeMouse?.wheelScrollAmount == nil || scrollSender.canPostEvents()),
                 restorePreviousSettingsOnDisconnect: runtimeRestorePreviousSettings
             )
             if attemptedWheelRequest != wheel {
                 let previous = attemptedWheelRequest
+                let hasPhysicalWheelIntent = wheel.inverted != nil || wheel.highResolution != nil || boltStatus.wheel.isOwned ||
+                    previous?.inverted != nil || previous?.highResolution != nil ||
+                    wheel.restorePreviousSettingsOnDisconnect || previous?.restorePreviousSettingsOnDisconnect == true
+                let hasAmountIntent = wheel.amount != nil || previous?.amount != nil
                 if boltStatus.wheel.support == .supported &&
-                    (wheel.inverted != nil || wheel.highResolution != nil || wheel.amount != nil || previous?.amount != nil || boltStatus.wheel.isOwned ||
-                     previous?.inverted != nil || previous?.highResolution != nil ||
-                     wheel.restorePreviousSettingsOnDisconnect || previous?.restorePreviousSettingsOnDisconnect == true) {
+                    (hasPhysicalWheelIntent || (!physicalMainWheelOnly && hasAmountIntent)) {
                     attemptedWheelRequest = wheel
                     isWheelApplyPending = true
                     await performMouseOperation(for: lease) { session in
-                        await session.applyWheelPreferences(
-                            inverted: wheel.inverted,
-                            highResolution: wheel.highResolution,
-                            restorePreviousSettingsOnDisconnect: wheel.restorePreviousSettingsOnDisconnect,
-                            amount: wheel.amount,
-                            scrollPostingAllowed: wheel.postingAllowed
-                        )
+                        if physicalMainWheelOnly {
+                            await session.applyWheelPreferences(
+                                inverted: wheel.inverted,
+                                highResolution: wheel.highResolution,
+                                restorePreviousSettingsOnDisconnect: wheel.restorePreviousSettingsOnDisconnect
+                            )
+                        } else {
+                            await session.applyWheelPreferences(
+                                inverted: wheel.inverted,
+                                highResolution: wheel.highResolution,
+                                restorePreviousSettingsOnDisconnect: wheel.restorePreviousSettingsOnDisconnect,
+                                amount: wheel.amount,
+                                scrollPostingAllowed: wheel.postingAllowed
+                            )
+                        }
                     }
                     guard lifecycleIntent == intent, owns(lease) else { continue }
-                    if !wheel.postingAllowed { scrollReleasePending = false }
+                    if !physicalMainWheelOnly && !wheel.postingAllowed { scrollReleasePending = false }
                     isWheelApplyPending = false
                     reconciliationRequested = true
                     continue
                 }
             }
-            let thumbwheel = ThumbwheelRequest(
-                inverted: runtimeMouse?.thumbwheelInverted,
-                amount: runtimeMouse?.thumbwheelScrollAmount,
-                postingAllowed: !thumbwheelReleasePending && !thumbwheelPostingFailed && permission == .granted &&
-                    (runtimeMouse?.thumbwheelScrollAmount == nil || thumbwheelScrollSender.canPostEvents()),
-                restorePreviousSettingsOnDisconnect: runtimeRestorePreviousSettings
-            )
-            if attemptedThumbwheelRequest != thumbwheel {
-                let previous = attemptedThumbwheelRequest
-                let hasIntent = thumbwheel.inverted != nil || thumbwheel.amount != nil ||
-                    previous?.inverted != nil || previous?.amount != nil || boltStatus.thumbwheel.isOwned ||
-                    thumbwheel.restorePreviousSettingsOnDisconnect || previous?.restorePreviousSettingsOnDisconnect == true
-                let hasConfiguredValue = thumbwheel.inverted != nil || thumbwheel.amount != nil
-                let canApply = boltStatus.thumbwheel.support == .supported ||
-                    (boltStatus.thumbwheel.support == .unknown && hasConfiguredValue)
-                if hasIntent && canApply {
-                    attemptedThumbwheelRequest = thumbwheel
-                    isThumbwheelApplyPending = true
-                    await performMouseOperation(for: lease) { session in
-                        await session.applyThumbwheelPreferences(
-                            inverted: thumbwheel.inverted,
-                            amount: thumbwheel.amount,
-                            restorePreviousSettingsOnDisconnect: thumbwheel.restorePreviousSettingsOnDisconnect,
-                            scrollPostingAllowed: thumbwheel.postingAllowed
-                        )
+            if boltStatus.supportsManagement {
+                let thumbwheel = ThumbwheelRequest(
+                    inverted: runtimeMouse?.thumbwheelInverted,
+                    amount: runtimeMouse?.thumbwheelScrollAmount,
+                    postingAllowed: !thumbwheelReleasePending && !thumbwheelPostingFailed && permission == .granted &&
+                        (runtimeMouse?.thumbwheelScrollAmount == nil || thumbwheelScrollSender.canPostEvents()),
+                    restorePreviousSettingsOnDisconnect: runtimeRestorePreviousSettings
+                )
+                if attemptedThumbwheelRequest != thumbwheel {
+                    let previous = attemptedThumbwheelRequest
+                    let hasIntent = thumbwheel.inverted != nil || thumbwheel.amount != nil ||
+                        previous?.inverted != nil || previous?.amount != nil || boltStatus.thumbwheel.isOwned ||
+                        thumbwheel.restorePreviousSettingsOnDisconnect || previous?.restorePreviousSettingsOnDisconnect == true
+                    let hasConfiguredValue = thumbwheel.inverted != nil || thumbwheel.amount != nil
+                    let canApply = boltStatus.thumbwheel.support == .supported ||
+                        (boltStatus.thumbwheel.support == .unknown && hasConfiguredValue)
+                    if hasIntent && canApply {
+                        attemptedThumbwheelRequest = thumbwheel
+                        isThumbwheelApplyPending = true
+                        await performMouseOperation(for: lease) { session in
+                            await session.applyThumbwheelPreferences(
+                                inverted: thumbwheel.inverted,
+                                amount: thumbwheel.amount,
+                                restorePreviousSettingsOnDisconnect: thumbwheel.restorePreviousSettingsOnDisconnect,
+                                scrollPostingAllowed: thumbwheel.postingAllowed
+                            )
+                        }
+                        guard lifecycleIntent == intent, owns(lease) else { continue }
+                        if !thumbwheel.postingAllowed { thumbwheelReleasePending = false }
+                        isThumbwheelApplyPending = false
+                        reconciliationRequested = true
+                        continue
                     }
-                    guard lifecycleIntent == intent, owns(lease) else { continue }
-                    if !thumbwheel.postingAllowed { thumbwheelReleasePending = false }
-                    isThumbwheelApplyPending = false
-                    reconciliationRequested = true
-                    continue
                 }
             }
             let enabled = shouldEnableButtons

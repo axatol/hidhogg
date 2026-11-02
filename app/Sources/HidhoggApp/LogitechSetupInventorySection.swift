@@ -27,7 +27,6 @@ struct LogitechSetupInventorySection: View {
                 if candidates.isEmpty && !isLoading && message == nil {
                     Text("No paired Logitech mice were found.")
                         .foregroundStyle(.secondary)
-                        .padding(.vertical, 4)
                 }
 
                 ForEach(candidates) { candidate in
@@ -41,6 +40,7 @@ struct LogitechSetupInventorySection: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .cardContentPadding()
         } label: {
             HStack {
                 Label("Existing Mice", systemImage: "computermouse")

@@ -273,7 +273,7 @@ struct D200XPresetChooserView: View {
                             assignmentLine(title: "Right", presentation: pair.1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
+                        .cardContentPadding()
                     }
                     Text("Applying this preset changes both rotation assignments together. Press and appearance stay as they are.")
                         .font(.callout)
@@ -432,7 +432,7 @@ struct D200XPresetChooserView: View {
                 )
                 .frame(width: control == .key13 ? 220 : 110, height: 110)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
         }
     }

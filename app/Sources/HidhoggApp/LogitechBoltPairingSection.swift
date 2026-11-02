@@ -60,6 +60,7 @@ struct LogitechBoltPairingSection: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .cardContentPadding()
         } label: {
             Label("Logi Bolt", systemImage: "cable.connector")
         }

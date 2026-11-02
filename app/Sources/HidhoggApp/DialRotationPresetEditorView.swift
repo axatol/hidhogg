@@ -81,7 +81,7 @@ struct DialRotationPresetEditorView: View {
                 TextField("Name", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .disabled(!model.canEdit)
-                    .padding(.vertical, 4)
+                    .cardContentPadding()
             }
 
             rotationActionEditor(title: "Rotate Left", draft: $leftAction)

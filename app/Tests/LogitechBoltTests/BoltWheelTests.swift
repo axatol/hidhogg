@@ -1761,3 +1761,39 @@ func wheelCaptureAmountOffPreflightsFinalPhysicalRestorationBeforeReleasingCaptu
     #expect(await recorder.last?.cleanupUncertain == false)
     #expect(await recorder.last?.wheel.captureActive == false)
 }
+
+
+@Test func wheelOwnedResolutionRejectsLostLegacyCapabilityBeforeCleanup() async {
+    let fixture = WheelFixture()
+    let controller = BoltController(makeTransport: { WheelChannel(fixture) })
+    let recorder = WheelRecorder()
+    let reader = watchWheel(controller, recorder)
+    defer { reader.cancel() }
+    await controller.discover()
+    await controller.applyWheelPreferences(inverted: nil, highResolution: true, restorePreviousSettingsOnDisconnect: true)
+    #expect(await fixture.writes == [[2]])
+    await fixture.setCapabilities([12, 0])
+    await controller.applyWheelPreferences(inverted: nil, highResolution: false, restorePreviousSettingsOnDisconnect: true)
+    #expect(await wheelEventually { await recorder.last?.cleanupUncertain == true })
+    #expect(await fixture.writes == [[2]])
+    #expect(await controller.stopForRestart() == false)
+}
+
+
+@Test func wheelCaptureRejectsLostLegacyCapabilityBeforeCleanup() async {
+    let fixture = WheelFixture()
+    await fixture.configure(capabilities: [12, 8])
+    let controller = BoltController(scrollPostingPreflight: { true }, makeTransport: { WheelChannel(fixture) })
+    let recorder = WheelRecorder()
+    let reader = watchWheel(controller, recorder)
+    defer { reader.cancel() }
+    await controller.discover()
+    await controller.applyWheelPreferences(inverted: nil, highResolution: nil, restorePreviousSettingsOnDisconnect: true,
+                                          amount: 2, scrollPostingAllowed: true)
+    #expect(await fixture.writes == [[1]])
+    await fixture.setCapabilities([12, 0])
+    await controller.enable()
+    #expect(await wheelEventually { await recorder.last?.cleanupUncertain == true })
+    #expect(await fixture.writes == [[1]])
+    #expect(await controller.stopForRestart() == false)
+}

@@ -536,6 +536,33 @@ private actor EndpointFixtureAudit {
     private(set) var setterRequestCount = 0
     private(set) var openedEndpoints: [UInt64] = []
     private(set) var closedEndpoints: [UInt64] = []
+    var wheelRoot: [UInt8] = [0, 0, 0]
+    var wheelCapabilities: [UInt8] = [12, 8]
+    var wheelModeReply: [UInt8] = [0, 0]
+    var wheelWrites: [[UInt8]] = []
+    var nonWheelReads = 0
+    var nonWheelSetterRequests = 0
+
+    func configureWheel(root: [UInt8], capabilities: [UInt8] = [12, 8], mode: [UInt8] = [0, 0]) {
+        wheelRoot = root
+        wheelCapabilities = capabilities
+        wheelModeReply = mode
+    }
+
+    func setWheelMode(_ reply: [UInt8]) { wheelModeReply = reply }
+
+    func wheelRequest(function: UInt8, parameters: [UInt8]) throws -> [UInt8] {
+        switch function {
+        case 0: return wheelCapabilities
+        case 1: return wheelModeReply
+        case 2:
+            wheelWrites.append(parameters)
+            wheelModeReply = parameters + [0]
+            return [0, 0, 0]
+        default: throw BoltFailure.unsupported
+        }
+    }
+
     private var buttonStates: [UInt16: UInt8] = [0x53: 0, 0x56: 0]
     private var identityProbeCount = 0
     private var identityProbeAwaitingData = false
@@ -547,6 +574,8 @@ private actor EndpointFixtureAudit {
     func closed(_ key: UInt64) { closedEndpoints.append(key) }
     func request(feature: UInt8, function: UInt8) {
         if function == 3 { setterRequestCount += 1 }
+        if feature == 0x1B { nonWheelReads += 1 }
+        if function == 2, feature != 0x1B, feature != wheelRoot.first { nonWheelSetterRequests += 1 }
     }
     func noteIdentityProbeRoot() { identityProbeAwaitingData = true }
     func pauseNextIdentityProbe() { pauseIdentityProbeOnRead = identityProbeCount + 1 }
@@ -646,9 +675,14 @@ private struct EndpointFixtureTransport: BoltTransport {
         if feature == 0, function == 0 {
             switch parameters {
             case [0x1B, 0x04]: return [0x1B, 0, 5]
-            case [0x21, 0x21], [0x21, 0x50]: return [0, 0, 0]
+            case [0x21, 0x21]: return await audit.wheelRoot
+            case [0x21, 0x50]: return [0, 0, 0]
             default: throw BoltFailure.unavailable
             }
+        }
+        let wheelIndex = await audit.wheelRoot.first
+        if feature == wheelIndex, feature != 0 {
+            return try await audit.wheelRequest(function: function, parameters: parameters)
         }
         guard feature == 0x1B else { throw BoltFailure.unavailable }
         switch function {
@@ -682,4 +716,149 @@ private struct EndpointFixtureTransport: BoltTransport {
         }
         return [0, 0, 0]
     }
+}
+
+
+@Test(arguments: [UInt8(0x17), 0x2A])
+func mx4WheelDiscoversIndependentlyAndRestoresOnlyPhysicalFields(index: UInt8) async {
+    let payload: [UInt8] = [0, 1, 2, 3, 4, 0, 2, 0xB0, 0x42, 0, 0, 0, 0]
+    let locator = LogitechEndpointLocator(id: UUID(), key: 71, connection: .bolt, productID: 0xC548)
+    let audit = EndpointFixtureAudit()
+    await audit.configureWheel(root: [index, 0, 1])
+    let catalog = EndpointFixtureCatalog(endpoints: [locator], payloads: [71: payload], audit: audit)
+    let controller = BoltController(scrollPostingPreflight: { true }, makeTransport: {
+        EndpointFixtureTransport(locator: locator, payload: payload, audit: audit)
+    }, endpointCatalog: catalog, requiresExplicitAssociation: true)
+    let statuses = EndpointStatusRecorder()
+    let reader = Task { for await event in controller.events { await statuses.append(event) } }
+    defer { reader.cancel() }
+    guard let candidate = try? await controller.existingConnections().first else {
+        Issue.record("Missing synthetic MX4 candidate.")
+        return
+    }
+    let target = LogitechConnectionTarget(model: .mxMaster4,
+        association: LogitechAssociation(identity: candidate.identity, preferredConnection: .bolt), candidateID: candidate.id)
+    await controller.discover(target: target)
+    #expect(await endpointEventually { await statuses.last?.phase == .ready })
+    #expect(await statuses.last?.wheel.support == .supported)
+    #expect(await statuses.last?.supportsManagement == false)
+    #expect(await audit.wheelWrites.isEmpty)
+    #expect(await audit.nonWheelReads == 0)
+    await controller.applyWheelPreferences(inverted: true, highResolution: true, restorePreviousSettingsOnDisconnect: true)
+    #expect(await audit.wheelWrites == [[6]])
+    await controller.enable()
+    await controller.applyThumbwheelPreferences(inverted: true, amount: 2, restorePreviousSettingsOnDisconnect: true, scrollPostingAllowed: true)
+    await controller.applyWheelPreferences(inverted: false, highResolution: false, restorePreviousSettingsOnDisconnect: true, amount: 2, scrollPostingAllowed: true)
+    #expect(await audit.wheelWrites == [[6]])
+    #expect(await audit.setterRequestCount == 0)
+    #expect(await audit.nonWheelSetterRequests == 0)
+    #expect(await statuses.last?.wheel.captureActive == false)
+    #expect(await controller.stopForRestart())
+    #expect(await audit.wheelWrites == [[6], [0]])
+    await controller.discover(target: target)
+    #expect(await endpointEventually { await statuses.last?.wheel.support == .supported })
+    #expect(await audit.wheelWrites == [[6], [0]])
+    #expect(await controller.stopForRestart())
+}
+
+
+private func mx4WheelSession(root: [UInt8] = [23, 0, 1], capabilities: [UInt8] = [12, 8], mode: [UInt8] = [0, 0],
+                             limits: EndpointFixtureLimits = .init()) async throws
+    -> (BoltController, EndpointFixtureAudit, EndpointStatusRecorder, Task<Void, Never>, LogitechConnectionTarget) {
+    let payload: [UInt8] = [0, 1, 2, 3, 4, 0, 2, 0xB0, 0x42, 0, 0, 0, 0]
+    let locator = LogitechEndpointLocator(id: UUID(), key: 72, connection: .bolt, productID: 0xC548)
+    let audit = EndpointFixtureAudit()
+    await audit.configureWheel(root: root, capabilities: capabilities, mode: mode)
+    let catalog = EndpointFixtureCatalog(endpoints: [locator], payloads: [72: payload], audit: audit, limits: limits)
+    let controller = BoltController(scrollPostingPreflight: { true }, makeTransport: {
+        EndpointFixtureTransport(locator: locator, payload: payload, audit: audit, limits: limits)
+    }, endpointCatalog: catalog, requiresExplicitAssociation: true)
+    let statuses = EndpointStatusRecorder()
+    let reader = Task { for await event in controller.events { await statuses.append(event) } }
+    guard let candidate = try await controller.existingConnections().first else {
+        reader.cancel()
+        throw BoltFailure.unavailable
+    }
+    let target = LogitechConnectionTarget(model: .mxMaster4,
+        association: LogitechAssociation(identity: candidate.identity, preferredConnection: .bolt), candidateID: candidate.id)
+    await controller.discover(target: target)
+    return (controller, audit, statuses, reader, target)
+}
+
+@Test func mx4WheelResolutionOnlyPreservesUnsupportedDirectionAndRestoresOwnedBit() async throws {
+    let (controller, audit, statuses, reader, _) = try await mx4WheelSession(capabilities: [12, 0], mode: [4, 0])
+    defer { reader.cancel() }
+    #expect(await endpointEventually { await statuses.last?.wheel.support == .supported })
+    #expect(await statuses.last?.wheel.supportsInversion == false)
+    await controller.applyWheelPreferences(inverted: true, highResolution: true, restorePreviousSettingsOnDisconnect: true)
+    #expect(await audit.wheelWrites.isEmpty)
+    #expect(await statuses.last?.phase == .ready)
+    await controller.applyWheelPreferences(inverted: nil, highResolution: true, restorePreviousSettingsOnDisconnect: true)
+    #expect(await audit.wheelWrites == [[6]])
+    #expect(await statuses.last?.wheel.supportsInversion == false)
+    #expect(await controller.stopForRestart())
+    #expect(await audit.wheelWrites == [[6], [4]])
+}
+
+@Test(arguments: [0, 1, 2, 3, 4, 5, 6])
+func mx4WheelInvalidDiscoveryRemainsConnectedWithoutWrites(kind: Int) async throws {
+    let roots: [[UInt8]] = [[0, 0, 0], [23, 0, 2], [23, 0], [23, 0, 1], [23, 0, 1], [23, 0, 1], [23, 0, 1]]
+    let caps: [UInt8] = kind == 3 ? [12] : [12, 8]
+    let modes: [[UInt8]] = [[0, 0], [0, 0], [0, 0], [0, 0], [0], [1, 0], [0, 1]]
+    let (controller, audit, statuses, reader, _) = try await mx4WheelSession(root: roots[kind], capabilities: caps, mode: modes[kind])
+    defer { reader.cancel() }
+    #expect(await endpointEventually { await statuses.last?.phase == .ready })
+    #expect(await statuses.last?.wheel.support == .unsupported)
+    #expect(await statuses.last?.wheel.supportsInversion == false)
+    await controller.applyWheelPreferences(inverted: true, highResolution: true, restorePreviousSettingsOnDisconnect: true)
+    #expect(await audit.wheelWrites.isEmpty)
+    #expect(await audit.nonWheelReads == 0)
+    #expect(await controller.stopForRestart())
+}
+
+@Test(arguments: [0, 1, 2])
+func mx4WheelCleanupRefusesRemappedFeatureLostCapabilityOrForeignMode(kind: Int) async throws {
+    let (controller, audit, statuses, reader, _) = try await mx4WheelSession()
+    defer { reader.cancel() }
+    await controller.applyWheelPreferences(inverted: true, highResolution: true, restorePreviousSettingsOnDisconnect: true)
+    #expect(await audit.wheelWrites == [[6]])
+    if kind == 0 { await audit.configureWheel(root: [42, 0, 1], mode: [6, 0]) }
+    if kind == 1 { await audit.configureWheel(root: [23, 0, 1], capabilities: [12, 0], mode: [6, 0]) }
+    if kind == 2 { await audit.setWheelMode([2, 0]) }
+    #expect(await controller.stopForRestart() == false)
+    #expect(await audit.wheelWrites == [[6]])
+    #expect(await endpointEventually { await statuses.last?.cleanupUncertain == true })
+}
+
+@Test func mx4WheelIdentityAwaitCannotAuthorizeChangedMode() async throws {
+    let (controller, audit, statuses, reader, _) = try await mx4WheelSession()
+    defer { reader.cancel() }
+    await audit.pauseNextIdentityProbe()
+    let apply = Task { await controller.applyWheelPreferences(inverted: true, highResolution: true, restorePreviousSettingsOnDisconnect: true) }
+    #expect(await endpointEventually { await audit.identityProbePaused })
+    await audit.setWheelMode([2, 0])
+    await audit.resumeIdentityProbe()
+    await apply.value
+    #expect(await audit.wheelWrites.isEmpty)
+    #expect(await endpointEventually { await statuses.last?.cleanupUncertain == true })
+}
+
+@Test(arguments: [false, true])
+func mx4WheelCaptureOverloadCannotActivateEvenWithNilAmount(posting: Bool) async throws {
+    let (controller, audit, statuses, reader, _) = try await mx4WheelSession()
+    defer { reader.cancel() }
+    await controller.applyWheelPreferences(inverted: true, highResolution: true, restorePreviousSettingsOnDisconnect: true,
+                                          amount: nil, scrollPostingAllowed: posting)
+    #expect(await audit.wheelWrites.isEmpty)
+    #expect(await statuses.last?.wheel.captureActive == false)
+    #expect(await statuses.last?.wheel.support == .supported)
+    #expect(await controller.stopForRestart())
+}
+
+@Test(arguments: [UInt16(0), 0x1700, 0x1701, 0x1702, 0x0001, 0x0900])
+func mx4WheelReservesFreshContractIdentityAndRollbackPools(pool: UInt16) async throws {
+    let (controller, audit, _, reader, _) = try await mx4WheelSession(limits: .init(available: [pool: 1]))
+    defer { reader.cancel() }
+    await controller.applyWheelPreferences(inverted: true, highResolution: true, restorePreviousSettingsOnDisconnect: true)
+    #expect(await audit.wheelWrites.isEmpty)
 }

@@ -160,7 +160,7 @@ struct D200XAutomationEditorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .cardContentPadding()
             }
 
             if let automationMessage = model.automationMessage {

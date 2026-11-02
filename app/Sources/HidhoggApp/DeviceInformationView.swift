@@ -17,7 +17,7 @@ struct DeviceInformationView: View {
                     }
                     if presentation.isConnected {
                         LabeledContent("Identity", value: model.selectedMouseStatus.verifiedIdentity == registration.logitechAssociation?.identity ? "Verified" : "Unavailable")
-                        LabeledContent("Capabilities", value: model.selectedMouseSupportsManagement ? "Buttons and supported wheel controls" : "Basic information; control writes unsupported")
+                        LabeledContent("Capabilities", value: model.selectedDeviceCapabilitySummary)
                     }
                 }
                 if presentation.isConnected, model.selectedMouseStatus.deviceInformation.firmwareState == .available {
@@ -46,7 +46,7 @@ struct DeviceInformationView: View {
                 }
                 .disabled(!model.canRefreshDeviceInformation)
             }
-            .padding(8)
+            .cardContentPadding()
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
