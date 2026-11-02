@@ -3135,3 +3135,7 @@ Model11pass, independentreviewclear. Fullfirstfailedsetuptesttarget-start/AsyncS
 ## CPU acceptance and DPI follow-up — 2 November 2026
 
 Owner reports window freezing seems resolved, but DPI cannot be set. Close CPU interaction acceptance only; no heap-profile or broader hardware acceptance inferred. Prepare automatic local dependency-closed check-in of tested settings prerequisites/CPU fix, preserving DPI V2 read-only and deferred pointer gates. Public primary-source DPI compatibility research continues; no guessed writer or live device operation. Source333hashes unchanged from1,098case gate.
+
+## Local check-in and DPI proposal — 2 November 2026
+
+Committed43-path dependency-closed settings/acceptedCPU checkpoint4bd7931, parent5973d41;333 committed input hashes match1,098case tested/signed4013fd4. No push. New read-only primary-source comparison confirms Solaar/libratbag legacy3parameter DPI writes with no versionbranch; transport padding differs, and unknownV2level semantics remain unproven. Hidhogg alwayssendslong20byteframes, so omittingargumentstillzeropadsit. Concrete optional compatibility plan docs/dpi-v2-compatibility-plan.md is proposed for owner approval, no new code or device writes.

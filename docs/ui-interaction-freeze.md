@@ -11,7 +11,7 @@
 - [x] Fix confirmed cause and pass same-case/full-domain regressions.
 - [x] Independent review, full offline gate, strict signed delivery.
 - [x] Owner reports the freezing seems resolved on the delivered fix.
-- [ ] Commit accepted dependency-closed scope automatically.
+- [x] Local dependency-closed checkpoint committed as4bd7931 after owner confirmation.
 - [ ] Return to shared interactive3S/MX4 canvas proposal after layout-plan confirmation.
 
 ## Evidence and cause
