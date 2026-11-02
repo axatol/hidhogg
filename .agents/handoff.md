@@ -1,5 +1,13 @@
 # Current handoff
 
+## BOLT-CRASH-04 owner-verified checkpoint — 2 November 2026
+
+Owner reports no further crash so far and believes the fix is working. Treat this as current-use acceptance for a local native-fix checkpoint; duration and explicit receiver-removal/stress coverage were not reported. Do not claim permanent stability or acceptance of the separate naming/layout changes.
+
+Accepted scope: private native IOHID clients, nonreused callback tokens with admission/drain, immutable input-buffer ownership by actual native objects, and sticky unverified registration-rollback cleanup. Signed normal build40529d5e passed1,187 offline tests and329optimizedASanbackend tests; all363manifest hashes match. Native-only overlay on the committed baseline independently passed313backendtests in /Volumes/Data/tmp/hidhogg-native-commit-check/tests.log. Onlyfour native source/test paths and related native documentation are being committed. Other naming/layout source and documentation remain uncommitted and untouched.
+
+After check-in, approved MX3S/MX4 interactive mouse diagrams remain the next feature; no artwork/source changes started. Preserve existing dirty naming/layout scope. No push, production launch or hardware operation by the agent. Raw crash reports remain locally excluded. Reopen crash investigation if symptoms recur; current evidence does not prove every prior SwiftUI crash had the same cause.
+
 ## Receiver switching accepted; naming approved — 2 November 2026
 
 Owner confirms replacement receiver switching works. Commit the tested dependency-closed BOLT-RECOVERY-02 checkpoint, including its offline regression harness and fixed-string diagnostics. The post-navigation crash remains OPEN: it recurred on e94f7423, with approved bounded report fields showing main-thread CoreText truncation/text measurement EXC_BAD_ACCESS/SIGBUS at 17:40:43 AEST. This is evidence of the failure location, not a proven cause. No crash fix or crash acceptance is claimed. All 348 frozen inputs still match the tested/signed checkpoint.

@@ -86,11 +86,19 @@ final class IOKitBoltTransport: BoltReceiverTransport, @unchecked Sendable {
 }
 
 private final class BoltHIDSend {
-    weak var worker: BoltHIDWorker?
+    static let completion: IOHIDReportCallback = { context, result, _, _, _, _, _ in
+        guard let context else { return }
+        let packet = Unmanaged<BoltHIDSend>.fromOpaque(context).takeRetainedValue()
+        BoltHIDCallbackRegistry.shared.withOwner(packet.callbackToken) { worker in
+            worker.completeSend(result)
+        }
+    }
+
+    let callbackToken: UnsafeMutableRawPointer?
     let bytes: UnsafeMutablePointer<UInt8>
 
     init(worker: BoltHIDWorker, frame: [UInt8]) {
-        self.worker = worker
+        callbackToken = worker.callbackToken
         bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: frame.count)
         bytes.initialize(from: frame, count: frame.count)
     }
@@ -113,11 +121,14 @@ final class BoltHIDWorker: @unchecked Sendable {
     private var acceptedSubmissions = 0
     private var closeScheduled = false
     private var closeResult: BoltTransportCloseResult = .unverified
+    private var nativeTeardownUnverified = false
     private var closeWaiters: [CheckedContinuation<BoltTransportCloseResult, Never>] = []
-    private var device: IOHIDDevice?
-    private var manager: IOHIDManager?
-    private var outputElement: IOHIDElement?
-    private var input = UnsafeMutablePointer<UInt8>.allocate(capacity: 256)
+    private var device: BoltNativeDevice?
+    private var manager: BoltNativeManager?
+    private var outputElement: BoltNativeOutputElement?
+    private let native: any BoltHIDNativeAPI
+    private var input: BoltHIDInputBuffer?
+    fileprivate var callbackToken: UnsafeMutableRawPointer?
     private var removed = false
     private var inputFailed = false
     private var notificationStopped = false
@@ -139,14 +150,11 @@ final class BoltHIDWorker: @unchecked Sendable {
     private(set) var nativeInputDiagnostics = BoltNativeInputDiagnostics(available: true)
 
     init(connection: LogitechConnection = .bolt, selectedEndpoint: IOKitEndpointHandle? = nil,
-         requireEndpoint: Bool = false) {
+         requireEndpoint: Bool = false, native: any BoltHIDNativeAPI = IOKitBoltNativeAPI()) {
+        self.native = native
         self.connection = connection
         self.selectedEndpoint = selectedEndpoint
         self.requireEndpoint = requireEndpoint
-    }
-
-    deinit {
-        input.deallocate()
     }
 
     var submissionsSealed: Bool { lock.withLock { !acceptingSubmissions } }
@@ -244,104 +252,63 @@ final class BoltHIDWorker: @unchecked Sendable {
     }
 
     func open() throws {
-        guard device == nil else { throw BoltFailure.transport }
+        guard device == nil, !nativeTeardownUnverified else { throw BoltFailure.transport }
         nativeInputDiagnostics = .init(available: true)
-        let manager = IOHIDManagerCreate(nil, IOOptionBits(kIOHIDOptionsTypeNone))
+        let manager = native.makeManager(connection: connection)
         self.manager = manager
-        let matching: [[String: Any]] = switch connection {
-        case .bolt:
-            [[kIOHIDVendorIDKey as String: LogitechEndpointEligibility.vendorID,
-              kIOHIDProductIDKey as String: LogitechEndpointEligibility.boltProductID,
-              kIOHIDTransportKey as String: kIOHIDTransportUSBValue]]
-        case .bluetooth:
-            LogitechEndpointEligibility.bluetoothProductIDs.sorted().map {
-                [kIOHIDVendorIDKey as String: LogitechEndpointEligibility.vendorID,
-                 kIOHIDProductIDKey as String: $0]
-            }
-        }
-        IOHIDManagerSetDeviceMatchingMultiple(manager, matching as CFArray)
-        let selected: IOHIDDevice
+        let selected: BoltNativeDevice
         if let selectedEndpoint {
-            guard eligible(selectedEndpoint.device) else { throw BoltFailure.unavailable }
-            selected = selectedEndpoint.device
+            selected = native.catalogDevice(selectedEndpoint)
+            guard native.eligible(selected, connection: connection) else { throw BoltFailure.unavailable }
         } else {
-            guard !requireEndpoint,
-                  let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else { throw BoltFailure.unavailable }
-            let candidates = devices.filter { eligible($0) }
+            guard !requireEndpoint else { throw BoltFailure.unavailable }
+            let candidates = native.devices(manager).filter { native.eligible($0, connection: connection) }
             guard candidates.count == 1, let candidate = candidates.first else {
                 throw candidates.isEmpty ? BoltFailure.unavailable : BoltFailure.ambiguous
             }
             selected = candidate
         }
-        outputElement = connection == .bluetooth ? bluetoothOutputElement(for: selected) : nil
-        if connection == .bluetooth, outputElement == nil { throw BoltFailure.unavailable }
-        guard IOHIDDeviceOpen(selected, IOOptionBits(kIOHIDOptionsTypeNone)) == kIOReturnSuccess else { throw BoltFailure.transport }
-        device = selected
+        guard let key = native.registryKey(selected),
+              selectedEndpoint.map({ $0.key == key }) ?? true,
+              let privateDevice = native.makePrivateDevice(selected),
+              native.registryKey(privateDevice) == key,
+              native.eligible(privateDevice, connection: connection) else { throw BoltFailure.unavailable }
+        let output = connection == .bluetooth ? native.outputElement(privateDevice) : nil
+        if connection == .bluetooth, output == nil { throw BoltFailure.unavailable }
+        guard native.open(privateDevice) == kIOReturnSuccess else { throw BoltFailure.transport }
+        outputElement = output
+        device = privateDevice
         removed = false
         inputFailed = false
         notificationStopped = false
-        let context = Unmanaged.passUnretained(self).toOpaque()
-        IOHIDDeviceRegisterInputReportCallback(selected, input, 256, { context, result, _, type, reportID, bytes, count in
-            guard let context else { return }
-            Unmanaged<BoltHIDWorker>.fromOpaque(context).takeUnretainedValue().receive(result: result, type: type, reportID: reportID, bytes: bytes, count: count)
-        }, context)
-        IOHIDDeviceRegisterRemovalCallback(selected, { context, _, _ in
-            guard let context else { return }
-            let worker = Unmanaged<BoltHIDWorker>.fromOpaque(context).takeUnretainedValue()
-            worker.removed = true
-            _ = worker.sink?(.failure(.disconnected))
-            worker.emitReceiverFailure(.disconnected)
-        }, context)
-        IOHIDDeviceScheduleWithRunLoop(selected, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
-        IOHIDManagerRegisterDeviceMatchingCallback(manager, { context, _, _, added in
-            guard let context else { return }
-            let worker = Unmanaged<BoltHIDWorker>.fromOpaque(context).takeUnretainedValue()
-            guard added != worker.device, worker.eligible(added) else { return }
-            guard worker.selectedEndpoint == nil else { return }
-            worker.inputFailed = true
-            _ = worker.sink?(.failure(.ambiguous))
-            _ = worker.receiverSink?(.failure(.ambiguous))
-        }, context)
-        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        let buffer = BoltHIDInputBuffer()
+        input = buffer
+        let context = BoltHIDCallbackRegistry.shared.register(self)
+        callbackToken = context
+        guard native.registerInput(privateDevice, buffer: buffer, callback: BoltHIDCallbacks.inputReport, context: context) else {
+            _ = closeNativeHandle()
+            throw BoltFailure.transport
+        }
+        native.registerRemoval(privateDevice, callback: BoltHIDCallbacks.removalReport, context: context)
+        native.schedule(privateDevice)
+        native.registerMatching(manager, callback: BoltHIDCallbacks.matchingReport, context: context)
+        native.schedule(manager)
     }
 
-    private func eligible(_ device: IOHIDDevice) -> Bool {
-        let vendorID = (IOHIDDeviceGetProperty(device, kIOHIDVendorIDKey as CFString) as? NSNumber)?.intValue
-        let productID = (IOHIDDeviceGetProperty(device, kIOHIDProductIDKey as CFString) as? NSNumber)?.intValue
-        let transport = IOHIDDeviceGetProperty(device, kIOHIDTransportKey as CFString) as? String
-        let capacity = (IOHIDDeviceGetProperty(device, kIOHIDMaxInputReportSizeKey as CFString) as? NSNumber)?.intValue
-        guard let elements = IOHIDDeviceCopyMatchingElements(device, nil, IOOptionBits(kIOHIDOptionsTypeNone)) as? [IOHIDElement] else { return false }
-        if connection == .bluetooth { return bluetoothOutputElement(for: device) != nil }
-        let reportTypes = elements
-            .filter { IOHIDElementGetReportID($0) == LogitechEndpointEligibility.hidppReportID }
-            .map { (IOHIDElementGetReportID($0), IOHIDElementGetType($0).rawValue) }
-        return LogitechEndpointEligibility.isEligibleBolt(vendorID: vendorID, productID: productID,
-                                                           transport: transport, maxInputReportSize: capacity,
-                                                           reportIDs: reportTypes)
+    func receiveRemoval() {
+        removed = true
+        _ = sink?(.failure(.disconnected))
+        emitReceiverFailure(.disconnected)
     }
 
-    private func bluetoothOutputElement(for device: IOHIDDevice) -> IOHIDElement? {
-        guard let elements = IOHIDDeviceCopyMatchingElements(device, nil, IOOptionBits(kIOHIDOptionsTypeNone)) as? [IOHIDElement] else { return nil }
-        let vendorID = (IOHIDDeviceGetProperty(device, kIOHIDVendorIDKey as CFString) as? NSNumber)?.intValue
-        let productID = (IOHIDDeviceGetProperty(device, kIOHIDProductIDKey as CFString) as? NSNumber)?.intValue
-        let transport = IOHIDDeviceGetProperty(device, kIOHIDTransportKey as CFString) as? String
-        let outputs = elements.filter { element in
-            LogitechEndpointEligibility.bluetoothOutputIsEligible(
-                vendorID: vendorID, productID: productID, transport: transport,
-                output: LogitechBluetoothOutputDescriptor(
-                    reportID: IOHIDElementGetReportID(element),
-                    usagePage: IOHIDElementGetUsagePage(element),
-                    isOutput: IOHIDElementGetType(element) == kIOHIDElementTypeOutput,
-                    reportCount: IOHIDElementGetReportCount(element),
-                    reportSize: IOHIDElementGetReportSize(element)
-                )
-            )
-        }
-        let hasInput = elements.contains {
-            IOHIDElementGetReportID($0) == LogitechEndpointEligibility.hidppReportID
-                && [1, 2, 3, 4, 5].contains(IOHIDElementGetType($0).rawValue)
-        }
-        return outputs.count == 1 && hasInput ? outputs[0] : nil
+    func receiveMatching(_ added: BoltNativeDevice) {
+        guard let device, let addedKey = native.registryKey(added),
+              addedKey != native.registryKey(device),
+              native.eligible(added, connection: connection) else { return }
+        guard selectedEndpoint == nil else { return }
+        inputFailed = true
+        _ = sink?(.failure(.ambiguous))
+        _ = receiverSink?(.failure(.ambiguous))
     }
 
     func request(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8], optionalInformation: Bool = false) throws -> [UInt8] {
@@ -360,7 +327,7 @@ final class BoltHIDWorker: @unchecked Sendable {
         requestDeadline = sendDeadline + 4
         pendingSend = true
         if connection == .bluetooth {
-            guard let outputElement, transaction.frame.count == 20,
+            guard let raw = device.raw, let outputElement = outputElement?.raw, transaction.frame.count == 20,
                   transaction.frame[0] == 0x11, transaction.frame[1] == 0xFF else {
                 pendingSend = false
                 expected = nil
@@ -371,7 +338,7 @@ final class BoltHIDWorker: @unchecked Sendable {
                 guard let baseAddress = bytes.baseAddress,
                       let value = IOHIDValueCreateWithBytes(kCFAllocatorDefault, outputElement, 0,
                                                             baseAddress, bytes.count) else { return kIOReturnError }
-                return IOHIDDeviceSetValue(device, outputElement, value)
+                return IOHIDDeviceSetValue(raw, outputElement, value)
             }
             sendCompleted = ProcessInfo.processInfo.systemUptime
             sendResult = status
@@ -379,14 +346,8 @@ final class BoltHIDWorker: @unchecked Sendable {
         } else {
             let packet = BoltHIDSend(worker: self, frame: transaction.frame)
             let packetContext = Unmanaged.passRetained(packet).toOpaque()
-            let status = IOHIDDeviceSetReportWithCallback(device, kIOHIDReportTypeOutput, 0x11, packet.bytes, 20, 600, { context, result, _, _, _, _, _ in
-                guard let context else { return }
-                let packet = Unmanaged<BoltHIDSend>.fromOpaque(context).takeRetainedValue()
-                guard let worker = packet.worker else { return }
-                worker.sendCompleted = ProcessInfo.processInfo.systemUptime
-                worker.sendResult = result
-                worker.pendingSend = false
-            }, packetContext)
+            let status = native.sendReport(device, reportID: 0x11, bytes: packet.bytes, count: 20,
+                                           callback: BoltHIDSend.completion, context: packetContext)
             if status != kIOReturnSuccess {
                 Unmanaged<BoltHIDSend>.fromOpaque(packetContext).release()
                 pendingSend = false
@@ -440,15 +401,9 @@ final class BoltHIDWorker: @unchecked Sendable {
 
         let packet = BoltHIDSend(worker: self, frame: frame)
         let packetContext = Unmanaged.passRetained(packet).toOpaque()
-        let status = IOHIDDeviceSetReportWithCallback(device, kIOHIDReportTypeOutput, Int(frame[0]),
-                                                      packet.bytes, frame.count, 600, { context, result, _, _, _, _, _ in
-            guard let context else { return }
-            let packet = Unmanaged<BoltHIDSend>.fromOpaque(context).takeRetainedValue()
-            guard let worker = packet.worker else { return }
-            worker.sendCompleted = ProcessInfo.processInfo.systemUptime
-            worker.sendResult = result
-            worker.pendingSend = false
-        }, packetContext)
+        let status = native.sendReport(device, reportID: Int(frame[0]),
+                                       bytes: packet.bytes, count: frame.count,
+                                       callback: BoltHIDSend.completion, context: packetContext)
         if status != kIOReturnSuccess {
             Unmanaged<BoltHIDSend>.fromOpaque(packetContext).release()
             pendingSend = false
@@ -516,7 +471,7 @@ final class BoltHIDWorker: @unchecked Sendable {
         return try dispatchCancellationWithoutReply(device: device, request: request)
     }
 
-    private func dispatchCancellationWithoutReply(device: IOHIDDevice,
+    private func dispatchCancellationWithoutReply(device: BoltNativeDevice,
                                                   request: BoltReceiverRegisterRequest) throws -> BoltReceiverCancellationResult {
         let frame = request.frame()
         registerReply = nil
@@ -527,15 +482,9 @@ final class BoltHIDWorker: @unchecked Sendable {
 
         let packet = BoltHIDSend(worker: self, frame: frame)
         let packetContext = Unmanaged.passRetained(packet).toOpaque()
-        let status = IOHIDDeviceSetReportWithCallback(device, kIOHIDReportTypeOutput, Int(frame[0]),
-                                                      packet.bytes, frame.count, 600, { context, result, _, _, _, _, _ in
-            guard let context else { return }
-            let packet = Unmanaged<BoltHIDSend>.fromOpaque(context).takeRetainedValue()
-            guard let worker = packet.worker else { return }
-            worker.sendCompleted = ProcessInfo.processInfo.systemUptime
-            worker.sendResult = result
-            worker.pendingSend = false
-        }, packetContext)
+        let status = native.sendReport(device, reportID: Int(frame[0]),
+                                       bytes: packet.bytes, count: frame.count,
+                                       callback: BoltHIDSend.completion, context: packetContext)
         if status != kIOReturnSuccess {
             Unmanaged<BoltHIDSend>.fromOpaque(packetContext).release()
             pendingSend = false
@@ -556,6 +505,12 @@ final class BoltHIDWorker: @unchecked Sendable {
 
         registerLaneUncertain = true
         return .dispatchedUnconfirmed
+    }
+
+    fileprivate func completeSend(_ result: IOReturn) {
+        sendCompleted = ProcessInfo.processInfo.systemUptime
+        sendResult = result
+        pendingSend = false
     }
 
     func receive(result: IOReturn, type: IOHIDReportType, reportID: UInt32, bytes: UnsafeMutablePointer<UInt8>, count: CFIndex) {
@@ -643,19 +598,28 @@ final class BoltHIDWorker: @unchecked Sendable {
     }
 
     private func closeNativeHandle() -> BoltTransportCloseResult {
+        let context = callbackToken
+        BoltHIDCallbackRegistry.shared.retireAndWait(context)
+        callbackToken = nil
+        let result = tearDownNativeObjects(context: context)
+        input = nil
+        if result == .unverified { nativeTeardownUnverified = true }
+        return nativeTeardownUnverified ? .unverified : result
+    }
+
+    private func tearDownNativeObjects(context: UnsafeMutableRawPointer?) -> BoltTransportCloseResult {
         if let manager {
-            IOHIDManagerRegisterDeviceMatchingCallback(manager, nil, nil)
-            IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+            native.unregister(manager, context: context)
+            native.unschedule(manager)
         }
         guard let device else { manager = nil; return .closed }
         expected = nil
         expectedRegister = nil
         registerReply = nil
         registerFailure = nil
-        IOHIDDeviceRegisterInputReportCallback(device, input, 256, nil, nil)
-        IOHIDDeviceRegisterRemovalCallback(device, nil, nil)
-        IOHIDDeviceUnscheduleFromRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
-        let result = IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone))
+        native.unregister(device, context: context)
+        native.unschedule(device)
+        let result = native.close(device)
         self.device = nil
         outputElement = nil
         manager = nil

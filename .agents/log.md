@@ -3165,3 +3165,7 @@ Current source is uncommitted onmaster3e5e6ee; owner manual handover/challenge c
 ## 2 November 2026 — receiver acceptance and local naming
 
 Owner accepted receiver switching; post-navigation crash remains unresolved and recurred on e94f7423 in main-thread CoreText truncation. Offline layout tests do not establish a crash fix. The 348-input tested checkpoint is unchanged. NAME-01 local renaming is approved for all configured devices and receivers; hardware renaming is excluded and receiver labels require a stable identity.
+
+## 2 November 2026 — native callback fix accepted for local checkpoint
+
+Owner reports current use has not crashed and believes40529d5e is fixed. Commit only native callback ownership/admission/buffer/rollback code and regressions; retain unrelated naming/layout changes. Native-only baseline overlay313backendtests passed; signed full1,187/ASan329 and363hashes remain verified. Acceptance is observational, not a claim of permanent stability or a full hardware matrix. Diagrams remain the next approved feature. No push.
