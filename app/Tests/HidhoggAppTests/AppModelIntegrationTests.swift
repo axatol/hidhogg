@@ -336,6 +336,45 @@ final class AppModelIntegrationTests: XCTestCase {
         XCTAssertEqual(session.stopCount, 0)
     }
 
+    func testMouseClickAssignmentUsesForegroundOverrideAndPersistsUnderDeviceID() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let session = FixtureBindingSession()
+        var posted = [InputShortcut]()
+        let sender = ShortcutSender(accessibilityPreflight: { true }, preflight: { true }, request: { true },
+                                    postInputShortcut: { posted.append($0) })
+        let model = AppModel(configurationURL: url, store: ConfigurationStore(url: url), bolt: session,
+                             sender: sender, loadImmediately: false, observeSleep: false,
+                             frontmostApplication: { "com.example.browser" })
+        var configuration = AppConfiguration.empty
+        let defaultClick = MouseShortcut(button: .left, modifiers: [.command])
+        let overrideClick = MouseShortcut(button: .right, modifiers: [.option])
+        configuration.devices[0].defaults["thumbRest"] = .mouse(defaultClick)
+        configuration.devices[0].applications["com.example.browser"] = ["thumbRest": .mouse(overrideClick)]
+        model.updateDraft(configuration)
+        let id = try XCTUnwrap(model.registration(for: .mxMaster3S)?.id)
+        model.connect()
+        let enabled = await eventually { model.isBindingsEnabled }
+        XCTAssertTrue(enabled)
+        session.press(.thumbRest)
+        let delivered = await eventually { posted == [.mouseClick(overrideClick)] }
+        XCTAssertTrue(delivered)
+        XCTAssertEqual(model.bindingMode(for: .thumbRest), .shortcut)
+        let saved = await model.flushPendingSave()
+        XCTAssertTrue(saved)
+        let loaded = try await ConfigurationStore(url: url).load()
+        XCTAssertEqual(loaded.configuration.mouse?.defaults["thumbRest"], .mouse(defaultClick))
+        XCTAssertEqual(loaded.configuration.mouse?.applications["com.example.browser"]?["thumbRest"], .mouse(overrideClick))
+        XCTAssertEqual(loaded.workspace.devices.first { $0.family == .mxMaster3S }?.id, id)
+        model.setDeviceEnabled(id, enabled: false)
+        let stopped = await eventually { model.boltStatus.phase == .idle }
+        XCTAssertTrue(stopped)
+        session.press(.thumbRest)
+        await Task.yield()
+        XCTAssertEqual(posted, [.mouseClick(overrideClick)])
+    }
+
     func testAutosaveUsesOneSecondTrailingDebounceAndLatestDraft() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

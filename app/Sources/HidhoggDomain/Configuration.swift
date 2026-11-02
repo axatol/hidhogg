@@ -45,18 +45,47 @@ public struct KeyboardShortcut: Codable, Equatable, Hashable, Sendable {
 }
 
 public struct ControlBinding: Codable, Equatable, Sendable {
-    public enum Kind: String, Codable, Sendable { case disabled, shortcut }
+    public enum Kind: String, Codable, Sendable {
+        case disabled
+        case shortcut
+        case mouseShortcut = "mouse_shortcut"
+    }
+
     public var kind: Kind
     public var shortcut: KeyboardShortcut?
+    public var mouseShortcut: MouseShortcut?
 
-    public init(kind: Kind, shortcut: KeyboardShortcut? = nil) {
+    public init(kind: Kind, shortcut: KeyboardShortcut? = nil, mouseShortcut: MouseShortcut? = nil) {
         self.kind = kind
         self.shortcut = shortcut
+        self.mouseShortcut = mouseShortcut
     }
 
     public static let disabled = Self(kind: .disabled)
     public static func key(_ shortcut: KeyboardShortcut) -> Self {
         Self(kind: .shortcut, shortcut: shortcut)
+    }
+    public static func mouse(_ shortcut: MouseShortcut) -> Self {
+        Self(kind: .mouseShortcut, mouseShortcut: shortcut)
+    }
+    public static func input(_ shortcut: InputShortcut) -> Self {
+        switch shortcut {
+        case let .keyboard(keyboard): .key(keyboard)
+        case let .mouseClick(mouse): .mouse(mouse)
+        }
+    }
+
+    public var inputShortcut: InputShortcut? {
+        switch kind {
+        case .disabled:
+            return nil
+        case .shortcut:
+            guard mouseShortcut == nil else { return nil }
+            return shortcut.map(InputShortcut.keyboard)
+        case .mouseShortcut:
+            guard shortcut == nil else { return nil }
+            return mouseShortcut.map(InputShortcut.mouseClick)
+        }
     }
 }
 
@@ -258,12 +287,13 @@ enum ConfigurationValueValidation {
     static func isValid(binding: ControlBinding) -> Bool {
         switch binding.kind {
         case .disabled:
-            return binding.shortcut == nil
+            return binding.shortcut == nil && binding.mouseShortcut == nil
         case .shortcut:
-            guard let shortcut = binding.shortcut else { return false }
-            return shortcut.keyCode <= 127
-                && !(54...63).contains(shortcut.keyCode)
-                && Set(shortcut.modifiers).count == shortcut.modifiers.count
+            guard let shortcut = binding.shortcut, binding.mouseShortcut == nil else { return false }
+            return InputShortcutCodec.isValid(shortcut)
+        case .mouseShortcut:
+            guard let shortcut = binding.mouseShortcut, binding.shortcut == nil else { return false }
+            return InputShortcutCodec.isValid(shortcut)
         }
     }
 }

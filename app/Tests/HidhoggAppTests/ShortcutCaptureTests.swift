@@ -77,6 +77,28 @@ final class ShortcutCaptureTests: XCTestCase {
         XCTAssertNil(model.recordingTarget)
     }
 
+    func testMouseDraftCommitsOnlyForCurrentCaptureSession() throws {
+        let model = makeModel(sender: ShortcutSender(preflight: { false }, request: { false }, postPair: { _ in
+            XCTFail("Editing must not post input")
+        }))
+        let initial = model.document.draft
+        let input = InputShortcut.mouseClick(MouseShortcut(button: .left, modifiers: [.command]))
+        model.beginRecording(for: .thumbRest)
+        let oldSession = try XCTUnwrap(model.captureSessionID)
+        model.cancelRecording(sessionID: oldSession)
+        XCTAssertEqual(model.document.draft, initial)
+
+        model.beginRecording(for: .middle)
+        let currentSession = try XCTUnwrap(model.captureSessionID)
+        model.completeRecording(input, sessionID: oldSession)
+        XCTAssertEqual(model.document.draft, initial)
+        model.completeRecording(input, sessionID: currentSession)
+        XCTAssertEqual(model.document.draft.mouse?.defaults["middle"], .input(input))
+        XCTAssertNil(model.document.draft.mouse?.defaults["thumbRest"])
+        XCTAssertEqual(model.bindingMode(for: .middle), .shortcut)
+        XCTAssertNil(model.captureSessionID)
+    }
+
     private func keyEvent(
         keyCode: UInt16,
         modifiers: NSEvent.ModifierFlags,

@@ -7,16 +7,13 @@ struct ControlBindingInspector: View {
     @State private var manualEditorCaptureSessionID: UUID?
     @State private var manualEditorApplicationID: String?
     @State private var manualEditorPresentationID = UUID()
+    @State private var startsRecording = false
 
     let control: MouseControl
 
     private var availableModes: [BindingEditorMode] {
         if model.selectedApplicationID != nil { return [.inherit, .disabled, .shortcut] }
         return control == .back || control == .forward ? [.disabled, .shortcut] : [.native, .disabled, .shortcut]
-    }
-
-    private var captureTarget: ShortcutRecordingTarget {
-        ShortcutRecordingTarget(control: control, applicationID: model.selectedApplicationID)
     }
 
     var body: some View {
@@ -34,7 +31,10 @@ struct ControlBindingInspector: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Picker("Assignment", selection: Binding(
                         get: { model.bindingMode(for: control) },
-                        set: { model.setBindingMode($0, for: control) }
+                        set: { mode in
+                            model.setBindingMode(mode, for: control)
+                            if mode == .shortcut, model.captureSessionID != nil { openEditor(recording: false) }
+                        }
                     )) {
                         ForEach(availableModes) { mode in
                             Text(mode.title).tag(mode)
@@ -50,6 +50,7 @@ struct ControlBindingInspector: View {
                        model.bindingMode(for: control) == .inherit {
                         Button("Override", systemImage: "pencil") {
                             model.setBindingMode(.shortcut, for: control)
+                            if model.captureSessionID != nil { openEditor(recording: false) }
                         }
                         .disabled(!model.canEditConfiguration)
                     }
@@ -78,10 +79,12 @@ struct ControlBindingInspector: View {
         .sheet(isPresented: $isShortcutEditorPresented, onDismiss: finishManualEditor) {
             if let sessionID = manualEditorCaptureSessionID {
                 ShortcutEditorView(
-                    initialShortcut: model.document.draft.mouse?.binding(
+                    initialInputShortcut: model.document.draft.mouse?.binding(
                         for: control,
                         application: manualEditorApplicationID
-                    ).shortcut,
+                    ).inputShortcut,
+                    allowsMouse: true,
+                    startsRecording: startsRecording,
                     onCancel: { isShortcutEditorPresented = false },
                     onCommit: { shortcut in
                         model.completeRecording(shortcut, sessionID: sessionID)
@@ -101,31 +104,10 @@ struct ControlBindingInspector: View {
     @ViewBuilder
     private var shortcutControls: some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 8) {
-                if let sessionID = model.captureSessionID,
-                   model.recordingTarget == captureTarget,
-                   !isShortcutEditorPresented {
-                    ShortcutCaptureView(
-                        onCapture: { shortcut in
-                            model.completeRecording(shortcut, sessionID: sessionID)
-                        },
-                        onCancel: {
-                            model.cancelRecording(sessionID: sessionID)
-                        }
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 34)
-                    .id(sessionID)
-
-                    Button("Cancel", systemImage: "xmark.circle") {
-                        model.cancelRecording(sessionID: sessionID)
-                    }
-                } else {
-                    Button("Record Shortcut", systemImage: "record.circle") {
-                        model.beginRecording(for: control, applicationID: model.selectedApplicationID)
-                    }
-                    .disabled(!model.canEditConfiguration)
-                }
+            Button("Record Shortcut", systemImage: "record.circle") {
+                openEditor(recording: true)
             }
+            .disabled(!model.canEditConfiguration || manualEditorCaptureSessionID != nil)
 
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 10) {
@@ -158,16 +140,21 @@ struct ControlBindingInspector: View {
 
     private var manualShortcutButton: some View {
         Button("Choose Manually…", systemImage: "keyboard") {
-            guard manualEditorCaptureSessionID == nil else { return }
-            manualEditorApplicationID = model.selectedApplicationID
-            model.beginRecording(for: control, applicationID: manualEditorApplicationID)
-            guard let sessionID = model.captureSessionID else { return }
-            manualEditorCaptureSessionID = sessionID
-            manualEditorPresentationID = UUID()
-            isShortcutEditorPresented = true
+            openEditor(recording: false)
         }
         .disabled(!model.canEditConfiguration || manualEditorCaptureSessionID != nil)
-        .accessibilityHint("Choose a key and modifiers without pressing the shortcut")
+        .accessibilityHint("Type, paste or choose a keyboard or mouse shortcut")
+    }
+
+    private func openEditor(recording: Bool) {
+        guard manualEditorCaptureSessionID == nil else { return }
+        manualEditorApplicationID = model.selectedApplicationID
+        model.beginRecording(for: control, applicationID: manualEditorApplicationID)
+        guard let sessionID = model.captureSessionID else { return }
+        startsRecording = recording
+        manualEditorCaptureSessionID = sessionID
+        manualEditorPresentationID = UUID()
+        isShortcutEditorPresented = true
     }
 
     private func finishManualEditor() {

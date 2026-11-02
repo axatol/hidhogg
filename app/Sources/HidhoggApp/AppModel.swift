@@ -2793,9 +2793,9 @@ final class AppModel: ObservableObject {
             setBinding(.disabled, for: control, applicationID: applicationID)
         case .shortcut:
             let inherited = document.draft.mouse?.binding(for: control, application: applicationID)
-            if inherited?.kind == .shortcut, let shortcut = inherited?.shortcut {
+            if let shortcut = inherited?.inputShortcut {
                 cancelRecording(for: control, applicationID: applicationID)
-                setBinding(.key(shortcut), for: control, applicationID: applicationID)
+                setBinding(.input(shortcut), for: control, applicationID: applicationID)
             } else {
                 beginRecording(for: control, applicationID: applicationID)
             }
@@ -2812,13 +2812,13 @@ final class AppModel: ObservableObject {
             return .inherit
         }
         guard let binding = device.configuredBinding(for: control, application: applicationID) else { return .native }
-        return binding.kind == .shortcut ? .shortcut : .disabled
+        return binding.inputShortcut != nil ? .shortcut : .disabled
     }
 
     func bindingDescription(for control: MouseControl) -> String {
         let applicationID = selectedApplicationID
         if recordingTarget == ShortcutRecordingTarget(control: control, applicationID: applicationID) {
-            return "Press a key combination. Escape cancels."
+            return "Editing shortcut. Apply to save, or Cancel to keep the previous assignment."
         }
         guard let device = document.draft.mouse else { return "Disabled" }
 
@@ -2866,12 +2866,21 @@ final class AppModel: ObservableObject {
     }
 
     func completeRecording(_ shortcut: KeyboardShortcut) {
+        completeRecording(.keyboard(shortcut))
+    }
+
+    func completeRecording(_ shortcut: InputShortcut) {
         guard canEditConfiguration, let target = recordingTarget else { return }
-        setBinding(.key(shortcut), for: target.control, applicationID: target.applicationID)
+        setBinding(.input(shortcut), for: target.control, applicationID: target.applicationID)
         cancelRecording()
     }
 
     func completeRecording(_ shortcut: KeyboardShortcut, sessionID: UUID) {
+        guard captureSessionID == sessionID else { return }
+        completeRecording(shortcut)
+    }
+
+    func completeRecording(_ shortcut: InputShortcut, sessionID: UUID) {
         guard captureSessionID == sessionID else { return }
         completeRecording(shortcut)
     }
@@ -3388,7 +3397,7 @@ final class AppModel: ObservableObject {
     private func containsConfiguredShortcut(in mouse: DeviceBindings?) -> Bool {
         guard let mouse else { return false }
         return (Array(mouse.defaults.values) + mouse.applications.values.flatMap { $0.values })
-            .contains { $0.kind == .shortcut }
+            .contains { $0.inputShortcut != nil }
     }
 
     private var requestedMouseButtonControls: Set<MouseControl> {
@@ -3864,7 +3873,7 @@ final class AppModel: ObservableObject {
 
         let applicationID = frontmostApplication()
         let binding = runtimeMouse?.binding(for: control, application: applicationID) ?? .disabled
-        guard binding.kind == .shortcut, let shortcut = binding.shortcut else { return }
+        guard let shortcut = binding.inputShortcut else { return }
 
         var deliveryError: Error?
         let admitted = bolt.withPressAdmission(generation: generation, observedAt: observedAt) {
@@ -3916,7 +3925,7 @@ final class AppModel: ObservableObject {
     }
 
     private static func bindingDescription(_ binding: ControlBinding) -> String {
-        guard binding.kind == .shortcut, let shortcut = binding.shortcut else { return "Disabled" }
+        guard let shortcut = binding.inputShortcut else { return "Disabled" }
         return ShortcutSender.label(for: shortcut)
     }
 

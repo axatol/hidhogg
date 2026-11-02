@@ -12,7 +12,7 @@ Updated 26 October 2026. The active implementation is the Swift package under ap
 | app/Sources/UlanziD200X | Bounded frames, input/identity codecs, page archives, IOHID transport and generation-bound session maintenance |
 | app/Sources/LofreeFlowLite84 | Receiver-specific read-only status codec, exact non-seizing discovery and serialized session |
 | app/Sources/FlowLite84StatusProbe | Developer-only, explicit --read-only one-snapshot diagnostic; not bundled in the app |
-| app/Sources/MacOSActions | Permission adapters, shortcut/scroll posting and injected native media, volume, sound and opener services |
+| app/Sources/MacOSActions | Permission adapters, paired keyboard/mouse shortcut and scroll posting, and injected native media, volume, sound and opener services |
 | app/Sources/HidhoggAutomation | Local wire protocol/server, notification overlay store, bounded process/native action lanes and metadata history |
 | app/Sources/HidhoggApp | Native workspace/menu, canonical app model, device models and editor/lifecycle composition |
 | app/Sources/HidhoggCLI | hidhoggctl client for the existing local service; it does not launch the app |

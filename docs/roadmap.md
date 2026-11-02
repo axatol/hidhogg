@@ -1,5 +1,7 @@
 # Roadmap
 
+BIND-01 accepted (2 November 2026): unified token editor, recording into an editable draft, canonical copy/paste and modified single mouse clicks for mouse assignments. Full 1,125 tests pass, existing exclusions unchanged; all 342 input hashes match strict signed build bff106c7. Owner reports current behavior works and requests local check-in. Existing keyboard bindings remain compatible; DPI and literal-text/macros remain deferred. A newly reported replacement/multiple-receiver enumeration error is a separate diagnostic task. [Checklist](shortcut-token-editor.md).
+
 UI-FREEZE-01 signed (2 November 2026): owner interaction99.7%CPU traced to large-range native slider tick layout. One-line fix preserves integer pressure values; failing4.7s layout now about0.02s, fullUInt16range covered. All1,098 offline tests and333input hashes pass; strict signed build4013fd4; owner reports freezing resolved, while DPI writes remain open. [Diagnosis/evidence](ui-interaction-freeze.md). Shared interactive3S/MX4 canvas proposal remains queued for confirmation.
 
 MX-SET-01 signed partial checkpoint (2 November 2026): SmartShift, capability-gated wheel/thumb/button controls and MX4 haptics/panel settings; explicit scroll defaults; 1,097 offline tests pass,333 matching inputs. Build df12cc3 awaits owner verification. Pointer speed explicitly deferred; target DPI V2 reads work but writes remain research-blocked. [Scope and evidence](mouse-settings-milestone.md). Commit accepted scope automatically.

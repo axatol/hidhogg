@@ -3139,3 +3139,13 @@ Owner reports window freezing seems resolved, but DPI cannot be set. Close CPU i
 ## Local check-in and DPI proposal — 2 November 2026
 
 Committed43-path dependency-closed settings/acceptedCPU checkpoint4bd7931, parent5973d41;333 committed input hashes match1,098case tested/signed4013fd4. No push. New read-only primary-source comparison confirms Solaar/libratbag legacy3parameter DPI writes with no versionbranch; transport padding differs, and unknownV2level semantics remain unproven. Hidhogg alwayssendslong20byteframes, so omittingargumentstillzeropadsit. Concrete optional compatibility plan docs/dpi-v2-compatibility-plan.md is proposed for owner approval, no new code or device writes.
+
+## 2 November 2026 — BIND-01 token editor and mouse shortcuts
+
+Owner approved one shared draft for typed/picked/recorded shortcuts with removable tokens, canonical plain-text copy/paste, and modified single mouse clicks. DPI deferred explicitly. Keyboard configuration remains intact; strict mouse_shortcut payload adds one left/right/middle trigger and unique modifiers. Domain codec handles named physical keys/keycode fallback, no literal text/macros. AppModel preserves admission/session/application/device fences. Recording is local to a focused capture area and does not save; Apply commits.
+
+Focused78 cases pass; final capture/layout6pass and full1,125pass with two existing exclusions. Frozen342 hashes match strict signed bff106c7 app/CLI and CLIhelp. Root viewed6 of8hidden synthetic layoutimages; corrected narrow prompt clipping and Form labelcolumn before final gate. Initial compile failures retained in tmp logs. No physical-delivery/production-sheet acceptance inferred; owner reopening/manual checks next. Source remains uncommitted onmaster170fc37 until acceptance, no push. A public signature requirement inspection unexpectedly exposed certificate-owner metadata; stopped that inspection, derived signing fingerprint without subject output, removed temporary public-certificate extracts, and did not copy owner metadata into docs.
+
+## 2 November 2026 — owner accepts BIND-01; receiver replacement report
+
+Owner reports current shortcut behavior works and requests local check-in. Verified342 source/input hashes still identify signed bff106c7 and full1,125 offline pass; no source changes since verification. Check-in authorized on master without push. New issue: old receiver alone works, replacement alone or both attached produces generic receiver enumeration failure in Add Logitech Mouse. No cause or receiver model inferred from screenshot; no live/private diagnostic inspection yet. Receiver work is a separate approval/verification scope.

@@ -649,32 +649,56 @@ private struct MouseHardwarePreferencesDocument: Codable {
 private struct BindingDocument: Codable {
     let kind: ControlBinding.Kind
     let shortcut: ShortcutDocument?
+    let mouseShortcut: MouseShortcutDocument?
 
     var configuration: ControlBinding {
-        ControlBinding(kind: kind, shortcut: shortcut?.configuration)
+        ControlBinding(kind: kind, shortcut: shortcut?.configuration, mouseShortcut: mouseShortcut?.configuration)
     }
 
     init(configuration: ControlBinding) {
         self.kind = configuration.kind
         self.shortcut = configuration.shortcut.map(ShortcutDocument.init(configuration:))
+        self.mouseShortcut = configuration.mouseShortcut.map(MouseShortcutDocument.init(configuration:))
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
-        try container.rejectUnknownKeys(["kind", "shortcut"])
+        try container.rejectUnknownKeys(["kind", "shortcut", "mouse_shortcut"])
         kind = try container.decode(ControlBinding.Kind.self, forKey: AnyCodingKey("kind"))
         shortcut = try container.decodeIfPresent(ShortcutDocument.self, forKey: AnyCodingKey("shortcut"))
+        mouseShortcut = try container.decodeIfPresent(MouseShortcutDocument.self, forKey: AnyCodingKey("mouse_shortcut"))
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(kind, forKey: .kind)
         try container.encodeIfPresent(shortcut, forKey: .shortcut)
+        try container.encodeIfPresent(mouseShortcut, forKey: .mouseShortcut)
     }
 
     private enum CodingKeys: String, CodingKey {
         case kind
         case shortcut
+        case mouseShortcut = "mouse_shortcut"
+    }
+}
+
+private struct MouseShortcutDocument: Codable {
+    let button: MouseButton
+    let modifiers: [ShortcutModifier]
+
+    var configuration: MouseShortcut { MouseShortcut(button: button, modifiers: modifiers) }
+
+    init(configuration: MouseShortcut) {
+        button = configuration.button
+        modifiers = configuration.modifiers
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        try container.rejectUnknownKeys(["button", "modifiers"])
+        button = try container.decode(MouseButton.self, forKey: AnyCodingKey("button"))
+        modifiers = try container.decode([ShortcutModifier].self, forKey: AnyCodingKey("modifiers"))
     }
 }
 

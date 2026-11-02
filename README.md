@@ -19,6 +19,7 @@ Custom card content uses consistent internal spacing. Logitech wheel mode decodi
 ## Current capabilities
 
 - MX Master 3S Back and Forward shortcut bindings, with defaults for all apps and per-app overrides.
+- Token-based shortcut editing with typed/pasted combinations, recording into an editable draft, and plain-text copying. Mouse assignments can send one left/right/middle click with modifiers; the owner has accepted the current behavior. [Editor and interchange](docs/shortcut-token-editor.md).
 - MX Master 3S vertical and thumb-wheel direction and custom scroll amount controls.
 - MX Master 3S/4 capability-gated wheel/thumb settings, SmartShift and selective direct button assignments; MX4 haptic/panel pressure controls. Readback and owned restoration are verified offline; physical acceptance remains pending. [Checkpoint and DPI/pointer limits](docs/mouse-settings-milestone.md).
 - Battery status, firmware information and optional low-battery notifications.

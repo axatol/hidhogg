@@ -1,5 +1,7 @@
 # DPI V2 follow-up — proposed, not implemented
 
+Status: owner explicitly deferred DPI on 2 November 2026. The proposal below is retained for future review; it is not approved for implementation.
+
 2 November 2026. Owner confirms the CPU/window freeze seems resolved and still cannot set DPI. Local software checkpoint4bd7931 records the tested settings prerequisites and accepted CPU fix. Pointer speed remains deferred. This document proposes a DPI-only compatibility approach for owner approval; no new device/source mutation has been performed.
 
 ## Verified starting point

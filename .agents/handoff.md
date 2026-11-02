@@ -1,5 +1,23 @@
 # Current handoff
 
+## BIND-01 accepted; replacement Bolt receiver issue — 2 November 2026
+
+Owner reports shortcut UI/current behavior looks good and works well, and explicitly requests check-in. Local commit authorized for the reviewed BIND-01 scope, tested/signed bff106c7 (1,125 offline cases,342 matching inputs); no push. Acceptance is the reported current behavior, not an exhaustive key/layout/transport matrix. DPI remains deferred.
+
+Separate new report: replacing the old Bolt receiver with another receiver makes Add Logitech Mouse show “Logi Bolt receivers could not be checked. Stop pairing and retry.” It occurs with only the new receiver and with both receivers; old receiver alone works again. Screenshot supplied by owner. No receiver identity/private logs/live HID data read for this report. The message comes from startBoltPairing's session.receivers() catch; underlying cause not yet established. Diagnose separately after check-in, propose a concrete repro/fix before code changes. Do not conflate successful shortcut acceptance with receiver compatibility.
+
+## BIND-01 signed delivery — 2 November 2026
+
+Signed build bff106c775aa8d2e53cf62cc6b4735742d20832e7d64297bd845ef0d308a64eb is in dist/Hidhogg.app and dist/hidhoggctl. Strict app/CLI signatures and CLI help pass. Full offline1,125 cases (660XCTest+465SwiftTesting), same two exclusions WakeConnectionTests/NativeWorkspaceWindowTests; all342 frozen inputs match tests and signing. Manifest /Volumes/Data/tmp/hidhogg-bind01-inputs.json SHA2566b7c29390bdb221473e643425bcf8f5cdd6e40a909cde1935f4db84ca24cd76b; focused/full/release logs hidhogg-bind01-* in /Volumes/Data/tmp. Source review clear; targeted capture/layout6/6,8synthetic hidden/nonkey images, parent viewed6. Initial cache/compiler failures retained; later narrow prompt wrapping and grouped fullwidth form corrections validated.
+
+Implemented removable modifier/trigger chips, modifier-first entry, searchable keys/mouse choices, typed canonical text, local focused one-shot recording into editable draft, Copy Shortcut and explicit Apply/Cancel. Mouse shortcuts support left/right/middle with modifiers, one down/up pair at currentcursor; permission checks/injectedfake output, app/device/session fences and UUID payload persistence preserved. Existing keyboard TOML/D200X keyboard output retained. Legacy input.keyboard diagnostic IDs remain for both output kinds for compatibility. New kind mouse_shortcut is not recognized by older binaries; no downgrade compatibility claim.
+
+Owner next quits/reopens signed app, checks Choose Manually/Record, chips/typing/Copy-paste/Cancel/Apply, then physical thumbbutton Command-leftclick. No agent production app launch, live input/HID/device writes, private configuration/log inspection. No actual mouse delivery accepted yet. Master170fc37 source uncommitted/unstaged pending owner manual acceptance; commit verified dependency-closed scope automatically afterward, no push. DPI explicitly deferred (proposal not approved); pointer speed deferred; interactive shared mouse layout remains queued. TaskView external payload approval remains unanswered, no retry.
+
+## BIND-01 in progress — 2 November 2026
+
+Owner approved single-combination token editor with modifier buttons/removable chips, typing/paste, local recording into the draft, explicit Apply/Cancel, canonical Copy Shortcut text and modified mouse clicks (left/right/middle). DPI explicitly deferred; literal text, macros/sequences and held drag are outside this slice. Base master170fc37 was clean. Checklist docs/shortcut-token-editor.md. Workers own domain/sender and editor/capture; root integrates AppModel/strict TOML and capture-session fences. Independent review/test in progress; no offline gate, new signed build or physical acceptance yet. Existing signed4013fd4 remains installed until verified replacement. Do not commit new BIND-01 scope until owner manual acceptance; no push. No production app launch/device or input writes authorized/performed.
+
 ## Owner accepts CPU fix; DPI still open — 2 November 2026
 
 Owner: does seem to be resolved, i still cant set dpi though. CPU/window-interaction acceptance is recorded for build4013fd4; do not infer all new hardware settings, heap behavior or transport edge cases were manually verified. Local checkpoint4bd7931 is committed with a clean tree and no push; it contains the new settings prerequisites plus the accepted pressure-slider fix; its Git commit records this tested scope with remaining DPI/pointer/physical gates explicit. No push authorized.
