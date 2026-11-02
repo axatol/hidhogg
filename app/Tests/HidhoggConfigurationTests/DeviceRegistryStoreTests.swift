@@ -136,7 +136,15 @@ final class DeviceRegistryStoreTests: XCTestCase {
             wheelInverted: true,
             wheelScrollAmount: 0.5,
             thumbwheelInverted: true,
-            thumbwheelScrollAmount: 0.75
+            thumbwheelScrollAmount: 0.75,
+            hardwarePreferences: MouseHardwarePreferences(
+                smartShiftMode: .automatic,
+                smartShiftThreshold: 120,
+                smartShiftTorque: 40,
+                pointerSpeed: 1.25,
+                hapticsEnabled: true,
+                hapticPowerSaving: false
+            )
         )
         let secondMouse = DeviceBindings(
             id: AppConfiguration.logitechProfileID,
@@ -148,7 +156,13 @@ final class DeviceRegistryStoreTests: XCTestCase {
             wheelInverted: false,
             wheelScrollAmount: 1.5,
             thumbwheelInverted: false,
-            thumbwheelScrollAmount: 2.5
+            thumbwheelScrollAmount: 2.5,
+            hardwarePreferences: MouseHardwarePreferences(
+                dpi: 1600,
+                hapticsEnabled: false,
+                hapticIntensity: 70,
+                forceThreshold: 0
+            )
         )
 
         var workspace = WorkspaceConfiguration(legacy: ConfigurationFixtures.configuration)

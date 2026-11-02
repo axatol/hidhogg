@@ -252,7 +252,7 @@ final class MouseAssociationIntegrationTests: XCTestCase {
         _ = try await store.save(workspace, expecting: .missing)
         let session = AssociatedMouseSession()
         let model = makeModel(url: url, store: store, session: session)
-        await waitUntil { model.presentedMouseOwnerID == id && session.writeCount > 0 }
+        await waitUntil { model.presentedMouseOwnerID == id && session.writeCount == 3 }
         let initialWrites = session.writeCount
         session.setRecoverableCleanupFailure()
         model.systemWillSleep()
@@ -262,11 +262,11 @@ final class MouseAssociationIntegrationTests: XCTestCase {
         model.systemDidWake()
         await waitUntil {
             session.targets.count == 2 && model.presentedMouseOwnerID == id &&
-                !model.boltStatus.cleanupUncertain && session.writeCount == initialWrites + 1
+                !model.boltStatus.cleanupUncertain && session.writeCount == initialWrites + 3
         }
         XCTAssertTrue(session.targets.allSatisfy { $0.model == .mxMaster3S && $0.association == AssociatedMouseSession.association })
         XCTAssertEqual(session.catalogCount, 0)
-        XCTAssertEqual(session.writeCount, initialWrites + 1)
+        XCTAssertEqual(session.writeCount, initialWrites + 3)
 
         let recoveredWrites = session.writeCount
         session.setRecoverableCleanupFailure()
@@ -276,10 +276,10 @@ final class MouseAssociationIntegrationTests: XCTestCase {
         model.connect()
         await waitUntil {
             session.targets.count == 3 && model.presentedMouseOwnerID == id &&
-                !model.boltStatus.cleanupUncertain && session.writeCount == recoveredWrites + 1
+                !model.boltStatus.cleanupUncertain && session.writeCount == recoveredWrites + 3
         }
         XCTAssertTrue(session.targets.allSatisfy { $0.association == AssociatedMouseSession.association })
-        XCTAssertEqual(session.writeCount, recoveredWrites + 1)
+        XCTAssertEqual(session.writeCount, recoveredWrites + 3)
         model.disconnect()
     }
 

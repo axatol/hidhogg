@@ -11,7 +11,8 @@ struct ControlBindingInspector: View {
     let control: MouseControl
 
     private var availableModes: [BindingEditorMode] {
-        model.selectedApplicationID == nil ? [.disabled, .shortcut] : BindingEditorMode.allCases
+        if model.selectedApplicationID != nil { return [.inherit, .disabled, .shortcut] }
+        return control == .back || control == .forward ? [.disabled, .shortcut] : [.native, .disabled, .shortcut]
     }
 
     private var captureTarget: ShortcutRecordingTarget {
@@ -60,7 +61,7 @@ struct ControlBindingInspector: View {
 
                 Divider()
 
-                Text("While Hidhogg is handling the buttons, Disabled also suppresses the mouse’s original Back or Forward action. Native behavior resumes when the button session is off.")
+                Text("Disabled suppresses this button while Hidhogg handles it. Use native behavior leaves optional buttons under the mouse’s control. Native behavior resumes when management stops.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

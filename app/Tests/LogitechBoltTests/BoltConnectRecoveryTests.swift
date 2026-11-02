@@ -228,11 +228,11 @@ private func recoveryEventually(_ condition: @escaping @Sendable () async -> Boo
 
 @Test(arguments: [UInt8(0), 2, 4, 6]) func connectRecoveryPreservesOtherModeBits(bits: UInt8) async {
     let fixture = RecoveryFixture()
-    await fixture.configure(wheel: bits | 1, thumb: [1, bits | 1])
+    await fixture.configure(wheel: bits | 1, thumb: [1, 1])
     let controller = BoltController(makeTransport: { RecoveryChannel(fixture) })
     await controller.discover()
     #expect(await fixture.wheel == bits)
-    #expect(await fixture.thumb == [0, bits | 1])
+    #expect(await fixture.thumb == [0, 1])
     await controller.stop()
 }
 

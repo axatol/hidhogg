@@ -4,7 +4,7 @@
 
 # HIDHogg
 
-A native Swift macOS app for configuring **Logitech MX Master 3S** and **Ulanzi D200X** from one workspace. Existing Logitech connections can be associated over Bolt or direct Bluetooth; MX Master 4 has identity, battery and firmware information plus capability-gated main-wheel direction and input-resolution settings. The mainline branch is `master`; acceptance is recorded per feature rather than claiming complete hardware compatibility. See the [LC-02 scope and hardware checks](docs/logitech-lc02-plan.md).
+A native Swift macOS app for configuring **Logitech MX Master 3S** and **Ulanzi D200X** from one workspace. Existing Logitech connections can be associated over Bolt or direct Bluetooth; MX Master 4 has identity/status plus capability-gated wheel, button, SmartShift, haptic and panel settings. Target DPI V2 is read-only pending its write contract; independent host pointer speed is deferred. The mainline branch is `master`; acceptance is recorded per feature rather than claiming complete hardware compatibility. See the [LC-02 scope and hardware checks](docs/logitech-lc02-plan.md).
 
 **Add Device → Logitech Mouse…** shows Bolt/Bluetooth options and existing mice on one centre-pane page. Add a verified existing mouse or pair through Bolt inline; the app saves and opens the device without a model-first placeholder or completion step. **Change Connection…** retains an existing registration's settings. New Bluetooth pairing remains unavailable. Offline checks and signing pass; native usability, receiver allocation, authentication and input continuity remain owner checks. See [compact setup](docs/logitech-compact-setup-plan.md) and [Bolt scope and assumptions](docs/logitech-bolt-pairing-plan.md).
 
@@ -20,7 +20,7 @@ Custom card content uses consistent internal spacing. Logitech wheel mode decodi
 
 - MX Master 3S Back and Forward shortcut bindings, with defaults for all apps and per-app overrides.
 - MX Master 3S vertical and thumb-wheel direction and custom scroll amount controls.
-- MX Master 4 main-wheel direction/input resolution when the connected feature contract permits, with readback and optional owned-field restoration. Other MX4 controls remain later work.
+- MX Master 3S/4 capability-gated wheel/thumb settings, SmartShift and selective direct button assignments; MX4 haptic/panel pressure controls. Readback and owned restoration are verified offline; physical acceptance remains pending. [Checkpoint and DPI/pointer limits](docs/mouse-settings-milestone.md).
 - Battery status, firmware information and optional low-battery notifications.
 - A native device editor, menu-bar connection status, launch-at-login support and background operation.
 - TOML configuration under `$XDG_CONFIG_HOME/hidhogg/` or `~/.config/hidhogg/`, automatic saving and manual reload.

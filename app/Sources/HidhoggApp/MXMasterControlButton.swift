@@ -74,6 +74,9 @@ struct MXMasterControlButton: View {
 
     private var targetIdentifier: String {
         switch target {
+        case .middle: "middle"
+        case .wheelMode: "wheel-mode"
+        case .thumbRest: "thumb-rest"
         case .back: "back"
         case .forward: "forward"
         case .verticalWheel: "vertical-wheel"

@@ -170,7 +170,11 @@ final class LogitechSetupIntegrationTests: XCTestCase {
         XCTAssertTrue(fixture.model.registeredDevices.isEmpty)
         XCTAssertTrue(fixture.binding.targets.isEmpty)
         pairing.resumeClose()
-        await waitUntil { fixture.binding.targets.count == 1 }
+        await waitUntil {
+            guard let id = fixture.model.selectedMouseID else { return false }
+            return fixture.binding.targets.count == 1 && fixture.model.presentedMouseOwnerID == id &&
+                fixture.model.selectedMouseStatus.phase == .ready
+        }
         XCTAssertEqual(fixture.model.registration(id: try XCTUnwrap(fixture.model.selectedMouseID))?.mouseModel, .mxMaster4)
         XCTAssertFalse(fixture.model.selectedMouseSupportsManagement)
         XCTAssertEqual(fixture.binding.writeCount, 0)

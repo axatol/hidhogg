@@ -21,12 +21,19 @@ struct ThumbwheelState {
     struct Mode: Equatable {
         let diverted: Bool
         let inverted: Bool
+        let statusFlags: UInt8
+
+        init(diverted: Bool, inverted: Bool, statusFlags: UInt8 = 0) {
+            self.diverted = diverted
+            self.inverted = inverted
+            self.statusFlags = statusFlags
+        }
 
         var parameters: [UInt8] { [diverted ? 1 : 0, inverted ? 1 : 0] }
 
         static func decode(_ reply: [UInt8]) throws -> Mode {
             guard reply.count >= 2, reply[0] <= 1, reply[1] & 0xF8 == 0 else { throw BoltFailure.foreignState }
-            return Mode(diverted: reply[0] == 1, inverted: reply[1] & 1 != 0)
+            return Mode(diverted: reply[0] == 1, inverted: reply[1] & 1 != 0, statusFlags: reply[1] & 0x06)
         }
     }
 

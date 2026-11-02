@@ -63,6 +63,7 @@ final class ThumbwheelModelTests: XCTestCase {
         model.connect()
         await expectEventually { session.wheelCaptureActive && session.thumbwheelCaptureActive }
 
+        clock.now = .now
         var observedAt = clock.now.advanced(by: .milliseconds(1))
         clock.now = observedAt
         session.emitScroll(vertical: 0.5, observedAt: observedAt)
@@ -144,6 +145,7 @@ final class ThumbwheelModelTests: XCTestCase {
         model.connect()
         await expectEventually { session.wheelCaptureActive && session.thumbwheelCaptureActive }
 
+        clock.now = .now
         var observedAt = clock.now.advanced(by: .milliseconds(1))
         clock.now = observedAt
         session.emitThumbwheel(rotation: 1, state: 0, observedAt: observedAt)
@@ -178,7 +180,7 @@ final class ThumbwheelModelTests: XCTestCase {
         await expectEventually { !session.wheelCaptureActive && !session.thumbwheelCaptureActive }
     }
 
-    func testThumbwheelDefaultsStayNativeAndEditsAutosaveReloadAndCoalesceOffOn() async throws {
+    func testThumbwheelDefaultsApplyNaturalWithoutCaptureAndEditsAutosaveReloadAndCoalesceOffOn() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let session = ThumbwheelModelSession()
@@ -190,10 +192,11 @@ final class ThumbwheelModelTests: XCTestCase {
         )
 
         model.connect()
-        await expectEventually { session.phase == .ready }
-        XCTAssertTrue(session.thumbwheelRequests.isEmpty)
+        await expectEventually { session.lastThumbwheelRequest?.inverted == true }
+        XCTAssertEqual(session.thumbwheelRequests.count, 1)
+        XCTAssertFalse(session.thumbwheelCaptureActive)
         XCTAssertEqual(model.thumbwheelScrollAmountDraft, nil)
-        XCTAssertEqual(model.observedThumbwheelDirection, "Not observed")
+        XCTAssertEqual(model.observedThumbwheelDirection, "Natural")
 
         model.setThumbwheelPreference(true)
         model.setThumbwheelScrollAmount(1)
@@ -409,7 +412,7 @@ private final class ThumbwheelModelSession: BindingSession, @unchecked Sendable 
             )
             let thumbwheel = BoltThumbwheelStatus(
                 support: thumbwheelSupport,
-                observedInverted: false,
+                observedInverted: thumbwheelActive ? false : thumbwheelRequest?.inverted ?? false,
                 isOwned: thumbwheelRequest?.inverted != nil || thumbwheelRequest?.amount != nil,
                 captureActive: thumbwheelActive,
                 effectiveInverted: thumbwheelRequest?.inverted ?? false

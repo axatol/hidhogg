@@ -14,6 +14,8 @@ struct DevicesView: View {
             VStack(alignment: .leading, spacing: 24) {
                 deviceHeader
 
+                MouseHardwareSettingsView()
+
                 deviceControls
 
                 configurationStatus
@@ -142,7 +144,7 @@ struct DevicesView: View {
             DeviceControlCanvas(isInspectorPresented: $isInspectorPresented)
         case .physicalMainWheel:
             Label(
-                "Main wheel settings are available in the inspector. Button settings, thumb-wheel controls, and scroll capture are not available yet.",
+                "Main wheel settings are available in the inspector. Other input controls depend on this connection’s verified capabilities.",
                 systemImage: "info.circle"
             )
             .foregroundStyle(.secondary)

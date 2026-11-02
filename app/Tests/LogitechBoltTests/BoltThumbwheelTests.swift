@@ -167,7 +167,7 @@ private func thumbEventually(_ condition: @escaping @Sendable () async -> Bool) 
     #expect(movement.rotation == -2 && movement.elapsed == 0x1234 && movement.state == 3 && movement.flags == 0x0E)
     #expect(try BoltWire.thumbwheelMovement(report, slot: 3, feature: 16) == nil)
     #expect(throws: BoltFailure.malformed) { try BoltWire.thumbwheelMovement(Array(report.prefix(19)), slot: 2, feature: 16) }
-    #expect(try ThumbwheelState.Mode.decode([0, 6]) == .init(diverted: false, inverted: false))
+    #expect(try ThumbwheelState.Mode.decode([0, 6]) == .init(diverted: false, inverted: false, statusFlags: 6))
     #expect(throws: BoltFailure.foreignState) { try ThumbwheelState.Mode.decode([2, 0]) }
 }
 

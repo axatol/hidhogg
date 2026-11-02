@@ -19,14 +19,14 @@ final class WheelEditorTests: XCTestCase {
         model.connect()
         let applied = await eventually { session.appliedResolutions == [true] && !model.isWheelApplyInFlight }
         XCTAssertTrue(applied)
-        XCTAssertEqual(session.appliedPreferences, [nil])
+        XCTAssertEqual(session.appliedPreferences, [false])
         XCTAssertEqual(model.observedWheelResolution, "High")
-        XCTAssertEqual(model.observedWheelDirection, "Natural")
+        XCTAssertEqual(model.observedWheelDirection, "Standard")
         XCTAssertEqual(session.enableCount, 0)
         await model.save()
         let persisted = try await ConfigurationStore(url: url).load()
         XCTAssertEqual(persisted.configuration.mouse?.wheelHighResolution, true)
-        XCTAssertNil(persisted.configuration.mouse?.wheelInverted)
+        XCTAssertEqual(persisted.configuration.mouse?.wheelInverted, false)
         model.setWheelHighResolution(nil)
         let released = await eventually { session.appliedResolutions == [true, nil] && !model.isWheelApplyInFlight }
         XCTAssertTrue(released)
@@ -51,7 +51,7 @@ final class WheelEditorTests: XCTestCase {
         session.resumeApply()
         let finished = await eventually { session.appliedResolutions.count == 2 && !model.isWheelApplyInFlight }
         XCTAssertTrue(finished)
-        XCTAssertEqual(session.appliedPreferences, [nil, false])
+        XCTAssertEqual(session.appliedPreferences, [false, false])
         XCTAssertEqual(session.appliedResolutions, [true, true])
         XCTAssertEqual(session.appliedPolicies, [false, true])
     }
@@ -67,20 +67,20 @@ final class WheelEditorTests: XCTestCase {
         XCTAssertTrue(ready)
         XCTAssertFalse(model.restorePreviousSettingsOnDisconnect)
         model.setRestorePreviousSettingsOnDisconnect(true)
-        let enabled = await eventually { session.appliedPolicies == [true] }
+        let enabled = await eventually { session.appliedPolicies == [false, true] }
         XCTAssertTrue(enabled)
         let enabledSaved = await eventually { !model.isDirty }
         XCTAssertTrue(enabledSaved)
         let enabledConfiguration = try await ConfigurationStore(url: url).load()
         XCTAssertEqual(enabledConfiguration.configuration.mouse?.restorePreviousSettingsOnDisconnect, true)
         model.setRestorePreviousSettingsOnDisconnect(false)
-        let disabled = await eventually { session.appliedPolicies == [true, false] }
+        let disabled = await eventually { session.appliedPolicies == [false, true, false] }
         XCTAssertTrue(disabled)
         let saved = await eventually { !model.isDirty }
         XCTAssertTrue(saved)
         let persisted = try await ConfigurationStore(url: url).load()
         XCTAssertEqual(persisted.configuration.mouse?.restorePreviousSettingsOnDisconnect, false)
-        XCTAssertNil(persisted.configuration.mouse?.wheelInverted)
+        XCTAssertEqual(persisted.configuration.mouse?.wheelInverted, false)
     }
 
     func testImmediateLifecycleStopUsesLatestPolicyWithoutApplyingPendingDirection() async throws {
@@ -131,7 +131,7 @@ final class WheelEditorTests: XCTestCase {
         XCTAssertEqual(session.enableCount, 0)
         XCTAssertEqual(session.stopCount, 0)
         model.setWheelPreference(nil)
-        let retained = await eventually { session.appliedPreferences == [false, nil] && !model.isWheelApplyInFlight }
+        let retained = await eventually { session.appliedPreferences == [false] && !model.isWheelApplyInFlight }
         XCTAssertTrue(retained)
         XCTAssertTrue(model.boltStatus.wheel.isOwned)
         XCTAssertEqual(model.observedWheelDirection, "Standard")
@@ -224,7 +224,7 @@ final class WheelEditorTests: XCTestCase {
         XCTAssertEqual(session.stopCount, 0)
     }
 
-    func testUnmanagedUnownedWheelDoesNotSpendAnApplyOperation() async throws {
+    func testUnspecifiedDirectionUsesAndAppliesStandardDefault() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let session = WheelBindingSession()
@@ -235,14 +235,14 @@ final class WheelEditorTests: XCTestCase {
             wheelInverted: nil
         )
 
-        XCTAssertNil(model.savedWheelPreference)
+        XCTAssertEqual(model.savedWheelPreference, false)
         model.applySavedWheelPreference()
 
         await drainMainActorTasks()
-        XCTAssertEqual(session.appliedPreferences, [])
+        XCTAssertEqual(session.appliedPreferences, [false])
         let finished = await eventually { !model.isWheelApplyInFlight }
         XCTAssertTrue(finished)
-        XCTAssertFalse(model.boltStatus.wheel.isOwned)
+        XCTAssertTrue(model.boltStatus.wheel.isOwned)
     }
 
     func testQueuedApplyIsInvalidatedByDisconnect() async throws {

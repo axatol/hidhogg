@@ -1,5 +1,45 @@
 # Current handoff
 
+## Owner accepts CPU fix; DPI still open — 2 November 2026
+
+Owner: does seem to be resolved, i still cant set dpi though. CPU/window-interaction acceptance is recorded for build4013fd4; do not infer all new hardware settings, heap behavior or transport edge cases were manually verified. Current dependency-closed local checkpoint contains the new settings prerequisites plus the accepted pressure-slider fix; its Git commit records this tested scope with remaining DPI/pointer/physical gates explicit. No push authorized.
+
+DPI remains deliberately read-only for2201V2 (canWrite only permits knownpositive current onV0/V1). Existing native setter appends dpi_level forV>1; its normal caller/meaning and safe baseline/restore remain unresolved. Public-reference3S/4 samples both useV2. Do not remove gate or guess0 from unrelated writer code. Bounded new primary-source Solaar/libratbag/Logitech comparison is in progress; no new source or hardware writes authorized by an unproved contract. Pointer speed stays deferred. Interactive sharedmouse vector layout proposal remains queued for confirmation.
+
+All333build inputs still match final1,098offlinepass/strictsigned4013fd4; only owner feedback/docs changed. No test rerun required for documentation-only acceptance. Build metadata preserves owner CPU acceptance separately from remaining hardware checks. TaskView reduceddraftapproval remains pending after prior rejection; no retry.
+
+
+## UI-FREEZE-01 signed fix — 2 November 2026
+
+Signed build 4013fd4d3be6127aace690c63cc5b511a27a6550e4aa03c360ce2f5a4a03a8eb supersedes df12cc3 at dist/Hidhogg.app and dist/hidhoggctl; ignored dist/build-info.json records current provenance/history. Owner reported100%CPU/freezing on any window interaction, approved Hidhogg-only counters/five-second samples and offline regression/fix. Idle first sample was uninformative; coordinated interaction captured99.7%CPU with SwiftUI main layout/SliderMarkLabels. Running image UUID matched df12cc3. No memory leak established, no args/env/raw memory/privateconfig/logs/HID inspection.
+
+Minimized fake actualMouseHardwareSettingsView:force0...100 renders~0.1s, force0...4095 fails3s bound at4.726s, resizes~2.4s. One-lineproductionfix removesforce Slider step:1; existingUInt16.rounded setter/range unchanged. Same-caseGREEN~0.02s; full65535range~0.023s, resizes~0.002s. Fakecountersunchanged/windowsnevervisible. No other production/build input changed since previouscheckpoint except regressiontest and test-onlysetupwait.
+
+Final1,098offline cases pass (642XCTest+456SwiftTesting),2existingexclusionsunchanged;333inputhashesmatch tests/signatures/help. Independentreviewclear. Firstfullhad1setuptestreadinessrace; strengthenedwait forselectedID+verifiedowner+ready; actualfalsemanagement/write0assertionsuntouched; setup22pass/model11pass. Failedlogsandmanifestpreserved; no hiddenretry. All owned testgroups gone. Relevant sources/tests/docs in docs/ui-interaction-freeze.md.
+
+Owner next quits oldrunningHidhogg andopens rebuilt dist app, repeatsinteraction. No post-fixproduction launch/input/devicewrites byagents. Source unstaged/uncommitted onmaster5973d41; commit accepteddependency-closed scope automatically onmanualconfirmation, no push unlessasked. Prior settingsmilestone remainspartial: pointerspeed explicitlydeferred, DPIV2read-onlypendinglevelcontract. Newproposal sharedinteractive3S/MX4vectorcanvas+inspector awaitsconfirmation; bugfixpreemptsit, noartworkchangesimplemented.
+
+TaskView reduceddraftapproval remains pending; originalexternalpayloadrejected, no taskcreated/retry. Do not mixtrackingpermission withhardwareacceptance. Keepprivateprofiles owner-only outsidegit, reportredactedsymbols/numerics only.
+
+
+## MX-SET-01 signed partial checkpoint — 2 November 2026
+
+Signed build df12cc383925ee63277f4cadaeb41bf5833d12246b61c07181cfc251e51c2d27 is at dist/Hidhogg.app and dist/hidhoggctl; ignored dist/build-info.json has current provenance/history. Full1,097 offline tests pass (641XCTest+456SwiftTesting), targeted72pass, backend283pass. Exactly WakeConnectionTests/NativeWorkspaceWindowTests excluded;333 frozen inputs match before/after tests/signing, strict signatures/help pass. Parent viewed final380/720 fake captures; no clipping. First full failed and compile overlap retained, not hidden. Real passive-enable eligibility and delayed-disable latch fixed; fake timestamp/default-direction expectations updated; D200X only test-cancellation wait changed, no production D200X edits.
+
+Implemented established SmartShift/wheel/thumb/direct-button/haptic/one-entry panel settings; granular feature/version admission, native unassigned optional controls, foreground subset dispatch fence, UUID persistence,200ms hardware debounce, readback/owned restore and uncertainty recovery. Full settings scope remains INCOMPLETE: owner explicitly chose pointer speed pending (no private host API implementation), and both public target specimens use DPI2201V2 with unresolved dpi_level write/restore contract. V2 status/ranges are readable but setters blocked; V0/V1 write support verified. Haptic rounding preserves observed data but unmatched desired-state restoration stays uncertain.
+
+No production app launch, live HID/OS input/config writes, private logs/config/captures or push by agents. Master remains5973d41; all new scope unstaged/uncommitted pending owner manual verification. Commit accepted dependency-closed scope automatically after owner confirmation, without another check-in request.
+
+Next: owner reopens signed app and verifies available controls/defaults, SmartShift/force, MX4 haptic/panel, optional buttons/native restoration, reconnect/restore and transports separately. Resolve V2 DPI ordinary UI caller/level/readback evidence before enabling writes; query in docs/mouse-settings-milestone.md. Other roadmap exclusions unchanged.
+
+TaskView creation was rejected by automatic approval review because payload transmitted repository/build/local-path details. No task created. Reduced concrete draft docs/mouse-settings-taskview-draft.md is awaiting owner approval through async question; do not retry without approval. Current feature readiness does not depend on this tracking sync.
+
+
+## MX-SET-01 combined settings in progress — 2 November 2026
+
+Owner approved one combined MX3S/MX4 settings milestone, then clarified pointer speed independent of DPI, implementation guided by Logitech; similar user-facing scroll speed intent. Remove Leave unchanged scroll direction, default vertical Standard and thumbwheel Natural, always apply explicit saved directions. Base clean master5973d41. Plan/checklist docs/mouse-settings-milestone.md. Backend agent owns LogitechBolt feature/version codecs and guarded IO; storage agent domain/config; parent model/UI/integration. Explorer found conditional2205 pointer scaling, separate2201 DPI; exact Options+ host/device implementation and actual3S/4 support remain unknown. No global mouse tap fallback or private IOHID property writes authorized/performed. Core UI/model/config changes in flight, no current combined compile/test/signing yet. Old signed dist remains prior accepted build until replacement. No agent app launch, hardware reads/writes, private logs/config/captures. Physical confirmation remains owner. After owner manual acceptance, commit dependency-closed verified scope locally without separate request; no push unless asked.
+
+
 ## Owner feedback on padding / LC-05A — 2 November 2026
 
 Owner reports latest build303a3f “Seems to work well.” Treat current padding/initial MX4 settings behavior as owner-accepted. Specific restore/reconnect/Bluetooth/fault cases were not enumerated. The verified padding/MX4 scope is being checked in locally at the owner’s request. Standing workflow: after manual verification, commit the verified, dependency-closed scope without waiting for another check-in request. Preserve unrelated work; push only when authorized. Full3S/4 hardware roadmap remains staged in docs/padding-mx4-settings-plan.md. No live operation performed by agent.

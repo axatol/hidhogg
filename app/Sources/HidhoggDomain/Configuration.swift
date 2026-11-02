@@ -3,8 +3,19 @@ import Foundation
 public enum MouseControl: String, Codable, CaseIterable, Hashable, Sendable {
     case back
     case forward
+    case middle
+    case wheelMode
+    case thumbRest
 
-    public var title: String { rawValue.capitalized }
+    public var title: String {
+        switch self {
+        case .back: "Back"
+        case .forward: "Forward"
+        case .middle: "Middle button"
+        case .wheelMode: "Wheel mode button"
+        case .thumbRest: "Thumb button"
+        }
+    }
 }
 
 public enum ShortcutModifier: String, Codable, CaseIterable, Hashable, Sendable {
@@ -53,13 +64,27 @@ public struct DeviceBindings: Codable, Equatable, Sendable {
     public var id: String
     public var defaults: [String: ControlBinding]
     public var applications: [String: [String: ControlBinding]]
-    public var wheelInverted: Bool?
+    private var storedWheelInverted: Bool
+    public var wheelInverted: Bool? {
+        get { storedWheelInverted }
+        set { storedWheelInverted = newValue ?? Self.defaultWheelInverted }
+    }
+    public var effectiveWheelInverted: Bool { storedWheelInverted }
     public var restorePreviousSettingsOnDisconnect: Bool
     public var wheelHighResolution: Bool?
     public var wheelScrollAmount: Double?
-    public var thumbwheelInverted: Bool?
+    private var storedThumbwheelInverted: Bool
+    public var thumbwheelInverted: Bool? {
+        get { storedThumbwheelInverted }
+        set { storedThumbwheelInverted = newValue ?? Self.defaultThumbwheelInverted }
+    }
+    public var effectiveThumbwheelInverted: Bool { storedThumbwheelInverted }
     public var thumbwheelScrollAmount: Double?
     public var lowBatteryNotificationsEnabled: Bool
+    public var hardwarePreferences: MouseHardwarePreferences?
+
+    public static let defaultWheelInverted = false
+    public static let defaultThumbwheelInverted = true
 
     public init(
         id: String,
@@ -71,18 +96,20 @@ public struct DeviceBindings: Codable, Equatable, Sendable {
         wheelScrollAmount: Double? = nil,
         thumbwheelInverted: Bool? = nil,
         thumbwheelScrollAmount: Double? = nil,
-        lowBatteryNotificationsEnabled: Bool = false
+        lowBatteryNotificationsEnabled: Bool = false,
+        hardwarePreferences: MouseHardwarePreferences? = nil
     ) {
         self.id = id
         self.defaults = defaults
         self.applications = applications
-        self.wheelInverted = wheelInverted
+        self.storedWheelInverted = wheelInverted ?? Self.defaultWheelInverted
         self.restorePreviousSettingsOnDisconnect = restorePreviousSettingsOnDisconnect
         self.wheelHighResolution = wheelHighResolution
         self.wheelScrollAmount = wheelScrollAmount
-        self.thumbwheelInverted = thumbwheelInverted
+        self.storedThumbwheelInverted = thumbwheelInverted ?? Self.defaultThumbwheelInverted
         self.thumbwheelScrollAmount = thumbwheelScrollAmount
         self.lowBatteryNotificationsEnabled = lowBatteryNotificationsEnabled
+        self.hardwarePreferences = hardwarePreferences
     }
 
     public init(from decoder: Decoder) throws {
@@ -90,24 +117,46 @@ public struct DeviceBindings: Codable, Equatable, Sendable {
         id = try container.decode(String.self, forKey: .id)
         defaults = try container.decode([String: ControlBinding].self, forKey: .defaults)
         applications = try container.decode([String: [String: ControlBinding]].self, forKey: .applications)
-        wheelInverted = try container.decodeIfPresent(Bool.self, forKey: .wheelInverted)
+        storedWheelInverted = try container.decodeIfPresent(Bool.self, forKey: .wheelInverted)
+            ?? Self.defaultWheelInverted
         restorePreviousSettingsOnDisconnect = try container.decode(
             Bool.self, forKey: .restorePreviousSettingsOnDisconnect
         )
         wheelHighResolution = try container.decodeIfPresent(Bool.self, forKey: .wheelHighResolution)
         wheelScrollAmount = try container.decodeIfPresent(Double.self, forKey: .wheelScrollAmount)
-        thumbwheelInverted = try container.decodeIfPresent(Bool.self, forKey: .thumbwheelInverted)
+        storedThumbwheelInverted = try container.decodeIfPresent(Bool.self, forKey: .thumbwheelInverted)
+            ?? Self.defaultThumbwheelInverted
         thumbwheelScrollAmount = try container.decodeIfPresent(Double.self, forKey: .thumbwheelScrollAmount)
         lowBatteryNotificationsEnabled = try container.decodeIfPresent(
             Bool.self, forKey: .lowBatteryNotificationsEnabled
         ) ?? false
+        hardwarePreferences = try container.decodeIfPresent(MouseHardwarePreferences.self, forKey: .hardwarePreferences)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(defaults, forKey: .defaults)
+        try container.encode(applications, forKey: .applications)
+        try container.encode(storedWheelInverted, forKey: .wheelInverted)
+        try container.encode(restorePreviousSettingsOnDisconnect, forKey: .restorePreviousSettingsOnDisconnect)
+        try container.encodeIfPresent(wheelHighResolution, forKey: .wheelHighResolution)
+        try container.encodeIfPresent(wheelScrollAmount, forKey: .wheelScrollAmount)
+        try container.encode(storedThumbwheelInverted, forKey: .thumbwheelInverted)
+        try container.encodeIfPresent(thumbwheelScrollAmount, forKey: .thumbwheelScrollAmount)
+        try container.encode(lowBatteryNotificationsEnabled, forKey: .lowBatteryNotificationsEnabled)
+        try container.encodeIfPresent(hardwarePreferences, forKey: .hardwarePreferences)
     }
 
     public func binding(for control: MouseControl, application: String?) -> ControlBinding {
+        configuredBinding(for: control, application: application) ?? .disabled
+    }
+
+    public func configuredBinding(for control: MouseControl, application: String?) -> ControlBinding? {
         if let application, let override = applications[application]?[control.rawValue] {
             return override
         }
-        return defaults[control.rawValue] ?? .disabled
+        return defaults[control.rawValue]
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -121,6 +170,7 @@ public struct DeviceBindings: Codable, Equatable, Sendable {
         case thumbwheelInverted
         case thumbwheelScrollAmount
         case lowBatteryNotificationsEnabled
+        case hardwarePreferences
     }
 }
 
@@ -166,6 +216,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
             throw ConfigurationValidationError.invalidProfile
         }
         let known = Set(MouseControl.allCases.map(\.rawValue))
+        let required = Set([MouseControl.back.rawValue, MouseControl.forward.rawValue])
         for device in devices {
             guard device.wheelScrollAmount.map(WheelScrollAmount.contains) ?? true else {
                 throw ConfigurationValidationError.invalidWheelScrollAmount
@@ -173,7 +224,10 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
             guard device.thumbwheelScrollAmount.map(WheelScrollAmount.contains) ?? true else {
                 throw ConfigurationValidationError.invalidWheelScrollAmount
             }
-            guard Set(device.defaults.keys) == known, device.applications.count <= 128 else {
+            _ = try device.hardwarePreferences?.validated()
+            let defaultControls = Set(device.defaults.keys)
+            guard required.isSubset(of: defaultControls), defaultControls.isSubset(of: known),
+                  device.applications.count <= 128 else {
                 throw ConfigurationValidationError.invalidControls
             }
             for (application, overrides) in device.applications {
@@ -218,6 +272,7 @@ public enum ConfigurationValidationError: Error, LocalizedError, Sendable {
     case unsupportedVersion, invalidProfile, invalidControls, invalidApplication, invalidShortcut
     case invalidD200XControls, invalidD200XAppearance, invalidD200XAction
     case invalidWheelScrollAmount
+    case invalidMouseHardwarePreferences
     case invalidRegistry
 
     public var errorDescription: String? {
@@ -232,6 +287,7 @@ public enum ConfigurationValidationError: Error, LocalizedError, Sendable {
         case .invalidD200XAppearance: "A D200X tile key, label or background color is invalid."
         case .invalidD200XAction: "A D200X action, notification source or brightness preference is invalid."
         case .invalidWheelScrollAmount: "Wheel scroll amount must be a finite value between 0.25 and 10."
+        case .invalidMouseHardwarePreferences: "A mouse hardware preference is out of range or conflicts with its mode."
         }
     }
 }

@@ -147,7 +147,7 @@ final class ScrollAmountModelTests: XCTestCase {
         await expectEventually { posts == [1] }
 
         var buttonsDisabled = model.document.draft
-        for control in MouseControl.allCases {
+        for control in [MouseControl.back, .forward] {
             buttonsDisabled.devices[0].defaults[control.rawValue] = .disabled
         }
         buttonsDisabled.devices[0].applications.removeAll()

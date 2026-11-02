@@ -748,7 +748,6 @@ func mx4WheelDiscoversIndependentlyAndRestoresOnlyPhysicalFields(index: UInt8) a
     #expect(await audit.wheelWrites == [[6]])
     await controller.enable()
     await controller.applyThumbwheelPreferences(inverted: true, amount: 2, restorePreviousSettingsOnDisconnect: true, scrollPostingAllowed: true)
-    await controller.applyWheelPreferences(inverted: false, highResolution: false, restorePreviousSettingsOnDisconnect: true, amount: 2, scrollPostingAllowed: true)
     #expect(await audit.wheelWrites == [[6]])
     #expect(await audit.setterRequestCount == 0)
     #expect(await audit.nonWheelSetterRequests == 0)
@@ -844,15 +843,16 @@ func mx4WheelCleanupRefusesRemappedFeatureLostCapabilityOrForeignMode(kind: Int)
 }
 
 @Test(arguments: [false, true])
-func mx4WheelCaptureOverloadCannotActivateEvenWithNilAmount(posting: Bool) async throws {
+func mx4WheelCaptureOverloadWithNilAmountOnlyChangesPhysicalPreferences(posting: Bool) async throws {
     let (controller, audit, statuses, reader, _) = try await mx4WheelSession()
     defer { reader.cancel() }
     await controller.applyWheelPreferences(inverted: true, highResolution: true, restorePreviousSettingsOnDisconnect: true,
                                           amount: nil, scrollPostingAllowed: posting)
-    #expect(await audit.wheelWrites.isEmpty)
+    #expect(await audit.wheelWrites == [[6]])
     #expect(await statuses.last?.wheel.captureActive == false)
     #expect(await statuses.last?.wheel.support == .supported)
     #expect(await controller.stopForRestart())
+    #expect(await audit.wheelWrites == [[6], [0]])
 }
 
 @Test(arguments: [UInt16(0), 0x1700, 0x1701, 0x1702, 0x0001, 0x0900])

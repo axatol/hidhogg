@@ -524,7 +524,7 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
 @Test func wireRejectsDuplicatesVirtualWrongTaskAndMalformedSnapshots() throws {
     let back = FixtureTransport.row(cid: 0x53, task: 0x3C)
     let forward = FixtureTransport.row(cid: 0x56, task: 0x3E)
-    #expect(try BoltWire.eligible([back, forward]) == Set(MouseControl.allCases))
+    #expect(try BoltWire.eligible([back, forward]) == Set([.back, .forward]))
     #expect(throws: BoltFailure.ambiguous) { try BoltWire.eligible([back, back, forward]) }
     #expect(try BoltWire.eligible([back, FixtureTransport.row(cid: 0x56, task: 0x3E, flags: 0xA0)]) == [.back])
     #expect(try BoltWire.eligible([back, FixtureTransport.row(cid: 0x56, task: 0x3C)]) == [.back])

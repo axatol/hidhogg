@@ -18,7 +18,11 @@ protocol BindingSession: Sendable {
     func discover(target: LogitechConnectionTarget) async
     func discover() async
     func refreshDeviceInformation() async
+    func applyHardwareSettings(_ preferences: BoltHardwareSettingsPreferences, restorePreviousSettingsOnDisconnect: Bool) async
+    func refreshHardwareSettings() async
+    func playHapticTest(waveform: UInt8) async
     func enable() async
+    func enable(controls: Set<MouseControl>) async
     func disable() async
     func stop() async
     func stop(restorePreviousSettingsOnDisconnect: Bool) async
@@ -45,7 +49,11 @@ extension BindingSession {
     func existingConnections() async throws -> [LogitechEndpointCandidate] { [] }
     func discover(target: LogitechConnectionTarget) async { await discover() }
 
+    func enable(controls: Set<MouseControl>) async { await enable() }
     func refreshDeviceInformation() async {}
+    func applyHardwareSettings(_ preferences: BoltHardwareSettingsPreferences, restorePreviousSettingsOnDisconnect: Bool) async {}
+    func refreshHardwareSettings() async {}
+    func playHapticTest(waveform: UInt8) async {}
 
     func stop(restorePreviousSettingsOnDisconnect: Bool) async { await stop() }
 
@@ -113,12 +121,13 @@ struct WorkspaceLocation: Hashable {
         self.route = route
         self.applicationID = applicationID
         self.control = control
-        self.target = control == .back ? .back : .forward
+        self.target = DeviceEditorTarget(rawValue: control.rawValue) ?? .back
     }
 }
 
 enum BindingEditorMode: String, CaseIterable, Identifiable {
     case inherit
+    case native
     case disabled
     case shortcut
 
@@ -127,6 +136,7 @@ enum BindingEditorMode: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .inherit: "Inherit"
+        case .native: "Use native behavior"
         case .disabled: "Disabled"
         case .shortcut: "Shortcut"
         }
@@ -320,6 +330,13 @@ final class AppModel: ObservableObject {
         var postingAllowed: Bool
         var restorePreviousSettingsOnDisconnect: Bool
     }
+    private struct HardwareSettingsRequest: Equatable {
+        let preferences: BoltHardwareSettingsPreferences
+        let restore: Bool
+    }
+    private var attemptedHardwareSettingsRequest: HardwareSettingsRequest?
+    private var hardwareSettingsDebounceTask: Task<Void, Never>?
+    private var hardwareSettingsDebouncing = false
     private var attemptedWheelRequest: WheelRequest?
     private struct ThumbwheelRequest: Equatable {
         var inverted: Bool?
@@ -329,6 +346,9 @@ final class AppModel: ObservableObject {
     }
     private var attemptedThumbwheelRequest: ThumbwheelRequest?
     private var attemptedButtonState: Bool?
+    private var attemptedButtonControls: Set<MouseControl>?
+    private var buttonDisablePending = false
+    private var frontmostMouseApplicationObserver: NSObjectProtocol?
     private var reconciliationRequested = false
     private var reconciliationTask: Task<Void, Never>?
     private var autosaveTask: Task<Void, Never>?
@@ -385,7 +405,8 @@ final class AppModel: ObservableObject {
                                              registryReport: SystemIORegistryBatteryReport(),
                                              scheduler: BluetoothCheckScheduler()),
             loadImmediately: true,
-            observeSleep: true
+            observeSleep: true,
+            observeFrontmostMouseApplication: true
         )
         d200x.startAutomation()
     }
@@ -406,6 +427,7 @@ final class AppModel: ObservableObject {
         genericBluetoothAlerts: GenericBluetoothAlertCoordinator? = nil,
         loadImmediately: Bool = true,
         observeSleep: Bool = true,
+        observeFrontmostMouseApplication: Bool = false,
         wakeDelay: @escaping WakeRecoveryCoordinator.Delay = { try await Task.sleep(for: $0) },
         wakeStatusTimeout: @escaping WakeRecoveryCoordinator.Delay = { try await Task.sleep(for: $0) },
         frontmostApplication: @escaping @MainActor () -> String? = {
@@ -455,6 +477,14 @@ final class AppModel: ObservableObject {
             }
         }
 
+        if observeFrontmostMouseApplication {
+            frontmostMouseApplicationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.foregroundMouseApplicationChanged() }
+            }
+        }
+
         if observeSleep {
             bluetoothAuthorizationObserver = NotificationCenter.default.addObserver(
                 forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
@@ -497,10 +527,12 @@ final class AppModel: ObservableObject {
     }
 
     isolated deinit {
+        if let frontmostMouseApplicationObserver { NSWorkspace.shared.notificationCenter.removeObserver(frontmostMouseApplicationObserver) }
         if let bluetoothAuthorizationObserver { NotificationCenter.default.removeObserver(bluetoothAuthorizationObserver) }
         eventTask?.cancel()
         boltPairingEventTask?.cancel()
         autosaveTask?.cancel()
+        hardwareSettingsDebounceTask?.cancel()
         reconciliationTask?.cancel()
         wakeStatusWait?.timeout.cancel()
         wakeStatusWait?.continuation.resume(returning: nil)
@@ -710,14 +742,14 @@ final class AppModel: ObservableObject {
     var canPairNewMouse: Bool { makeBoltPairingSession != nil && canSelectExistingMouse && !isMouseSelectorPresented }
     var isBoltPairingInProgress: Bool { isBoltPairingActive }
     var selectedMouseSupportsManagement: Bool {
-        selectedMouseID.flatMap { registration(id: $0)?.mouseModel } != .mxMaster4 && selectedMouseStatus.supportsManagement
+        selectedMouseStatus.supportsButtonManagement || selectedMouseStatus.supportsWheelCapture || selectedMouseStatus.supportsThumbwheelManagement
     }
     var selectedMouseSettingsAvailability: MouseSettingsAvailability {
         if selectedMouseSupportsManagement { return .managed }
         return selectedMouseStatus.wheel.support == .supported ? .physicalMainWheel : .informationOnly
     }
     var selectedWheelInversionAvailable: Bool {
-        selectedMouseSupportsManagement || selectedMouseStatus.wheel.supportsInversion
+        selectedMouseStatus.supportsManagement || selectedMouseStatus.wheel.supportsInversion
     }
     private var unverifiedMainWheelSettingsMessage: String {
         if let message = selectedMouseStatus.wheel.message { return message }
@@ -739,16 +771,16 @@ final class AppModel: ObservableObject {
         case .managed:
             "Buttons and supported wheel controls"
         case .physicalMainWheel where selectedMouseStatus.wheel.supportsInversion:
-            "Main wheel direction and input resolution; other controls are not available yet"
+            "Main wheel direction and input resolution; other hardware settings are shown in the workspace"
         case .physicalMainWheel:
-            "Main wheel input resolution; direction inversion unavailable; other controls are not available yet"
+            "Main wheel input resolution; direction inversion unavailable"
         case .informationOnly:
             if let message = selectedMouseStatus.wheel.message {
-                "\(message); other controls are not available yet"
+                "\(message); available hardware settings are shown in the workspace"
             } else if selectedMouseStatus.wheel.support == .unknown {
-                "\(unverifiedMainWheelSettingsMessage); other controls are not available yet"
+                "\(unverifiedMainWheelSettingsMessage); available hardware settings are shown in the workspace"
             } else {
-                "Main wheel settings are unavailable for this connection; other controls are not available yet"
+                "Main wheel settings are unavailable for this connection; available hardware settings are shown in the workspace"
             }
         }
     }
@@ -895,7 +927,7 @@ final class AppModel: ObservableObject {
     var isBindingsEnabled: Bool { isSelectedMouseRuntimeTarget && boltStatus.phase == .enabled && actionsEnabled }
 
     var buttonReadiness: String {
-        if !selectedMouseSupportsManagement { return "Button settings are not available yet" }
+        if !selectedMouseStatus.supportsButtonManagement { return "Button settings are unavailable for this connection" }
         if recordingTarget != nil { return "Shortcuts paused while recording" }
         if !hasUsableConfiguration { return "Shortcuts blocked: configuration unavailable" }
         if !containsConfiguredShortcut(in: document.draft.mouse) { return "No shortcuts configured" }
@@ -905,11 +937,11 @@ final class AppModel: ObservableObject {
     }
     var isWheelApplyInFlight: Bool { isWheelApplyPending || boltStatus.wheel.isApplying }
     var isThumbwheelApplyInFlight: Bool { isThumbwheelApplyPending }
-    var wheelPreferenceDraft: Bool? { document.draft.mouse?.wheelInverted }
+    var wheelPreferenceDraft: Bool? { document.draft.mouse?.wheelInverted ?? false }
     var savedWheelPreference: Bool? { document.saved.mouse?.wheelInverted }
     var wheelScrollAmountDraft: Double? { document.draft.mouse?.wheelScrollAmount }
     var wheelHighResolutionDraft: Bool? { document.draft.mouse?.wheelHighResolution }
-    var thumbwheelPreferenceDraft: Bool? { document.draft.mouse?.thumbwheelInverted }
+    var thumbwheelPreferenceDraft: Bool? { document.draft.mouse?.thumbwheelInverted ?? true }
     var savedThumbwheelPreference: Bool? { document.saved.mouse?.thumbwheelInverted }
     var thumbwheelScrollAmountDraft: Double? { document.draft.mouse?.thumbwheelScrollAmount }
     var restorePreviousSettingsOnDisconnect: Bool { document.draft.mouse?.restorePreviousSettingsOnDisconnect ?? false }
@@ -1042,9 +1074,9 @@ final class AppModel: ObservableObject {
         return selectedMouseStatus.deviceResponding ? .discovering : .idle
     }
     var canEnableBindings: Bool {
-        canClaimConnectedMouse && isSelectedMouseRuntimeTarget && admissibleMouseID != nil && runtimeIdentityVerified && boltStatus.supportsManagement && !isRestarting && !isLoading && hasUsableConfiguration &&
+        canClaimConnectedMouse && isSelectedMouseRuntimeTarget && admissibleMouseID != nil && runtimeIdentityVerified && boltStatus.supportsButtonManagement && !isRestarting && !isLoading && hasUsableConfiguration &&
             permission == .granted && boltStatus.phase == .ready && !boltStatus.cleanupUncertain &&
-            boltStatus.availableControls == Set(MouseControl.allCases) &&
+            !boltStatus.availableControls.isEmpty &&
             (try? document.draft.validated()) != nil
     }
 
@@ -2522,11 +2554,79 @@ final class AppModel: ObservableObject {
         return permission
     }
 
+    var mouseHardwarePreferences: MouseHardwarePreferences {
+        document.draft.mouse?.hardwarePreferences ?? .init()
+    }
+
+    var mouseHardwareStatus: BoltHardwareSettingsStatus { selectedMouseStatus.hardwareSettings }
+
+    var canChangeMouseHardware: Bool {
+        canEditConfiguration && isSelectedMouseRuntimeTarget && runtimeIdentityVerified &&
+            [.ready, .enabled].contains(selectedMouseStatus.phase) && !selectedMouseStatus.cleanupUncertain
+    }
+
+    func setSmartShiftMode(_ mode: MouseSmartShiftMode) {
+        guard canEditConfiguration else { return }
+        var configuration = document.draft
+        guard let index = configuration.devices.firstIndex(where: { $0.id == AppConfiguration.logitechProfileID }) else { return }
+        var preferences = configuration.devices[index].hardwarePreferences ?? .init()
+        preferences.smartShiftMode = mode
+        if mode == .automatic {
+            let candidate = preferences.smartShiftThreshold ?? mouseHardwareStatus.smartShift.defaultThreshold ?? 10
+            preferences.smartShiftThreshold = min(254, max(1, candidate))
+        }
+        configuration.devices[index].hardwarePreferences = preferences
+        updateDraft(configuration)
+    }
+
+    func setMouseHardwarePreference<Value>(_ keyPath: WritableKeyPath<MouseHardwarePreferences, Value>, _ value: Value) {
+        guard canEditConfiguration else { return }
+        var configuration = document.draft
+        guard let index = configuration.devices.firstIndex(where: { $0.id == AppConfiguration.logitechProfileID }) else { return }
+        var preferences = configuration.devices[index].hardwarePreferences ?? .init()
+        preferences[keyPath: keyPath] = value
+        configuration.devices[index].hardwarePreferences = preferences
+        updateDraft(configuration)
+    }
+
+    func refreshMouseHardwareSettings() {
+        guard canChangeMouseHardware, let lease = activeMouseLease else { return }
+        Task { [weak self] in
+            guard let self, self.owns(lease) else { return }
+            await self.performMouseOperation(for: lease) { await $0.refreshHardwareSettings() }
+        }
+    }
+
+    func testMouseHaptics() {
+        guard canChangeMouseHardware, let lease = activeMouseLease,
+              !mouseHardwareStatus.isApplying, !hardwareSettingsDebouncing,
+              mouseHardwareStatus.haptics.support == .supported,
+              mouseHardwareStatus.haptics.enabled == true,
+              mouseHardwareStatus.haptics.rawEngineStatus == 0,
+              let waveform = mouseHardwareStatus.haptics.supportedWaveforms.first else { return }
+        Task { [weak self] in
+            guard let self, self.owns(lease) else { return }
+            await self.performMouseOperation(for: lease) { await $0.playHapticTest(waveform: waveform) }
+        }
+    }
+
+    private func debounceHardwareSettings() {
+        hardwareSettingsDebounceTask?.cancel()
+        hardwareSettingsDebouncing = true
+        hardwareSettingsDebounceTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+            guard let self else { return }
+            self.hardwareSettingsDebouncing = false
+            self.hardwareSettingsDebounceTask = nil
+            self.requestReconciliation()
+        }
+    }
+
     func setWheelPreference(_ inverted: Bool?) {
         guard canEditConfiguration else { return }
         var configuration = document.draft
         guard let index = configuration.devices.firstIndex(where: { $0.id == AppConfiguration.logitechProfileID }) else { return }
-        configuration.devices[index].wheelInverted = inverted
+        configuration.devices[index].wheelInverted = inverted ?? false
         updateDraft(configuration)
     }
 
@@ -2543,7 +2643,7 @@ final class AppModel: ObservableObject {
         guard canEditConfiguration else { return }
         var configuration = document.draft
         guard let index = configuration.devices.firstIndex(where: { $0.id == AppConfiguration.logitechProfileID }) else { return }
-        configuration.devices[index].thumbwheelInverted = inverted
+        configuration.devices[index].thumbwheelInverted = inverted ?? true
         updateDraft(configuration)
     }
 
@@ -2680,6 +2780,10 @@ final class AppModel: ObservableObject {
         guard canEditConfiguration else { return }
         let applicationID = selectedApplicationID
         switch mode {
+        case .native:
+            guard applicationID == nil, control != .back, control != .forward else { return }
+            cancelRecording(for: control, applicationID: applicationID)
+            setBinding(nil, for: control, applicationID: nil)
         case .inherit:
             guard applicationID != nil else { return }
             cancelRecording(for: control, applicationID: applicationID)
@@ -2707,7 +2811,8 @@ final class AppModel: ObservableObject {
         if let applicationID, device.applications[applicationID]?[control.rawValue] == nil {
             return .inherit
         }
-        return device.binding(for: control, application: applicationID).kind == .shortcut ? .shortcut : .disabled
+        guard let binding = device.configuredBinding(for: control, application: applicationID) else { return .native }
+        return binding.kind == .shortcut ? .shortcut : .disabled
     }
 
     func bindingDescription(for control: MouseControl) -> String {
@@ -2718,9 +2823,9 @@ final class AppModel: ObservableObject {
         guard let device = document.draft.mouse else { return "Disabled" }
 
         if let applicationID, device.applications[applicationID]?[control.rawValue] == nil {
-            return "Inherited: " + Self.bindingDescription(device.binding(for: control, application: nil))
+            return "Inherited: " + (device.configuredBinding(for: control, application: nil).map(Self.bindingDescription) ?? "Native behavior")
         }
-        return Self.bindingDescription(device.binding(for: control, application: applicationID))
+        return device.configuredBinding(for: control, application: applicationID).map(Self.bindingDescription) ?? "Native behavior"
     }
 
     func beginRecording(for control: MouseControl, applicationID: String? = nil) {
@@ -2743,7 +2848,7 @@ final class AppModel: ObservableObject {
     }
 
     func selectControl(_ control: MouseControl) {
-        selectTarget(control == .back ? .back : .forward)
+        selectTarget(DeviceEditorTarget(rawValue: control.rawValue) ?? .back)
     }
 
     var selectedTarget: DeviceEditorTarget { navigation.current.target }
@@ -2862,6 +2967,9 @@ final class AppModel: ObservableObject {
                 bolt.suspendThumbwheelAdmission()
                 thumbwheelScrollSender.reset()
                 attemptedThumbwheelRequest = nil
+            }
+            if updatesActiveMouse && document.draft.mouse?.hardwarePreferences != validated.mouse?.hardwarePreferences {
+                debounceHardwareSettings()
             }
             document.updateDraft(validated)
             workspace = updatedWorkspace
@@ -3283,14 +3391,30 @@ final class AppModel: ObservableObject {
             .contains { $0.kind == .shortcut }
     }
 
+    private var requestedMouseButtonControls: Set<MouseControl> {
+        guard let mouse = runtimeMouse else { return [] }
+        let application = frontmostApplication()
+        return Set(boltStatus.availableControls.filter { mouse.configuredBinding(for: $0, application: application) != nil })
+    }
+
+    func foregroundMouseApplicationChanged() {
+        refreshDeliveryAdmission()
+        requestReconciliation()
+    }
+
+    private var hasConfiguredButtonIntent: Bool {
+        let controls = requestedMouseButtonControls
+        if controls.contains(where: { $0 != .back && $0 != .forward }) { return true }
+        return hasConfiguredShortcut
+    }
+
     private var shouldEnableButtons: Bool {
-        activeMouseLease != nil && runtimeIdentityVerified && sessionActivationRequested && boltStatus.supportsManagement && !isRestarting && !isLoading && !boltStatus.cleanupUncertain && hasUsableConfiguration &&
-            permission == .granted && hasConfiguredShortcut &&
-            boltStatus.availableControls == Set(MouseControl.allCases)
+        activeMouseLease != nil && runtimeIdentityVerified && sessionActivationRequested && boltStatus.supportsButtonManagement && !isRestarting && !isLoading && !boltStatus.cleanupUncertain && hasUsableConfiguration &&
+            permission == .granted && hasConfiguredButtonIntent && !requestedMouseButtonControls.isEmpty
     }
 
     private func refreshDeliveryAdmission() {
-        let canDeliver = activeMouseLease != nil && runtimeIdentityVerified && boltStatus.supportsManagement && permission == .granted && sessionActivationRequested && !isRestarting &&
+        let canDeliver = activeMouseLease != nil && runtimeIdentityVerified && permission == .granted && sessionActivationRequested && !isRestarting &&
             !isBoltReceiverManagementActive && boltReceiverManagementCloseTask == nil &&
             !boltStatus.cleanupUncertain && [.ready, .enabling, .enabled].contains(boltStatus.phase)
         if !canDeliver {
@@ -3299,7 +3423,7 @@ final class AppModel: ObservableObject {
             bolt.invalidateThumbwheelAdmission()
             thumbwheelScrollSender.reset()
         }
-        actionsEnabled = shouldEnableButtons && boltStatus.phase == .enabled && recordingTarget == nil &&
+        actionsEnabled = !buttonDisablePending && shouldEnableButtons && attemptedButtonControls == requestedMouseButtonControls && boltStatus.phase == .enabled && recordingTarget == nil &&
             activeMouseLease.map { boltStatus.generation > $0.statusGenerationFloor } == true
         deliveryGeneration = actionsEnabled ? boltStatus.generation : nil
     }
@@ -3323,12 +3447,24 @@ final class AppModel: ObservableObject {
             guard let lease = activeMouseLease, sessionActivationRequested, !isRestarting, !isLoading, hasUsableConfiguration,
                   !discoveryPending, [.ready, .enabled].contains(boltStatus.phase),
                   !boltStatus.cleanupUncertain, runtimeIdentityVerified,
-                  (boltStatus.supportsManagement || boltStatus.wheel.support == .supported),
                   boltStatus.generation > lease.statusGenerationFloor else { continue }
             let intent = lifecycleIntent
-            let physicalMainWheelOnly = !boltStatus.supportsManagement
+            let hardware = HardwareSettingsRequest(
+                preferences: BoltHardwareSettingsPreferences(runtimeMouse?.hardwarePreferences ?? .init()),
+                restore: runtimeRestorePreviousSettings
+            )
+            if !hardwareSettingsDebouncing && attemptedHardwareSettingsRequest != hardware {
+                attemptedHardwareSettingsRequest = hardware
+                await performMouseOperation(for: lease) { session in
+                    await session.applyHardwareSettings(hardware.preferences, restorePreviousSettingsOnDisconnect: hardware.restore)
+                }
+                guard lifecycleIntent == intent, owns(lease) else { continue }
+                reconciliationRequested = true
+                continue
+            }
+            let physicalMainWheelOnly = !boltStatus.supportsWheelCapture
             let wheel = WheelRequest(
-                inverted: physicalMainWheelOnly && !boltStatus.wheel.supportsInversion ? nil : runtimeMouse?.wheelInverted,
+                inverted: physicalMainWheelOnly && !boltStatus.wheel.supportsInversion ? nil : (runtimeMouse?.wheelInverted ?? false),
                 highResolution: runtimeMouse?.wheelHighResolution,
                 amount: physicalMainWheelOnly ? nil : runtimeMouse?.wheelScrollAmount,
                 postingAllowed: !physicalMainWheelOnly && !scrollReleasePending && !scrollPostingFailed && permission == .granted &&
@@ -3369,9 +3505,9 @@ final class AppModel: ObservableObject {
                     continue
                 }
             }
-            if boltStatus.supportsManagement {
+            if boltStatus.supportsThumbwheelManagement {
                 let thumbwheel = ThumbwheelRequest(
-                    inverted: runtimeMouse?.thumbwheelInverted,
+                    inverted: runtimeMouse?.thumbwheelInverted ?? true,
                     amount: runtimeMouse?.thumbwheelScrollAmount,
                     postingAllowed: !thumbwheelReleasePending && !thumbwheelPostingFailed && permission == .granted &&
                         (runtimeMouse?.thumbwheelScrollAmount == nil || thumbwheelScrollSender.canPostEvents()),
@@ -3405,13 +3541,26 @@ final class AppModel: ObservableObject {
                 }
             }
             let enabled = shouldEnableButtons
-            guard attemptedButtonState != enabled else { continue }
-            if enabled && boltStatus.phase == .ready {
-                attemptedButtonState = enabled
-                await performMouseOperation(for: lease) { await $0.enable() }
-            } else if !enabled && [.enabling, .enabled].contains(boltStatus.phase) {
-                attemptedButtonState = enabled
+            let controls = requestedMouseButtonControls
+            guard !buttonDisablePending,
+                  attemptedButtonState != enabled || attemptedButtonControls != controls else { continue }
+            if boltStatus.phase == .enabled && (!enabled || attemptedButtonControls != controls) {
+                attemptedButtonState = false
+                attemptedButtonControls = controls
+                buttonDisablePending = true
+                refreshDeliveryAdmission()
                 await performMouseOperation(for: lease) { await $0.disable() }
+                guard lifecycleIntent == intent, owns(lease) else { continue }
+                reconciliationRequested = true
+                continue
+            }
+            if enabled && boltStatus.phase == .ready {
+                attemptedButtonControls = controls
+                attemptedButtonState = true
+                await performMouseOperation(for: lease) { await $0.enable(controls: controls) }
+            } else if !enabled && boltStatus.phase == .ready {
+                attemptedButtonControls = controls
+                attemptedButtonState = false
             }
             guard lifecycleIntent == intent, owns(lease) else { continue }
             refreshDeliveryAdmission()
@@ -3436,6 +3585,7 @@ final class AppModel: ObservableObject {
         sessionActivationRequested = true
         attemptedWheelRequest = nil
         attemptedThumbwheelRequest = nil
+        attemptedHardwareSettingsRequest = nil
         attemptedButtonState = nil
         actionsEnabled = false
         deliveryGeneration = nil
@@ -3607,8 +3757,10 @@ final class AppModel: ObservableObject {
             if status.phase == .discovering, boltStatus.phase != .discovering {
                 attemptedWheelRequest = nil
                 attemptedThumbwheelRequest = nil
+                attemptedHardwareSettingsRequest = nil
                 attemptedButtonState = nil
             }
+            if [.ready, .idle, .failed, .discovering].contains(status.phase) { buttonDisablePending = false }
             statusSequence &+= 1
             boltStatus = status
             if [.idle, .failed, .discovering].contains(status.phase) {
@@ -3640,7 +3792,7 @@ final class AppModel: ObservableObject {
     }
 
     private func deliverScroll(vertical: Double, horizontal: Double, generation: UInt64, observedAt: ContinuousClock.Instant) {
-        guard admitsInput(observedAt: observedAt), runtimeIdentityVerified, boltStatus.supportsManagement,
+        guard admitsInput(observedAt: observedAt), runtimeIdentityVerified, boltStatus.supportsWheelCapture,
               sessionActivationRequested, !isRestarting, !boltStatus.cleanupUncertain,
               [.ready, .enabling, .enabled].contains(boltStatus.phase), permission == .granted,
               let amount = runtimeMouse?.wheelScrollAmount else { return }
@@ -3670,7 +3822,7 @@ final class AppModel: ObservableObject {
     }
 
     private func deliverThumbwheel(rotation: Double, state: UInt8, generation: UInt64, observedAt: ContinuousClock.Instant) {
-        guard admitsInput(observedAt: observedAt), runtimeIdentityVerified, boltStatus.supportsManagement,
+        guard admitsInput(observedAt: observedAt), runtimeIdentityVerified, boltStatus.supportsThumbwheelManagement,
               sessionActivationRequested, !isRestarting, !boltStatus.cleanupUncertain,
               [.ready, .enabling, .enabled].contains(boltStatus.phase), permission == .granted,
               let amount = runtimeMouse?.thumbwheelScrollAmount else { return }
@@ -3757,6 +3909,8 @@ final class AppModel: ObservableObject {
             configuration.devices[index].applications[applicationID] = overrides
         } else if let binding {
             configuration.devices[index].defaults[control.rawValue] = binding
+        } else if control != .back && control != .forward {
+            configuration.devices[index].defaults.removeValue(forKey: control.rawValue)
         }
         updateDraft(configuration)
     }

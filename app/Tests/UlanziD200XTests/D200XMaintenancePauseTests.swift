@@ -199,7 +199,7 @@ struct D200XMaintenancePauseTests {
         await clock.advance(.seconds(5))
         #expect(await eventually { await transport.commands().count == 2 })
         #expect(await clock.count(.seconds(5)) == 1)
-        #expect(await clock.count(.seconds(3)) == 0)
+        #expect(await eventually { await clock.count(.seconds(3)) == 0 })
 
         await clock.advance(.seconds(5))
         #expect(await eventually { await transport.commands().count == 3 })

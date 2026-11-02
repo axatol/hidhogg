@@ -5,6 +5,17 @@ private struct BoltMutationPreflightFailure: Error, Sendable {
     let failure: BoltFailure
 }
 
+private enum BoltHardwareObservationFailure: Error {
+    case refused(HIDPPHardwareSnapshot)
+    case changed(HIDPPHardwareSnapshot)
+
+    var snapshot: HIDPPHardwareSnapshot {
+        switch self {
+        case .refused(let snapshot), .changed(let snapshot): snapshot
+        }
+    }
+}
+
 public actor BoltController {
     public nonisolated let events: AsyncStream<BoltEvent>
     public nonisolated let requiresExplicitAssociation: Bool
@@ -26,6 +37,14 @@ public actor BoltController {
     private var model: LogitechMouseModel?
     private var connectionType: LogitechConnection?
     private var supportsManagement = true
+    private var supportsButtonManagement = true
+    private var selectedButtonControls: Set<MouseControl> = [.back, .forward]
+    private var supportsWheelCapture: Bool {
+        supportsManagement || (model == .mxMaster4 && wheel.support == .supported && wheelCapabilities?.supportsInversion == true && wheelMultiplier > 0)
+    }
+    private var supportsThumbwheelManagement: Bool {
+        supportsManagement || (model == .mxMaster4 && thumbwheel.support == .supported)
+    }
     private var observer: Task<Void, Never>?
     private var connectionMonitor: Task<Void, Never>?
     private var connectionProbeNonce: UInt8 = 0
@@ -67,6 +86,36 @@ public actor BoltController {
     private var captureBlocker: String?
     private var physicalWheelRequest: PhysicalWheelRequest?
     private var thumbwheel = ThumbwheelState()
+    private var hardwareSettings = BoltHardwareSettingsStatus()
+    private var hardwareOwnership: [UInt16: HardwareOwnership] = [:]
+    private var hardwareRecovery: [UInt16: HardwareOwnership] = [:]
+    private var hardwareRestore = false
+    private var hardwareRefreshPending = false
+    private var wheelRecovery: WheelSessionRecovery?
+    private var thumbwheelRecovery: ThumbwheelState?
+    private var buttonRecovery: [MouseControl: ButtonSessionRecovery] = [:]
+
+    private struct WheelSessionRecovery {
+        let ownership: WheelOwnership?
+        let capture: CaptureOwnership?
+        let baseline: (feature: UInt8, mode: UInt8)
+        let capabilities: HIDPP2121V1.Capabilities
+        let latest: UInt8?
+        let rollback: UInt8?
+        let restore: Bool
+    }
+
+    private struct ButtonSessionRecovery {
+        let flags: UInt8
+        let version: UInt8
+        let row: [UInt8]
+    }
+
+    private struct HardwareOwnership {
+        let original: HIDPPHardwareSnapshot
+        var target: [UInt16]
+        var mask: [UInt16]
+    }
     private var pendingReclaims: [ConnectReclaim] = []
     private var deviceInformation = BoltDeviceInformation()
     private var informationRefreshPending = false
@@ -105,6 +154,12 @@ public actor BoltController {
         let original: UInt8
         let target: UInt8
         let mask: UInt8
+    }
+
+    private enum FeatureMutation {
+        case wheelCapture(UInt8)
+        case thumbwheel(ThumbwheelState.Mode)
+        case button(MouseControl)
     }
 
     private struct CapabilityTable {
@@ -278,6 +333,10 @@ public actor BoltController {
     }
 
     public func enable() async {
+        await enable(controls: [.back, .forward])
+    }
+
+    public func enable(controls: Set<MouseControl>) async {
         let requestedRevision = operationRevision
         guard !shutdownRequested, !disableRequested else {
             publish(phase, "Enable was cancelled by the current session transition.")
@@ -286,11 +345,12 @@ public actor BoltController {
         await acquireOperation()
         defer { releaseOperation() }
         guard requestedRevision == operationRevision, !shutdownRequested, !disableRequested,
-              phase == .ready, transport != nil, !uncertain, supportsManagement,
-              changed.isEmpty, available == Set(MouseControl.allCases) else {
-            publish(phase, "Enable requires a ready Bolt handle with fresh eligible Back and Forward controls.")
+              phase == .ready, transport != nil, !uncertain, supportsButtonManagement,
+              changed.isEmpty, !controls.isEmpty, controls.isSubset(of: available) else {
+            publish(phase, "Enable requires a ready connection with fresh eligible selected controls.")
             return
         }
+        selectedButtonControls = controls
         generation &+= 1
         admission.prepare(generation: generation)
         terminalFailure = nil
@@ -301,6 +361,346 @@ public actor BoltController {
 
     public func disable() async { await disableBindings() }
     public func stop() async { await shutdown() }
+
+    public func refreshHardwareSettings() async {
+        guard requiresExplicitAssociation, !hardwareRefreshPending, !shutdownRequested,
+              transport != nil, phase == .ready || phase == .enabled else { return }
+        hardwareRefreshPending = true
+        let revision = operationRevision
+        let current = connection
+        await acquireOperation()
+        defer { hardwareRefreshPending = false; releaseOperation() }
+        for identifier: UInt16 in [0x2111, 0x2201, 0x2205, 0x19B0, 0x19C0] {
+            do {
+                try checkMutationState(revision: revision, connection: current, duringCleanup: false)
+                let snapshot = try await readHardwareSnapshot(identifier)
+                observeHardware(snapshot)
+            } catch {
+                if identifier == 0x2111, (error as? BoltFailure) == .unavailable {
+                    do { observeHardware(try await readHardwareSnapshot(0x2110)) }
+                    catch { hardwareUnavailable(0x2110, error: error) }
+                } else { hardwareUnavailable(identifier, error: error) }
+            }
+            guard connection == current, operationRevision == revision, !shutdownRequested else { return }
+        }
+        publish(phase, statusMessage)
+    }
+
+    public func applyHardwareSettings(_ preferences: BoltHardwareSettingsPreferences,
+                                      restorePreviousSettingsOnDisconnect: Bool) async {
+        let revision = operationRevision
+        let current = connection
+        await acquireOperation()
+        defer { releaseOperation() }
+        guard revision == operationRevision, current == connection, !shutdownRequested else { return }
+        hardwareRestore = restorePreviousSettingsOnDisconnect
+        guard preferences != .init() else { return }
+        guard requiresExplicitAssociation, !uncertain, phase == .ready || phase == .enabled else {
+            hardwareSettings.message = "Hardware settings require a ready, verified association."
+            publish(phase, statusMessage)
+            return
+        }
+        hardwareSettings.isApplying = true
+        defer { hardwareSettings.isApplying = false; publish(phase, statusMessage) }
+        let requested: [(UInt16, Bool)] = [
+            (0x2111, preferences.smartShiftMode != nil || preferences.smartShiftThreshold != nil || preferences.smartShiftTorque != nil),
+            (0x2201, preferences.dpi != nil), (0x2205, preferences.pointerSpeed != nil),
+            (0x19B0, preferences.hapticsEnabled != nil || preferences.hapticIntensity != nil || preferences.hapticPowerSaving != nil),
+            (0x19C0, preferences.forceThreshold != nil)
+        ]
+        for (identifier, shouldApply) in requested where shouldApply {
+            do {
+                try checkMutationState(revision: revision, connection: current, duringCleanup: false)
+                var snapshot: HIDPPHardwareSnapshot
+                do { snapshot = try await readHardwareSnapshot(identifier) }
+                catch BoltFailure.unavailable where identifier == 0x2111 { snapshot = try await readHardwareSnapshot(0x2110) }
+                if snapshot.identifier == 0x2201 {
+                    observeHardware(snapshot)
+                    if !hardwareSettings.dpi.canWrite {
+                        hardwareSettings.dpi.message = "Current DPI is available. Changing DPI is unavailable for this sensor state."
+                        hardwareSettings.message = hardwareSettings.dpi.message
+                        continue
+                    }
+                }
+                let plan = try snapshot.plan(preferences)
+                try await writeHardware(snapshot, desired: plan.values, mask: plan.mask,
+                                        revision: revision, connection: current)
+                hardwareSettings.message = nil
+            } catch {
+                hardwareSettings.message = hardwareUnavailable(identifier, error: error)
+            }
+            guard connection == current, operationRevision == revision, !shutdownRequested else { return }
+        }
+    }
+
+    public func playHapticTest(waveform: UInt8) async {
+        let revision = operationRevision
+        let current = connection
+        await acquireOperation()
+        defer { releaseOperation() }
+        do {
+            guard requiresExplicitAssociation, !uncertain, phase == .ready || phase == .enabled else { throw BoltFailure.associationRequired }
+            try await verifyActiveTargetIdentityBeforeMutation(revision: revision, connection: current, duringCleanup: false)
+            let snapshot = try await readHardwareSnapshot(0x19B0)
+            try checkMutationState(revision: revision, connection: current, duringCleanup: false)
+            guard waveform < 32, snapshot.values[0] & 1 != 0, snapshot.values[1] > 0, snapshot.values[2] == 0,
+                  hapticWaveforms(snapshot).contains(waveform) else { throw BoltFailure.unsupported }
+            if let owned = hardwareOwnership[0x19B0] {
+                guard snapshot.hasSameContract(as: owned.original), HIDPPHardwareCodec.matches(snapshot.values, owned.target, mask: owned.mask) else { throw BoltFailure.foreignState }
+            }
+            var required: [UInt16: Int] = [UInt16(snapshot.index) << 8 | 4: 1]
+            try addIdentityPreflightRequirements(writes: 1, to: &required)
+            try requireNativeTokenCapacity(required)
+            _ = try await request(feature: snapshot.index, function: 4, parameters: [waveform, 0, 0])
+            try checkMutationState(revision: revision, connection: current, duringCleanup: false)
+            observeHardware(snapshot)
+            hardwareSettings.haptics.message = "Feedback requested."
+        } catch { hardwareSettings.haptics.message = error.localizedDescription }
+        publish(phase, statusMessage)
+    }
+
+    private func hardwareRead(feature: UInt8, function: UInt8, parameters: [UInt8] = [], cleanup: Bool) async throws -> [UInt8] {
+        let revision = operationRevision
+        let current = connection
+        guard let transport else { throw BoltFailure.disconnected }
+        let reply = try await transport.requestDeviceInformation(slot: slot, feature: feature, function: function, parameters: parameters)
+        try checkMutationState(revision: revision, connection: current, duringCleanup: cleanup)
+        return reply
+    }
+
+    private func readHardwareSnapshot(_ identifier: UInt16, cleanup: Bool = false) async throws -> HIDPPHardwareSnapshot {
+        let rootReply = try await hardwareRead(feature: 0, function: 0, parameters: BoltWire.bytes(identifier), cleanup: cleanup)
+        guard rootReply.count >= 3 else { throw BoltFailure.malformed }
+        guard rootReply[0] != 0 else { throw BoltFailure.unavailable }
+        let root = Array(rootReply.prefix(3))
+        guard root[1] & 0xE0 == 0, root[2] == 0 || (identifier == 0x2201 && root[2] <= 2) else { throw BoltFailure.unsupported }
+        let index = root[0]
+        switch identifier {
+        case 0x2110:
+            let state = try await hardwareRead(feature: index, function: 0, cleanup: cleanup)
+            guard state.count >= 3, state[0] == 1 || state[0] == 2, state[1] > 0, state[2] > 0 else { throw BoltFailure.malformed }
+            return .init(identifier: identifier, root: root, capabilities: [state[2]], values: state.prefix(3).map(UInt16.init))
+        case 0x2111:
+            let caps = try await hardwareRead(feature: index, function: 0, cleanup: cleanup)
+            let state = try await hardwareRead(feature: index, function: 1, cleanup: cleanup)
+            guard caps.count >= 4, state.count >= 3, state[0] == 1 || state[0] == 2,
+                  state[1] > 0, caps[1] > 0,
+                  caps[0] & 1 == 0 || (caps[3] > 0 && state[2] > 0 && state[2] <= min(100, caps[3])) else { throw BoltFailure.malformed }
+            return .init(identifier: identifier, root: root, capabilities: Array(caps.prefix(4)), values: state.prefix(3).map(UInt16.init))
+        case 0x2201:
+            let count = try await hardwareRead(feature: index, function: 0, cleanup: cleanup)
+            guard let count = count.first, count == 1 else { throw BoltFailure.unsupported }
+            let list = try await hardwareRead(feature: index, function: 1, parameters: [0], cleanup: cleanup)
+            guard list.count >= 3, list[0] == 0 else { throw BoltFailure.malformed }
+            let values = try HIDPPHardwareCodec.dpiValues(Array(list.dropFirst()))
+            let state = try await hardwareRead(feature: index, function: 2, parameters: [0], cleanup: cleanup)
+            guard state.count >= (root[2] == 0 ? 3 : 5), state[0] == 0 else { throw BoltFailure.malformed }
+            let dpi = BoltWire.word(state, 1)
+            let defaultDPI = root[2] == 0 ? 0 : BoltWire.word(state, 3)
+            guard values.contains(dpi == 0 ? defaultDPI : dpi), defaultDPI == 0 || values.contains(defaultDPI) else { throw BoltFailure.malformed }
+            return .init(identifier: identifier, root: root, capabilities: [count] + Array(list.dropFirst()), values: [dpi, defaultDPI])
+        case 0x2205:
+            let state = try await hardwareRead(feature: index, function: 0, cleanup: cleanup)
+            guard state.count >= 2, BoltWire.word(state, 0) > 0 else { throw BoltFailure.malformed }
+            return .init(identifier: identifier, root: root, capabilities: [], values: [BoltWire.word(state, 0)])
+        case 0x19B0:
+            let caps = try await hardwareRead(feature: index, function: 0, cleanup: cleanup)
+            let state = try await hardwareRead(feature: index, function: 1, cleanup: cleanup)
+            let engine = try await hardwareRead(feature: index, function: 3, cleanup: cleanup)
+            guard caps.count >= 8, state.count >= 3, state[1] <= 100, let engine = engine.first else { throw BoltFailure.malformed }
+            return .init(identifier: identifier, root: root, capabilities: Array(caps.prefix(8)) + [state[2]], values: [UInt16(state[0]), UInt16(state[1]), UInt16(engine)])
+        case 0x19C0:
+            let count = try await hardwareRead(feature: index, function: 0, cleanup: cleanup)
+            guard count.first == 1 else { throw BoltFailure.ambiguous }
+            let info = try await hardwareRead(feature: index, function: 1, parameters: [0], cleanup: cleanup)
+            let state = try await hardwareRead(feature: index, function: 2, parameters: [0], cleanup: cleanup)
+            guard info.count >= 8, state.count >= 2 else { throw BoltFailure.malformed }
+            let minimum = BoltWire.word(info, 6), maximum = BoltWire.word(info, 4)
+            let threshold = BoltWire.word(state, 0), defaultThreshold = BoltWire.word(info, 2)
+            guard minimum <= maximum, (minimum...maximum).contains(threshold), (minimum...maximum).contains(defaultThreshold),
+                  BoltWire.word(info, 0) & 1 != 0 else { throw BoltFailure.unsupported }
+            return .init(identifier: identifier, root: root, capabilities: Array(info.prefix(8)), values: [threshold])
+        default: throw BoltFailure.unsupported
+        }
+    }
+
+    private func writeHardware(_ baseline: HIDPPHardwareSnapshot, desired: [UInt16], mask: [UInt16],
+                               revision: UInt64, connection current: UInt64, cleanup: Bool = false) async throws {
+        guard baseline.identifier != 0x2201 || baseline.root[2] <= 1 else { throw BoltFailure.unsupported }
+        var owned = hardwareOwnership[baseline.identifier]
+        if let owned {
+            guard baseline.hasSameContract(as: owned.original), HIDPPHardwareCodec.matches(baseline.values, owned.target, mask: owned.mask) else {
+                throw BoltHardwareObservationFailure.changed(baseline)
+            }
+        }
+        let target = HIDPPHardwareCodec.merge(current: baseline.values, desired: desired, mask: mask)
+        if target == baseline.values { observeHardware(baseline); return }
+        var required: [UInt16: Int] = [0: cleanup ? 2 : 5, UInt16(baseline.index) << 8 | UInt16(baseline.setFunction): 2]
+        for function in baseline.readFunctions { required[UInt16(baseline.index) << 8 | UInt16(function), default: 0] += cleanup ? 2 : 5 }
+        try addIdentityPreflightRequirements(writes: 2, to: &required)
+        try requireNativeTokenCapacity(required)
+        try checkMutationState(revision: revision, connection: current, duringCleanup: cleanup)
+        try await verifyActiveTargetIdentityBeforeMutation(revision: revision, connection: current, duringCleanup: cleanup)
+        let fresh = try await readHardwareSnapshot(baseline.identifier, cleanup: cleanup)
+        guard fresh == baseline else { throw BoltHardwareObservationFailure.changed(fresh) }
+        try checkMutationState(revision: revision, connection: current, duringCleanup: cleanup)
+        if !cleanup {
+            if owned == nil { owned = .init(original: baseline, target: target, mask: mask) }
+            else if var previous = owned {
+                previous.target = target
+                previous.mask = zip(previous.mask, mask).map { $0 | $1 }
+                owned = previous
+            }
+            hardwareOwnership[baseline.identifier] = owned
+        }
+        var writeMask = mask
+        if baseline.identifier == 0x2111, mask[2] != 0 { writeMask[0] = 0xFF }
+        do {
+            _ = try await request(feature: baseline.index, function: baseline.setFunction,
+                                  parameters: baseline.parameters(values: target, mask: writeMask))
+        } catch { }
+        let readback = try await readHardwareSnapshot(baseline.identifier, cleanup: cleanup)
+        observeHardware(readback)
+        guard readback.hasSameContract(as: baseline) else { throw BoltHardwareObservationFailure.changed(readback) }
+        guard HIDPPHardwareCodec.matches(readback.values, target, mask: mask) else { throw BoltHardwareObservationFailure.refused(readback) }
+    }
+
+    private func cleanupHardwareSettings() async -> Bool {
+        guard hardwareRestore else {
+            hardwareOwnership.removeAll()
+            hardwareSettings.smartShift.isOwned = false
+            hardwareSettings.dpi.isOwned = false
+            hardwareSettings.pointerSpeed.isOwned = false
+            hardwareSettings.haptics.isOwned = false
+            hardwareSettings.forceButton.isOwned = false
+            return true
+        }
+        var restored = true
+        for identifier in hardwareOwnership.keys.sorted() {
+            guard let owned = hardwareOwnership[identifier] else { continue }
+            do {
+                let current = try await readHardwareSnapshot(identifier, cleanup: true)
+                guard current.hasSameContract(as: owned.original) else { throw BoltFailure.foreignState }
+                if !HIDPPHardwareCodec.matches(current.values, owned.original.values, mask: owned.mask) {
+                    try await writeHardware(current, desired: owned.original.values, mask: owned.mask,
+                                            revision: operationRevision, connection: connection, cleanup: true)
+                }
+                hardwareOwnership.removeValue(forKey: identifier)
+                hardwareRecovery.removeValue(forKey: identifier)
+                observeHardware(try await readHardwareSnapshot(identifier, cleanup: true))
+            } catch {
+                restored = false
+                hardwareRecovery[identifier] = owned
+                hardwareUnavailable(identifier, error: error)
+            }
+        }
+        return restored
+    }
+
+    private func hapticWaveforms(_ snapshot: HIDPPHardwareSnapshot) -> [UInt8] {
+        let mask = snapshot.capabilities[4...7].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+        return (0..<32).compactMap { mask & (UInt32(1) << $0) != 0 ? UInt8($0) : nil }
+    }
+
+    private func observeHardware(_ snapshot: HIDPPHardwareSnapshot) {
+        let owned = hardwareOwnership[snapshot.identifier] != nil
+        switch snapshot.identifier {
+        case 0x2110, 0x2111:
+            hardwareSettings.smartShift.support = .supported
+            hardwareSettings.smartShift.mode = snapshot.values[0] == 1 ? .freeSpin : snapshot.values[1] == 255 ? .ratchet : .automatic
+            hardwareSettings.smartShift.threshold = UInt8(snapshot.values[1])
+            hardwareSettings.smartShift.defaultThreshold = snapshot.capabilities[snapshot.identifier == 0x2111 ? 1 : 0]
+            hardwareSettings.smartShift.supportsTorque = snapshot.identifier == 0x2111 && snapshot.capabilities[0] & 1 != 0
+            hardwareSettings.smartShift.torque = snapshot.identifier == 0x2111 ? UInt8(snapshot.values[2]) : nil
+            hardwareSettings.smartShift.maximumTorque = snapshot.identifier == 0x2111 ? min(100, snapshot.capabilities[3]) : nil
+            hardwareSettings.smartShift.isOwned = owned
+            hardwareSettings.smartShift.message = nil
+        case 0x2201:
+            hardwareSettings.dpi.support = .supported
+            hardwareSettings.dpi.canWrite = snapshot.root[2] <= 1 && snapshot.values[0] > 0
+            hardwareSettings.dpi.sensorCount = snapshot.capabilities[0]
+            hardwareSettings.dpi.sensor = 0
+            hardwareSettings.dpi.current = snapshot.values[0] == 0 ? snapshot.values[1] : snapshot.values[0]
+            hardwareSettings.dpi.defaultDPI = snapshot.values[1] == 0 ? nil : snapshot.values[1]
+            hardwareSettings.dpi.values = (try? HIDPPHardwareCodec.dpiValues(Array(snapshot.capabilities.dropFirst()))) ?? []
+            hardwareSettings.dpi.isOwned = owned
+            hardwareSettings.dpi.message = nil
+        case 0x2205:
+            hardwareSettings.pointerSpeed.support = .supported
+            hardwareSettings.pointerSpeed.current = Double(snapshot.values[0]) / 256
+            hardwareSettings.pointerSpeed.isOwned = owned
+            hardwareSettings.pointerSpeed.message = "Adjusts pointer movement independently of sensor DPI."
+        case 0x19B0:
+            hardwareSettings.haptics.support = .supported
+            hardwareSettings.haptics.enabled = snapshot.values[0] & 1 != 0
+            hardwareSettings.haptics.powerSaving = snapshot.values[0] & 2 != 0
+            hardwareSettings.haptics.intensity = UInt8(snapshot.values[1])
+            hardwareSettings.haptics.intensityStep = snapshot.capabilities[8] >> 4
+            hardwareSettings.haptics.intensityCount = snapshot.capabilities[8] & 15
+            hardwareSettings.haptics.supportedWaveforms = hapticWaveforms(snapshot)
+            hardwareSettings.haptics.rawEngineStatus = UInt8(snapshot.values[2])
+            hardwareSettings.haptics.isOwned = owned
+            hardwareSettings.haptics.message = nil
+        case 0x19C0:
+            hardwareSettings.forceButton.support = .supported
+            hardwareSettings.forceButton.threshold = snapshot.values[0]
+            hardwareSettings.forceButton.defaultThreshold = BoltWire.word(snapshot.capabilities, 2)
+            hardwareSettings.forceButton.minimum = BoltWire.word(snapshot.capabilities, 6)
+            hardwareSettings.forceButton.maximum = BoltWire.word(snapshot.capabilities, 4)
+            hardwareSettings.forceButton.isOwned = owned
+            hardwareSettings.forceButton.message = nil
+        default: break
+        }
+    }
+
+    @discardableResult
+    private func hardwareUnavailable(_ identifier: UInt16, error: Error) -> String {
+        if let observation = error as? BoltHardwareObservationFailure {
+            let snapshot = observation.snapshot
+            observeHardware(snapshot)
+            let actual: String
+            switch snapshot.identifier {
+            case 0x2110, 0x2111: actual = "Wheel threshold: \(snapshot.values[1])."
+            case 0x2201: actual = "Sensor DPI: \(hardwareSettings.dpi.current ?? 0)."
+            case 0x2205: actual = String(format: "Pointer speed: %.3g×.", Double(snapshot.values[0]) / 256)
+            case 0x19B0: actual = "Feedback: \(snapshot.values[0] & 1 == 0 ? "Off" : "On"); intensity: \(snapshot.values[1])%."
+            default: actual = "Force threshold: \(snapshot.values[0])."
+            }
+            let message: String
+            switch observation {
+            case .refused: message = "The device did not accept the requested setting. " + actual
+            case .changed: message = "The device setting changed. " + actual
+            }
+            switch snapshot.identifier {
+            case 0x2110, 0x2111: hardwareSettings.smartShift.message = message
+            case 0x2201: hardwareSettings.dpi.message = message
+            case 0x2205: hardwareSettings.pointerSpeed.message = message
+            case 0x19B0: hardwareSettings.haptics.message = message
+            case 0x19C0: hardwareSettings.forceButton.message = message
+            default: break
+            }
+            return message
+        }
+        let failure = error as? BoltFailure
+        let support: BoltFeatureSupport = failure == .unsupported || failure == .unavailable || failure == .ambiguous ? .unsupported : .unknown
+        let message: String
+        switch failure {
+        case .unavailable: message = "This setting is unavailable on the connected mouse."
+        case .unsupported: message = "This setting or requested value is unsupported by the connected mouse."
+        case .foreignState: message = "Device settings changed or the requested value was not accepted. Refresh to read the current setting."
+        case .ambiguous: message = "The connected mouse does not identify a single configurable control."
+        default: message = error.localizedDescription
+        }
+        switch identifier {
+        case 0x2110, 0x2111: hardwareSettings.smartShift.support = support; hardwareSettings.smartShift.message = message
+        case 0x2201: hardwareSettings.dpi.support = support; hardwareSettings.dpi.message = message
+        case 0x2205: hardwareSettings.pointerSpeed.support = support; hardwareSettings.pointerSpeed.message = message
+        case 0x19B0: hardwareSettings.haptics.support = support; hardwareSettings.haptics.message = message
+        case 0x19C0: hardwareSettings.forceButton.support = support; hardwareSettings.forceButton.message = message
+        default: break
+        }
+        return message
+    }
 
     public func refreshDeviceInformation() async {
         guard !informationRefreshPending, !shutdownRequested, !disableRequested,
@@ -441,7 +841,7 @@ public actor BoltController {
 
     public func applyWheelPreferences(inverted: Bool?, highResolution: Bool?, restorePreviousSettingsOnDisconnect: Bool,
                                       amount: Double?, scrollPostingAllowed: Bool) async {
-        guard supportsManagement else {
+        guard supportsWheelCapture else {
             publish(phase, "Scroll capture is unavailable for this Logitech connection.")
             return
         }
@@ -452,7 +852,7 @@ public actor BoltController {
 
     private func reconcileWheelPreferences(inverted: Bool?, highResolution: Bool?, restorePreviousSettingsOnDisconnect: Bool,
                                            amount: Double?, scrollPostingAllowed: Bool) async {
-        guard supportsManagement || (model == .mxMaster4 && amount == nil && !scrollPostingAllowed && wheel.support == .supported) else {
+        guard supportsManagement || (model == .mxMaster4 && wheel.support == .supported && (amount == nil || supportsWheelCapture)) else {
             publish(phase, "These wheel settings are unavailable for this Logitech connection.")
             return
         }
@@ -521,7 +921,7 @@ public actor BoltController {
 
     public func applyThumbwheelPreferences(inverted: Bool?, amount: Double?, restorePreviousSettingsOnDisconnect: Bool,
                                           scrollPostingAllowed: Bool) async {
-        guard supportsManagement else {
+        guard supportsThumbwheelManagement else {
             publish(phase, "This Logitech connection is read-only; thumb-wheel settings are unavailable.")
             return
         }
@@ -631,6 +1031,7 @@ public actor BoltController {
         invalidateThumbwheelAdmission()
         if let restorePreviousSettingsOnDisconnect {
             self.restorePreviousSettingsOnDisconnect = restorePreviousSettingsOnDisconnect
+            hardwareRestore = restorePreviousSettingsOnDisconnect
             thumbwheel.restore = restorePreviousSettingsOnDisconnect
         }
         if !shutdownRequested {
@@ -719,6 +1120,7 @@ public actor BoltController {
             try checkConnectActive(revision: revision)
             wheelDirection = VerticalWheelDirection(nativeNaturalScrolling: nativeNaturalScrolling())
             deviceResponding = true
+
             publish(.discovering, "Mouse detected; verifying capabilities and restoring the session.")
             let table = try await readCapabilities()
             capabilityTable = table
@@ -886,6 +1288,13 @@ public actor BoltController {
                                                                                connection: current, revision: revision,
                                                                                deadline: deadline)
             deviceResponding = true
+            if !hardwareRecovery.isEmpty {
+                hardwareOwnership = hardwareRecovery
+                hardwareRestore = true
+                guard await cleanupHardwareSettings() else { throw BoltFailure.foreignState }
+                try checkConnectActive(revision: revision)
+            }
+            try await restoreWheelAndThumbwheelRecovery()
 
             if supportsManagement {
                 wheelDirection = VerticalWheelDirection(nativeNaturalScrolling: nativeNaturalScrolling())
@@ -893,6 +1302,8 @@ public actor BoltController {
                 let table = try await readCapabilities()
                 capabilityTable = table
                 available = table.controls
+                supportsButtonManagement = !available.isEmpty
+                try await restoreButtonRecovery(table)
                 stage = .connectPreflight
                 try await reclaimConnectDiversion(table, revision: revision, stage: &stage)
                 try checkConnectActive(revision: revision)
@@ -902,15 +1313,35 @@ public actor BoltController {
             } else {
                 available.removeAll()
                 capabilityTable = nil
+                supportsButtonManagement = false
                 wheelDirection = VerticalWheelDirection(nativeNaturalScrolling: nativeNaturalScrolling())
                 try await discoverWheel()
+                try await discoverThumbwheel()
+                do {
+                    let table = try await readCapabilities()
+                    capabilityTable = table
+                    supportsButtonManagement = !table.controls.isEmpty
+                    try await restoreButtonRecovery(table)
+                    var nativeControls = Set<MouseControl>()
+                    for control in table.controls {
+                        if try await reporting(control) == .baseline { nativeControls.insert(control) }
+                    }
+                    capabilityTable = table
+                    available = nativeControls
+                    supportsButtonManagement = !nativeControls.isEmpty
+                } catch {
+                    try checkConnectActive(revision: revision)
+                    if !buttonRecovery.isEmpty { throw error }
+                    capabilityTable = nil
+                    available.removeAll()
+                }
                 try checkConnectActive(revision: revision)
-                if recoveryRequired, wheelBaseline == nil { throw BoltFailure.foreignState }
+                if freshWheelRoutingRequired, wheelBaseline == nil { throw BoltFailure.foreignState }
+                if freshThumbwheelRoutingRequired, thumbwheel.support != .supported { throw BoltFailure.foreignState }
                 uncertain = false
                 uncertainTarget = nil
                 freshWheelRoutingRequired = false
-                thumbwheel.support = .unsupported
-                thumbwheel.message = "Settings management is unavailable for this MX Master 4 connection."
+                freshThumbwheelRoutingRequired = false
                 publish(.ready, wheel.support == .supported
                     ? "Connected to the saved MX Master 4 association; supported wheel preferences are available."
                     : "Connected to the saved MX Master 4 association; wheel settings are unavailable for this session.")
@@ -918,6 +1349,7 @@ public actor BoltController {
 
             startConnectionMonitor(connection: current)
             Task { await self.refreshDeviceInformation() }
+            Task { await self.refreshHardwareSettings() }
         } catch {
             guard phase != .stopping else { return }
             await fail(error, stage: (error as? BoltFailure) == .cancelled ? nil : stage)
@@ -928,7 +1360,7 @@ public actor BoltController {
                                      connection current: UInt64, revision: UInt64,
                                      deadline: ContinuousClock.Instant) async throws -> [UInt16: UInt8] {
         var versions: [UInt16: UInt8] = [0x0003: probe.featureVersion]
-        let featureIDs: [UInt16] = [0x1004, 0x1B04, 0x2121, 0x2150, 0x2201, 0x1814, 0x2110, 0x2111]
+        let featureIDs: [UInt16] = [0x1004, 0x1B04, 0x2121, 0x2150, 0x2201, 0x1814, 0x2110, 0x2111, 0x2205, 0x19B0, 0x19C0]
         for identifier in featureIDs {
             try checkConnectActive(revision: revision)
             guard ContinuousClock.now < deadline else { break }
@@ -952,10 +1384,52 @@ public actor BoltController {
         guard operationRevision == revision, !shutdownRequested, !disableRequested else { throw BoltFailure.cancelled }
     }
 
-    private func reclaimConnectDiversion(_ table: CapabilityTable, revision: UInt64, stage: inout BoltFailureStage?) async throws {
-        guard table.controls == Set(MouseControl.allCases) else { throw BoltFailure.unsupported }
-        var preflight: [ConnectReclaim] = []
+    private func restoreWheelAndThumbwheelRecovery() async throws {
+        if let recovery = wheelRecovery {
+            let index = try await readWheelFeature()
+            guard index == recovery.baseline.feature, wheelCapabilities == recovery.capabilities else { throw BoltFailure.foreignState }
+            wheelBaseline = recovery.baseline
+            wheelOwnership = recovery.ownership
+            captureOwnership = recovery.capture
+            latestVerifiedWheelMode = recovery.latest
+            pendingWheelRollback = recovery.rollback
+            restorePreviousSettingsOnDisconnect = recovery.restore
+            wheelAssociationLost = false
+            observeWheel(try await wheelMode(feature: index))
+            guard await cleanupWheel() else { throw BoltFailure.foreignState }
+            wheelRecovery = nil
+        }
+        if var recovery = thumbwheelRecovery {
+            let index = try await readThumbwheelFeature()
+            guard index == recovery.feature, thumbwheel.info == recovery.info else { throw BoltFailure.foreignState }
+            recovery.associationLost = false
+            thumbwheel = recovery
+            guard await cleanupThumbwheel(final: true) else { throw BoltFailure.foreignState }
+            thumbwheelRecovery = nil
+        }
+    }
+
+    private func restoreButtonRecovery(_ table: CapabilityTable) async throws {
         for control in MouseControl.allCases {
+            guard let recovery = buttonRecovery[control] else { continue }
+            guard recovery.flags == table.rootFlags, recovery.version == table.version,
+                  table.controls.contains(control),
+                  table.rows.contains(recovery.row) else { throw BoltFailure.foreignState }
+            let current = try await reporting(control)
+            if current == .diverted {
+                changed.insert(control)
+                try await mutate(control, flags: 0x02, duringCleanup: true)
+                guard try await reporting(control) == .baseline else { throw BoltFailure.foreignState }
+            } else if current != .baseline { throw BoltFailure.foreignState }
+            changed.remove(control)
+            buttonRecovery.removeValue(forKey: control)
+        }
+    }
+
+    private func reclaimConnectDiversion(_ table: CapabilityTable, revision: UInt64, stage: inout BoltFailureStage?) async throws {
+        guard Set([MouseControl.back, .forward]).isSubset(of: table.controls) else { throw BoltFailure.unsupported }
+        var preflight: [ConnectReclaim] = []
+        for control in [MouseControl.back, .forward] {
             let state = try await reporting(control)
             try checkConnectActive(revision: revision)
             guard state != .foreign else { throw BoltFailure.foreignState }
@@ -992,7 +1466,7 @@ public actor BoltController {
             try checkConnectActive(revision: revision)
             let decoded = try ThumbwheelState.Info(info)
             let reply = try await request(feature: thumbRoot[0], function: 1)
-            _ = try ThumbwheelState.Mode.decode(reply)
+            guard try ThumbwheelState.Mode.decode(reply).statusFlags == 0 else { throw BoltFailure.foreignState }
             try checkConnectActive(revision: revision)
             thumbwheel.info = decoded
             preflight.append(ConnectReclaim(control: .thumbwheel, feature: thumbRoot[0], root: Array(thumbRoot.prefix(3)),
@@ -1190,6 +1664,9 @@ public actor BoltController {
         scrollGeneration &+= 1
         scrollEnabledAt = .now
         thumbwheel = ThumbwheelState()
+        hardwareSettings = .init()
+        hardwareOwnership.removeAll()
+        hardwareRestore = false
         pendingReclaims.removeAll()
         terminalFailure = nil
         activeEndpointLocator = nil
@@ -1199,6 +1676,8 @@ public actor BoltController {
         model = nil
         connectionType = nil
         supportsManagement = true
+        supportsButtonManagement = true
+        selectedButtonControls = [.back, .forward]
         scrollAdmission.invalidate()
         thumbwheelAdmission.invalidate()
     }
@@ -1216,13 +1695,13 @@ public actor BoltController {
             stage = .thumbWheel
             try await verifyOwnedThumbwheelForEnable()
             stage = .capabilities
-            guard available == Set(MouseControl.allCases) else { throw BoltFailure.unsupported }
-            for control in MouseControl.allCases {
+            guard selectedButtonControls.isSubset(of: available) else { throw BoltFailure.unsupported }
+            for control in MouseControl.allCases where selectedButtonControls.contains(control) {
                 stage = control == .back ? .buttonBaselineBack : .buttonBaselineForward
                 guard try await reporting(control) == .baseline else { throw BoltFailure.foreignState }
                 try checkActive()
             }
-            for control in MouseControl.allCases {
+            for control in MouseControl.allCases where selectedButtonControls.contains(control) {
                 stage = control == .back ? .buttonWriteBack : .buttonWriteForward
                 try checkActive()
                 changed.insert(control)
@@ -1238,7 +1717,7 @@ public actor BoltController {
             enabledAt = .now
             guard !disableRequested else { throw BoltFailure.cancelled }
             guard admission.enable(generation: generation) else { throw BoltFailure.transport }
-            publish(.enabled, "Bindings enabled. Native Back/Forward behavior is suppressed. Release both buttons to arm delivery.")
+            publish(.enabled, "Bindings enabled for selected controls. Release the selected buttons to arm delivery.")
         } catch {
             guard phase != .stopping else { return }
             await fail(error, stage: (error as? BoltFailure) == .cancelled ? nil : stage)
@@ -1248,33 +1727,34 @@ public actor BoltController {
     private func readCapabilities() async throws -> CapabilityTable {
         let root = try await request(feature: 0, function: 0, parameters: [0x1B, 0x04])
         try checkActive()
-        guard root.count >= 3, root[0] != 0, root[1] & 0xE0 == 0, root[2] == 5 else { throw BoltFailure.unsupported }
+        guard root.count >= 3, root[0] != 0, root[1] & 0xE0 == 0,
+              root[2] == (model == .mxMaster4 ? 6 : 5) else { throw BoltFailure.unsupported }
         let index = root[0]
         let count = try await request(feature: index, function: 0)
         try checkActive()
-        guard let count = count.first, count > 0, count <= 12 else { throw BoltFailure.unsupported }
+        guard let count = count.first, count > 0, count <= (root[2] == 6 ? 32 : 12) else { throw BoltFailure.unsupported }
         var rows: [[UInt8]] = []
         for index in 0..<count {
             rows.append(try await request(feature: root[0], function: 1, parameters: [index]))
             try checkActive()
         }
         feature = root[0]
-        return CapabilityTable(feature: root[0], rootFlags: root[1], version: root[2], rows: rows, controls: try BoltWire.eligible(rows))
+        return CapabilityTable(feature: root[0], rootFlags: root[1], version: root[2], rows: rows, controls: try BoltWire.eligible(rows, model: model))
     }
 
-    private func verifyCapabilities(_ cached: CapabilityTable) async throws {
+    private func verifyCapabilities(_ cached: CapabilityTable, cleanup: Bool = false) async throws {
         let root = try await request(feature: 0, function: 0, parameters: [0x1B, 0x04])
-        try checkActive()
-        guard root.count >= 3, root[0] != 0, root[1] & 0xE0 == 0, root[2] == 5,
+        if !cleanup { try checkActive() }
+        guard root.count >= 3, root[0] != 0, root[1] & 0xE0 == 0,
               root[0] == cached.feature, root[1] == cached.rootFlags, root[2] == cached.version else {
             throw BoltFailure.foreignState
         }
         let count = try await request(feature: cached.feature, function: 0)
-        try checkActive()
+        if !cleanup { try checkActive() }
         guard count.first == UInt8(cached.rows.count) else { throw BoltFailure.foreignState }
         for index in try eligibleCapabilityRowIndices(cached) {
             let row = try await request(feature: cached.feature, function: 1, parameters: [UInt8(index)])
-            try checkActive()
+            if !cleanup { try checkActive() }
             guard row == cached.rows[index] else { throw BoltFailure.foreignState }
         }
         feature = cached.feature
@@ -1282,9 +1762,10 @@ public actor BoltController {
     }
 
     private func eligibleCapabilityRowIndices(_ table: CapabilityTable) throws -> [Int] {
-        guard try BoltWire.eligible(table.rows) == table.controls else { throw BoltFailure.foreignState }
-        let indices = BoltWire.controls.compactMap { (_, cid, _) in
-            table.rows.firstIndex { row in row.count >= 2 && BoltWire.word(row, 0) == cid }
+        guard try BoltWire.eligible(table.rows, model: model) == table.controls else { throw BoltFailure.foreignState }
+        let indices = BoltWire.controls.compactMap { (control, cid, _) -> Int? in
+            guard table.controls.contains(control) else { return nil }
+            return table.rows.firstIndex { row in row.count >= 2 && BoltWire.word(row, 0) == cid }
         }
         guard indices.count == table.controls.count else { throw BoltFailure.malformed }
         return indices.sorted()
@@ -1292,15 +1773,18 @@ public actor BoltController {
 
     private func reserveEnableAndCleanupTokens(for table: CapabilityTable) throws {
         let capabilityRows = try eligibleCapabilityRowIndices(table).count
+        let controlCount = selectedButtonControls.count
+        let additionalPreflights = supportsManagement ? 0 : controlCount * 2
         let buttonFeatureRootReads = 1 + (wheelOwnership == nil && captureOwnership == nil ? 0 : 1) + (thumbwheel.ownership == nil && thumbwheel.capture == nil ? 0 : 1)
         var required: [UInt16: Int] = [
-            0: buttonFeatureRootReads,
-            UInt16(table.feature) << 8: 1,
-            UInt16(table.feature) << 8 | 1: capabilityRows,
-            UInt16(table.feature) << 8 | 2: 8,
-            UInt16(table.feature) << 8 | 3: 4
+            0: buttonFeatureRootReads + additionalPreflights,
+            UInt16(table.feature) << 8: 1 + additionalPreflights,
+            UInt16(table.feature) << 8 | 1: min(15, capabilityRows + additionalPreflights),
+            UInt16(table.feature) << 8 | 2: min(15, controlCount * 4 + additionalPreflights),
+            UInt16(table.feature) << 8 | 3: controlCount * 2
         ]
-        try addIdentityPreflightRequirements(writes: 4, to: &required)
+        try addIdentityPreflightRequirements(writes: controlCount * 2, to: &required)
+        required[0] = min(15, required[0, default: 0])
         try requireNativeTokenCapacity(required)
     }
 
@@ -1334,17 +1818,35 @@ public actor BoltController {
     }
 
     private func mutateRequest(feature: UInt8, function: UInt8, parameters: [UInt8],
-                               duringCleanup: Bool = false, physicalWheelMode: UInt8? = nil) async throws -> [UInt8] {
+                               duringCleanup: Bool = false, physicalWheelMode: UInt8? = nil,
+                               scopedMutation: FeatureMutation? = nil) async throws -> [UInt8] {
         let revision = operationRevision
         let currentConnection = connection
         do {
             let scopedWheelCapabilities = wheelCapabilities
+            let scopedThumbwheelInfo = thumbwheel.info
             if !supportsManagement {
-                guard requiresExplicitAssociation, model == .mxMaster4, wheel.support == .supported,
-                      wheelBaseline?.feature == feature, function == 2, parameters.count == 1,
-                      let physicalWheelMode, let scopedWheelCapabilities,
-                      HIDPP2121V1.permitsPhysicalChange(from: physicalWheelMode, to: parameters[0], capabilities: scopedWheelCapabilities) else {
-                    throw BoltFailure.unsupportedModel
+                guard requiresExplicitAssociation, model == .mxMaster4 else { throw BoltFailure.unsupportedModel }
+                switch scopedMutation {
+                case .wheelCapture(let baseline):
+                    guard supportsWheelCapture, wheelBaseline?.feature == feature, function == 2, parameters.count == 1,
+                          baseline & 0xF8 == 0, parameters[0] & 0xF8 == 0,
+                          scopedWheelCapabilities?.supportsInversion == true else { throw BoltFailure.unsupported }
+                case .thumbwheel(let baseline):
+                    guard supportsThumbwheelManagement, thumbwheel.feature == feature, function == 2,
+                          parameters.count == 2, parameters[0] <= 1, parameters[1] <= 1,
+                          baseline.statusFlags == 0, scopedThumbwheelInfo != nil else { throw BoltFailure.unsupported }
+                case .button(let control):
+                    guard supportsButtonManagement, capabilityTable?.controls.contains(control) == true,
+                          self.feature == feature, function == 3,
+                          parameters == BoltWire.bytes(BoltWire.cid(control)) + [duringCleanup ? 2 : 3, 0, 0],
+                          changed.contains(control) else { throw BoltFailure.unsupported }
+                case nil:
+                    guard wheel.support == .supported, wheelBaseline?.feature == feature, function == 2, parameters.count == 1,
+                          let physicalWheelMode, let scopedWheelCapabilities,
+                          HIDPP2121V1.permitsPhysicalChange(from: physicalWheelMode, to: parameters[0], capabilities: scopedWheelCapabilities) else {
+                        throw BoltFailure.unsupportedModel
+                    }
                 }
             }
             try checkMutationState(revision: revision, connection: currentConnection, duringCleanup: duringCleanup)
@@ -1352,9 +1854,21 @@ public actor BoltController {
                                                                duringCleanup: duringCleanup)
             try checkMutationState(revision: revision, connection: currentConnection, duringCleanup: duringCleanup)
             if !supportsManagement {
-                guard try await readWheelFeature(cleanup: duringCleanup) == feature, wheelCapabilities == scopedWheelCapabilities,
-                      try await wheelMode(feature: feature, cleanup: true) == physicalWheelMode else {
-                    throw BoltFailure.foreignState
+                switch scopedMutation {
+                case .thumbwheel(let baseline):
+                    guard try await readThumbwheelFeature(cleanup: duringCleanup) == feature,
+                          thumbwheel.info == scopedThumbwheelInfo,
+                          try await thumbwheelMode(feature: feature, cleanup: true) == baseline else { throw BoltFailure.foreignState }
+                case .button(let control):
+                    guard let table = capabilityTable else { throw BoltFailure.unsupported }
+                    try await verifyCapabilities(table, cleanup: duringCleanup)
+                    guard try await reporting(control) == (duringCleanup ? .diverted : .baseline) else { throw BoltFailure.foreignState }
+                case .wheelCapture(let baseline):
+                    guard try await readWheelFeature(cleanup: duringCleanup) == feature, wheelCapabilities == scopedWheelCapabilities,
+                          try await wheelMode(feature: feature, cleanup: true) == baseline else { throw BoltFailure.foreignState }
+                case nil:
+                    guard try await readWheelFeature(cleanup: duringCleanup) == feature, wheelCapabilities == scopedWheelCapabilities,
+                          try await wheelMode(feature: feature, cleanup: true) == physicalWheelMode else { throw BoltFailure.foreignState }
                 }
                 try checkMutationState(revision: revision, connection: currentConnection, duringCleanup: duringCleanup)
             }
@@ -1392,7 +1906,7 @@ public actor BoltController {
             throw BoltFailure.cancelled
         }
         guard transport != nil else { throw BoltFailure.disconnected }
-        guard duringCleanup || (!shutdownRequested && !disableRequested && phase != .stopping && terminalFailure == nil) else {
+        guard duringCleanup || (!Task.isCancelled && !shutdownRequested && !disableRequested && phase != .stopping && terminalFailure == nil) else {
             throw BoltFailure.cancelled
         }
     }
@@ -1431,7 +1945,7 @@ public actor BoltController {
     private func mutate(_ control: MouseControl, flags: UInt8, duringCleanup: Bool = false) async throws {
         let reply = try await mutateRequest(feature: feature, function: 3,
                                             parameters: BoltWire.bytes(BoltWire.cid(control)) + [flags, 0, 0],
-                                            duringCleanup: duringCleanup)
+                                            duringCleanup: duringCleanup, scopedMutation: .button(control))
         guard reply.count == 16, BoltWire.word(reply, 0) == BoltWire.cid(control) else { throw BoltFailure.malformed }
     }
 
@@ -1601,7 +2115,7 @@ public actor BoltController {
         captureVerified = false
         scrollGeneration &+= 1
         scrollAdmission.prepare(generation: scrollGeneration)
-        do { _ = try await mutateRequest(feature: index, function: 2, parameters: [capture.capturedMode]) }
+        do { _ = try await mutateRequest(feature: index, function: 2, parameters: [capture.capturedMode], scopedMutation: .wheelCapture(nativeMode)) }
         catch let preflight as BoltMutationPreflightFailure { throw preflight.failure }
         catch { }
         let verified = try await wheelMode(feature: index)
@@ -1636,7 +2150,7 @@ public actor BoltController {
             let current = try await wheelMode(feature: capture.feature, cleanup: true)
             guard current == capture.capturedMode || current == capture.nativeMode || current == restoration else { throw BoltFailure.foreignState }
             if current != restoration {
-                do { _ = try await mutateRequest(feature: capture.feature, function: 2, parameters: [restoration], duringCleanup: true) }
+                do { _ = try await mutateRequest(feature: capture.feature, function: 2, parameters: [restoration], duringCleanup: true, scopedMutation: .wheelCapture(current)) }
                 catch let preflight as BoltMutationPreflightFailure { throw preflight.failure }
                 catch { }
                 guard try await wheelMode(feature: capture.feature, cleanup: true) == restoration else { throw BoltFailure.foreignState }
@@ -1719,7 +2233,7 @@ public actor BoltController {
         }
     }
 
-    private func readThumbwheelFeature() async throws -> UInt8 {
+    private func readThumbwheelFeature(cleanup: Bool = false) async throws -> UInt8 {
         let root = try await request(feature: 0, function: 0, parameters: [0x21, 0x50])
         let usable = root.count >= 3 && root[0] != 0 && root[1] & 0xE0 == 0 && root[2] == 0
         if let index = thumbwheel.feature, thumbwheel.capture != nil || thumbwheel.ownership != nil,
@@ -1727,11 +2241,11 @@ public actor BoltController {
             thumbwheel.associationLost = true
             throw BoltFailure.foreignState
         }
-        try checkActive()
+        if !cleanup { try checkActive() }
         guard usable else { throw BoltFailure.unsupported }
         let info = try await request(feature: root[0], function: 0)
         thumbwheel.info = try ThumbwheelState.Info(info)
-        try checkActive()
+        if !cleanup { try checkActive() }
         return root[0]
     }
 
@@ -1745,7 +2259,7 @@ public actor BoltController {
             let index = try await readThumbwheelFeature()
             let mode = try await thumbwheelMode(feature: index)
             try checkActive()
-            guard !mode.diverted else { throw BoltFailure.foreignState }
+            guard !mode.diverted, mode.statusFlags == 0 else { throw BoltFailure.foreignState }
             thumbwheel.feature = index
             thumbwheel.baseline = mode
             thumbwheel.latest = mode
@@ -1764,8 +2278,10 @@ public actor BoltController {
             UInt16(feature) << 8 | 1: reads + 2,
             UInt16(feature) << 8 | 2: setters + 1
         ]
-        required[0, default: 0] += rootReads
-        required[UInt16(feature) << 8, default: 0] += infoReads
+        let featurePreflights = supportsManagement ? 0 : setters + 1
+        required[UInt16(feature) << 8 | 1, default: 0] += featurePreflights
+        required[0, default: 0] += rootReads + featurePreflights
+        required[UInt16(feature) << 8, default: 0] += infoReads + featurePreflights
         let identityWrites = identityPreflights ?? (setters > 0 ? setters + 1 : 0)
         try addIdentityPreflightRequirements(writes: identityWrites, to: &required)
         try requireNativeTokenCapacity(required)
@@ -1782,7 +2298,7 @@ public actor BoltController {
         guard try await readThumbwheelFeature() == index else { throw BoltFailure.foreignState }
         let current = try await thumbwheelMode(feature: index)
         try checkActive()
-        guard !current.diverted else { throw BoltFailure.foreignState }
+        guard !current.diverted, current.statusFlags == 0 else { throw BoltFailure.foreignState }
         if let owned = thumbwheel.ownership {
             guard current == owned.target || current == owned.original else { throw BoltFailure.foreignState }
             if current == owned.original { thumbwheel.ownership = nil }
@@ -1794,7 +2310,7 @@ public actor BoltController {
         try checkActive()
         thumbwheel.ownership = .init(original: original, target: target)
         thumbwheel.pendingRollback = current
-        do { _ = try await mutateRequest(feature: index, function: 2, parameters: target.parameters) }
+        do { _ = try await mutateRequest(feature: index, function: 2, parameters: target.parameters, scopedMutation: .thumbwheel(current)) }
         catch let preflight as BoltMutationPreflightFailure { throw preflight.failure }
         catch { }
         let verified = try await thumbwheelMode(feature: index)
@@ -1811,7 +2327,7 @@ public actor BoltController {
         guard try await readThumbwheelFeature() == index else { throw BoltFailure.foreignState }
         let native = try await thumbwheelMode(feature: index)
         try checkActive()
-        guard !native.diverted, native == thumbwheel.latest else { throw BoltFailure.foreignState }
+        guard !native.diverted, native.statusFlags == 0, native == thumbwheel.latest else { throw BoltFailure.foreignState }
         guard scrollPostingPreflight() else {
             thumbwheel.blocker = "Input posting permission changed before thumb-wheel capture; native scrolling remains active."
             return
@@ -1821,7 +2337,7 @@ public actor BoltController {
         thumbwheel.captureVerified = false
         thumbwheel.generation &+= 1
         thumbwheelAdmission.prepare(generation: thumbwheel.generation)
-        do { _ = try await mutateRequest(feature: index, function: 2, parameters: capture.captured.parameters) }
+        do { _ = try await mutateRequest(feature: index, function: 2, parameters: capture.captured.parameters, scopedMutation: .thumbwheel(native)) }
         catch let preflight as BoltMutationPreflightFailure { throw preflight.failure }
         catch { }
         let verified = try await thumbwheelMode(feature: index)
@@ -1863,7 +2379,7 @@ public actor BoltController {
             let attributable = [capture?.captured, capture?.native, owned?.target, thumbwheel.pendingRollback, restoration].compactMap { $0 }
             guard attributable.contains(current) else { throw BoltFailure.foreignState }
             if current != restoration {
-                do { _ = try await mutateRequest(feature: index, function: 2, parameters: restoration.parameters, duringCleanup: true) }
+                do { _ = try await mutateRequest(feature: index, function: 2, parameters: restoration.parameters, duringCleanup: true, scopedMutation: .thumbwheel(current)) }
                 catch let preflight as BoltMutationPreflightFailure { throw preflight.failure }
                 catch { }
                 guard try await thumbwheelMode(feature: index, cleanup: true) == restoration else { throw BoltFailure.foreignState }
@@ -1914,12 +2430,23 @@ public actor BoltController {
         }
         let wheelRoutingWasOwned = captureOwnership != nil || wheelOwnership != nil || pendingWheelRollback != nil
         let wheelRestored = await cleanupWheel()
-        if !wheelRestored, wheelRoutingWasOwned { freshWheelRoutingRequired = true }
+        if !wheelRestored, wheelRoutingWasOwned {
+            freshWheelRoutingRequired = true
+            if let baseline = wheelBaseline, let capabilities = wheelCapabilities {
+                wheelRecovery = .init(ownership: wheelOwnership, capture: captureOwnership, baseline: baseline,
+                                      capabilities: capabilities, latest: latestVerifiedWheelMode,
+                                      rollback: pendingWheelRollback, restore: restorePreviousSettingsOnDisconnect)
+            }
+        } else if wheelRestored { wheelRecovery = nil }
         let thumbwheelRoutingWasOwned = thumbwheel.capture != nil || thumbwheel.ownership != nil || thumbwheel.pendingRollback != nil
         let thumbwheelRestored = await cleanupThumbwheel(final: true)
-        if !thumbwheelRestored, thumbwheelRoutingWasOwned { freshThumbwheelRoutingRequired = true }
+        if !thumbwheelRestored, thumbwheelRoutingWasOwned {
+            freshThumbwheelRoutingRequired = true
+            thumbwheelRecovery = thumbwheel
+        } else if thumbwheelRestored { thumbwheelRecovery = nil }
         let buttonsRestored = await cleanupButtons()
-        let restored = connectRestored && wheelRestored && thumbwheelRestored && buttonsRestored
+        let hardwareRestored = await cleanupHardwareSettings()
+        let restored = connectRestored && wheelRestored && thumbwheelRestored && buttonsRestored && hardwareRestored
         uncertain = uncertain || !restored
         return restored && !uncertain
     }
@@ -1936,8 +2463,13 @@ public actor BoltController {
                     throw BoltFailure.foreignState
                 }
                 changed.remove(control)
+                buttonRecovery.removeValue(forKey: control)
             } catch {
                 restored = false
+                if let table = capabilityTable,
+                   let row = table.rows.first(where: { BoltWire.word($0, 0) == BoltWire.cid(control) }) {
+                    buttonRecovery[control] = .init(flags: table.rootFlags, version: table.version, row: row)
+                }
             }
         }
         return restored
@@ -2088,11 +2620,12 @@ public actor BoltController {
             }
             guard phase == .enabled, terminalFailure == nil, !disableRequested else { return }
             do {
-                guard let down = try BoltWire.snapshot(report, slot: slot, feature: feature) else { return }
+                guard let snapshot = try BoltWire.snapshot(report, slot: slot, feature: feature) else { return }
+                let down = snapshot.intersection(selectedButtonControls)
                 guard arrival >= enabledAt else { return }
                 guard arrival.duration(to: .now) <= .milliseconds(250) else { throw BoltFailure.stale }
                 let newlyPressed = down.subtracting(pressed).intersection(armed)
-                armed.formUnion(Set(MouseControl.allCases).subtracting(down))
+                armed.formUnion(selectedButtonControls.subtracting(down))
                 pressed = down
                 for control in MouseControl.allCases where newlyPressed.contains(control) {
                     if case .dropped = continuation.yield(.press(control, generation: generation, observedAt: arrival)) {
@@ -2177,7 +2710,11 @@ public actor BoltController {
                                                        thumbwheel: thumbwheel.status, failure: failure,
                                                        deviceInformation: deviceInformation, deviceResponding: deviceResponding,
                                                        supportsManagement: supportsManagement, model: model,
-                                                       connection: connectionType, verifiedIdentity: verifiedIdentity)))
+                                                       connection: connectionType, verifiedIdentity: verifiedIdentity,
+                                                       hardwareSettings: hardwareSettings,
+                                                       supportsWheelCapture: supportsWheelCapture,
+                                                       supportsThumbwheelManagement: supportsThumbwheelManagement,
+                                                       supportsButtonManagement: supportsButtonManagement)))
         if case .dropped(let event) = result {
             switch event {
             case .status: return

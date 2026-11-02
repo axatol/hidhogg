@@ -29,7 +29,7 @@ AppModel owns the canonical editable configuration, navigation and application l
 
 Configuration is resolved from an absolute nonempty XDG_CONFIG_HOME or the standard home configuration location. Loading, revision-aware atomic saving, one-second edit debounce and explicit reload are implemented. Invalid or externally changed files do not silently replace valid state. No filesystem watcher is used. Swift TOML is pinned to 2.0.0 in the package manifest.
 
-The shared `HIDPP2121V1` module decodes and plans wheel preference changes for either model when that feature version is valid. The common controller retains transport, identity, serialization, readback and restoration. Current MX4 access is physical wheel preferences only; button/thumbwheel/capture, SmartShift, DPI and other hardware are subsequent versioned adapters. [Approved coverage roadmap](padding-mx4-settings-plan.md).
+The shared `HIDPP2121V1` module decodes and plans wheel preference changes for either model when that feature version is valid. The common controller retains transport, identity, serialization, readback and restoration. MX-SET-01 adds independent wheel/thumb/button admission, SmartShift, haptic/force settings and DPI reads. Target V2 DPI writes remain blocked pending the level contract; host pointer speed is deferred. Identity/ownership/readback fences remain. [Approved coverage roadmap](padding-mx4-settings-plan.md).
 
 ## Logitech ownership and recovery
 

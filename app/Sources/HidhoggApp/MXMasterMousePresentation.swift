@@ -147,6 +147,7 @@ struct MXMasterMousePresentation: View {
 
     private func hitBounds(for target: DeviceEditorTarget) -> CGRect {
         switch target {
+        case .middle, .wheelMode, .thumbRest: .zero
         case .back: MXMasterMouseGeometry.backButtonHitBounds
         case .forward: MXMasterMouseGeometry.forwardButtonHitBounds
         case .verticalWheel: MXMasterMouseGeometry.verticalWheelHitBounds

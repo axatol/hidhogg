@@ -92,3 +92,7 @@ BoltNativeInputDiagnostics is a numeric-only callback disposition snapshot owned
 
 
 BoltReceiverNotificationLease calculates the temporary0x900 mask/owned additions. BoltPairingSession owns its setup/readback/cleanup lifetime with cancellation and verification drain barriers; separate status messages/attention preserve verified outcomes and surface cleanup uncertainty. AppModel caches all receiver inventories for display while retaining only one fresh active management snapshot as Unpair authority. Full successful refresh replaces ephemeral receiver IDs atomically. See docs/logitech-notification-discovery-plan.md.
+
+## Combined mouse settings — 2 November 2026
+
+MouseHardwarePreferences stores per-registration intent; strict TOML codecs preserve sparse optional bindings and explicit directions. BoltHardwareSettings exposes capability/readback state; HIDPPHardwareSettings plans snapshots, while BoltController retains identity/IO/ownership/restore. Granular flags authorize button/wheel/thumb writes independently. AppModel debounces hardware200ms and reconciles per-app button subsets behind a dispatch fence; MouseHardwareSettingsView owns workspace settings. V2 DPI is read-only and independent pointer speed deferred. See docs/mouse-settings-milestone.md.

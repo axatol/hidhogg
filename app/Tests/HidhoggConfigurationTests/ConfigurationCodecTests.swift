@@ -13,7 +13,10 @@ final class ConfigurationCodecTests: XCTestCase {
         XCTAssertFalse(device.restorePreviousSettingsOnDisconnect)
         XCTAssertNil(device.wheelHighResolution)
         XCTAssertNil(device.wheelScrollAmount)
-        XCTAssertNil(device.thumbwheelInverted)
+        XCTAssertEqual(device.effectiveWheelInverted, false)
+        XCTAssertEqual(device.effectiveThumbwheelInverted, true)
+        XCTAssertEqual(device.wheelInverted, false)
+        XCTAssertEqual(device.thumbwheelInverted, true)
         XCTAssertNil(device.thumbwheelScrollAmount)
         XCTAssertEqual(device.binding(for: .back, application: nil), .key(
             KeyboardShortcut(keyCode: 4, modifiers: [.command, .shift])
@@ -35,8 +38,8 @@ final class ConfigurationCodecTests: XCTestCase {
         XCTAssertTrue(source.contains("connect_on_launch = true"))
         XCTAssertTrue(source.contains("key_code = 4"))
         XCTAssertTrue(source.contains("com.example.Editor_ID"))
-        XCTAssertFalse(source.contains("wheel_inverted"))
-        XCTAssertFalse(source.contains("thumbwheel_inverted"))
+        XCTAssertTrue(source.contains("wheel_inverted = false"))
+        XCTAssertTrue(source.contains("thumbwheel_inverted = true"))
         XCTAssertFalse(source.contains("thumbwheel_scroll_amount"))
         XCTAssertFalse(source.contains("d200x"))
         XCTAssertEqual(try ConfigurationCodec.decode(first), ConfigurationFixtures.configuration)
@@ -195,21 +198,17 @@ final class ConfigurationCodecTests: XCTestCase {
         }
     }
 
-    func testWheelInversionIntentRoundTripsAndOmitsUnmanagedValue() throws {
-        let intents: [Bool?] = [nil, false, true]
+    func testWheelDirectionDefaultsAndExplicitValuesRoundTripDeterministically() throws {
+        let intents: [(Bool?, Bool)] = [(nil, false), (false, false), (true, true)]
 
-        for intent in intents {
+        for (intent, effectiveValue) in intents {
             var configuration = ConfigurationFixtures.configuration
             configuration.devices[0].wheelInverted = intent
 
             let encoded = try ConfigurationCodec.encode(configuration)
             let source = try XCTUnwrap(String(data: encoded, encoding: .utf8))
 
-            if let intent {
-                XCTAssertTrue(source.contains("wheel_inverted = \(intent)"))
-            } else {
-                XCTAssertFalse(source.contains("wheel_inverted"))
-            }
+            XCTAssertTrue(source.contains("wheel_inverted = \(effectiveValue)"))
             XCTAssertEqual(try ConfigurationCodec.decode(encoded), configuration)
         }
     }
@@ -262,7 +261,9 @@ final class ConfigurationCodecTests: XCTestCase {
     }
 
     func testThumbwheelPreferencesRoundTripWithoutChangingVerticalWheelSettings() throws {
-        for inversion: Bool? in [nil, false, true] {
+        let inversions: [(Bool?, Bool)] = [(nil, true), (false, false), (true, true)]
+
+        for (inversion, effectiveValue) in inversions {
             for amount: Double? in [nil, 0.25, 1.0, 10.0] {
                 var configuration = ConfigurationFixtures.configuration
                 configuration.devices[0].wheelInverted = false
@@ -275,11 +276,7 @@ final class ConfigurationCodecTests: XCTestCase {
                 let encoded = try ConfigurationCodec.encode(configuration)
                 let source = try XCTUnwrap(String(data: encoded, encoding: .utf8))
 
-                if let inversion {
-                    XCTAssertTrue(source.contains("thumbwheel_inverted = \(inversion)"))
-                } else {
-                    XCTAssertFalse(source.contains("thumbwheel_inverted"))
-                }
+                XCTAssertTrue(source.contains("thumbwheel_inverted = \(effectiveValue)"))
                 if let amount {
                     XCTAssertTrue(source.contains("thumbwheel_scroll_amount = \(amount)"))
                 } else {
@@ -292,6 +289,124 @@ final class ConfigurationCodecTests: XCTestCase {
                 XCTAssertEqual(try ConfigurationCodec.decode(encoded), configuration)
             }
         }
+    }
+
+    func testMouseHardwarePreferencesRoundTripAndValidateProtocolIndependentValues() throws {
+        let preferences = MouseHardwarePreferences(
+            smartShiftMode: .freeSpin,
+            smartShiftThreshold: 255,
+            smartShiftTorque: 80,
+            dpi: 1600,
+            pointerSpeed: 1.25,
+            hapticsEnabled: true,
+            hapticIntensity: 0,
+            hapticPowerSaving: false,
+            forceThreshold: 0
+        )
+        var configuration = ConfigurationFixtures.configuration
+        configuration.devices[0].hardwarePreferences = preferences
+
+        let encoded = try ConfigurationCodec.encode(configuration)
+        let source = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+        let decoded = try ConfigurationCodec.decode(encoded)
+
+        XCTAssertTrue(source.contains("smart_shift_mode = \"freeSpin\""))
+        XCTAssertTrue(source.contains("smart_shift_threshold = 255"))
+        XCTAssertTrue(source.contains("smart_shift_torque = 80"))
+        XCTAssertTrue(source.contains("dpi = 1600"))
+        XCTAssertTrue(source.contains("pointer_speed = 1.25"))
+        XCTAssertTrue(source.contains("haptics_enabled = true"))
+        XCTAssertTrue(source.contains("haptic_intensity = 0"))
+        XCTAssertTrue(source.contains("haptic_power_saving = false"))
+        XCTAssertTrue(source.contains("force_threshold = 0"))
+        XCTAssertEqual(decoded, configuration)
+        XCTAssertEqual(try preferences.validated(), preferences)
+    }
+
+    func testMouseHardwarePreferencesRejectInvalidDeviceIndependentValues() {
+        let invalidPreferences = [
+            MouseHardwarePreferences(smartShiftMode: .automatic, smartShiftThreshold: 255),
+            MouseHardwarePreferences(smartShiftThreshold: 0),
+            MouseHardwarePreferences(smartShiftTorque: 0),
+            MouseHardwarePreferences(smartShiftTorque: 101),
+            MouseHardwarePreferences(dpi: 0),
+            MouseHardwarePreferences(pointerSpeed: 0),
+            MouseHardwarePreferences(pointerSpeed: MousePointerSpeed.range.lowerBound.nextDown),
+            MouseHardwarePreferences(pointerSpeed: MousePointerSpeed.range.upperBound.nextUp),
+            MouseHardwarePreferences(pointerSpeed: .infinity),
+            MouseHardwarePreferences(hapticIntensity: 101)
+        ]
+
+        for preferences in invalidPreferences {
+            var configuration = ConfigurationFixtures.configuration
+            configuration.devices[0].hardwarePreferences = preferences
+            XCTAssertThrowsError(try configuration.validated())
+        }
+
+        XCTAssertTrue(MousePointerSpeed.contains(MousePointerSpeed.range.lowerBound))
+        XCTAssertTrue(MousePointerSpeed.contains(MousePointerSpeed.range.upperBound))
+        XCTAssertNoThrow(try MouseHardwarePreferences(smartShiftMode: .automatic, smartShiftThreshold: 254).validated())
+    }
+
+    func testMouseHardwarePreferenceCodecRejectsInvalidAndUnknownFields() throws {
+        var configuration = ConfigurationFixtures.configuration
+        configuration.devices[0].hardwarePreferences = MouseHardwarePreferences(
+            smartShiftMode: .automatic,
+            smartShiftThreshold: 120,
+            smartShiftTorque: 40,
+            dpi: 1600,
+            pointerSpeed: 1.0,
+            hapticsEnabled: true,
+            hapticIntensity: 50,
+            hapticPowerSaving: false,
+            forceThreshold: 0
+        )
+        let encoded = try ConfigurationCodec.encode(configuration)
+        let source = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+        let outsidePointerSpeed = MousePointerSpeed.range.lowerBound.nextDown
+        let invalidSources = [
+            source.replacingOccurrences(of: "smart_shift_threshold = 120", with: "smart_shift_threshold = 0"),
+            source.replacingOccurrences(of: "smart_shift_threshold = 120", with: "smart_shift_threshold = 1.5"),
+            source.replacingOccurrences(of: "smart_shift_torque = 40", with: "smart_shift_torque = 101"),
+            source.replacingOccurrences(of: "dpi = 1600", with: "dpi = 0"),
+            source.replacingOccurrences(of: "pointer_speed = 1.0", with: "pointer_speed = \(outsidePointerSpeed)"),
+            source.replacingOccurrences(of: "haptic_intensity = 50", with: "haptic_intensity = 101"),
+            source.replacingOccurrences(
+                of: "haptic_intensity = 50",
+                with: "haptic_intensity = 50\nunknown_preference = true"
+            )
+        ]
+
+        for invalidSource in invalidSources {
+            XCTAssertThrowsError(try ConfigurationCodec.decode(ConfigurationFixtures.data(invalidSource)))
+        }
+    }
+
+    func testLegacyMissingAndNullDirectionFieldsUseDefaultsAndPreserveExplicitValues() throws {
+        let legacyBase = #"{"id":"logitech.mx-master-3s","defaults":{"back":{"kind":"disabled"},"forward":{"kind":"disabled"}},"applications":{},"restorePreviousSettingsOnDisconnect":false}"#
+        let decoder = JSONDecoder()
+        let missing = try decoder.decode(DeviceBindings.self, from: Data(legacyBase.utf8))
+
+        XCTAssertEqual(missing.wheelInverted, false)
+        XCTAssertEqual(missing.thumbwheelInverted, true)
+        XCTAssertEqual(missing.effectiveWheelInverted, false)
+        XCTAssertEqual(missing.effectiveThumbwheelInverted, true)
+
+        let nullable = legacyBase.replacingOccurrences(
+            of: "\"applications\":{}",
+            with: "\"applications\":{},\"wheelInverted\":null,\"thumbwheelInverted\":null"
+        )
+        let nullValues = try decoder.decode(DeviceBindings.self, from: Data(nullable.utf8))
+        XCTAssertEqual(nullValues.effectiveWheelInverted, false)
+        XCTAssertEqual(nullValues.effectiveThumbwheelInverted, true)
+
+        let explicit = legacyBase.replacingOccurrences(
+            of: "\"applications\":{}",
+            with: "\"applications\":{},\"wheelInverted\":true,\"thumbwheelInverted\":false"
+        )
+        let explicitValues = try decoder.decode(DeviceBindings.self, from: Data(explicit.utf8))
+        XCTAssertEqual(explicitValues.effectiveWheelInverted, true)
+        XCTAssertEqual(explicitValues.effectiveThumbwheelInverted, false)
     }
 
     func testRejectsWrongTypedThumbwheelInversion() {
@@ -497,5 +612,67 @@ final class ConfigurationCodecTests: XCTestCase {
                 return XCTFail("Expected domain validation error, received \($0)")
             }
         }
+    }
+
+    func testOptionalMouseControlsRemainUnassignedUntilExplicitlyConfigured() throws {
+        XCTAssertEqual(MouseControl.allCases, [.back, .forward, .middle, .wheelMode, .thumbRest])
+        XCTAssertEqual(MouseControl.middle.title, "Middle button")
+        XCTAssertEqual(MouseControl.wheelMode.title, "Wheel mode button")
+        XCTAssertEqual(MouseControl.thumbRest.title, "Thumb button")
+
+        var configuration = ConfigurationFixtures.configuration
+        configuration.devices[0].defaults[MouseControl.middle.rawValue] = .disabled
+        configuration.devices[0].applications["com.example.Editor_ID"] = [
+            MouseControl.middle.rawValue: .key(KeyboardShortcut(keyCode: 4)),
+            MouseControl.wheelMode.rawValue: .key(KeyboardShortcut(keyCode: 5)),
+            MouseControl.thumbRest.rawValue: .disabled
+        ]
+
+        let device = try XCTUnwrap(configuration.mouse)
+        XCTAssertEqual(device.configuredBinding(for: .middle, application: nil), .disabled)
+        XCTAssertNil(device.configuredBinding(for: .thumbRest, application: nil))
+        XCTAssertNil(device.configuredBinding(for: .thumbRest, application: "com.example.Other"))
+        XCTAssertEqual(device.configuredBinding(for: .middle, application: "com.example.Other"), .disabled)
+        XCTAssertEqual(
+            device.configuredBinding(for: .middle, application: "com.example.Editor_ID"),
+            .key(KeyboardShortcut(keyCode: 4))
+        )
+        XCTAssertEqual(
+            device.configuredBinding(for: .wheelMode, application: "com.example.Editor_ID"),
+            .key(KeyboardShortcut(keyCode: 5))
+        )
+        XCTAssertEqual(device.configuredBinding(for: .thumbRest, application: "com.example.Editor_ID"), .disabled)
+
+        let encoded = try ConfigurationCodec.encode(configuration)
+        XCTAssertEqual(try ConfigurationCodec.decode(encoded), configuration)
+    }
+
+    func testMouseValidationRequiresBackAndForwardButAllowsSparseKnownControls() throws {
+        let defaults: [String: ControlBinding] = ["back": .disabled, "forward": .disabled]
+        let sparse = DeviceBindings(
+            id: AppConfiguration.logitechProfileID,
+            defaults: defaults,
+            applications: ["com.example.Editor": ["wheelMode": .disabled]]
+        )
+        XCTAssertNoThrow(try AppConfiguration(devices: [sparse]).validated())
+
+        let missingRequired = DeviceBindings(
+            id: AppConfiguration.logitechProfileID,
+            defaults: ["back": .disabled]
+        )
+        XCTAssertThrowsError(try AppConfiguration(devices: [missingRequired]).validated())
+
+        let unknownDefault = DeviceBindings(
+            id: AppConfiguration.logitechProfileID,
+            defaults: defaults.merging(["unknown": .disabled]) { _, replacement in replacement }
+        )
+        XCTAssertThrowsError(try AppConfiguration(devices: [unknownDefault]).validated())
+
+        let unknownOverride = DeviceBindings(
+            id: AppConfiguration.logitechProfileID,
+            defaults: defaults,
+            applications: ["com.example.Editor": ["unknown": .disabled]]
+        )
+        XCTAssertThrowsError(try AppConfiguration(devices: [unknownOverride]).validated())
     }
 }

@@ -464,7 +464,7 @@ func wheelAbsentOrUnsupportedFeatureKeepsKeyboardDiscovery(root: [UInt8]) async 
     await controller.applyWheelPreference(nil, restorePreviousSettingsOnDisconnect: true)
     #expect(await wheelEventually { await recorder.last?.phase == .ready })
     #expect(await recorder.last?.wheel.support == .unsupported)
-    #expect(await recorder.last?.availableControls == Set(MouseControl.allCases))
+    #expect(await recorder.last?.availableControls == Set([.back, .forward]))
     await controller.enable()
     #expect(await wheelEventually { await recorder.last?.phase == .enabled })
     #expect(await fixture.writes.isEmpty)

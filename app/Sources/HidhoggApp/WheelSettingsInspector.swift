@@ -24,9 +24,7 @@ struct WheelSettingsInspector: View {
                 ))
                 .disabled(!model.canEditConfiguration)
 
-                Text(physicalMainWheelOnly
-                     ? "Restore only main wheel settings changed by Hidhogg."
-                     : "This restore policy is shared by both wheels and applies across all app contexts.")
+                Text("Restore previous mouse settings changed by Hidhogg. This policy applies across all app contexts.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -42,7 +40,6 @@ struct WheelSettingsInspector: View {
                 get: { model.wheelPreferenceDraft },
                 set: { model.setWheelPreference($0) }
             )) {
-                Text("Leave unchanged").tag(Optional<Bool>.none)
                 Text("Standard").tag(Optional<Bool>.some(false))
                 Text("Natural").tag(Optional<Bool>.some(true))
             }
@@ -89,13 +86,12 @@ struct WheelSettingsInspector: View {
                 get: { model.wheelPreferenceDraft },
                 set: { model.setWheelPreference($0) }
             )) {
-                Text("Leave unchanged").tag(Optional<Bool>.none)
                 Text("Standard").tag(Optional<Bool>.some(false))
                 Text("Natural").tag(Optional<Bool>.some(true))
             }
             .disabled(!model.canEditConfiguration)
 
-            Toggle("Custom scroll amount", isOn: Binding(
+            Toggle("Adjust scroll speed", isOn: Binding(
                 get: { model.wheelScrollAmountDraft != nil },
                 set: { model.setWheelScrollAmount($0 ? WheelScrollAmount.defaultSelection : nil) }
             ))
@@ -106,14 +102,14 @@ struct WheelSettingsInspector: View {
                     get: { model.wheelScrollAmountDraft ?? WheelScrollAmount.defaultSelection },
                     set: { model.setWheelScrollAmount($0) }
                 ), in: WheelScrollAmount.range, step: 0.25)
-                .accessibilityLabel("Scroll wheel amount")
+                .accessibilityLabel("Scroll speed")
                 .accessibilityValue(String(format: "%.2f×", amount))
                 .disabled(!model.canEditConfiguration)
 
-                LabeledContent("Scroll amount", value: String(format: "%.2f×", amount))
+                LabeledContent("Scroll speed", value: String(format: "%.2f×", amount))
             }
 
-            LabeledContent("Scroll amount state", value: model.scrollAmountStatus)
+            LabeledContent("Scroll speed state", value: model.scrollAmountStatus)
 
             if let message = model.selectedMouseStatus.wheel.message {
                 Text(message)
@@ -145,7 +141,7 @@ struct WheelSettingsInspector: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
 
-                    Text("Leave unchanged keeps the current value, or restores the previous value when restoration is enabled.")
+                    Text("Input resolution can follow the device. Scroll direction always follows your saved setting.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -166,13 +162,12 @@ struct WheelSettingsInspector: View {
                 get: { model.thumbwheelPreferenceDraft },
                 set: { model.setThumbwheelPreference($0) }
             )) {
-                Text("Leave unchanged").tag(Optional<Bool>.none)
                 Text("Standard").tag(Optional<Bool>.some(false))
                 Text("Natural").tag(Optional<Bool>.some(true))
             }
             .disabled(!model.canEditConfiguration)
 
-            Toggle("Custom thumb-wheel amount", isOn: Binding(
+            Toggle("Adjust thumbwheel speed", isOn: Binding(
                 get: { model.thumbwheelScrollAmountDraft != nil },
                 set: { model.setThumbwheelScrollAmount($0 ? WheelScrollAmount.defaultSelection : nil) }
             ))
@@ -183,14 +178,14 @@ struct WheelSettingsInspector: View {
                     get: { model.thumbwheelScrollAmountDraft ?? WheelScrollAmount.defaultSelection },
                     set: { model.setThumbwheelScrollAmount($0) }
                 ), in: WheelScrollAmount.range, step: 0.25)
-                .accessibilityLabel("Thumb-wheel amount")
+                .accessibilityLabel("Thumbwheel speed")
                 .accessibilityValue(String(format: "%.2f×", amount))
                 .disabled(!model.canEditConfiguration)
 
-                LabeledContent("Thumb-wheel amount", value: String(format: "%.2f×", amount))
+                LabeledContent("Thumbwheel speed", value: String(format: "%.2f×", amount))
             }
 
-            LabeledContent("Thumb-wheel amount state", value: model.thumbwheelScrollAmountStatus)
+            LabeledContent("Thumbwheel speed state", value: model.thumbwheelScrollAmountStatus)
 
             if let message = model.selectedMouseStatus.thumbwheel.message {
                 Text(message)

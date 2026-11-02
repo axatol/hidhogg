@@ -3113,3 +3113,25 @@ Owner reports “Seems to work well” after signed build303a3f. Current padding
 ## Commit after manual verification — 2 November 2026
 
 Owner corrected the delayed check-in workflow. After owner manual verification, make a local commit of the verified, dependency-closed scope without waiting for another check-in request. Preserve unrelated or unverified changes; do not push without authorization. Apply this now to the accepted padding and initial MX4 wheel settings. All 326 tested inputs still match the signed build manifest; documentation-only acceptance/policy updates require no source test rerun.
+
+## MX-SET-01 combined settings approved — 2 November 2026
+
+Owner approved combined hardware settings, independent user-facing pointer speed/DPI and scroll behavior, explicit vertical Standard/thumb Natural direction defaults. Implementation plan docs/mouse-settings-milestone.md records feature gates, storage migration and verification boundary. Per-feature adapters keep unknown contracts unwritable; conditional2205 pointer scaling does not establish stock Options+ parity. Parent integration and backend/storage workers active. No hardware or private-runtime operations. Commit automatically after owner acceptance.
+
+## MX-SET-01 verified signed partial checkpoint — 2 November 2026
+
+Final full gate1,097pass (641XCTest+456SwiftTesting), targeted72pass, backend283pass;333source/test/build hashes match strict signed builddf12cc383925ee63277f4cadaeb41bf5833d12246b61c07181cfc251e51c2d27. First integrated failure exposed actual passive-ready/manual-enable and delayed-disable re-enable regressions; corrected source plus default-direction and post-activation fake-clock tests pass. D200X change is test-only eventual cancellation synchronization. Source reviews clear; final offscreen380/720 captures reviewed. No new exclusions/retry masking/live operations.
+
+Pointer speed explicitly deferred by owner. Both pinned target models advertise2201V2; retained native setter appends unestablished dpi_level. No guessed writer: V2 readable, not writable; V0/V1 write/readback/owned restore tested. Haptic rounding keeps supported actual observation but mismatching owned restore refused. Milestone remains incomplete and awaits physical acceptance of available controls. Source uncommitted on5973d41; commit accepted scope automatically, no push.
+
+Automatic approval review rejected TaskView creation for externally transmitting repository/build/local-path details. No task created; reduced draft prepared and permission question pending. No bypass attempted.
+
+## UI-FREEZE-01 diagnosed and signed — 2 November 2026
+
+Owner approved boundedCPU/threaddiagnosis+offlinefix and reports anywindowinteraction. Matchedloadeddf12cc3image; idle0–1.5%watchmissedissue, coordinatedsamplecaught99.7%CPU/SwiftUI layout withSliderMarkLabels. Native stepped pressure Slider scales tickwork withrawUInt16range. Fakeviewreference100~0.1s vs4095~4.726sRED; productionone-line step removal, unchangedrounding/range, samecaseGREEN~0.02s and65535~0.023s. No memory leak established; no rawmemory/args/env/privateconfig/log/HID inspection.
+
+Model11pass, independentreviewclear. Fullfirstfailedsetuptesttarget-start/AsyncStreamreadiness race; correctedboundedowner+readywait preservesassertions, setup22pass. Final1,098offlinepass (642+456), same2exclusions;333hashesmatch signedbuild4013fd4d3be6127aace690c63cc5b511a27a6550e4aa03c360ce2f5a4a03a8eb, strictsignatures/help pass. Sourcependingownerinteractionverification/autocommit, no push/newapplaunch/device/inputwrites. Detailedlogs/checklist docs/ui-interaction-freeze.md. Interactivecanvasproposalqueued; pointerspeeddeferred/DPIV2readonlyunchanged.
+
+## CPU acceptance and DPI follow-up — 2 November 2026
+
+Owner reports window freezing seems resolved, but DPI cannot be set. Close CPU interaction acceptance only; no heap-profile or broader hardware acceptance inferred. Prepare automatic local dependency-closed check-in of tested settings prerequisites/CPU fix, preserving DPI V2 read-only and deferred pointer gates. Public primary-source DPI compatibility research continues; no guessed writer or live device operation. Source333hashes unchanged from1,098case gate.

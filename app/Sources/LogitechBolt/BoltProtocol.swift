@@ -68,14 +68,18 @@ public struct BoltStatus: Equatable, Sendable {
     public let deviceResponding: Bool
     public let wheel: BoltWheelStatus
     public let thumbwheel: BoltThumbwheelStatus
+    public let hardwareSettings: BoltHardwareSettingsStatus
     public let failure: BoltFailureContext?
     public let deviceInformation: BoltDeviceInformation
     public let supportsManagement: Bool
+    public let supportsWheelCapture: Bool
+    public let supportsThumbwheelManagement: Bool
+    public let supportsButtonManagement: Bool
     public let model: LogitechMouseModel?
     public let connection: LogitechConnection?
     public let verifiedIdentity: LogitechIdentity?
 
-    public init(phase: BoltPhase, message: String, availableControls: Set<MouseControl>, generation: UInt64, cleanupUncertain: Bool, wheel: BoltWheelStatus = .init(), thumbwheel: BoltThumbwheelStatus = .init(), failure: BoltFailureContext? = nil, deviceInformation: BoltDeviceInformation = .init(), deviceResponding: Bool = false, supportsManagement: Bool = true, model: LogitechMouseModel? = nil, connection: LogitechConnection? = nil, verifiedIdentity: LogitechIdentity? = nil) {
+    public init(phase: BoltPhase, message: String, availableControls: Set<MouseControl>, generation: UInt64, cleanupUncertain: Bool, wheel: BoltWheelStatus = .init(), thumbwheel: BoltThumbwheelStatus = .init(), failure: BoltFailureContext? = nil, deviceInformation: BoltDeviceInformation = .init(), deviceResponding: Bool = false, supportsManagement: Bool = true, model: LogitechMouseModel? = nil, connection: LogitechConnection? = nil, verifiedIdentity: LogitechIdentity? = nil, hardwareSettings: BoltHardwareSettingsStatus = .init(), supportsWheelCapture: Bool? = nil, supportsThumbwheelManagement: Bool? = nil, supportsButtonManagement: Bool? = nil) {
         self.phase = phase
         self.message = message
         self.availableControls = availableControls
@@ -84,9 +88,13 @@ public struct BoltStatus: Equatable, Sendable {
         self.deviceResponding = deviceResponding
         self.wheel = wheel
         self.thumbwheel = thumbwheel
+        self.hardwareSettings = hardwareSettings
         self.failure = failure
         self.deviceInformation = deviceInformation
         self.supportsManagement = supportsManagement
+        self.supportsWheelCapture = supportsWheelCapture ?? supportsManagement
+        self.supportsThumbwheelManagement = supportsThumbwheelManagement ?? supportsManagement
+        self.supportsButtonManagement = supportsButtonManagement ?? supportsManagement
         self.model = model
         self.connection = connection
         self.verifiedIdentity = verifiedIdentity
@@ -221,13 +229,22 @@ extension BoltTransport {
 }
 
 enum BoltWire {
-    static let controls: [(MouseControl, UInt16, UInt16)] = [(.back, 0x0053, 0x003C), (.forward, 0x0056, 0x003E)]
+    static let controls: [(MouseControl, UInt16, UInt16)] = [(.back, 0x0053, 0x003C), (.forward, 0x0056, 0x003E),
+        (.middle, 0x0052, 0x003A), (.wheelMode, 0x00C4, 0x009D), (.thumbRest, 0x00C3, 0x00A9)]
 
     static func word(_ bytes: [UInt8], _ offset: Int) -> UInt16 {
         UInt16(bytes[offset]) << 8 | UInt16(bytes[offset + 1])
     }
 
-    static func cid(_ control: MouseControl) -> UInt16 { control == .back ? 0x0053 : 0x0056 }
+    static func cid(_ control: MouseControl) -> UInt16 {
+        switch control {
+        case .back: 0x0053
+        case .forward: 0x0056
+        case .middle: 0x0052
+        case .wheelMode: 0x00C4
+        case .thumbRest: 0x00C3
+        }
+    }
     static func bytes(_ value: UInt16) -> [UInt8] { [UInt8(value >> 8), UInt8(value & 0xFF)] }
 
     static func reply(_ report: [UInt8], slot: UInt8, feature: UInt8, functionSoftware: UInt8) -> Result<[UInt8], BoltFailure>? {
@@ -243,15 +260,17 @@ enum BoltWire {
         return .success(Array(report.dropFirst(4)))
     }
 
-    static func eligible(_ rows: [[UInt8]]) throws -> Set<MouseControl> {
+    static func eligible(_ rows: [[UInt8]], model: LogitechMouseModel? = nil) throws -> Set<MouseControl> {
         guard rows.allSatisfy({ $0.count == 16 }) else { throw BoltFailure.malformed }
         var result = Set<MouseControl>()
         for (control, cid, task) in controls {
+            guard model != nil || control == .back || control == .forward else { continue }
             let matching = rows.filter { word($0, 0) == cid }
             guard matching.count <= 1 else { throw BoltFailure.ambiguous }
             guard let row = matching.first else { continue }
             let flags = UInt16(row[4]) | UInt16(row[8]) << 8
-            if word(row, 2) == task, flags & 0x20 != 0, flags & 0x80 == 0 { result.insert(control) }
+            let expectedTask: UInt16 = control == .thumbRest && model == .mxMaster4 ? 0x009C : task
+            if word(row, 2) == expectedTask, flags & 0x20 != 0, flags & 0x80 == 0 { result.insert(control) }
         }
         return result
     }

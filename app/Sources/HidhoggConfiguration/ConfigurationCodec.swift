@@ -454,13 +454,14 @@ private struct DeviceDocument: Codable {
     let id: String
     let defaults: [String: BindingDocument]
     let applications: [String: [String: BindingDocument]]
-    let wheelInverted: Bool?
+    let wheelInverted: Bool
     let restorePreviousSettingsOnDisconnect: Bool
     let wheelHighResolution: Bool?
     let wheelScrollAmount: Double?
-    let thumbwheelInverted: Bool?
+    let thumbwheelInverted: Bool
     let thumbwheelScrollAmount: Double?
     let lowBatteryNotificationsEnabled: Bool
+    let hardwarePreferences: MouseHardwarePreferencesDocument?
 
     var configuration: DeviceBindings {
         DeviceBindings(
@@ -473,7 +474,8 @@ private struct DeviceDocument: Codable {
             wheelScrollAmount: wheelScrollAmount,
             thumbwheelInverted: thumbwheelInverted,
             thumbwheelScrollAmount: thumbwheelScrollAmount,
-            lowBatteryNotificationsEnabled: lowBatteryNotificationsEnabled
+            lowBatteryNotificationsEnabled: lowBatteryNotificationsEnabled,
+            hardwarePreferences: hardwarePreferences?.configuration
         )
     }
 
@@ -483,13 +485,14 @@ private struct DeviceDocument: Codable {
         self.applications = configuration.applications.mapValues {
             $0.mapValues(BindingDocument.init(configuration:))
         }
-        self.wheelInverted = configuration.wheelInverted
+        self.wheelInverted = configuration.effectiveWheelInverted
         self.restorePreviousSettingsOnDisconnect = configuration.restorePreviousSettingsOnDisconnect
         self.wheelHighResolution = configuration.wheelHighResolution
         self.wheelScrollAmount = configuration.wheelScrollAmount
-        self.thumbwheelInverted = configuration.thumbwheelInverted
+        self.thumbwheelInverted = configuration.effectiveThumbwheelInverted
         self.thumbwheelScrollAmount = configuration.thumbwheelScrollAmount
         self.lowBatteryNotificationsEnabled = configuration.lowBatteryNotificationsEnabled
+        self.hardwarePreferences = configuration.hardwarePreferences.map(MouseHardwarePreferencesDocument.init(configuration:))
     }
 
     init(from decoder: Decoder) throws {
@@ -497,7 +500,8 @@ private struct DeviceDocument: Codable {
         try container.rejectUnknownKeys([
             "id", "defaults", "applications", "wheel_inverted",
             "restore_previous_settings_on_disconnect", "wheel_high_resolution", "wheel_scroll_amount",
-            "thumbwheel_inverted", "thumbwheel_scroll_amount", "low_battery_notifications_enabled"
+            "thumbwheel_inverted", "thumbwheel_scroll_amount", "low_battery_notifications_enabled",
+            "hardware_preferences"
         ])
         id = try container.decode(String.self, forKey: AnyCodingKey("id"))
         defaults = try container.decode([String: BindingDocument].self, forKey: AnyCodingKey("defaults"))
@@ -506,6 +510,7 @@ private struct DeviceDocument: Codable {
             forKey: AnyCodingKey("applications")
         ) ?? [:]
         wheelInverted = try container.decodeIfPresent(Bool.self, forKey: AnyCodingKey("wheel_inverted"))
+            ?? DeviceBindings.defaultWheelInverted
         restorePreviousSettingsOnDisconnect = try container.decodeIfPresent(
             Bool.self, forKey: AnyCodingKey("restore_previous_settings_on_disconnect")
         ) ?? false
@@ -517,13 +522,16 @@ private struct DeviceDocument: Codable {
         )
         thumbwheelInverted = try container.decodeIfPresent(
             Bool.self, forKey: AnyCodingKey("thumbwheel_inverted")
-        )
+        ) ?? DeviceBindings.defaultThumbwheelInverted
         thumbwheelScrollAmount = try container.decodeIfPresent(
             Double.self, forKey: AnyCodingKey("thumbwheel_scroll_amount")
         )
         lowBatteryNotificationsEnabled = try container.decodeIfPresent(
             Bool.self, forKey: AnyCodingKey("low_battery_notifications_enabled")
         ) ?? false
+        hardwarePreferences = try container.decodeIfPresent(
+            MouseHardwarePreferencesDocument.self, forKey: AnyCodingKey("hardware_preferences")
+        )
     }
 
     func encode(to encoder: Encoder) throws {
@@ -533,13 +541,14 @@ private struct DeviceDocument: Codable {
         if !applications.isEmpty {
             try container.encode(applications, forKey: .applications)
         }
-        try container.encodeIfPresent(wheelInverted, forKey: .wheelInverted)
+        try container.encode(wheelInverted, forKey: .wheelInverted)
         try container.encode(restorePreviousSettingsOnDisconnect, forKey: .restorePreviousSettingsOnDisconnect)
         try container.encodeIfPresent(wheelHighResolution, forKey: .wheelHighResolution)
         try container.encodeIfPresent(wheelScrollAmount, forKey: .wheelScrollAmount)
-        try container.encodeIfPresent(thumbwheelInverted, forKey: .thumbwheelInverted)
+        try container.encode(thumbwheelInverted, forKey: .thumbwheelInverted)
         try container.encodeIfPresent(thumbwheelScrollAmount, forKey: .thumbwheelScrollAmount)
         try container.encode(lowBatteryNotificationsEnabled, forKey: .lowBatteryNotificationsEnabled)
+        try container.encodeIfPresent(hardwarePreferences, forKey: .hardwarePreferences)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -553,6 +562,87 @@ private struct DeviceDocument: Codable {
         case thumbwheelInverted = "thumbwheel_inverted"
         case thumbwheelScrollAmount = "thumbwheel_scroll_amount"
         case lowBatteryNotificationsEnabled = "low_battery_notifications_enabled"
+        case hardwarePreferences = "hardware_preferences"
+    }
+}
+
+private struct MouseHardwarePreferencesDocument: Codable {
+    let smartShiftMode: MouseSmartShiftMode?
+    let smartShiftThreshold: UInt8?
+    let smartShiftTorque: UInt8?
+    let dpi: UInt16?
+    let pointerSpeed: Double?
+    let hapticsEnabled: Bool?
+    let hapticIntensity: UInt8?
+    let hapticPowerSaving: Bool?
+    let forceThreshold: UInt16?
+
+    var configuration: MouseHardwarePreferences {
+        MouseHardwarePreferences(
+            smartShiftMode: smartShiftMode,
+            smartShiftThreshold: smartShiftThreshold,
+            smartShiftTorque: smartShiftTorque,
+            dpi: dpi,
+            pointerSpeed: pointerSpeed,
+            hapticsEnabled: hapticsEnabled,
+            hapticIntensity: hapticIntensity,
+            hapticPowerSaving: hapticPowerSaving,
+            forceThreshold: forceThreshold
+        )
+    }
+
+    init(configuration: MouseHardwarePreferences) {
+        smartShiftMode = configuration.smartShiftMode
+        smartShiftThreshold = configuration.smartShiftThreshold
+        smartShiftTorque = configuration.smartShiftTorque
+        dpi = configuration.dpi
+        pointerSpeed = configuration.pointerSpeed
+        hapticsEnabled = configuration.hapticsEnabled
+        hapticIntensity = configuration.hapticIntensity
+        hapticPowerSaving = configuration.hapticPowerSaving
+        forceThreshold = configuration.forceThreshold
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        try container.rejectUnknownKeys([
+            "smart_shift_mode", "smart_shift_threshold", "smart_shift_torque", "dpi", "pointer_speed",
+            "haptics_enabled", "haptic_intensity", "haptic_power_saving", "force_threshold"
+        ])
+        smartShiftMode = try container.decodeIfPresent(MouseSmartShiftMode.self, forKey: AnyCodingKey("smart_shift_mode"))
+        smartShiftThreshold = try container.decodeIfPresent(UInt8.self, forKey: AnyCodingKey("smart_shift_threshold"))
+        smartShiftTorque = try container.decodeIfPresent(UInt8.self, forKey: AnyCodingKey("smart_shift_torque"))
+        dpi = try container.decodeIfPresent(UInt16.self, forKey: AnyCodingKey("dpi"))
+        pointerSpeed = try container.decodeIfPresent(Double.self, forKey: AnyCodingKey("pointer_speed"))
+        hapticsEnabled = try container.decodeIfPresent(Bool.self, forKey: AnyCodingKey("haptics_enabled"))
+        hapticIntensity = try container.decodeIfPresent(UInt8.self, forKey: AnyCodingKey("haptic_intensity"))
+        hapticPowerSaving = try container.decodeIfPresent(Bool.self, forKey: AnyCodingKey("haptic_power_saving"))
+        forceThreshold = try container.decodeIfPresent(UInt16.self, forKey: AnyCodingKey("force_threshold"))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(smartShiftMode, forKey: .smartShiftMode)
+        try container.encodeIfPresent(smartShiftThreshold, forKey: .smartShiftThreshold)
+        try container.encodeIfPresent(smartShiftTorque, forKey: .smartShiftTorque)
+        try container.encodeIfPresent(dpi, forKey: .dpi)
+        try container.encodeIfPresent(pointerSpeed, forKey: .pointerSpeed)
+        try container.encodeIfPresent(hapticsEnabled, forKey: .hapticsEnabled)
+        try container.encodeIfPresent(hapticIntensity, forKey: .hapticIntensity)
+        try container.encodeIfPresent(hapticPowerSaving, forKey: .hapticPowerSaving)
+        try container.encodeIfPresent(forceThreshold, forKey: .forceThreshold)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case smartShiftMode = "smart_shift_mode"
+        case smartShiftThreshold = "smart_shift_threshold"
+        case smartShiftTorque = "smart_shift_torque"
+        case dpi
+        case pointerSpeed = "pointer_speed"
+        case hapticsEnabled = "haptics_enabled"
+        case hapticIntensity = "haptic_intensity"
+        case hapticPowerSaving = "haptic_power_saving"
+        case forceThreshold = "force_threshold"
     }
 }
 

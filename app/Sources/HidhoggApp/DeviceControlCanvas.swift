@@ -1,4 +1,5 @@
 import SwiftUI
+import HidhoggDomain
 
 struct DeviceControlCanvas: View {
     @EnvironmentObject private var model: AppModel
@@ -7,7 +8,7 @@ struct DeviceControlCanvas: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("MX Master 3S")
+                Text(model.selectedMouseName)
                     .font(.headline)
                 Text("Select a wheel or side button to open its settings.")
                     .font(.callout)
@@ -15,10 +16,26 @@ struct DeviceControlCanvas: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            MXMasterMousePresentation(
-                selectedTarget: model.selectedTarget,
-                onSelect: selectTarget
-            )
+            if model.selectedMouseID.flatMap({ model.registration(id: $0)?.mouseModel }) != .mxMaster4 {
+                MXMasterMousePresentation(
+                    selectedTarget: model.selectedTarget,
+                    onSelect: selectTarget
+                )
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150))], alignment: .leading, spacing: 10) {
+                if model.selectedMouseID.flatMap({ model.registration(id: $0)?.mouseModel }) == .mxMaster4 {
+                    Button("Scroll wheel") { selectTarget(.verticalWheel) }
+                    Button("Thumbwheel") { selectTarget(.thumbWheel) }
+                        .disabled(!model.selectedMouseStatus.supportsThumbwheelManagement)
+                }
+                ForEach(MouseControl.allCases, id: \.self) { control in
+                    if control != .back && control != .forward || model.selectedMouseID.flatMap({ model.registration(id: $0)?.mouseModel }) == .mxMaster4 {
+                        Button(control.title) { selectTarget(DeviceEditorTarget(rawValue: control.rawValue) ?? .back) }
+                            .disabled(!model.selectedMouseStatus.availableControls.contains(control))
+                    }
+                }
+            }
+
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
