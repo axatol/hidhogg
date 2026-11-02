@@ -3149,3 +3149,19 @@ Focused78 cases pass; final capture/layout6pass and full1,125pass with two exist
 ## 2 November 2026 — owner accepts BIND-01; receiver replacement report
 
 Owner reports current shortcut behavior works and requests local check-in. Verified342 source/input hashes still identify signed bff106c7 and full1,125 offline pass; no source changes since verification. Check-in authorized on master without push. New issue: old receiver alone works, replacement alone or both attached produces generic receiver enumeration failure in Add Logitech Mouse. No cause or receiver model inferred from screenshot; no live/private diagnostic inspection yet. Receiver work is a separate approval/verification scope.
+
+## 2 November 2026 — receiver connection-change correction focused verification
+
+Owner approved offline crash reproduction/fix and connection-flow correction; raw crash.log locally excluded. Crash stack is main-thread SwiftUI layout/preference array destruction; binary matches bff106c7, cause/outcome unconfirmed. Full hidden Workspace Debug reproductions did not crash. Release-baseline check is running in isolated HEAD archive/cache.
+
+Source now separates acknowledged local shutdown from unresolved remote restoration, preserves same-identity recovery/policy, keeps warnings, fences save/remapping and delayed generations, and adds fixed-string completion diagnostics. No actual UI crash fix is claimed. Independent review found/remedied removed-handle return classification and stale cleanup-floor race. Old floor regression red6fail then corrected green. Focused iteration3 passes56XCTest+296SwiftTesting after documented fixture/restore-policy corrections; full gate pending, same two old exclusions. Frozen348 inputs SHA7491b010ae1eb297a5ca37d32c76658b9fd0a27c1587ea2aad16112b3fa38dea. Source uncommitted onmaster3e5e6ee, oldsignedartifact remains until successful replacement. No app launch, actual input/HID writes, private config inspection or push by agents.
+
+## 2 November 2026 — BOLT-RECOVERY-02 signed offline candidate
+
+Signed e94f7423 after full1,147pass and focused352pass; final current/original Release UI2/2 each, all348final hashes match. Strict app/CLI signatures/help pass. Exact crash remains unreproduced, not proven fixed. Native teardown/connection-flow correction and fixed-string completion diagnostics are ready for owner verification; no production layout fix was guessed. Repeated-stop floor bug red6assertions then green; first-stop restore timing regression corrected. Release fixture was stabilized around legitimate automatic preference reconciliation; production code unchanged by that adjustment. Review clear with native-OS/manual behavior limits and concurrent-stop test handshake limitation recorded.
+
+Current source is uncommitted onmaster3e5e6ee; owner manual handover/challenge check next, no push. crash.log remains locally excluded; private report inspection limited to approved exception/build/crashed-stack fields. No live input/device writes or app launch by agents. See docs/bolt-pairing-completion-crash.md for final test/log hashes and open scope.
+
+## 2 November 2026 — receiver acceptance and local naming
+
+Owner accepted receiver switching; post-navigation crash remains unresolved and recurred on e94f7423 in main-thread CoreText truncation. Offline layout tests do not establish a crash fix. The 348-input tested checkpoint is unchanged. NAME-01 local renaming is approved for all configured devices and receivers; hardware renaming is excluded and receiver labels require a stable identity.

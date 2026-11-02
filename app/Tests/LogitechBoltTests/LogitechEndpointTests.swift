@@ -513,6 +513,95 @@ import HidhoggDomain
     #expect(await audit.setterRequestCount == 1)
 }
 
+@Test func replacementBoltReceiverRecoversTheSameMouseWithoutLosingRepeatedStopPolicy() async throws {
+    let payload: [UInt8] = [0, 1, 2, 3, 4, 0, 0x02, 0xB0, 0x34, 0, 0, 0, 0]
+    let original = LogitechEndpointLocator(id: UUID(), key: 10, connection: .bolt, productID: 0xC548)
+    let replacement = LogitechEndpointLocator(id: UUID(), key: 20, connection: .bolt, productID: 0xC548)
+    let payloadStore = EndpointFixturePayloadStore([original.key: payload, replacement.key: payload])
+    let audit = EndpointFixtureAudit()
+    await audit.configureWheel(root: [15, 0, 1])
+    let catalog = SwitchingEndpointFixtureCatalog(endpoints: [original], audit: audit, payloadStore: payloadStore)
+    let controller = BoltController(makeTransport: {
+        EndpointFixtureTransport(locator: original, payload: payload, audit: audit, payloadStore: payloadStore)
+    }, endpointCatalog: catalog, requiresExplicitAssociation: true)
+    let statuses = EndpointStatusRecorder()
+    let reader = Task { for await event in controller.events { await statuses.append(event) } }
+    defer { reader.cancel() }
+    let candidates = try await controller.existingConnections()
+    let candidate = try #require(candidates.first)
+    let target = LogitechConnectionTarget(model: candidate.model,
+        association: LogitechAssociation(identity: candidate.identity, preferredConnection: .bolt))
+    await controller.discover(target: target)
+    #expect(await endpointEventually { await statuses.last?.phase == .ready })
+    await controller.applyWheelPreference(true, restorePreviousSettingsOnDisconnect: true)
+    #expect(await audit.wheelModeReply.first == 4)
+    await audit.setWheelReadsFailing(true)
+    let stopped = await controller.stopForConnectionChange(restorePreviousSettingsOnDisconnect: true)
+    guard case .locallyStopped(_, .unverified(let recordedTarget)) = stopped else {
+        Issue.record("The closed original receiver must retain its unverified mouse restoration.")
+        return
+    }
+    #expect(recordedTarget == target)
+    let writesBeforeRepeat = await audit.wheelWrites
+    #expect(await controller.stopForConnectionChange(restorePreviousSettingsOnDisconnect: false) == stopped)
+    #expect(await audit.wheelWrites == writesBeforeRepeat)
+    #expect(await controller.stopForRestart() == false)
+
+    let different = LogitechConnectionTarget(model: candidate.model,
+        association: LogitechAssociation(identity: LogitechIdentity(unitID: "05060708", modelID: candidate.identity.modelID),
+                                          preferredConnection: .bolt))
+    await controller.discover(target: different)
+    #expect(await endpointEventually { await statuses.last?.failure?.code == .identityMismatch })
+    #expect(await audit.wheelWrites == writesBeforeRepeat)
+
+    await catalog.replaceEndpoints([replacement])
+    await audit.setWheelReadsFailing(false)
+    await controller.discover(target: target)
+    #expect(await endpointEventually { await statuses.last?.phase == .ready })
+    #expect(await statuses.last?.cleanupUncertain == false)
+    #expect(await audit.wheelModeReply.first == 0)
+    #expect(await audit.wheelWrites == [[4], [0]])
+    #expect(await audit.openedEndpoints.contains(replacement.key))
+    #expect(await controller.stopForRestart())
+}
+
+private actor SwitchingEndpointFixtureCatalog: LogitechEndpointCatalog {
+    private var endpoints: [LogitechEndpointLocator]
+    private let audit: EndpointFixtureAudit
+    private let payloadStore: EndpointFixturePayloadStore
+
+    init(endpoints: [LogitechEndpointLocator], audit: EndpointFixtureAudit, payloadStore: EndpointFixturePayloadStore) {
+        self.endpoints = endpoints
+        self.audit = audit
+        self.payloadStore = payloadStore
+    }
+
+    func replaceEndpoints(_ endpoints: [LogitechEndpointLocator]) { self.endpoints = endpoints }
+    func enumerate() async -> [LogitechEndpointLocator] { endpoints }
+    nonisolated func makeTransport(for locator: LogitechEndpointLocator,
+                                   onTerminal: @escaping @Sendable () -> Void) -> any BoltTransport {
+        EndpointFixtureTransport(locator: locator, payload: [], audit: audit, payloadStore: payloadStore)
+    }
+}
+
+@Test func connectionChangeRequiresAcknowledgementFromTemporaryIdentityProbes() async throws {
+    let payload: [UInt8] = [0, 1, 2, 3, 4, 0, 0x02, 0xB0, 0x34, 0, 0, 0, 0]
+    let locator = LogitechEndpointLocator(id: UUID(), key: 10, connection: .bolt, productID: 0xC548)
+    let audit = EndpointFixtureAudit()
+    await audit.setCloseResult(.unverified)
+    let catalog = EndpointFixtureCatalog(endpoints: [locator], payloads: [locator.key: payload], audit: audit)
+    let controller = BoltController(makeTransport: {
+        EndpointFixtureTransport(locator: locator, payload: payload, audit: audit)
+    }, endpointCatalog: catalog, requiresExplicitAssociation: true)
+    #expect(try await controller.existingConnections().count == 1)
+    #expect(await controller.stopForConnectionChange(restorePreviousSettingsOnDisconnect: true) == .blocked)
+    await audit.setCloseResult(.closed)
+    #expect(try await controller.existingConnections().count == 1)
+    #expect(await controller.stopForConnectionChange(restorePreviousSettingsOnDisconnect: true) == .blocked)
+    #expect(await audit.setterRequestCount == 0)
+}
+
+
 private func endpointEventually(_ condition: @escaping @Sendable () async -> Bool) async -> Bool {
     for _ in 0..<100 {
         if await condition() { return true }
@@ -540,6 +629,8 @@ private actor EndpointFixtureAudit {
     var wheelCapabilities: [UInt8] = [12, 8]
     var wheelModeReply: [UInt8] = [0, 0]
     var wheelWrites: [[UInt8]] = []
+    var failWheelReads = false
+    var closeResult: BoltTransportCloseResult = .closed
     var nonWheelReads = 0
     var nonWheelSetterRequests = 0
 
@@ -550,11 +641,15 @@ private actor EndpointFixtureAudit {
     }
 
     func setWheelMode(_ reply: [UInt8]) { wheelModeReply = reply }
+    func setCloseResult(_ result: BoltTransportCloseResult) { closeResult = result }
+    func setWheelReadsFailing(_ failing: Bool) { failWheelReads = failing }
 
     func wheelRequest(function: UInt8, parameters: [UInt8]) throws -> [UInt8] {
         switch function {
         case 0: return wheelCapabilities
-        case 1: return wheelModeReply
+        case 1:
+            guard !failWheelReads else { throw BoltFailure.timeout }
+            return wheelModeReply
         case 2:
             wheelWrites.append(parameters)
             wheelModeReply = parameters + [0]
@@ -661,6 +756,10 @@ private struct EndpointFixtureTransport: BoltTransport {
 
     func open() async throws { await audit.opened(locator.key) }
     func close() async { await audit.closed(locator.key) }
+    func closeAndWait() async -> BoltTransportCloseResult {
+        await close()
+        return await audit.closeResult
+    }
     func availableRequestIDs(slot: UInt8, feature: UInt8, function: UInt8) -> Int {
         limits.count(feature: feature, function: function)
     }

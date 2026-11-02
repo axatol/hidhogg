@@ -17,6 +17,13 @@ struct LogitechSetupView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                if let warning = model.logitechCleanupWarning {
+                    Label(warning, systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 connectionLayout {
                     LogitechBoltPairingSection()
                         .frame(maxWidth: .infinity, alignment: .topLeading)

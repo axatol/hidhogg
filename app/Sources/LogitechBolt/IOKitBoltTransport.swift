@@ -73,15 +73,15 @@ final class IOKitBoltTransport: BoltReceiverTransport, @unchecked Sendable {
     }
 
     func close() async {
-        if let snapshot = try? await worker.submit({
-            $0.close()
-            return $0.nativeInputDiagnostics
-        }) {
-            diagnosticsLock.withLock { retainedInputDiagnostics = snapshot }
-        }
+        _ = await closeAndWait()
+    }
+
+    func closeAndWait() async -> BoltTransportCloseResult {
+        let result = await worker.closeAndWait()
+        diagnosticsLock.withLock { retainedInputDiagnostics = worker.nativeInputDiagnostics }
         continuation.finish()
         receiverContinuation.finish()
-        worker.finish()
+        return result
     }
 }
 
@@ -107,7 +107,13 @@ final class BoltHIDWorker: @unchecked Sendable {
     private let lock = NSLock()
     private var runLoop: CFRunLoop?
     private var thread: Thread?
+    private weak var finishingThread: Thread?
     private var finished = false
+    private var acceptingSubmissions = true
+    private var acceptedSubmissions = 0
+    private var closeScheduled = false
+    private var closeResult: BoltTransportCloseResult = .unverified
+    private var closeWaiters: [CheckedContinuation<BoltTransportCloseResult, Never>] = []
     private var device: IOHIDDevice?
     private var manager: IOHIDManager?
     private var outputElement: IOHIDElement?
@@ -143,10 +149,12 @@ final class BoltHIDWorker: @unchecked Sendable {
         input.deallocate()
     }
 
+    var submissionsSealed: Bool { lock.withLock { !acceptingSubmissions } }
+
     func submit<T: Sendable>(_ body: @escaping @Sendable (BoltHIDWorker) throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
             lock.lock()
-            if finished {
+            if finished || !acceptingSubmissions {
                 lock.unlock()
                 continuation.resume(throwing: BoltFailure.disconnected)
                 return
@@ -162,11 +170,16 @@ final class BoltHIDWorker: @unchecked Sendable {
                     started.signal()
                     CFRunLoopRun()
                     CFRunLoopRemoveSource(loop, source, .defaultMode)
-                    lock.withLock {
+                    let completion = lock.withLock {
                         finished = true
                         runLoop = nil
+                        finishingThread = self.thread
                         self.thread = nil
+                        let waiters = closeWaiters
+                        closeWaiters.removeAll()
+                        return (waiters, closeResult)
                     }
+                    for waiter in completion.0 { waiter.resume(returning: completion.1) }
                 }
                 thread.name = "Hidhogg Bolt HID"
                 self.thread = thread
@@ -174,7 +187,9 @@ final class BoltHIDWorker: @unchecked Sendable {
                 started.wait()
             }
             let loop = runLoop!
+            acceptedSubmissions += 1
             CFRunLoopPerformBlock(loop, CFRunLoopMode.defaultMode.rawValue) { [self] in
+                defer { completeSubmission() }
                 do { continuation.resume(returning: try body(self)) }
                 catch { continuation.resume(throwing: error) }
             }
@@ -183,13 +198,49 @@ final class BoltHIDWorker: @unchecked Sendable {
         }
     }
 
-    func finish() {
-        lock.lock()
-        finished = true
-        let loop = runLoop
-        thread = nil
-        lock.unlock()
-        if let loop { CFRunLoopStop(loop); CFRunLoopWakeUp(loop) }
+    func closeAndWait() async -> BoltTransportCloseResult {
+        let result = await withCheckedContinuation { continuation in
+            lock.lock()
+            acceptingSubmissions = false
+            if finished {
+                let result = closeResult
+                lock.unlock()
+                continuation.resume(returning: result)
+                return
+            }
+            if thread == nil {
+                finished = true
+                closeResult = .closed
+                lock.unlock()
+                continuation.resume(returning: .closed)
+                return
+            }
+            closeWaiters.append(continuation)
+            scheduleCloseIfDrainedWhileLocked()
+            lock.unlock()
+        }
+        let finishingThread = lock.withLock { self.finishingThread }
+        while let finishingThread, !finishingThread.isFinished { await Task.yield() }
+        return result
+    }
+
+    private func completeSubmission() {
+        lock.withLock {
+            acceptedSubmissions -= 1
+            scheduleCloseIfDrainedWhileLocked()
+        }
+    }
+
+    private func scheduleCloseIfDrainedWhileLocked() {
+        guard !acceptingSubmissions, acceptedSubmissions == 0, !closeScheduled,
+              let runLoop else { return }
+        closeScheduled = true
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) { [self] in
+            let result = closeNativeHandle()
+            lock.withLock { closeResult = result }
+            CFRunLoopStop(runLoop)
+        }
+        CFRunLoopWakeUp(runLoop)
     }
 
     func open() throws {
@@ -585,12 +636,18 @@ final class BoltHIDWorker: @unchecked Sendable {
         return error
     }
 
-    func close() {
+    static func localCloseResult(_ result: IOReturn, removalObserved: Bool) -> BoltTransportCloseResult {
+        if result == kIOReturnSuccess || result == kIOReturnNotOpen { return .closed }
+        if removalObserved, result == kIOReturnNoDevice || result == kIOReturnOffline { return .closed }
+        return .unverified
+    }
+
+    private func closeNativeHandle() -> BoltTransportCloseResult {
         if let manager {
             IOHIDManagerRegisterDeviceMatchingCallback(manager, nil, nil)
             IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
         }
-        guard let device else { manager = nil; return }
+        guard let device else { manager = nil; return .closed }
         expected = nil
         expectedRegister = nil
         registerReply = nil
@@ -598,9 +655,12 @@ final class BoltHIDWorker: @unchecked Sendable {
         IOHIDDeviceRegisterInputReportCallback(device, input, 256, nil, nil)
         IOHIDDeviceRegisterRemovalCallback(device, nil, nil)
         IOHIDDeviceUnscheduleFromRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
-        IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone))
+        let result = IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone))
         self.device = nil
         outputElement = nil
         manager = nil
+        sink = nil
+        receiverSink = nil
+        return Self.localCloseResult(result, removalObserved: removed)
     }
 }

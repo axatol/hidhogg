@@ -415,6 +415,30 @@ func thumbwheelPendingCaptureEventsAreNotReplayedAndPermissionIsFresh(deny: Bool
     #expect(await recorder.last?.cleanupUncertain == false)
 }
 
+@Test func thumbwheelConcurrentStopsKeepFirstRequestedRestorePolicyWhileApplyDrains() async {
+    let fixture = ThumbFixture()
+    let controller = BoltController(scrollPostingPreflight: { true }, makeTransport: { ThumbChannel(fixture) })
+    let recorder = ThumbRecorder(); let reader = watchThumb(controller, recorder)
+    defer { reader.cancel() }
+    await controller.discover()
+    await controller.applyThumbwheelPreferences(inverted: true, amount: 1, restorePreviousSettingsOnDisconnect: false, scrollPostingAllowed: true)
+    await fixture.pauseRead(8)
+    let apply = Task { await controller.applyThumbwheelPreferences(inverted: false, amount: 1, restorePreviousSettingsOnDisconnect: false, scrollPostingAllowed: true) }
+    #expect(await thumbEventually { await fixture.readPaused })
+    let first = Task { await controller.stop(restorePreviousSettingsOnDisconnect: true) }
+    #expect(await thumbEventually { await recorder.last?.phase == .stopping })
+    let second = Task { await controller.stop(restorePreviousSettingsOnDisconnect: false) }
+    try? await Task.sleep(for: .milliseconds(20))
+    #expect(await fixture.closes == 0)
+    await fixture.resumeRead()
+    await apply.value
+    await first.value
+    await second.value
+    #expect(await fixture.mode == [0, 0])
+    #expect(await recorder.last?.cleanupUncertain == false)
+    #expect(await fixture.closes == 1)
+}
+
 @Test func thumbwheelPermissionLossAfterSetterRetainsFinalTwoReadReleaseCapacity() async {
     let fixture = ThumbFixture()
     let permission = ThumbPermission(onDenial: {

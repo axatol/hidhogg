@@ -184,7 +184,7 @@ private actor RecoveryRecorder {
         statuses.count > count && statuses.last?.phase == .ready && statuses.last?.cleanupUncertain == false
     }
     func unverifiedStopWasPublished(after count: Int) -> Bool {
-        statuses.count >= count + 2 && statuses.last?.phase == .failed &&
+        statuses.count > count && statuses.last?.phase == .failed &&
             statuses.last?.cleanupUncertain == true &&
             statuses.last?.message.contains("fresh discovery must verify") == true
     }

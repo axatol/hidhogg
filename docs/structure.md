@@ -8,7 +8,7 @@ Updated 26 October 2026. The active implementation is the Swift package under ap
 |---|---|
 | app/Sources/HidhoggDomain | Validated configuration, bindings, profiles, presets, topics and static action definitions |
 | app/Sources/HidhoggConfiguration | Strict legacy/registry TOML codecs, versioned device payloads and coordinated revision-aware publication |
-| app/Sources/LogitechBolt | HID++ framing/correlation, IOHID transport, discovery, routing ownership and verified mouse reconciliation |
+| app/Sources/LogitechBolt | HID++ framing/correlation, IOHID transport with acknowledged local teardown, discovery, routing/recovery ownership and verified mouse reconciliation |
 | app/Sources/UlanziD200X | Bounded frames, input/identity codecs, page archives, IOHID transport and generation-bound session maintenance |
 | app/Sources/LofreeFlowLite84 | Receiver-specific read-only status codec, exact non-seizing discovery and serialized session |
 | app/Sources/FlowLite84StatusProbe | Developer-only, explicit --read-only one-snapshot diagnostic; not bundled in the app |

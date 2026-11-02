@@ -172,6 +172,10 @@ private final class WheelChannel: BoltTransport, Sendable {
 
     func open() async { await fixture.open(continuation) }
     func close() async { await fixture.close(); continuation.finish() }
+    func closeAndWait() async -> BoltTransportCloseResult {
+        await close()
+        return .closed
+    }
     func availableRequestIDs(slot: UInt8, feature: UInt8, function: UInt8) -> Int {
         requestIDs.available(slot: slot, feature: feature, function: function)
     }
@@ -1173,6 +1177,31 @@ func wheelExplicitStopPolicyOverridesConnectedPolicyWithoutApplyingDirection(res
     #expect(await controller.stopForRestart(restorePreviousSettingsOnDisconnect: restore))
     #expect(await fixture.mode == (restore ? 0 : 4))
     #expect(await fixture.writes == (restore ? [[4], [0]] : [[4]]))
+}
+
+@Test func repeatedConnectionChangeStopRetainsUnverifiedWheelRestorationPolicy() async {
+    let fixture = WheelFixture()
+    let controller = BoltController(makeTransport: { WheelChannel(fixture) })
+    let recorder = WheelRecorder()
+    let reader = watchWheel(controller, recorder)
+    defer { reader.cancel() }
+    await controller.discover()
+    await controller.applyWheelPreference(true, restorePreviousSettingsOnDisconnect: true)
+    await fixture.configureWrites(ignoreRestore: true)
+    let result = await controller.stopForConnectionChange(restorePreviousSettingsOnDisconnect: true)
+    guard case .locallyStopped(_, .unverified(target: nil)) = result else {
+        Issue.record("Failed wheel restoration must remain unverified after local close.")
+        return
+    }
+    #expect(await wheelEventually { await recorder.last?.wheel.isOwned == true })
+    let reads = await fixture.modeReads
+    let writes = await fixture.writes
+    #expect(await controller.stopForConnectionChange(restorePreviousSettingsOnDisconnect: false) == result)
+    #expect(await controller.stopForRestart(restorePreviousSettingsOnDisconnect: false) == false)
+    #expect(await recorder.last?.wheel.isOwned == true)
+    #expect(await fixture.modeReads == reads)
+    #expect(await fixture.writes == writes)
+    #expect(await fixture.closes == 1)
 }
 
 

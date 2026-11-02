@@ -34,6 +34,10 @@ private actor FixtureTransport {
     var beforeCapabilities: CheckedContinuation<Void, Never>?
     var failNextRequestWithSensitiveError = false
     var requests = 0
+    var pauseClose = false
+    var closePaused = false
+    var beforeClose: CheckedContinuation<Void, Never>?
+    var closeResult: BoltTransportCloseResult = .closed
 
 
     static func row(cid: UInt16, task: UInt16, flags: UInt8 = 0x20) -> [UInt8] {
@@ -49,6 +53,22 @@ private actor FixtureTransport {
         }
     }
     func close() { closes += 1 }
+
+    func closeAndWait() async -> BoltTransportCloseResult {
+        if pauseClose {
+            closePaused = true
+            await withCheckedContinuation { beforeClose = $0 }
+        }
+        closes += 1
+        return closeResult
+    }
+
+    func configureClose(pause: Bool = false, result: BoltTransportCloseResult = .closed) {
+        pauseClose = pause
+        closeResult = result
+    }
+
+    func resumeClose() { pauseClose = false; beforeClose?.resume(); beforeClose = nil }
 
     func request(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) async throws -> [UInt8] {
         requests += 1
@@ -134,6 +154,11 @@ private final class FixtureChannel: BoltTransport, Sendable {
 
     func open() async { await state.open(continuation) }
     func close() async { await state.close(); continuation.finish() }
+    func closeAndWait() async -> BoltTransportCloseResult {
+        let result = await state.closeAndWait()
+        continuation.finish()
+        return result
+    }
     func availableRequestIDs(slot: UInt8, feature: UInt8, function: UInt8) -> Int {
         requestIDs.available(slot: slot, feature: feature, function: function)
     }
@@ -242,6 +267,68 @@ private func eventually(_ condition: @escaping @Sendable () async -> Bool) async
     await transport.setState(0x53, 2)
     #expect(await controller.stopForRestart() == false)
     #expect(await transport.states[0x53] == 2)
+}
+
+private actor ConnectionStopRecorder {
+    var result: BoltConnectionChangeStopResult?
+    func record(_ result: BoltConnectionChangeStopResult) { self.result = result }
+}
+
+@Test func connectionChangeWaitsForExplicitLocalCloseAcknowledgement() async {
+    let transport = FixtureTransport()
+    let controller = BoltController(makeTransport: { FixtureChannel(transport) })
+    await controller.discover()
+    await controller.enable()
+    await transport.configureClose(pause: true)
+    let completion = ConnectionStopRecorder()
+    let stopping = Task {
+        let result = await controller.stopForConnectionChange(restorePreviousSettingsOnDisconnect: true)
+        await completion.record(result)
+        return result
+    }
+    #expect(await eventually { await transport.closePaused })
+    #expect(await completion.result == nil)
+    #expect(await transport.closes == 0)
+    await transport.resumeClose()
+    guard case .locallyStopped(_, .verified) = await stopping.value else {
+        Issue.record("Verified cleanup and acknowledged local close should permit connection change.")
+        return
+    }
+    let requestCount = await transport.requests
+    await controller.enable()
+    #expect(await transport.requests == requestCount)
+    #expect(await transport.closes == 1)
+}
+
+@Test func connectionChangeRejectsUnacknowledgedLocalClose() async {
+    let transport = FixtureTransport()
+    let controller = BoltController(makeTransport: { FixtureChannel(transport) })
+    await controller.discover()
+    await transport.configureClose(result: .unverified)
+    #expect(await controller.stopForConnectionChange(restorePreviousSettingsOnDisconnect: true) == .blocked)
+    let requestCount = await transport.requests
+    #expect(await controller.stopForConnectionChange(restorePreviousSettingsOnDisconnect: false) == .blocked)
+    #expect(await transport.requests == requestCount)
+    #expect(await transport.closes == 1)
+}
+
+@Test func connectionChangeRetainsUnknownRemoteCleanupAfterLocalClose() async {
+    let transport = FixtureTransport()
+    let controller = BoltController(makeTransport: { FixtureChannel(transport) })
+    await controller.discover()
+    await controller.enable()
+    await transport.setState(0x53, 2)
+    let first = await controller.stopForConnectionChange(restorePreviousSettingsOnDisconnect: true)
+    guard case .locallyStopped(let generation, .unverified(target: nil)) = first else {
+        Issue.record("Local close must retain unattributed remote uncertainty.")
+        return
+    }
+    let requestCount = await transport.requests
+    #expect(await controller.stopForConnectionChange(restorePreviousSettingsOnDisconnect: false)
+        == .locallyStopped(generation: generation, remoteCleanup: .unverified(target: nil)))
+    #expect(await controller.stopForRestart() == false)
+    #expect(await transport.requests == requestCount)
+    #expect(await transport.closes == 1)
 }
 
 @Test func heldStartReleaseArmingAndDuplicateFiltering() async {
@@ -600,7 +687,7 @@ private func finishOfflineWorker() async throws -> WeakWorker {
     let worker = BoltHIDWorker()
     let weakWorker = WeakWorker(worker)
     #expect(try await worker.submit { _ in 42 } == 42)
-    worker.finish()
+    #expect(await worker.closeAndWait() == .closed)
     return weakWorker
 }
 
@@ -612,14 +699,14 @@ private func finishOfflineWorker() async throws -> WeakWorker {
 @Test func finishedRunLoopRejectsSubmissionInsteadOfRestartingWithoutOpeningHID() async throws {
     let worker = BoltHIDWorker()
     #expect(try await worker.submit { _ in 42 } == 42)
-    worker.finish()
+    #expect(await worker.closeAndWait() == .closed)
     do {
         _ = try await worker.submit { _ in 43 }
         Issue.record("Finished worker accepted another submission")
     } catch {
         #expect(error as? BoltFailure == .disconnected)
     }
-    worker.finish()
+    #expect(await worker.closeAndWait() == .closed)
 }
 
 @Test func stopDuringDiscoveryCannotPublishReadyOrResumeRequests() async {

@@ -29,6 +29,8 @@ public actor BoltController {
     private nonisolated let thumbwheelAdmission: BoltPressAdmission
     private nonisolated let admission: BoltPressAdmission
     private var transport: (any BoltTransport)?
+    private var transportCloseResult: BoltTransportCloseResult = .closed
+    private var probeClosuresVerified = true
     private var activeEndpointLocator: LogitechEndpointLocator?
     private var activeTarget: LogitechConnectionTarget?
     private var uncertainTarget: LogitechConnectionTarget?
@@ -1000,6 +1002,13 @@ public actor BoltController {
         return phase == .idle && !uncertain && changed.isEmpty && wheelOwnership == nil && captureOwnership == nil && thumbwheel.ownership == nil && thumbwheel.capture == nil && transport == nil
     }
 
+    public func stopForConnectionChange(restorePreviousSettingsOnDisconnect: Bool) async -> BoltConnectionChangeStopResult {
+        await shutdown(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
+        guard transport == nil, transportCloseResult == .closed, probeClosuresVerified else { return .blocked }
+        return .locallyStopped(generation: generation,
+                               remoteCleanup: uncertain ? .unverified(target: uncertainTarget) : .verified)
+    }
+
     /// Runs synchronously under the admission lock; the closure must not reenter admission or wait for this actor.
     public nonisolated func withPressAdmission(generation: UInt64, observedAt: ContinuousClock.Instant, _ operation: () -> Void) -> Bool {
         switch admission.perform(generation: generation, observedAt: observedAt, operation) {
@@ -1029,12 +1038,16 @@ public actor BoltController {
         admission.invalidate()
         invalidateScrollAdmission()
         invalidateThumbwheelAdmission()
-        if let restorePreviousSettingsOnDisconnect {
-            self.restorePreviousSettingsOnDisconnect = restorePreviousSettingsOnDisconnect
-            hardwareRestore = restorePreviousSettingsOnDisconnect
-            thumbwheel.restore = restorePreviousSettingsOnDisconnect
+        if transport == nil, !operationHeld, !shutdownRequested {
+            publishShutdownStatus()
+            return
         }
         if !shutdownRequested {
+            if transport != nil, let restorePreviousSettingsOnDisconnect {
+                self.restorePreviousSettingsOnDisconnect = restorePreviousSettingsOnDisconnect
+                hardwareRestore = restorePreviousSettingsOnDisconnect
+                thumbwheel.restore = restorePreviousSettingsOnDisconnect
+            }
             operationRevision &+= 1
             shutdownRequested = true
             generation &+= 1
@@ -1051,14 +1064,22 @@ public actor BoltController {
     private func performShutdown() async {
         armed.removeAll()
         pressed.removeAll()
-        let restored = await cleanup()
-        uncertain = uncertain || !restored
-        if uncertain { uncertainTarget = activeTarget ?? uncertainTarget }
-        else { uncertainTarget = nil }
-        await closeTransport()
+        if transport != nil {
+            let restored = await cleanup()
+            uncertain = uncertain || !restored
+            if uncertain { uncertainTarget = activeTarget ?? uncertainTarget }
+            else { uncertainTarget = nil }
+            await closeTransport()
+        }
         available.removeAll()
-        publish(restored ? .idle : .failed, restored ? "Disconnected. Session cleanup verified." : "Cleanup is unverified. Delivery is stopped; fresh discovery must verify capabilities and native routing before bindings can be enabled.")
+        publishShutdownStatus()
         shutdownRequested = false
+    }
+
+    private func publishShutdownStatus() {
+        publish(uncertain ? .failed : .idle, uncertain
+            ? "Cleanup is unverified. Delivery is stopped; fresh discovery must verify capabilities and native routing before bindings can be enabled."
+            : "Disconnected. Session cleanup verified.")
     }
 
     private func disableBindings() async {
@@ -1181,7 +1202,7 @@ public actor BoltController {
         let probeTransport = endpointCatalog.makeTransport(for: endpoint, onTerminal: {})
         do { try await probeTransport.open() }
         catch {
-            await probeTransport.close()
+            await closeProbeTransport(probeTransport)
             throw error
         }
 
@@ -1215,11 +1236,15 @@ public actor BoltController {
                 }
             }
         } catch {
-            await probeTransport.close()
+            await closeProbeTransport(probeTransport)
             throw error
         }
-        await probeTransport.close()
+        await closeProbeTransport(probeTransport)
         return result
+    }
+
+    private func closeProbeTransport(_ transport: any BoltTransport) async {
+        if await transport.closeAndWait() != .closed { probeClosuresVerified = false }
     }
 
     private func readIdentity(on channel: any BoltTransport, endpoint: LogitechEndpointLocator,
@@ -1261,6 +1286,7 @@ public actor BoltController {
                 thumbwheelAdmission.invalidate()
             })
             transport = candidate
+            transportCloseResult = .unverified
             connectionOpenedAt = .now
             observer = Task { [weak self] in
                 for await event in candidate.events {
@@ -1612,6 +1638,7 @@ public actor BoltController {
         }
         let candidate = makeTransport()
         transport = candidate
+        transportCloseResult = .unverified
         connectionOpenedAt = .now
         observer = Task { [weak self] in
             for await event in candidate.events {
@@ -2419,6 +2446,7 @@ public actor BoltController {
     }
 
     private func cleanup() async -> Bool {
+        guard transport != nil else { return !uncertain }
         let pendingReclaim = pendingReclaims.first
         let connectRestored = await cleanupConnectReclaims()
         if !connectRestored, let pendingReclaim {
@@ -2512,7 +2540,7 @@ public actor BoltController {
         deviceResponding = false
         observer?.cancel()
         observer = nil
-        if let transport { await transport.close() }
+        if let transport { transportCloseResult = await transport.closeAndWait() }
         transport = nil
         activeEndpointLocator = nil
         activeTarget = nil

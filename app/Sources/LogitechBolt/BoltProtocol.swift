@@ -220,9 +220,15 @@ protocol BoltTransport: Sendable {
     func request(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) async throws -> [UInt8]
     func requestDeviceInformation(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) async throws -> [UInt8]
     func close() async
+    func closeAndWait() async -> BoltTransportCloseResult
 }
 
 extension BoltTransport {
+    func closeAndWait() async -> BoltTransportCloseResult {
+        await close()
+        return .unverified
+    }
+
     func requestDeviceInformation(slot: UInt8, feature: UInt8, function: UInt8, parameters: [UInt8]) async throws -> [UInt8] {
         try await request(slot: slot, feature: feature, function: function, parameters: parameters)
     }

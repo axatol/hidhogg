@@ -14,6 +14,13 @@ struct DevicesView: View {
             VStack(alignment: .leading, spacing: 24) {
                 deviceHeader
 
+                if let warning = model.logitechCleanupWarning {
+                    Label(warning, systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 MouseHardwareSettingsView()
 
                 deviceControls

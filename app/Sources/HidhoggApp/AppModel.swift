@@ -28,6 +28,7 @@ protocol BindingSession: Sendable {
     func stop(restorePreviousSettingsOnDisconnect: Bool) async
     func stopForRestart() async -> Bool
     func stopForRestart(restorePreviousSettingsOnDisconnect: Bool) async -> Bool
+    func stopForConnectionChange(restorePreviousSettingsOnDisconnect: Bool) async -> BoltConnectionChangeStopResult
     func applyWheelPreference(_ inverted: Bool?) async
     func applyWheelPreference(_ inverted: Bool?, restorePreviousSettingsOnDisconnect: Bool) async
     func applyWheelPreferences(inverted: Bool?, highResolution: Bool?, restorePreviousSettingsOnDisconnect: Bool) async
@@ -59,6 +60,11 @@ extension BindingSession {
 
     func stopForRestart(restorePreviousSettingsOnDisconnect: Bool) async -> Bool {
         await stopForRestart()
+    }
+
+    func stopForConnectionChange(restorePreviousSettingsOnDisconnect: Bool) async -> BoltConnectionChangeStopResult {
+        guard await stopForRestart(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect) else { return .blocked }
+        return .locallyStopped(generation: 0, remoteCleanup: .verified)
     }
 
     func applyWheelPreference(_ inverted: Bool?) async {}
@@ -224,6 +230,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var logitechSetupCandidates: [LogitechEndpointCandidate] = []
     @Published private(set) var isLogitechSetupLoading = false
     @Published private(set) var logitechSetupMessage: String?
+    @Published private(set) var logitechCleanupWarning: String?
     @Published private(set) var logitechSetupCompletedDeviceID: UUID?
     @Published private(set) var requiresLogitechSetupRefreshBeforePairing = false
     @Published private(set) var boltStoredInventories: [BoltReceiverInventory] = []
@@ -321,6 +328,12 @@ final class AppModel: ObservableObject {
         let association: LogitechAssociation
     }
     private var endpointRecoveryTarget: MouseEndpointTarget?
+    private struct PendingMouseCleanup {
+        let originalOwnerID: UUID?
+        let target: LogitechConnectionTarget?
+        let generationFloor: UInt64
+    }
+    private var pendingMouseCleanup: PendingMouseCleanup?
     private var cleanupRestorePreviousSettings = false
     private var mouseOperations: [UUID: Task<Void, Never>] = [:]
     private struct WheelRequest: Equatable {
@@ -882,22 +895,77 @@ final class AppModel: ObservableObject {
 
     @discardableResult
     private func scheduleMouseCleanup(restore: Bool) -> Task<Bool, Never> {
+        let cleanup = makeMouseCleanupTask { await $0.stopForRestart(restorePreviousSettingsOnDisconnect: restore) }
+        sleepCleanupTask = cleanup
+        return cleanup
+    }
+
+    private func scheduleConnectionChangeCleanup(restore: Bool) -> Task<BoltConnectionChangeStopResult, Never> {
+        let cleanup = makeMouseCleanupTask { await $0.stopForConnectionChange(restorePreviousSettingsOnDisconnect: restore) }
+        sleepCleanupTask = Task {
+            guard case .locallyStopped(_, .verified) = await cleanup.value else { return false }
+            return true
+        }
+        return cleanup
+    }
+
+    private func makeMouseCleanupTask<Result: Sendable>(
+        stop: @escaping @Sendable (any BindingSession) async -> Result
+    ) -> Task<Result, Never> {
         let previous = sleepCleanupTask
         let operations = Array(mouseOperations.values)
         let inventory = logitechSetupInventoryTask
         let pairingClose = boltPairingFinishTask
         let receiverManagementClose = boltReceiverManagementCloseTask
         sleepCleanupSequence = statusSequence
-        let cleanup = Task { [bolt] in
+        return Task { [bolt] in
             if let previous { _ = await previous.value }
             for operation in operations { await operation.value }
             if let inventory { _ = await inventory.value }
             if let pairingClose { await pairingClose.value }
             if let receiverManagementClose { await receiverManagementClose.value }
-            return await bolt.stopForRestart(restorePreviousSettingsOnDisconnect: restore)
+            return await stop(bolt)
         }
-        sleepCleanupTask = cleanup
-        return cleanup
+    }
+
+    private func acceptConnectionChangeCleanup(_ result: BoltConnectionChangeStopResult) -> Bool {
+        guard case let .locallyStopped(generation, remoteCleanup) = result else { return false }
+        if case let .unverified(target) = remoteCleanup {
+            if let pending = pendingMouseCleanup {
+                pendingMouseCleanup = PendingMouseCleanup(
+                    originalOwnerID: pending.originalOwnerID,
+                    target: pending.target,
+                    generationFloor: max(pending.generationFloor, generation)
+                )
+            } else {
+                pendingMouseCleanup = PendingMouseCleanup(
+                    originalOwnerID: endpointRecoveryTarget?.ownerID ?? endpointOwnerID,
+                    target: target,
+                    generationFloor: generation
+                )
+            }
+            logitechCleanupWarning = "The previous mouse's settings cleanup is unverified. Pairing can continue; Hidhogg will verify that same mouse before enabling its settings and bindings."
+        }
+        sleepCleanupTask = nil
+        endpointOwnerID = nil
+        if pendingMouseCleanup == nil { endpointRecoveryTarget = nil }
+        return true
+    }
+
+    private func canAssociateAfterPendingCleanup(_ candidate: LogitechEndpointCandidate) -> Bool {
+        guard let pendingMouseCleanup else { return true }
+        guard let target = pendingMouseCleanup.target else { return false }
+        return target.model == candidate.model && target.association == LogitechAssociation(
+            identity: candidate.identity, preferredConnection: candidate.connection
+        )
+    }
+
+    private func remapPendingCleanup(to id: UUID, candidate: LogitechEndpointCandidate) {
+        guard pendingMouseCleanup != nil, canAssociateAfterPendingCleanup(candidate) else { return }
+        endpointRecoveryTarget = MouseEndpointTarget(
+            ownerID: id, model: candidate.model,
+            association: LogitechAssociation(identity: candidate.identity, preferredConnection: candidate.connection)
+        )
     }
 
     private func admitsInput(observedAt: ContinuousClock.Instant) -> Bool {
@@ -1241,18 +1309,12 @@ final class AppModel: ObservableObject {
                     self.isLogitechSetupLoading = false
                 }
             }
-            let sequence = self.statusSequence
-            let cleaned = await self.scheduleMouseCleanup(restore: self.runtimeRestorePreviousSettings).value
+            let cleanup = await self.scheduleConnectionChangeCleanup(restore: self.runtimeRestorePreviousSettings).value
             guard self.isCurrentLogitechSetup(request, checkingRevision: false) else { return }
-            let settled = await self.waitForSettledControllerStatus(after: sequence)
-            guard self.isCurrentLogitechSetup(request, checkingRevision: false) else { return }
-            guard cleaned, settled?.cleanupUncertain == false else {
-                self.logitechSetupMessage = "The previous connection could not be released safely. Disconnect and retry."
+            guard self.acceptConnectionChangeCleanup(cleanup) else {
+                self.logitechSetupMessage = "The previous mouse session could not be released safely. Hidhogg has not started pairing."
                 return
             }
-            self.sleepCleanupTask = nil
-            self.endpointOwnerID = nil
-            self.endpointRecoveryTarget = nil
             let saved = await self.flushPendingSave()
             guard self.isCurrentLogitechSetup(request, checkingRevision: false) else { return }
             guard saved, self.savedWorkspace == request.workspace, await self.currentConfigurationRevisionMatches(),
@@ -1378,20 +1440,13 @@ final class AppModel: ObservableObject {
             if let pairingClose = self.boltPairingFinishTask { await pairingClose.value }
             guard self.isCurrentBoltReceiverManagement(operation) else { return }
 
-            let sequence = self.statusSequence
-            let cleanup = self.scheduleMouseCleanup(restore: self.runtimeRestorePreviousSettings)
-            let cleaned = await cleanup.value
+            let cleanup = await self.scheduleConnectionChangeCleanup(restore: self.runtimeRestorePreviousSettings).value
             guard self.isCurrentBoltReceiverManagement(operation) else { return }
-            let settled = await self.waitForSettledControllerStatus(after: sequence)
-            guard self.isCurrentBoltReceiverManagement(operation) else { return }
-            guard cleaned, settled?.cleanupUncertain == false else {
-                self.boltReceiverManagementMessage = "The previous connection could not be released safely. Disconnect and retry before inspecting the receiver."
+            guard self.acceptConnectionChangeCleanup(cleanup) else {
+                self.boltReceiverManagementMessage = "The previous mouse session could not be released safely. Receiver inspection has not started."
                 self.finishBoltReceiverManagementOperation(operation)
                 return
             }
-            self.sleepCleanupTask = nil
-            self.endpointOwnerID = nil
-            self.endpointRecoveryTarget = nil
 
             let session = makeBoltReceiverManagementSession()
             self.boltReceiverManagementSession = session
@@ -1844,6 +1899,7 @@ final class AppModel: ObservableObject {
         isLogitechSetupLoading = false
         logitechSetupMessage = nil
         navigate(to: .mouse(id))
+        recordDiagnostic(code: .logitechSetupNavigated, message: "Logitech setup navigation completed; device layout is pending.")
         connectRuntime()
     }
 
@@ -1852,6 +1908,10 @@ final class AppModel: ObservableObject {
     ) async -> UUID? {
         guard isCurrentLogitechSetup(snapshot), (try? candidate.identity.validated()) != nil,
               await currentConfigurationRevisionMatches(), isCurrentLogitechSetup(snapshot) else { return nil }
+        guard canAssociateAfterPendingCleanup(candidate) else {
+            logitechSetupMessage = "The previous mouse has unresolved cleanup. Hidhogg can recover only that verified mouse's connection; no saved association was changed."
+            return nil
+        }
         if let existing = existingLogitechRegistrationID(for: candidate), snapshot.destination != .reassociate(existing) {
             logitechSetupMessage = "This mouse is already added. Open the existing device to retain its settings."
             return nil
@@ -1883,6 +1943,7 @@ final class AppModel: ObservableObject {
         let publication = Task { @MainActor [self] in
             defer { isSaving = false; saveTask = nil }
             do {
+                recordDiagnostic(code: .logitechAssociationSaving, message: "Verified Logitech association save started.")
                 let saved = try await store.save(validated, expecting: revision)
                 fileRevision = saved.revision
                 savedWorkspace = saved.workspace
@@ -1902,7 +1963,9 @@ final class AppModel: ObservableObject {
                 synchronizeD200X()
                 configurationSaveError = nil
                 configurationFailureKind = nil
+                remapPendingCleanup(to: id, candidate: candidate)
                 logitechSetupCompletedDeviceID = id
+                recordDiagnostic(code: .logitechAssociationSaved, message: "Verified Logitech association saved and published.")
                 return true
             } catch {
                 configurationSaveError = error.localizedDescription
@@ -1966,23 +2029,17 @@ final class AppModel: ObservableObject {
                 self.receiveBoltPairing(status)
             }
         }
-        let sequence = statusSequence
-        let cleanup = scheduleMouseCleanup(restore: restore)
+        let cleanup = scheduleConnectionChangeCleanup(restore: restore)
         Task { [weak self] in
             guard let self else { return }
-            let cleaned = await cleanup.value
+            let stopped = await cleanup.value
             guard self.requireCurrentBoltPairing(request, checkingRevision: false) else { return }
-            let settled = await self.waitForSettledControllerStatus(after: sequence)
-            guard self.requireCurrentBoltPairing(request, checkingRevision: false) else { return }
-            guard cleaned, settled?.cleanupUncertain == false else {
-                self.boltPairingMessage = "The previous connection could not be released safely. Disconnect and retry."
+            guard self.acceptConnectionChangeCleanup(stopped) else {
+                self.boltPairingMessage = "The previous mouse session could not be released safely. Pairing has not started."
                 self.requireLogitechSetupRefresh()
                 self.finishBoltPairing(cancel: true, restore: false)
                 return
             }
-            self.sleepCleanupTask = nil
-            self.endpointOwnerID = nil
-            self.endpointRecoveryTarget = nil
             let saved = await self.flushPendingSave()
             guard self.requireCurrentBoltPairing(request, checkingRevision: false) else { return }
             guard saved, self.savedWorkspace == request.workspace,
@@ -2087,6 +2144,7 @@ final class AppModel: ObservableObject {
         if boltPairingRevoked, boltPairingMayHaveSucceeded { recordPairedButNotAdded() }
         switch status.phase {
         case .verified:
+            recordDiagnostic(code: .boltPairingVerified, message: "Bolt pairing identity verification completed.")
             finishBoltPairing(cancel: false, restore: false)
         case .failed, .cancelled, .pairedButNotAdded:
             finishBoltPairing(cancel: false, restore: true)
@@ -2098,6 +2156,10 @@ final class AppModel: ObservableObject {
     }
 
     private func recordPairedButNotAdded() {
+        if pendingMouseCleanup != nil, !boltPairingAssociationSaved {
+            boltPairingMessage = "Paired, but not managed by Hidhogg. Previous mouse cleanup is still unverified; no saved association was changed. Refresh Devices to review the connections."
+            return
+        }
         if boltPairingAssociationSaved {
             boltPairingMessage = "Paired and saved; connection cancelled. The association is retained. Connect when you are ready."
         } else if boltPairingIdentityVerified {
@@ -2114,6 +2176,7 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             if cancel { await session.cancel() }
             await session.close()
+            self.recordDiagnostic(code: .boltPairingSessionClosed, message: "Bolt pairing session closed; checking the final outcome.")
             self.boltPairingEventTask?.cancel()
             self.boltPairingEventTask = nil
             let finalStatus = await session.currentStatus()
@@ -2182,6 +2245,7 @@ final class AppModel: ObservableObject {
     }
 
     private func savePairedMouse(_ candidate: LogitechEndpointCandidate, snapshot: BoltPairingSnapshot) async -> Bool {
+        guard canAssociateAfterPendingCleanup(candidate) else { return false }
         if let setup = snapshot.setup {
             guard isCurrentBoltPairing(snapshot), candidate.connection == .bolt else { return false }
             let id = await commitLogitechSetupCandidate(candidate, snapshot: setup)
@@ -2199,6 +2263,7 @@ final class AppModel: ObservableObject {
         let submitted = workspace
         let saved = await flushPendingSave()
         boltPairingAssociationSaved = saved && savedWorkspace?.devices.first(where: { $0.id == snapshot.registrationID })?.logitechAssociation?.identity == candidate.identity
+        if boltPairingAssociationSaved { remapPendingCleanup(to: snapshot.registrationID, candidate: candidate) }
         guard saved, !boltPairingRevoked, boltPairingSnapshot?.token == snapshot.token,
               lifecycleIntent == snapshot.intent, selectedMouseID == snapshot.registrationID,
               workspace == submitted, savedWorkspace == submitted, !isRestarting, !wakeRecovery.sleeping,
@@ -2391,7 +2456,8 @@ final class AppModel: ObservableObject {
 
     private var matchesEndpointRecoveryTarget: Bool {
         guard bolt.requiresExplicitAssociation, let target = endpointRecoveryTarget,
-              target.ownerID == endpointOwnerID, target.ownerID == admissibleMouseID,
+              target.ownerID == admissibleMouseID,
+              endpointOwnerID == nil || target.ownerID == endpointOwnerID,
               let registration = registration(id: target.ownerID), registration.isEnabled,
               registration.mouseModel == target.model, registration.logitechAssociation == target.association,
               let saved = savedWorkspace?.devices.first(where: { $0.id == target.ownerID }),
@@ -3781,6 +3847,13 @@ final class AppModel: ObservableObject {
             }
             if [.ready, .enabled].contains(status.phase), !status.cleanupUncertain {
                 wakeRecovery.connectionRestored()
+                if let pending = pendingMouseCleanup, let target = pending.target,
+                   status.generation > pending.generationFloor,
+                   status.verifiedIdentity == target.association.identity,
+                   status.model == target.model, status.connection == target.association.preferredConnection {
+                    pendingMouseCleanup = nil
+                    logitechCleanupWarning = nil
+                }
             }
             updateLowBatteryObservation()
             if let wait = wakeStatusWait, wait.matches(status) {
