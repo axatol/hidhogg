@@ -23,10 +23,10 @@ struct D200XAutomationEditorView: View {
 
     private var actionValidationMessage: String? {
         guard ConfiguredExecutable.isValidIdentifier(actionIDDraft) else {
-            return "Use an action ID of at most 64 bytes, beginning with a letter or digit."
+            return "Use a script ID of at most 64 bytes, beginning with a letter or digit."
         }
         if selectedActionID == nil && model.configuration?.actionDefinition(id: actionIDDraft) != nil {
-            return "That action ID is already in use."
+            return "That ID is already in use."
         }
         if selectedActionID == nil && actionIDs.count >= 64 {
             return "A device can store at most 64 actions."
@@ -47,13 +47,13 @@ struct D200XAutomationEditorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            GroupBox("Custom executable") {
+            GroupBox("Script") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(selectedActionID.map { "Editing \($0)" } ?? "New custom action")
+                    Text(selectedActionID.map { "Editing \($0)" } ?? "New script")
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(.secondary)
 
-                    TextField("Action ID", text: $actionIDDraft)
+                    TextField("Script ID", text: $actionIDDraft)
                         .textFieldStyle(.roundedBorder)
                         .disabled(!canEditAutomation || selectedActionID != nil)
 
@@ -133,7 +133,7 @@ struct D200XAutomationEditorView: View {
                         step: 1
                     )
                     .disabled(!canEditAutomation)
-                    .accessibilityLabel("Executable action timeout in seconds")
+                    .accessibilityLabel("Script timeout in seconds")
 
                     if let actionError {
                         Text(actionError)
@@ -146,7 +146,7 @@ struct D200XAutomationEditorView: View {
                     }
 
                     HStack {
-                        Button(selectedActionID == nil ? "Add Action" : "Save Action", systemImage: "square.and.arrow.down") {
+                        Button(selectedActionID == nil ? "Add Script" : "Save Script", systemImage: "square.and.arrow.down") {
                             saveAction()
                         }
                         .disabled(!canEditAutomation || actionValidationMessage != nil)
@@ -188,7 +188,7 @@ struct D200XAutomationEditorView: View {
             beginNewAction()
         }
         .confirmationDialog(
-            "Remove configured action?",
+            "Remove script?",
             isPresented: Binding(
                 get: { removalActionID != nil },
                 set: { if !$0 { removalActionID = nil } }
@@ -204,7 +204,7 @@ struct D200XAutomationEditorView: View {
             }
             Button("Cancel", role: .cancel) { removalActionID = nil }
         } message: {
-            Text("Controls assigned to this action will no longer run it.")
+            Text("Controls assigned to this script will no longer run it.")
         }
     }
 

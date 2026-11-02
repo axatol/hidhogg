@@ -46,6 +46,11 @@ enum DiagnosticCode: String, CaseIterable, Equatable, Hashable, Identifiable, Se
     case boltEventsOverflowed = "bolt.events.overflow"
     case boltOperationCancelled = "bolt.operation.cancelled"
     case boltRequestIDsExhausted = "bolt.request-id.exhausted"
+    case logitechAssociationRequired = "logitech.association.required"
+    case logitechIdentityUnavailable = "logitech.identity.unavailable"
+    case logitechIdentityMismatch = "logitech.identity.mismatch"
+    case logitechCandidateStale = "logitech.candidate.stale"
+    case logitechModelUnsupported = "logitech.model.unsupported"
 
     var id: String { rawValue }
 
@@ -63,6 +68,11 @@ enum DiagnosticCode: String, CaseIterable, Equatable, Hashable, Identifiable, Se
         case .eventsOverflowed: .boltEventsOverflowed
         case .operationCancelled: .boltOperationCancelled
         case .requestIDsExhausted: .boltRequestIDsExhausted
+        case .associationRequired: .logitechAssociationRequired
+        case .identityUnavailable: .logitechIdentityUnavailable
+        case .identityMismatch: .logitechIdentityMismatch
+        case .candidateStale: .logitechCandidateStale
+        case .unsupportedModel: .logitechModelUnsupported
         }
     }
 }

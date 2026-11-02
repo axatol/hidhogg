@@ -120,6 +120,7 @@ private struct D200XDocument: Codable {
     let applicationTiles: [String: [String: D200XTileAppearanceDocument]]
     let applicationNotificationTopics: [String: [String: [String]]]
     let tilePresets: [String: D200XTilePresetDocument]
+    let dialRotationPresets: [String: D200XDialRotationPresetDocument]
 
     var configuration: D200XConfiguration {
         D200XConfiguration(
@@ -134,7 +135,8 @@ private struct D200XDocument: Codable {
             tilePresets: tilePresets.mapValues(\.configuration),
             nativeActions: nativeActions.mapValues(\.configuration),
             wideDisplayMode: wideDisplayMode,
-            clockFormat: clockFormat
+            clockFormat: clockFormat,
+            dialRotationPresets: dialRotationPresets.mapValues(\.configuration)
         )
     }
 
@@ -153,17 +155,19 @@ private struct D200XDocument: Codable {
         applicationTiles = configuration.applicationTiles.mapValues { $0.mapValues(D200XTileAppearanceDocument.init(configuration:)) }
         applicationNotificationTopics = configuration.applicationNotificationTopics
         tilePresets = configuration.tilePresets.mapValues(D200XTilePresetDocument.init(configuration:))
+        dialRotationPresets = configuration.dialRotationPresets.mapValues(D200XDialRotationPresetDocument.init(configuration:))
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
-        try container.rejectUnknownKeys(["defaults", "applications", "tiles", "brightness_percent", "wide_display_mode", "clock_format", "actions", "native_actions", "notification_topics", "application_tiles", "application_notification_topics", "tile_presets"])
+        try container.rejectUnknownKeys(["defaults", "applications", "tiles", "brightness_percent", "wide_display_mode", "clock_format", "actions", "native_actions", "notification_topics", "application_tiles", "application_notification_topics", "tile_presets", "dial_rotation_presets"])
         wideDisplayMode = try container.decodeIfPresent(D200XWideDisplayMode.self, forKey: AnyCodingKey("wide_display_mode")) ?? .custom
         clockFormat = try container.decodeIfPresent(D200XClockFormat.self, forKey: AnyCodingKey("clock_format")) ?? .twentyFourHour
         nativeActions = try container.decodeIfPresent([String: NativeActionDocument].self, forKey: AnyCodingKey("native_actions")) ?? [:]
         applicationTiles = try container.decodeIfPresent([String: [String: D200XTileAppearanceDocument]].self, forKey: AnyCodingKey("application_tiles")) ?? [:]
         applicationNotificationTopics = try container.decodeIfPresent([String: [String: [String]]].self, forKey: AnyCodingKey("application_notification_topics")) ?? [:]
         tilePresets = try container.decodeIfPresent([String: D200XTilePresetDocument].self, forKey: AnyCodingKey("tile_presets")) ?? [:]
+        dialRotationPresets = try container.decodeIfPresent([String: D200XDialRotationPresetDocument].self, forKey: AnyCodingKey("dial_rotation_presets")) ?? [:]
         defaults = try container.decodeIfPresent(
             [String: D200XBindingDocument].self,
             forKey: AnyCodingKey("defaults")
@@ -199,6 +203,7 @@ private struct D200XDocument: Codable {
         if !applicationTiles.isEmpty { try container.encode(applicationTiles, forKey: .applicationTiles) }
         if !applicationNotificationTopics.isEmpty { try container.encode(applicationNotificationTopics, forKey: .applicationNotificationTopics) }
         if !tilePresets.isEmpty { try container.encode(tilePresets, forKey: .tilePresets) }
+        if !dialRotationPresets.isEmpty { try container.encode(dialRotationPresets, forKey: .dialRotationPresets) }
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -214,7 +219,50 @@ private struct D200XDocument: Codable {
         case applicationTiles = "application_tiles"
         case applicationNotificationTopics = "application_notification_topics"
         case tilePresets = "tile_presets"
+        case dialRotationPresets = "dial_rotation_presets"
     }
+}
+
+private struct D200XDialRotationPresetDocument: Codable {
+    let name: String
+    let left: D200XBindingDocument
+    let right: D200XBindingDocument
+    let actions: [String: ExecutableDocument]
+    let nativeActions: [String: NativeActionDocument]
+
+    var configuration: D200XDialRotationPreset {
+        D200XDialRotationPreset(name: name, left: left.configuration, right: right.configuration,
+            actions: actions.mapValues(\.configuration), nativeActions: nativeActions.mapValues(\.configuration))
+    }
+
+    init(configuration: D200XDialRotationPreset) {
+        name = configuration.name
+        left = D200XBindingDocument(configuration: configuration.left)
+        right = D200XBindingDocument(configuration: configuration.right)
+        actions = configuration.actions.mapValues(ExecutableDocument.init(configuration:))
+        nativeActions = configuration.nativeActions.mapValues(NativeActionDocument.init(configuration:))
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        try container.rejectUnknownKeys(["name", "left", "right", "actions", "native_actions"])
+        name = try container.decode(String.self, forKey: AnyCodingKey("name"))
+        left = try container.decode(D200XBindingDocument.self, forKey: AnyCodingKey("left"))
+        right = try container.decode(D200XBindingDocument.self, forKey: AnyCodingKey("right"))
+        actions = try container.decodeIfPresent([String: ExecutableDocument].self, forKey: AnyCodingKey("actions")) ?? [:]
+        nativeActions = try container.decodeIfPresent([String: NativeActionDocument].self, forKey: AnyCodingKey("native_actions")) ?? [:]
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(left, forKey: .left)
+        try container.encode(right, forKey: .right)
+        if !actions.isEmpty { try container.encode(actions, forKey: .actions) }
+        if !nativeActions.isEmpty { try container.encode(nativeActions, forKey: .nativeActions) }
+    }
+
+    enum CodingKeys: String, CodingKey { case name, left, right, actions; case nativeActions = "native_actions" }
 }
 
 private struct D200XTilePresetDocument: Codable {
@@ -604,31 +652,40 @@ struct RegistryManifest: Codable {
     var schemaVersion: Int = WorkspaceConfiguration.currentVersion
     let connectOnLaunch: Bool
     let devices: [RegistryReference]
+    let preferredMouseID: UUID?
 
-    init(connectOnLaunch: Bool, devices: [RegistryReference]) {
+    init(connectOnLaunch: Bool, devices: [RegistryReference], preferredMouseID: UUID? = nil) {
         self.connectOnLaunch = connectOnLaunch
         self.devices = devices
+        self.preferredMouseID = preferredMouseID
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
-        try container.rejectUnknownKeys(["schema_version", "connect_on_launch", "devices"])
+        try container.rejectUnknownKeys(["schema_version", "connect_on_launch", "devices", "preferred_mouse_id"])
         schemaVersion = try container.decode(Int.self, forKey: AnyCodingKey("schema_version"))
         guard schemaVersion == WorkspaceConfiguration.currentVersion else {
             throw ConfigurationError.unsupportedVersion(schemaVersion)
         }
         connectOnLaunch = try container.decode(Bool.self, forKey: AnyCodingKey("connect_on_launch"))
         devices = try container.decode([RegistryReference].self, forKey: AnyCodingKey("devices"))
-        let nativeFamilies = devices.map(\.family).filter { $0 != .genericBluetooth }
+        preferredMouseID = try container.decodeIfPresent(UUID.self, forKey: AnyCodingKey("preferred_mouse_id"))
+        let singletonNativeFamilies = devices.map(\.family).filter { !$0.isLogitechMouse && $0 != .genericBluetooth }
         guard devices.count <= 256,
               Set(devices.map(\.id)).count == devices.count,
-              Set(nativeFamilies).count == nativeFamilies.count else {
+              Set(singletonNativeFamilies).count == singletonNativeFamilies.count else {
             throw ConfigurationError.invalidDocument
+        }
+        if let preferredMouseID {
+            guard devices.contains(where: { $0.id == preferredMouseID && $0.family.isLogitechMouse }) else {
+                throw ConfigurationError.invalidDocument
+            }
         }
     }
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version", connectOnLaunch = "connect_on_launch", devices
+        case preferredMouseID = "preferred_mouse_id"
     }
 }
 
@@ -748,6 +805,7 @@ private struct RegisteredPayload: Codable {
     let bluetoothLowBatteryAlertsEnabled: Bool?
     let bluetoothLowBatteryThreshold: Int?
     let bluetoothIconOverride: BluetoothDeviceKind?
+    let logitechAssociation: LogitechAssociationDocument?
 
     init(device: RegisteredDevice) {
         schemaVersion = 1
@@ -761,12 +819,14 @@ private struct RegisteredPayload: Codable {
         bluetoothLowBatteryAlertsEnabled = device.bluetoothConfiguration?.lowBatteryAlertsEnabled
         bluetoothLowBatteryThreshold = device.bluetoothConfiguration?.lowBatteryThreshold
         bluetoothIconOverride = device.bluetoothConfiguration?.iconOverride
+        logitechAssociation = device.logitechAssociation.map(LogitechAssociationDocument.init(association:))
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: AnyCodingKey.self)
         try container.rejectUnknownKeys(["schema_version", "id", "family", "mouse", "d200x", "bluetooth_endpoint",
-            "bluetooth_low_battery_alerts_enabled", "bluetooth_low_battery_threshold", "bluetooth_icon_override"])
+            "bluetooth_low_battery_alerts_enabled", "bluetooth_low_battery_threshold", "bluetooth_icon_override",
+            "logitech_association"])
         schemaVersion = try container.decode(Int.self, forKey: AnyCodingKey("schema_version"))
         guard schemaVersion == 1 else { throw ConfigurationError.unsupportedVersion(schemaVersion) }
         id = try container.decode(UUID.self, forKey: AnyCodingKey("id"))
@@ -777,11 +837,13 @@ private struct RegisteredPayload: Codable {
         bluetoothLowBatteryAlertsEnabled = try container.decodeIfPresent(Bool.self, forKey: AnyCodingKey("bluetooth_low_battery_alerts_enabled"))
         bluetoothLowBatteryThreshold = try container.decodeIfPresent(Int.self, forKey: AnyCodingKey("bluetooth_low_battery_threshold"))
         bluetoothIconOverride = try container.decodeIfPresent(BluetoothDeviceKind.self, forKey: AnyCodingKey("bluetooth_icon_override"))
+        logitechAssociation = try container.decodeIfPresent(LogitechAssociationDocument.self, forKey: AnyCodingKey("logitech_association"))
         guard bluetoothLowBatteryThreshold.map({ (1...100).contains($0) }) ?? true else { throw ConfigurationError.invalidDocument }
         guard family == .genericBluetooth || (bluetoothEndpoint == nil && bluetoothLowBatteryAlertsEnabled == nil &&
             bluetoothLowBatteryThreshold == nil && bluetoothIconOverride == nil) else { throw ConfigurationError.invalidDocument }
+        guard family.isLogitechMouse || logitechAssociation == nil else { throw ConfigurationError.invalidDocument }
         switch family {
-        case .mxMaster3S: guard mouse != nil, d200x == nil else { throw ConfigurationError.invalidDocument }
+        case .mxMaster3S, .mxMaster4: guard mouse != nil, d200x == nil else { throw ConfigurationError.invalidDocument }
         case .d200x: guard mouse == nil else { throw ConfigurationError.invalidDocument }
         case .flowLite84: guard mouse == nil, d200x == nil else { throw ConfigurationError.invalidDocument }
         case .genericBluetooth: guard mouse == nil, d200x == nil, bluetoothEndpoint != nil else { throw ConfigurationError.invalidDocument }
@@ -794,6 +856,45 @@ private struct RegisteredPayload: Codable {
         case bluetoothLowBatteryAlertsEnabled = "bluetooth_low_battery_alerts_enabled"
         case bluetoothLowBatteryThreshold = "bluetooth_low_battery_threshold"
         case bluetoothIconOverride = "bluetooth_icon_override"
+        case logitechAssociation = "logitech_association"
+    }
+}
+
+private struct LogitechAssociationDocument: Codable {
+    let version: Int
+    let unitID: String
+    let modelID: String
+    let connection: LogitechConnection
+
+    var association: LogitechAssociation {
+        LogitechAssociation(version: version,
+                            identity: LogitechIdentity(unitID: unitID, modelID: modelID),
+                            preferredConnection: connection)
+    }
+
+    init(association: LogitechAssociation) {
+        version = association.version
+        unitID = association.identity.unitID
+        modelID = association.identity.modelID
+        connection = association.preferredConnection
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: AnyCodingKey.self)
+        try container.rejectUnknownKeys(["version", "unit_id", "model_id", "connection"])
+        version = try container.decode(Int.self, forKey: AnyCodingKey("version"))
+        unitID = try container.decode(String.self, forKey: AnyCodingKey("unit_id"))
+        modelID = try container.decode(String.self, forKey: AnyCodingKey("model_id"))
+        connection = try container.decode(LogitechConnection.self, forKey: AnyCodingKey("connection"))
+        do { _ = try association.validated() }
+        catch { throw ConfigurationError.invalidDocument }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case unitID = "unit_id"
+        case modelID = "model_id"
+        case connection
     }
 }
 
@@ -812,10 +913,17 @@ enum RegistryCodec {
         }
         let configuration = try deviceConfiguration(payload)
         return RegisteredDevice(id: reference.id, displayName: reference.displayName,
-                                isEnabled: reference.isEnabled, configuration: configuration)
+                                isEnabled: reference.isEnabled,
+                                configuration: configuration,
+                                mouseModel: logitechMouseModel(for: payload.family),
+                                logitechAssociation: payload.logitechAssociation?.association)
     }
 
-    static func encode(device: RegisteredDevice) throws -> Data { try encode(RegisteredPayload(device: device)) }
+    static func encode(device: RegisteredDevice) throws -> Data {
+        do { _ = try WorkspaceConfiguration(connectOnLaunch: false, devices: [device]).validated() }
+        catch { throw ConfigurationError.invalidConfiguration(error.localizedDescription) }
+        return try encode(RegisteredPayload(device: device))
+    }
 
     static func shortSHA256(_ data: Data) -> String {
         String(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined().prefix(12))
@@ -830,7 +938,9 @@ enum RegistryCodec {
         }
 
         let device = RegisteredDevice(id: id, displayName: "Managed payload", isEnabled: true,
-                                      configuration: configuration)
+                                      configuration: configuration,
+                                      mouseModel: logitechMouseModel(for: payload.family),
+                                      logitechAssociation: payload.logitechAssociation?.association)
         return (try? WorkspaceConfiguration(connectOnLaunch: false, devices: [device]).validated()) != nil
     }
 
@@ -858,7 +968,7 @@ enum RegistryCodec {
 
     private static func deviceConfiguration(_ payload: RegisteredPayload) throws -> RegisteredDeviceConfiguration {
         switch payload.family {
-        case .mxMaster3S:
+        case .mxMaster3S, .mxMaster4:
             guard let mouse = payload.mouse else { throw ConfigurationError.invalidDocument }
             return .mouse(mouse.configuration)
         case .d200x:
@@ -871,6 +981,14 @@ enum RegistryCodec {
                 lowBatteryAlertsEnabled: payload.bluetoothLowBatteryAlertsEnabled ?? false,
                 lowBatteryThreshold: payload.bluetoothLowBatteryThreshold ?? 10,
                 iconOverride: payload.bluetoothIconOverride))
+        }
+    }
+
+    private static func logitechMouseModel(for family: DeviceFamily) -> LogitechMouseModel? {
+        switch family {
+        case .mxMaster3S: .mxMaster3S
+        case .mxMaster4: .mxMaster4
+        case .d200x, .flowLite84, .genericBluetooth: nil
         }
     }
 }

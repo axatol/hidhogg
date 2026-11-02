@@ -1,10 +1,10 @@
 # HIDHogg overview
 
-Updated 28 October 2026. This describes the current native implementation; dated implementation reports retain their original evidence.
+Updated 1 November 2026. This describes the current native implementation; dated implementation reports retain their original evidence.
 
 ## Product
 
-One macOS application configures Logitech MX Master 3S over a Bolt receiver and Ulanzi D200X, and reads Lofree Flow Lite84 status through its receiver. The workspace, menu-bar item and local CLI share the same in-process model and device sessions. Hardware acceptance is recorded per feature; an implemented feature is not automatically a claim of complete device compatibility.
+One macOS application configures Logitech MX Master 3S and Ulanzi D200X, and reads Lofree Flow Lite84 status through its receiver. Logitech existing-device association covers Bolt and direct Bluetooth, with basic read-only MX Master 4 information support. The workspace, menu-bar item and local CLI share the same in-process model and device sessions. Hardware acceptance is recorded per feature; an implemented feature is not automatically a claim of complete device compatibility.
 
 ## Architecture
 
@@ -57,7 +57,7 @@ Settings is one scrollable page. Accessibility and Notifications have compact pe
 
 The active package targets Apple Silicon and macOS 26+, with Swift tools 6.2. The build script signs a fixed-path Hidhogg.app and adjacent hidhoggctl without launching either or operating devices. Build output and provenance are local ignored artifacts.
 
-Use [the roadmap](roadmap.md) for current scope, [the structure](structure.md) for module ownership, and [check-in preparation](checkin-preparation.md) for the frozen review/test record. Pairing, Bluetooth, firmware installation, vendor plugins/cloud, physical multi-page support and notification-payload execution are outside the current implementation boundary.
+Use [the roadmap](roadmap.md) for current scope, [the structure](structure.md) for module ownership, and [check-in preparation](checkin-preparation.md) for the frozen review/test record. New direct Bluetooth pairing, firmware installation, vendor plugins/cloud, physical multi-page support and notification-payload execution are outside the current implementation boundary. LC-02 covers existing Logitech connections; LC-04 adds in-app Bolt pairing, with hardware acceptance pending.
 
 
 Seven built-in wide modes and clock format, static installed-app icon notifications, explicit screensaver image upload and temporary preview are implemented. The last sent screensaver JPEG is retained locally behind a collapsed preview. The owner confirmed the latest wide-mode/retained-preview follow-up working on28October2026; other hardware gates remain separate. Now Playing is a synthetic feasibility spike, not a production reader. Additive icon/text, badges and MCP are the requested next slice and are not implemented.
@@ -65,3 +65,6 @@ Seven built-in wide modes and clock format, static installed-app icon notificati
 ## Device registry — 31 October 2026
 
 REG-01 replaces fixed device-list composition with UUID registrations and per-device payload files coordinated by a root schema2 registry. Legacy schema1 configuration is backed up before migration publication. The existing strict aggregate remains an editor projection; registry membership/enabled state independently gates runtime activity. Existing native adapters still manage one endpoint per supported family. No new Bluetooth discovery or hardware commands are included. See [registry plan](device-registry-plan.md) for storage transactions, limitations and verification.
+
+
+LC-07 adds explicit Bolt receiver inventory and selected-slot unpairing in Logitech setup, with per-row confirmation, stale-snapshot checks, post-removal verification and retained Hidhogg settings. Offline/signed evidence and physical acceptance limits are recorded in [receiver management](logitech-receiver-management-plan.md).

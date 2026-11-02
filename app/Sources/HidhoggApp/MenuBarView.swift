@@ -80,7 +80,7 @@ private struct MenuBarContentView: View {
     @ViewBuilder
     private func deviceRow(_ registration: RegisteredDevice) -> some View {
         switch registration.family {
-        case .mxMaster3S:
+        case .mxMaster3S, .mxMaster4:
             mouseRow(registration)
         case .d200x:
             d200xRow(registration)
@@ -92,14 +92,16 @@ private struct MenuBarContentView: View {
     }
 
     private func mouseRow(_ registration: RegisteredDevice) -> some View {
-        let information = DeviceInformationPresentation(status: model.boltStatus)
-        let connection = registration.isEnabled
-            ? information.isConnected ? "Connected" : "Disconnected"
-            : "Disabled"
-        let value = registration.isEnabled ? mouseStatusText(information) : "Disabled"
+        let information = DeviceInformationPresentation(status: model.mouseStatus(for: registration.id))
+        let connection = !registration.isEnabled ? "Disabled"
+            : model.needsMouseEndpointSelection(for: registration.id) ? "Endpoint selection needed"
+            : information.isConnected ? "Connected" : "Disconnected"
+        let value = !registration.isEnabled ? "Disabled"
+            : model.needsMouseEndpointSelection(for: registration.id) ? "Endpoint selection needed"
+            : mouseStatusText(information)
         let indicator: MenuBarDeviceRow.Status = if !registration.isEnabled {
             .disabled
-        } else if information.isConnected {
+        } else if information.isConnected && !model.needsMouseEndpointSelection(for: registration.id) {
             .connected
         } else {
             .disconnected

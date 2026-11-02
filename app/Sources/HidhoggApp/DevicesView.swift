@@ -14,9 +14,14 @@ struct DevicesView: View {
             VStack(alignment: .leading, spacing: 24) {
                 deviceHeader
 
-                DeviceApplicationSelector(isDeviceWide: model.selectedTarget.control == nil)
-
-                DeviceControlCanvas(isInspectorPresented: $isInspectorPresented)
+                if model.selectedMouseSupportsManagement {
+                    DeviceApplicationSelector(isDeviceWide: model.selectedTarget.control == nil)
+                    DeviceControlCanvas(isInspectorPresented: $isInspectorPresented)
+                } else {
+                    Label("Button, wheel and haptic controls are unsupported. Battery, firmware and connection information remain available.",
+                          systemImage: "info.circle")
+                        .foregroundStyle(.secondary)
+                }
 
                 configurationStatus
 
@@ -60,7 +65,7 @@ struct DevicesView: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("MX Master 3S")
+                    Text(model.selectedMouseName)
                         .font(.title2.weight(.semibold))
                     Text(model.connectionMessage)
                         .foregroundStyle(.secondary)
@@ -72,7 +77,20 @@ struct DevicesView: View {
                 connectionAction
             }
 
-            DeviceManagementControls(family: .mxMaster3S)
+            if let id = model.selectedMouseID {
+                DeviceManagementControls(registrationID: id)
+                HStack {
+                    Button("Change Connection…", systemImage: "arrow.left.arrow.right") {
+                        model.presentLogitechSetup(destination: .reassociate(id))
+                    }
+                    .disabled(!model.canSelectExistingMouse)
+                    if let owner = model.presentedMouseOwnerID, owner != id {
+                        Text("Another registered mouse is active. Connecting this mouse releases it first.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .font(.callout)
+            }
 
             DeviceBatteryOverviewView()
 
@@ -88,7 +106,7 @@ struct DevicesView: View {
             }
             .font(.callout)
 
-            if model.boltStatus.cleanupUncertain && !model.isBackgroundRecovery {
+            if model.selectedMouseStatus.cleanupUncertain && !model.isBackgroundRecovery {
                 Label(
                     model.connectionRequested
                         ? "Mouse settings could not be verified. Reconnecting automatically."
@@ -99,7 +117,7 @@ struct DevicesView: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
 
-            if model.permission != .granted {
+            if model.selectedMouseSupportsManagement && model.permission != .granted {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Label(
                         "Input posting permission is required for shortcuts and custom scroll amounts.",
@@ -121,17 +139,17 @@ struct DevicesView: View {
 
     @ViewBuilder
     private var connectionAction: some View {
-        if model.isBackgroundRecovery {
+        if model.isSelectedMouseRuntimeTarget && model.isBackgroundRecovery {
             Button("Cancel", systemImage: "xmark.circle", role: .destructive) { model.disconnect() }
                 .help("Stop automatic connection recovery")
-        } else if model.boltStatus.phase == .discovering || model.boltStatus.phase == .enabling {
+        } else if model.selectedMouseStatus.phase == .discovering || model.selectedMouseStatus.phase == .enabling {
             Button("Cancel", systemImage: "xmark.circle") { model.disconnect() }
-        } else if [.ready, .enabled, .stopping].contains(model.boltStatus.phase) {
+        } else if [.ready, .enabled, .stopping].contains(model.selectedMouseStatus.phase) {
             Button("Disconnect", systemImage: "xmark.circle", role: .destructive) {
                 model.disconnect()
             }
-            .disabled(model.boltStatus.phase == .stopping)
-        } else if model.connectionRequested {
+            .disabled(model.selectedMouseStatus.phase == .stopping)
+        } else if model.isSelectedMouseRuntimeTarget && model.connectionRequested {
             Button(model.isReconnectPending ? "Cancel Reconnect" : "Cancel", systemImage: "xmark.circle", role: .destructive) {
                 model.disconnect()
             }
@@ -139,7 +157,7 @@ struct DevicesView: View {
             Button("Connect", systemImage: "cable.connector") {
                 model.connect()
             }
-            .disabled(!model.canDiscover)
+            .disabled(!model.canSelectExistingMouse)
         }
     }
 

@@ -7,6 +7,27 @@ import MacOSActions
 @testable import HidhoggApp
 
 final class MenuBarStatusTests: XCTestCase {
+    @MainActor
+    func testGlobalCleanupUncertaintyRemainsVisibleWithoutAttributingMouseConnection() {
+        let mouse = RegisteredDevice(configuration: .mouse(AppConfiguration.empty.devices[0]))
+        let deck = RegisteredDevice(configuration: .d200x(nil))
+        let disconnectedMouse = MenuBarDeviceState(status: .disconnected, isConnected: false)
+        let summary = MenuBarDeviceSummary(registeredDevices: [mouse, deck], statuses: [
+            mouse.id: disconnectedMouse,
+            deck.id: MenuBarDeviceState(status: .connected, isConnected: true)
+        ])
+        let label = MenuBarStatusLabel(phase: .idle, cleanupUncertain: true,
+                                      permissionChecks: .init(accessibilityTrusted: true, eventPostingAllowed: true),
+                                      summary: summary)
+
+        XCTAssertEqual(label.status, .cleanupUncertain)
+        XCTAssertEqual(label.status.iconColor, .failed)
+        XCTAssertEqual(label.status.accessibilityLabel, "Hidhogg, Cleanup uncertain")
+        XCTAssertEqual(summary.countLabel, "1/2")
+        XCTAssertEqual(disconnectedMouse.status, .disconnected)
+        XCTAssertFalse(disconnectedMouse.isConnected)
+    }
+
     func testManagedDeviceAggregationHasNoPhantomDisconnectedMouse() {
         XCTAssertEqual(MenuBarStatus(managedDevices: []), .disconnected)
         XCTAssertEqual(MenuBarStatus(managedDevices: [.connected]), .connected)

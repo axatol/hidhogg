@@ -32,6 +32,32 @@ final class NativeActionIntegrationTests: XCTestCase {
         await model.stop()
     }
 
+    func testLockScreenCanBeSavedWithoutRunningAndUsesActionIDHistoryOnInvoke() async throws {
+        let platform = RecordingNativeActionPlatform()
+        let model = makeModel(platform: platform)
+        model.onEdit = { [weak model] in model?.synchronize($0, canEdit: true) }
+        model.synchronize(.empty, canEdit: true)
+        let action = NativeAction(kind: .lockScreen)
+
+        try model.saveNativeAction(id: "lock-screen", action: action)
+
+        XCTAssertTrue(platform.actions.isEmpty, "Saving a Lock Screen action must not invoke it.")
+        XCTAssertEqual(model.configuration?.nativeActions["lock-screen"], action)
+
+        let response = await model.handleAutomation(invokeRequest(actionID: "lock-screen"))
+
+        XCTAssertNil(response.error)
+        let actionCompleted = await eventuallyNativeAction { model.actionHistory.first?.status == .succeeded }
+        XCTAssertTrue(actionCompleted)
+        XCTAssertEqual(platform.actions, [action])
+        XCTAssertEqual(model.actionHistory.first?.actionID, "lock-screen")
+        XCTAssertEqual(model.actionHistory.first?.trigger, ConfiguredActionTrigger(kind: .localAPI))
+        let history = String(decoding: try JSONEncoder().encode(model.actionHistory), as: UTF8.self)
+        XCTAssertTrue(history.contains("lock-screen"))
+        XCTAssertFalse(history.contains("lock_screen"))
+        await model.stop()
+    }
+
     func testDeckNotificationNativeActionPublishesWithoutNativeQueueCycleOrTextHistory() async throws {
         let platform = RecordingNativeActionPlatform()
         let iconResolver = FixedD200XApplicationIconResolver(pngData: try D200XIconTestFixture.png())
@@ -176,6 +202,50 @@ final class NativeActionIntegrationTests: XCTestCase {
         let runner = AppNativeActionRunner(platform: platform)
         runner.model = model
         let action = NativeAction(kind: .shortcut, shortcut: KeyboardShortcut(keyCode: 4, modifiers: [.command]))
+        let staleTrigger = ConfiguredActionTrigger(
+            kind: .device,
+            profile: "com.example.Editor",
+            control: "key0",
+            sessionEpoch: model.actionSessionEpoch,
+            applicationID: "com.example.Editor"
+        )
+
+        foreground = "com.example.Browser"
+        model.refreshActiveApplication()
+        let staleResult = await runner.run(action, trigger: staleTrigger)
+
+        XCTAssertEqual(staleResult.status, .cancelled)
+        XCTAssertTrue(platform.actions.isEmpty)
+
+        let currentTrigger = ConfiguredActionTrigger(
+            kind: .device,
+            profile: "com.example.Browser",
+            control: "key0",
+            sessionEpoch: model.actionSessionEpoch,
+            applicationID: "com.example.Browser"
+        )
+        let currentResult = await runner.run(action, trigger: currentTrigger)
+
+        XCTAssertEqual(currentResult.status, .succeeded)
+        XCTAssertEqual(platform.actions, [action])
+        await model.stop()
+    }
+
+    func testPhysicalLockScreenActionIsDroppedAfterForegroundApplicationChanges() async {
+        var foreground: String? = "com.example.Editor"
+        let platform = RecordingNativeActionPlatform()
+        let model = D200XModel(
+            sender: ShortcutSender(preflight: { false }, request: { false }, postPair: { _ in }),
+            frontmostApplication: { foreground },
+            nativePlatform: platform
+        )
+        model.synchronize(D200XConfiguration(applications: [
+            "com.example.Editor": [:],
+            "com.example.Browser": [:]
+        ]), canEdit: true)
+        let runner = AppNativeActionRunner(platform: platform)
+        runner.model = model
+        let action = NativeAction(kind: .lockScreen)
         let staleTrigger = ConfiguredActionTrigger(
             kind: .device,
             profile: "com.example.Editor",

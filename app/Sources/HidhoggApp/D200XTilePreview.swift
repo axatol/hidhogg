@@ -7,17 +7,19 @@ struct D200XTilePreview: View {
     let wide: Bool
     let labelOverride: String?
     let notificationIcon: Data?
+    let presetIcon: Data?
     let assetDirectory: URL?
 
     @State private var renderedImage: NSImage?
 
     init(appearance: D200XTileAppearance, wide: Bool, labelOverride: String?, assetDirectory: URL?,
-         notificationIcon: Data? = nil) {
+         notificationIcon: Data? = nil, presetIcon: Data? = nil) {
         self.appearance = appearance
         self.wide = wide
         self.labelOverride = labelOverride
         self.assetDirectory = assetDirectory
         self.notificationIcon = notificationIcon
+        self.presetIcon = presetIcon
     }
 
     private var renderKey: RenderKey {
@@ -26,6 +28,7 @@ struct D200XTilePreview: View {
             wide: wide,
             labelOverride: labelOverride,
             notificationIcon: notificationIcon,
+            presetIcon: presetIcon,
             assetDirectory: assetDirectory
         )
     }
@@ -41,7 +44,7 @@ struct D200XTilePreview: View {
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
-            } else if appearance.showTitle || labelOverride != nil || appearance.imageAsset != nil {
+            } else if appearance.showTitle || labelOverride != nil || appearance.imageAsset != nil || presetIcon != nil {
                 Text(fallbackTitle)
                     .font(.callout.weight(.semibold))
                     .lineLimit(2)
@@ -81,7 +84,8 @@ struct D200XTilePreview: View {
                 labelOverride: key.labelOverride,
                 assetDirectory: key.assetDirectory,
                 destination: .preview,
-                notificationIcon: key.notificationIcon
+                notificationIcon: key.notificationIcon,
+                presetIcon: key.presetIcon
             )
         }
 
@@ -128,6 +132,7 @@ struct D200XTilePreview: View {
         let wide: Bool
         let labelOverride: String?
         let notificationIcon: Data?
+        let presetIcon: Data?
         let assetDirectory: URL?
     }
 }

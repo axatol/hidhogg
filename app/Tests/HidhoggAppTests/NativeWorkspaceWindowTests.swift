@@ -43,7 +43,8 @@ final class NativeWorkspaceWindowTests: XCTestCase {
             ("file", .init(kind: .openFile, target: "/synthetic/document.txt")),
             ("url", .init(kind: .openURL, target: "https://example.test/")),
             ("notification", .init(kind: .deckNotification, topic: "build.finished", text: "Synthetic notification", ttlSeconds: 60)),
-            ("shortcut", .init(kind: .shortcut, shortcut: KeyboardShortcut(keyCode: 4, modifiers: [.command])))
+            ("shortcut", .init(kind: .shortcut, shortcut: KeyboardShortcut(keyCode: 4, modifiers: [.command]))),
+            ("lock-screen", .init(kind: .lockScreen))
         ]
         let model = D200XModel(
             sender: ShortcutSender(preflight: { false }, request: { false }, postPair: { _ in

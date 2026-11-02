@@ -44,8 +44,12 @@ struct D200XAssetStore {
 
     func importImage(from sourceURL: URL) throws -> String {
         let input = try readInput(from: sourceURL)
-        let normalized = try normalizePNG(input)
-        return try persist(normalized)
+        return try importImage(data: input)
+    }
+
+    func importImage(data: Data) throws -> String {
+        guard data.count <= Self.maximumInputBytes else { throw Failure.oversizedInput }
+        return try persist(normalizePNG(data))
     }
 
     func restoreImage(_ data: Data, reference: String) throws {

@@ -46,14 +46,17 @@ public struct BoltDeviceInformation: Equatable, Sendable {
     public var battery: Battery?
     public var firmware: [FirmwareEntity]
     public var isRefreshing: Bool
+    public var featureVersions: [UInt16: UInt8]
 
     public init(batteryState: State = .unknown, firmwareState: State = .unknown,
-                battery: Battery? = nil, firmware: [FirmwareEntity] = [], isRefreshing: Bool = false) {
+                battery: Battery? = nil, firmware: [FirmwareEntity] = [], isRefreshing: Bool = false,
+                featureVersions: [UInt16: UInt8] = [:]) {
         self.batteryState = batteryState
         self.firmwareState = firmwareState
         self.battery = battery
         self.firmware = firmware
         self.isRefreshing = isRefreshing
+        self.featureVersions = featureVersions
     }
 }
 

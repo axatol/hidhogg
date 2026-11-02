@@ -63,10 +63,10 @@ struct WheelSettingsInspector: View {
 
             LabeledContent("Scroll amount state", value: model.scrollAmountStatus)
 
-            if let message = model.boltStatus.wheel.message {
+            if let message = model.selectedMouseStatus.wheel.message {
                 Text(message)
                     .font(.callout)
-                    .foregroundStyle(model.boltStatus.cleanupUncertain ? .orange : .secondary)
+                    .foregroundStyle(model.selectedMouseStatus.cleanupUncertain ? .orange : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -83,7 +83,7 @@ struct WheelSettingsInspector: View {
                     .disabled(!model.canEditConfiguration)
 
                     LabeledContent("Observed direction", value: model.observedWheelDirection)
-                    if model.boltStatus.wheel.captureActive {
+                    if model.selectedMouseStatus.wheel.captureActive {
                         LabeledContent("Effective direction", value: model.effectiveWheelDirection)
                     }
                     LabeledContent("Observed resolution", value: model.observedWheelResolution)
@@ -140,10 +140,10 @@ struct WheelSettingsInspector: View {
 
             LabeledContent("Thumb-wheel amount state", value: model.thumbwheelScrollAmountStatus)
 
-            if let message = model.boltStatus.thumbwheel.message {
+            if let message = model.selectedMouseStatus.thumbwheel.message {
                 Text(message)
                     .font(.callout)
-                    .foregroundStyle(model.boltStatus.cleanupUncertain ? .orange : .secondary)
+                    .foregroundStyle(model.selectedMouseStatus.cleanupUncertain ? .orange : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 

@@ -1,3 +1,36 @@
+## Verified complete-preset delivery — 1 November 2026
+
+All 16 supported action templates plus Blank/None appear under Tile Presets with icons. Volume and Previous/Next dial starters are paired. Incomplete paths, URL, notification content, shortcut or executable remain drafts until valid. Tile/press preset creation uses inline action fields and generated IDs. The control chooser applies complete copies while preserving manual controls. None clears the current assignment, including per-app inheritance. Press/front assignments ignore appearance; rotation changes left/right together without changing press/held mappings. Matching definitions reuse IDs across fresh drafts; 100 repeated Lock Screen applications do not fill the registry. Deleted profiles cannot be recreated by a stale chooser.
+
+Built-in glyphs are 256-pixel white PNGs with transparent margins and caption space. In-memory previews and saved assets share the base-image renderer, leaving notification title semantics unchanged. Browsing creates no asset files. Tile packages retain versions 1/2 and their schema. New dial packages have strict kind/version/nested validation and a 256 KiB limit; dispatcher uses regular-file/no-follow/size checks and imports retain action review. Nonempty dial_rotation_presets requires a decoder that recognises the new field.
+
+Independent focused gate passes68; full offline gate passes862 (535XCTest+327SwiftTesting), zero failures. WakeConnectionTests/NativeWorkspaceWindowTests are explicitly excluded. Separate offscreen fixtures use never-shown windows, prohibited activation, fake input, temporary assets and zero edit/action assertions; captures are in /Volumes/Data/tmp/DX-PRESET-offscreen. The tile editor is scrollable beyond the fixed captured viewport. Native interaction and physical behavior remain owner checks.
+
+Signed app/CLI build6c525941148c110394225a35c911533ba417eee8baa8a2e7a5ebc6d0d14f72fc passes strict signatures. All269Swift/package/script inputs match focused/full test/build manifests; digest a84c79b9b8985ff01134379b7116d92ae718c61c537f74e003a5053bebfdb997. Logs /Volumes/Data/tmp/DX-PRESET-focused.log, DX-PRESET-full.log, DX-PRESET-verification.json, DX-PRESET-postbuild.sha256 and hidhogg-complete-presets-release-20261101.log. Earlier four compiler issues and one invalid test-fixture root are preserved in the result; the fixture was corrected without weakening strict-key checks.
+
+No production app, device/HID command, real keyboard/lock event, notification, media query, environment inspection or private configuration was used. Owner should restart updated app, select a tile and Choose Preset, apply a complete Lock Screen preset when ready, configure URL/shortcut inline, and apply dial Volume while confirming press stays unchanged. Check current-app-profile scope, None clearing, manual edits and package sharing. Source remains uncommitted after master3dc576f, including the earlier Lock Screen source/tests and individual-action review docs; no push or new check-in is requested.
+
+## Active task — DX-PRESET-01, 1 November 2026
+
+Owner approved complete Tile Presets with default icons for all current actions, inline configuration without an Actions-page prerequisite, manual controls retained, paired left/right rotation presets, and a press action-only tile-preset flow. Copy/current-profile/None-clears semantics accepted. docs/d200x-preset-assignment-plan.md contains authoritative contracts.
+
+Core worker preset_assignment_core implemented domain/config/application/assets/packages and 15 fixtures; domain/config build passed, no other code tests run yet. Forms worker preset_forms_catalog owns shared types/forms/icons/TilePresetEditorView/DialRotationPresetEditorView. Library worker preset_library_assignment_ui owns TilePresetsView/inspector/chooser/import. All user/root implementation approvals already given; workers must not wait for another plan approval. Integrated test/build waits for UI source freeze. Root owns .agents/docs/signing/integration.
+
+Preserve uncommitted Lock Screen source/tests and catalog documentation. No commit/push requested. No live app, HID/input, notifications, real configuration, environment inspection or PII. Current signed app remains Lock Screen build6dc189af until preset delivery.
+
+
+## 1 November 2026 — Lock Screen implementation delivered offline
+
+Parameter-free lock_screen action, fixed Control-Command-Q through ShortcutSender, UI chooser/editor/preset integration and stale-context guards completed. Independent27focusedtests pass; no actual input/lock/app/device operations. Strict signatures and252-input test/build manifests verified; build6dc189af... digest108b03b3...; detailed evidence docs/d200x-lock-screen-plan.md. Older strictdecoders rejectnewkind; no schema/history/privateAPI expansion. Native effect remains owner-operated. Feature remains uncommitted after accepted master3dc576f.
+
+## 1 November 2026 — Lock Screen action approved
+
+Owner narrows next D200X slice to Lock Screen only. Implement fixed Control-Command-Q with existing shortcut permissions/guards; no shell/private API or new OS permission. Exhaustive action chooser/preset UI cases are necessary integration, ownership extended accordingly. History remains metadata-only action ID rather than a mutable current-kind lookup. No brightness/pages/multi-action implementation. Offline fake validation and signed build planned; actual locking remains owner-operated.
+
+## 1 November 2026 — D200X individual actions before multi-actions
+
+Owner keeps pages out and requests Studio action-catalog review, especially brightness and Lock Screen. Local3.1.9 manifest catalog and currentNativeAction/platform executor reviewed; core gaps include Close App, Text, Hotkey Switch and bindable Stop Audio. D200X brightness exists as a setting but not an action. Mac brightness up/down public key constants exist; no display command sent or compatibility proven. Lock Screen is representable as Control-Command-Q; dedicated Studio macOS action not established. Brightness target clarification pending; no feature code started. Research and constraints: docs/d200x-action-catalog-review-2026-11-01.md.
+
 ## 1 November 2026 — Accepted Bluetooth check-in and D200X focus
 
 Owner accepts BT-01–05 count/layout and authorizes local master check-in; no push. Corrected threshold saving to 200 ms typing debounce before that check-in. Consolidated 822 offline tests passed before only this view edit; final four focused tests, failing-then-passing offscreen typing probe and debounce/invalid-input matrix pass. Signed1446cb3a and252-input final manifests verified (d8114d9995d957a3d74d213a7fc9326ac937bc5259366e401467f7468826e5e9). No production app/device/media/notification operation. Fresh D200X parity review recommends bounded ordered multi-actions, while icon+text/badges remain queued, physical pages deferred and encoder display schema evidence-blocked. Feature implementation awaits scope confirmation. Details: docs/checkin-preparation.md and docs/d200x-next-parity-review-2026-11-01.md.
@@ -2874,3 +2907,184 @@ Read-only provider sources: paired IOBluetooth inventory plus bounded System Inf
 Two owner-approved test-only synchronization corrections: Lofree fixture waits for editable current-generation snapshot; Bolt wrap fixture waits for one coherent ready/captured/direction state per alternating edit. No Logitech/Lofree production source changed. Earlier one Logitech failure and one Lofree case/three assertion failures are retained as history; final full786gate passes. Logs /Volumes/Data/tmp/BT-02-focused.log and BT-02-full.log; postbuildmanifest /Volumes/Data/tmp/BT-02-postbuild.sha256. Signed build `4cd8c060ff105e838591902ae0ea297aa90ddc4d9dea36ecd2574144203638a5`,249current input hashes in ignored build-info; release /Volumes/Data/tmp/hidhogg-bt02-release-20261031.log. No production app launch or native device input; only separately approved, fully redacted read-only cache diagnostics.
 
 Owner trial: restart updated app, use Refresh on the generic keyboard/glasses entries, verify battery fills in while AirPods components remain intact; check Add/Disable/Remove and app-wide Bluetooth permission flows. macOS cache/LE coverage and underlying report/property schemas remain platform-dependent. No automatic Bolt/Bluetooth merge. Source remains uncommitted on master after4bf494a, no push. Next planned slice remains Logitech Bluetooth investigation after owner acceptance/checkpoint.
+
+
+## Preset refinement — 1 November 2026
+
+Implemented approved item-driven chooser presentation, initial 760×580 sizing check, scrollable details and parameter-only chooser action form. Built-ins use black, centered icon-only appearance; saved presets unchanged. Set Volume accepts 0–100%, starts at 50%; appearance controls collapsed by default. Focused70 and full offline537 XCTest+322 reported Swift Testing passed, zero failures; live/native first-open timing remains owner check. Signed build90a4f200ce3521078fd91275ffea50f0367c9862ae554ae42327a6ab9bc3c835 in dist/Hidhogg.app. See docs/d200x-preset-refinement.md for evidence; all source uncommitted.
+
+
+## Scripts page — 1 November 2026
+
+User approved Actions -> Scripts dedicated executable configuration. Implemented scripts-only list and New Script button, executable-only editor and Script terminology; native definitions/assignments remain untouched and history/tile links retained. Internal route unchanged. Fourteen offline checks pass, configuration unchanged/no actions asserted, offscreen scripts view inspected. Signed build5cc8d353d36de074bf427283976fec99ee7c5d55638a24e8078df27a8ff4c655 in dist/Hidhogg.app. No production launch or real action, no commit/push. See docs/scripts-page-plan.md for evidence.
+
+
+## Logitech pairing planning — 1 November 2026
+
+User clarified support must include both existing pairings and creation of new Bolt/Bluetooth pairings inside Hidhogg, for MX Master3S/4. Reviewed earlier REA protocol-workflows/pairing research and dirty isolated Bluetooth worktree; did not change either implementation or issue device operations. Current SDK exposes LE inquiry and IOBluetoothDevicePair as a plausible in-app BLE pairing route; end-to-end Logitech HID enrollment is unverified and requires a bounded owner-operated spike. Proposed slices/evidence/checklist in docs/logitech-connectivity-pairing-plan.md; implementation approval still pending. Preserve current dirty accepted preset/scripts work.
+
+
+## Add Device prototype — 1 November 2026
+
+Approved simulated unified Add Device mock-up completed at /Volumes/Data/tmp/hidhogg-pairing-mockup/index.html; localhost8769 server session47703 and Chrome deliverable tab. Bluetooth happy path manually clicked to completion; other scenarios available under Preview scenarios. No hardware access or production change. See docs/logitech-pairing-mockup.md. Await user design feedback and external research; direct app integration/manual verification remains agreed.
+
+
+## Connectivity gap report reviewed — 1 November 2026
+
+Read REA hidhogg-connectivity-gap-report-2026-11-01.md. Current transport/controller/workspace source hashes match report; strict control V5 gate and singleton settings projection directly confirmed. Plan now records LC01 UUID-scoped settings/runtime first, existing read-only endpoints, in-app Bluetooth pairing, serialized Bolt pairing, capability-gated management and recovery acceptance. No implementation this review. Report third-party MX4 capture could not be freshly fetched (cache miss); retain report provenance rather than claim independent capture verification. User accepts mock-up provisionally; no standalone spikes, integrate in app and manually verify. See docs/logitech-connectivity-pairing-plan.md review section.
+
+
+## LC-01 implementation in progress — 1 November 2026
+
+Owner approved first connectivity slice. Domain worker adds UUID-specific projection/application and multi-mouse settings persistence; runtime worker adds UUID routes/editor isolation and one pinned backend lease with cleanup fencing. No new pairing/discovery/physical operations. Until LC02 only exactly one total mouse registration may activate hardware; additional records editable. Existing dirty preset/scripts/LockScreen work preserved. Checklist docs/logitech-lc01-plan.md. Verification agent waiting for source freeze; no current LC01 test/build result yet.
+
+
+## LC-01 verification checkpoint — 1 November 2026
+
+Intermediate focused69 passed. Full offline gate exposed cross-domain input-generation comparison regression and wheel fixture setup issues; audit exposed global/D200X edits rejected when no mouse selected in multi-mouse workspace. Runtime worker correcting these with regression tests. Do NOT treat current dist LC01 build as verified delivery. Tester waits source freeze then expanded wheel/thumbwheel+isolation gate and full suite. No hardware/production launch. Logs /Volumes/Data/tmp/hidhogg-lc01-full-run1.log, docs/logitech-lc01-plan.md.
+
+
+## LC-01 delivered for owner acceptance — 1 November 2026
+
+Implemented UUID-scoped mouse settings/editor routes and pinned runtime ownership. Current persistence schema/UUIDs/file paths and unrelated device settings retained. Multiple mouse records editable; physical management requires exactly one total registration until LC02 explicit endpoints. Old/new saves, startup UUID selection, stale input/status, pending operations/cleanup, global/D200X edits and cleanup health have synthetic regression coverage. Final gates58focused and871full(549XCTest+322SwiftTesting), zero failures; WakeConnectionTests/NativeWorkspaceWindowTests excluded. Signed app/CLI build96deafbe8257702abf8b6de0e17fa097c4312c192a03f23b51151db2f8cb9c01, 269captured inputs unchanged. Evidence and owner checklist docs/logitech-lc01-plan.md, logs /Volumes/Data/tmp/hidhogg-lc01-*-final.log. No app launch/hardware/privateconfig/pairing/commit/push.
+
+Next: owner validates existing single-mouse behavior and independent record edits/reopen; then LC02 explicit already-paired endpoints/read-only identity/capabilities. Direct in-app pairing follows later; no standalone spike apps. Mock-up provisionally accepted; research report /Users/axatol/Workspace/ai/rea/investigations/logi-options-plus/hidhogg-connectivity-gap-report-2026-11-01.md. Earlier dirty Bluetooth worktree remains read-only reference, not merged.
+
+All changes remain uncommitted on master after3dc576f, including prior owner-accepted Lock Screen, complete Tile Presets/refinements and Scripts page. Preserve those edits. Current app dist/Hidhogg.app; do not claim physical acceptance from tests. Relevant plans docs/logitech-connectivity-pairing-plan.md, docs/d200x-preset-assignment-plan.md, docs/scripts-page-plan.md.
+
+
+## Owner connection failure diagnosed — 1 November 2026
+
+Current Bolt mouse ordinary input works but Hidhogg background reconnect fails. User approved15minute structured diagnostics only (no rawreports/config/identifiers/devicecommands). Live code bolt.endpoint.ambiguous repeats on build96deaf; cannot distinguish receiverHID candidates vs responsive slots. Await owner topology answer (one receiver onlymouse / otherdevices / multiple receivers), then scope explicitassociationLC02 and truthfulstatus. Separately existing bounded WakeConnectionTests.testWakeRecoversAfterUncertainCleanup reproduced LC01 sameowner circularcleanupgate failure; transientreconnect test passes. No productioncode changed; do not conflate wake regression with observedambiguity. See docs/logitech-lc01-connection-diagnosis.md and new Bolt functionalitycoverage report. Codingplan approval still required before fixes; no hardware action authorized by diagnosticapproval.
+
+
+## Receiver ambiguity warning and vertical direction fix — 1 November 2026
+
+User approved warning+direction consistency only. Explicit failure/title/red presentation now shows typed Bolt ambiguity even without an owner lease, clears after success; no picker implemented. User confirms multiple receivers caused connectionrefusal and removingextra restored connection. User confirms OS Natural scrolling enabled. Added semantic/wire XOR mapping + injected narrow OS preference reader, capture snapshot semantic normalization; raw devicebaseline/ownership/restore unchanged, thumbwheel unchanged, amountoptional. No live preference read by agent/globalwrite/polling. Source docs/logitech-direction-ambiguity-fix.md.
+
+Actual Bolt fixture RED8expected failures OStrue only; GREEN focused50XCTest+162SwiftTesting; full550XCTest+326SwiftTesting=876, zerofailures excluding WakeConnectionTests/NativeWorkspaceWindowTests. Signed app/CLI build40b20c46c34c132218fd5aebf0ca2e401174b8bbf6bef4f0877b3b09eac60e33, all271captured inputs unchanged. Logs /Volumes/Data/tmp/hidhogg-direction-*.log; dist/Hidhogg.app. No productionlaunch/hardware/inputposting/commit/push. Owner must physically verify Standard/Natural amountoff/on/off. OSsetting sampled discovery/preferenceapply, no immediate externalchangeobserver.
+
+Pending separate realregression: sameowner uncertaincleanup circulargate reproduced by existing WakeConnectionTests.testWakeRecoversAfterUncertainCleanup; NOT fixed thispatch. Preserve crossUUIDfalsecleanup guards whenaddressing. See docs/logitech-lc01-connection-diagnosis.md. Initial live diagnostics only structuredcodes/status/build with userapproval last15min; no raw/deviceidentifiers/config. Additional research hidhogg-bolt-functionality-coverage-2026-11-01.md read and referenced, no scopeexpansion.
+
+LC01 is implemented; LC02 explicit endpoints/read-only identity next after owner acceptance/currentfixes. All source still uncommitted on master after3dc576f, including owneraccepted presets/scripts/LockScreen and LC01. Dirty old Bluetooth worktree remains read-only reference; no wholesale merge. Pairing mock-up /Volumes/Data/tmp/hidhogg-pairing-mockup/index.html provisionallyaccepted. No standalonepairing spikes; directinapp/manualverification agreed.
+
+
+## Direction physical acceptance failed — 1 November 2026
+
+Owner reports both Standard/Natural behaveStandard afterbuild40b20c46. No newproductionedits. PriorapprovedHidhoggstructured15min read confirmsnewbuild connected/onewheelverify19:39:05 andcleanstop19:39:16; no loggedapplyfailure, insufficientevidencebothchoicesapplied. Asyncquestionspending: amountdisabled/enabled/both and Connected+Observedfieldchanges. Explorer finds no deterministic app->controller noop; app/controller testedseparately notcomposed. Do notblindlyflipsign orclaim876testsprovephysicalbehavior. See docs/logitech-direction-ambiguity-fix.md follow-up.
+
+
+## Direction follow-up still unresolved
+
+Owner: bothamounton/off bothchoicesStandard; remainsConnected; ObserveddirectionNotobserved. Temporary appfake diagnostic reproduces unknownsupportgate skip, but realcontrollerpreflightpublishes supported/unsupportedbeforeready; no physicalroot established. No productionpatch; diagnostic-onlytestbeingmovedoutofrepo to /Volumes/Data/tmp byworker. REDlog /Volumes/Data/tmp/hidhogg-wheel-unknown-red.log not proofphysicalcause. Need croppedscreenshot mousecard+verticalAdvancedDetails Natural/amountoff to reconcile statusprojection. Repeatedauthorizedcodedlast15minute read returned0 recentBolt/config events, boundedabsenceonly. Do notblindlyflipsigns/forcecapture/addlazyprobes asfix.
+
+
+## 1 November 2026 — LC-02 existing-device association and basic MX4
+
+Implemented explicit saved hardware association and preferred registration, serial read-only endpoint inventory, exact Bolt/Bluetooth matching, save-before-control admission and basic MX4 read-only information. No automatic adoption by list order, slot or name. Same-target uncertain cleanup recovery uses both app snapshot/disk fences and backend exact-target revalidation; cross-owner switching remains strict. Setter identity checks preserve token capacity for rollback and distinguish pre-dispatch rejection from ambiguous acknowledgements. Queued operations are revision-fenced, and verified rollback can finish after caller cancellation. Chooser uses a derived short fingerprint rather than false receiver numbering.
+
+Focused 216 and full 908 offline checks pass, with existing WakeConnectionTests/NativeWorkspaceWindowTests exclusions explicitly retained. Signed app/CLI 13f26bd284bf2948b9eb241e2d5803e05ebf1aeb7b986e86d08b5108d4653649, strict signatures and help smoke pass; 289 input hashes unchanged. No app launch/hardware operations or live identifier/private-config reads. Owner hardware acceptance pending. Source remains uncommitted/unstaged on master; previous dirty work preserved, no push. Details and owner checks: docs/logitech-lc02-plan.md.
+
+
+## 1 November 2026 — Bolt pairing planning and empty chooser report
+
+Owner selected Bolt pairing before Bluetooth and reported an empty existing-mouse chooser while physical input works. Scope confirmation/reproduction questions pending under supplied AGENTS.md. Read-only source and protocol review confirms receiver register/event transport is separate from current feature matcher; chooser error categorization is incomplete. No physical root cause established, source edits/live diagnostics/HID/pairing performed, or current artifact replaced. Proposed plan: docs/logitech-bolt-pairing-plan.md.
+
+
+## 1 November 2026 — LC-04 research scope correction
+
+A worker broad search unintentionally traversed manual-check-runs and emitted a device-serial metadata row. Search stopped; the value is not used or reproduced in implementation, diagnostics, or handoff. Parent informed owner without the value and restricted further research to named protocol-spec files. No device command resulted. Keep manual runs and raw/private data outside subsequent searches.
+
+
+## 1 November 2026 — LC-04 implemented/offline verified
+
+Corrected Bolt native output-element enum mismatch with external SDK regression (RED2issues/GREEN1test); added in-app receiver-selected pairing, separate short/long receiver register lane, bounded vendor-source-supported authentication/fragment/status decoder, shared dynamic identity reader, pre/post pairing records and persistence/lifecycle gates. Synthetic tests exposed and fixed concurrent C0 cancellation-result race. Acknowledgement-only, unknown/late outcomes and save failure never admit unauthorized management; saved-before-cancel publication is reported truthfully. MX4 stays read-only.
+
+Focused221 and full940 checks pass, full excludes existing WakeConnectionTests/NativeWorkspaceWindowTests. Signed app/CLI 992654596b0c9b47e7d3c9f2b7d08b66c4d999f74e33340da9ce03eca5a1b6aa; strict signatures/help smoke pass and297 inputs unchanged. No app/device operations. Context-specific B5 UNKNOWN_DEVICE0x08→absent-record remains an explicit inference, receiver allocation/input/authentication owner checks pending. Selector label/same-name limits documented. Parent independently verified vendor source bytes120000–122800; public protocol facts only, no GPL copying.
+
+Source uncommitted/unstaged on master, old work preserved, no push. Research scope incident recorded above without identifier values. Owner checks/limits: docs/logitech-bolt-pairing-plan.md.
+
+
+## 1 November 2026 — native flow correction requested
+
+Owner confirms existing Bolt mouse appears after SDK enum fix, but prefers approved unified Add Device mock-up. Native model-first/precreated registration/separate sheets diverge from prototype. Read-only comparison/proposed revision recorded in docs/logitech-pairing-mockup.md; source confirmation pending, no code/build/hardware operations for revision. Do not treat list visibility as broader pairing acceptance.
+
+
+## 1 November 2026 — compact Logitech setup
+
+Owner approved mock-up alignment with fewer steps. Replaced model-first/sheet entry points with one centre-pane Logitech overview, combined existing Bolt/Bluetooth mice and inline Bolt pairing. Explicit addition/reassociation destinations preserve registration identity/settings, stage publication until verification, prevent duplicates and serialize receiver ownership. Successful save opens the device directly; new Bluetooth pairing remains unavailable. Cancellation after admitted publication is represented honestly without compensating deletion/unpair.
+
+Focused80/full955 offline cases pass (595 XCTest +360 Swift Testing; existing WakeConnectionTests/NativeWorkspaceWindowTests excluded). Metadata test wait corrected to observe firmware availability and completed refresh together; production backend unchanged. Strict app/CLI signatures and CLI help pass; 304 input hashes match before/after signed build ed409cfc4d2699838be694e84a6bd6ca44f06a537b5e3d9496f8442beba11f7d. Native UI/hardware acceptance remains pending. No production launch/device/private-data operations, commit or push. Full current evidence: docs/logitech-compact-setup-plan.md and ignored dist/build-info.json.
+
+
+## 1 November 2026 — pairing list preservation and receiver-capacity diagnosis
+
+Owner confirmed existing discovery works until a new MX Master 4 pairing attempt. Test-first regression exposed explicit candidate clearing; removed that clear while retaining receiver-ownership guards. Error now explains that six stored pairings, including offline devices, occupy all slots; capacity admission unchanged. Synthetic coverage includes five offline records and requires zero discovery/pairing starts for full inventory.
+
+Separately approved bounded anonymous read-only diagnostic: one receiver, six returned nonzero records, five not-reachable flags, no UNKNOWN_DEVICE/zero/erased fields. No raw reports/names/addresses/serials/unit IDs printed or retained, no discovery/pair/unpair/configuration writes. This supports full stored inventory, not a failed MX4 authentication path or proof of old peripheral ownership/recoverability. Focused28/full956 offline cases pass; two existing suite exclusions retained. Signed app/CLI build cf3cf0b64c983c067ade3b0b7a05d93b8703df71b6b13fe2a89053253a6c41f9, strict signatures/help and 304 input hashes pass. Native app not launched; owner UI/new-pairing checks pending. Source uncommitted; no push.
+
+
+### Pairing follow-up hardening and final gate — 1 November 2026
+
+Independent review found retained rows could admit cached selection after uncertain/verified-unsaved pairing. Added a shared selection block and Pair retry guard until Refresh reloads inventory; split row disablement from Refresh so recovery stays available. Preserved inventory messages as well as rows. New red/green regressions cover both uncertain variants, retry, refresh/Add recovery and message retention. Final focused 30/full 958 pass (598 XCTest+360 Swift Testing), same exclusions. Current signed build 4e63b49aa4a94c8c8dd87cf72c5c0ab59d765c2093923e45206e1ce6f03d6ee1 supersedes prior956-case artifact; strict signatures/help and 304 hashes pass. No further live device queries, pairing writes, production launch, commit or push. Final logs hidhogg-pairing-fix-iteration2-{focused,full}.log and hidhogg-pairing-fix-final-release.log under /Volumes/Data/tmp.
+
+
+## 1 November 2026 — LC-07 receiver inventory and explicit unpair
+
+Owner approved display/removal after full receiver blocked MX Master4 pairing test. Implemented expandable Stored Pairings panel, offline names/model fallbacks, selected snapshot confirmation, standalone serialized management actor and retained Hidhogg settings. All-slot preflight and post-diff verify only selected stable record removed; no automatic resend/rollback/unpairing. Review corrected close/drain ordering, temporary receiver UUID reuse and late-result UI fences. Paused-preflight navigation/sleep test uses dispatch-capable outcome and proves no write after revocation. Native external-writer race remains documented.
+
+Focused58/full978 offline cases pass (605 XCTest+373 Swift Testing), same two suite exclusions. Strict app/CLI signatures/help and311 source hashes pass for signed build5d6e183c00cb98d4679cd8162c478f507c9d15f75b6278c91046a1b677cd772c. No live receiver operations/native launch/commit/push. Owner physical inventory/unpair/MX4 pairing acceptance remains open. Source and evidence docs/logitech-receiver-management-plan.md, /Volumes/Data/tmp/hidhogg-lc07-* logs/manifest, ignored dist/build-info.json. Notification-icon follow-up remains deferred.
+
+
+## 2 November 2026 — discovery disclosure/loading and anonymous event counts
+
+Owner approved UI fixes and counters after first disclosure click switched layout and discovery timed out. Replaced duplicate adaptive trees with one AnyLayout subtree/parent expansion state. Loading regression REDthreephasechecks then GREEN; receiver-check spinner now ends during active discovery/authentication/verification. Added numeric-only typed-event diagnostics with per-attempt reset/terminal retention and preserved status authority; no device identities/content/raw reports/log writes or notification flag writes added. Physical timeout remains unresolved.
+
+Independent focused240/full981 cases pass (606 XCTest+375 Swift Testing), existing two suite exclusions retained. Strict signed app/CLI/help and313 source hashes pass for build127d4c1e809c010592721351ecdd406aacdfc048b34b59c272b5ca156b7537b7. Native expansion/radio checks remain owner-operated; no device query or production launch by agents. Source uncommitted/unstaged; no push. Evidence docs/logitech-discovery-ui-followup.md, hidhogg-discovery-ui-* under /Volumes/Data/tmp, ignored dist/build-info.json.
+
+
+## 2 November 2026 — native receiver boundary diagnostics and read-only flag check
+
+Owner approved anonymous native callback/filter counters and read-only notification mask check, then requested additional technical report review. One approved receiver GetRegister0 query returned0x000000; no flag/config/pair/unpair writes, names/IDs/rawreports retained or logged. Research corroborates C0start framing and leaves notification/discovery dependency unresolved. Instrumented callback disposition counts and serialized RAM snapshots preserve filters/matchers/status fields. Review found delayed same-generation snapshot count regression (14to7); red/green regression and monotonic merge corrected it. Physical discovery cause remains unconfirmed.
+
+Full990 tests pass; focused retry249 pass. Initial focused existing thumbwheel recorder blocker assertion failed once; subsequent full, isolated and focused retry passed. Cause unconfirmed, no thumbwheel edits; failed log retained. Signed build dc187c06641e5539dfdd7f641af5815449ab97ac38545bcb7524bb6696df0450 strict app/CLI signatures/help and315 source hashes pass. Existing two suite exclusions retained. No production app launch, commit or push. Current evidence docs/logitech-discovery-ui-followup.md and hidhogg-native-rx-* under /Volumes/Data/tmp; owner next attempt needed for native/radio acceptance. Notification icon remains deferred.
+
+
+## 2 November 2026 — verified temporary notifications and unified Devices
+
+Owner approved zero-mask hypothesis experiment as app implementation only, plus last-read retention; then unified device list and deferred new Bluetooth pairing. Added baseline-preserving0x900 setup/readback and owned-bit guarded restoration. Review red/green tests fixed actor IO overlaps across duplicate Cancel, timeout pair-cancel, post-await uncertainty, admitted/late verification. Cleanup uncertainty remains visible across Cancel rebuild and successful navigation without losing a verified association or an existing error message. External-writer race remains bounded but not eliminated.
+
+One Devices group now combines supported current sources; read-only all-receiver cache is separate from fresh Unpair authority. Serial enumeration/atomic cache replacement handles changing opaque receiver IDs; stale rows persist through Pair/Cancel but cannot authorize removal. Ready-to-pair candidates first, management errors/diagnostics retained, no names-only cross-source merge. New Bluetooth pairing remains next.
+
+Independent focused278/full1,011 cases pass (611 XCTest+400 Swift Testing), two existing suite exclusions retained; previously intermittent thumbwheel case passed both. Strict signatures/help and318 source hashes pass for build1861e1513027e5044aec8e1433c3cda8a6eed4f0f325098123d6f2225ba311a6. No live receiver operation, production launch, commit or push. Physical discovery/notification restoration and native UI await owner; notification-icon issue deferred. Evidence docs/logitech-notification-discovery-plan.md and hidhogg-notification-unified-* in /Volumes/Data/tmp; ignored dist/build-info.json current.
+
+
+## Pairing recovery source freeze — 2 November 2026
+
+Owner approved candidate stability, challenge current-action highlighting and safe retry. Synthetic changing-counter reports reproduced duplicate UUID rows and candidate-limit failure; counter, error retention, challenge completion and terminal failure cases were made RED then GREEN. Session identity uses parsed ephemeral metadata with bounded aliases, not counters/names. Generic error 2 remains generic failure; matched selected challenge/address plus unchanged full inventory is required for definite rejection. Late success and changed/unreadable close inventory stay conservative.
+
+Challenge UI derives current/completed/confirmation/waiting states from receiver events. Recovery exposes Refresh Devices after cleanup, requiring fresh connections and all accessible receiver inventories; successful zero-accessible enumeration retains stale stored rows without authority. Ordinary refresh does not gain an unrelated receiver dependency, and unsuccessful ordinary scans clear old endpoint candidates. Final definite failure clears the transient possible-success latch only after close and without any verified identity.
+
+Independent read-only review found and corrected stale endpoint authority and checked zero-receiver/final-latch corrections; no outstanding actionable findings. Source is frozen in /Volumes/Data/tmp/hidhogg-pairing-recovery-inputs.json (321 inputs). Independent focused/full tests and signed delivery are pending. No live HID, private captures/logs/config or production launch; no commit/push. General padding and notification-icon fixes remain deferred.
+
+
+## Pairing recovery signed delivery — 2 November 2026
+
+Final independent focused299/full1,032 pass (60+239;620+412), existing two suite exclusions unchanged. First focused failure corrected fixture identity and ordinary-refresh/recovery test contracts. First full failed two thumbwheel model cases with15 assertions; isolated4/4 and unchanged full repeat pass. Cause unconfirmed; no thumbwheel code/test change. Logs and failed-gate evidence retained under /Volumes/Data/tmp/hidhogg-pairing-recovery-*.
+
+Strict signatures/help and321 source hashes pass for signed app/CLI build `2434478ad6e8b8c88eaf7ac2e5f625dd80328cebafded6464530def9607a685b`. Source uncommitted/unstaged on unchanged master; no push, app launch or live device operation. Docs/checklist/handoff/build-info updated. Owner still verifies real candidate stability, challenge flow and physical pairing. General padding/icon fixes and new Bluetooth pairing remain deferred.
+
+
+## BOLT-KIND-01 source correction and RED/GREEN — 2 November 2026
+
+Owner approved the focused low-nibble kind correction after the shipped-flow report identified byte7 bitfield interpretation. Independent literal B042 vectors reproduce raw82→kind130 exclusion before correction. Production diff is one line, `deviceKind: report[7] & 0x0F`; five tests cover positive admission/selection, upper-bit variation identity stability and genuine kind/auth exclusions/conflict protection. RED three failing/two passing, GREEN5/5. No other parser/ACK/UI/auth/identity/length change. Source frozen321 hashes; exactly two files differ from recovery manifest. Independent gates/signing pending. Actual prior device kind unknown, no physical discovery-fix claim or live I/O.
+
+
+## BOLT-KIND-01 offline verified and signed — 2 November 2026
+
+One-line kind nibble correction and five literal MX4 tests reviewed independently. RED3failed/2passed→GREEN5/5; focused304/full1,037 pass first runs with two existing exclusions unchanged. Exactly session source/test change versus prior delivered321 hashes. Strict app/CLI signatures, CLI help and321 hashes pass for build `504408b9669e116a78b4fd580b02d6053119dc27460a6727720fcc6bed01ab82`. Evidence /Volumes/Data/tmp/hidhogg-kind-*.log, manifest hidhogg-kind-inputs.json; docs/handoff/roadmap/build-info updated. No live device operations, production launch, commit or push. Actual previous rawkind/physical discovery cause still unknown; owner acceptance remains next.
+
+
+## Owner acceptance and local check-in approval — 2 November 2026
+
+Owner reports latest kind-fix build worked, all working as expected, then asks for loose-thread audit and check-in if clear. Record current MX4 discovery/flow acceptance, without inventing exact previous rawkind or enumerated edgecase results. Independent inventory identifies131 completed/dependency/doc paths, no build/probe/private artifacts. Root will stage explicit allowed app/docs/README/.agents paths and commit the dependency-closed D200X/Logitech checkpoint locally. Nonblocking padding, notification icon and discovery ACK/error-detail hardening remain documented; no new code scope, push or worktree cleanup.

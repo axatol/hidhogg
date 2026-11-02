@@ -4,7 +4,7 @@ struct DeviceBatteryOverviewView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        let presentation = DeviceInformationPresentation(status: model.boltStatus)
+        let presentation = DeviceInformationPresentation(status: model.selectedMouseStatus)
 
         VStack(alignment: .leading, spacing: 10) {
             if model.lowBatteryNotifications != nil {
@@ -25,8 +25,8 @@ struct DeviceBatteryOverviewView: View {
                 batteryContent(presentation)
             }
 
-            if presentation.isConnected, let battery = model.boltStatus.deviceInformation.battery,
-               model.boltStatus.deviceInformation.batteryState == .available {
+            if presentation.isConnected, let battery = model.selectedMouseStatus.deviceInformation.battery,
+               model.selectedMouseStatus.deviceInformation.batteryState == .available {
                 Text("Battery read \(battery.observedAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -42,11 +42,24 @@ enum D200XPageRenderer {
         labelOverride: String? = nil,
         assetDirectory: URL? = nil,
         destination: Destination = .device,
-        notificationIcon: Data? = nil
+        notificationIcon: Data? = nil,
+        presetIcon: Data? = nil
     ) throws -> Data {
         try Task.checkCancellation()
         let icon = loadNotificationIcon(notificationIcon)
-        let image = icon == nil ? loadAsset(appearance.imageAsset, directory: assetDirectory) : nil
+        let presetImage = appearance.imageAsset == nil
+            ? loadNotificationIcon(
+                presetIcon,
+                maximumPNGBytes: D200XPresetIconRenderer.maximumPNGBytes,
+                maximumPixelDimension: D200XPresetIconRenderer.pixelSize
+            )
+            : nil
+        let image: CGImage?
+        if icon != nil {
+            image = nil
+        } else {
+            image = presetImage ?? loadAsset(appearance.imageAsset, directory: assetDirectory)
+        }
         try Task.checkCancellation()
         let title = labelOverride.flatMap { $0.isEmpty ? nil : $0 } ?? appearance.label
         let showTitle = icon == nil && (appearance.showTitle || labelOverride != nil ||
@@ -66,15 +79,19 @@ enum D200XPageRenderer {
         return result
     }
 
-    private static func loadNotificationIcon(_ data: Data?) -> CGImage? {
-        guard let data, data.count <= D200XApplicationIconResolver.maximumPNGBytes,
+    private static func loadNotificationIcon(
+        _ data: Data?,
+        maximumPNGBytes: Int = D200XApplicationIconResolver.maximumPNGBytes,
+        maximumPixelDimension: Int = D200XApplicationIconResolver.iconPixelDimension
+    ) -> CGImage? {
+        guard let data, data.count <= maximumPNGBytes,
               let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: true] as CFDictionary),
               CGImageSourceGetCount(source) == 1,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int,
-              (1...D200XApplicationIconResolver.iconPixelDimension).contains(width),
-              (1...D200XApplicationIconResolver.iconPixelDimension).contains(height) else { return nil }
+              (1...maximumPixelDimension).contains(width),
+              (1...maximumPixelDimension).contains(height) else { return nil }
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 

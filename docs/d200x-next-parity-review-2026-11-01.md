@@ -2,6 +2,8 @@
 
 **Reviewed:** 1 November 2026. Read-only source and documentation review; no app launch, media query, HID operation, build, or test run.
 
+**Later owner steering, 1 November:** pages stay out; individual actions such as brightness and Lock Screen take priority over the multi-action recommendation below. See the [action-specific review](d200x-action-catalog-review-2026-11-01.md). The ranking below is retained as research context, not the approved next implementation.
+
 ## Summary
 
 The 28 October checkpoint supersedes the old “Next: core appearance” proposal: brightness, static tile images/titles, seven wide-display modes, CPU/RAM/GPU status, explicit screensaver Apply, and source-filtered text/app-icon notifications are implemented. Current physical acceptance remains separate: mode rendering, screensaver placement/persistence, notification icons, lifecycle and host-metric accuracy still have owner checks. Do not schedule already-implemented appearance features as missing code. The legacy sequence row still labels appearance as “Next”; treat it as stale. [Roadmap, lines 3–5](/Users/axatol/Workspace/axatol/hidhogg/docs/d200x-roadmap.md), [display plan, lines 3–21](/Users/axatol/Workspace/axatol/hidhogg/docs/d200x-display-controls-plan.md), [parity plan, lines 3 and 11](/Users/axatol/Workspace/axatol/hidhogg/docs/d200x-studio-parity-plan.md)

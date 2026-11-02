@@ -1176,6 +1176,166 @@ func wheelExplicitStopPolicyOverridesConnectedPolicyWithoutApplyingDirection(res
 }
 
 
+@Test(arguments: [false, true], [false, true])
+func wheelVerticalDirectionMatchesNativeAndCapturedAmount(osNatural: Bool, desiredNatural: Bool) async {
+    let fixture = WheelFixture()
+    await fixture.configure(capabilities: [8, 0x08])
+    let controller = BoltController(scrollPostingPreflight: { true }, nativeNaturalScrolling: { osNatural },
+                                    makeTransport: { WheelChannel(fixture) })
+    let recorder = WheelRecorder()
+    let reader = watchWheel(controller, recorder)
+    defer { reader.cancel() }
+    await controller.discover()
+    #expect(await wheelEventually { await recorder.last?.phase == .ready })
+    #expect(await recorder.last?.wheel.observedInverted == osNatural)
+
+    let nativeMode: UInt8 = desiredNatural != osNatural ? 4 : 0
+    await controller.applyWheelPreferences(inverted: desiredNatural, highResolution: nil,
+                                           restorePreviousSettingsOnDisconnect: true,
+                                           amount: nil, scrollPostingAllowed: true)
+    #expect(await fixture.mode == nativeMode)
+    #expect(await wheelEventually { await recorder.last?.wheel.observedInverted == desiredNatural })
+    #expect(await recorder.last?.wheel.captureActive == false)
+
+    await controller.applyWheelPreferences(inverted: desiredNatural, highResolution: nil,
+                                           restorePreviousSettingsOnDisconnect: true,
+                                           amount: 1, scrollPostingAllowed: true)
+    #expect(await fixture.mode == 1)
+    #expect(await wheelEventually { await recorder.last?.wheel.captureActive == true })
+    #expect(await recorder.last?.wheel.observedInverted == osNatural)
+    #expect(await recorder.last?.wheel.effectiveInverted == desiredNatural)
+    await fixture.sendWheel(vertical: 8, horizontal: -16, highResolution: true)
+    #expect(await wheelEventually { await recorder.scrollCount == 1 })
+    #expect(await recorder.scroll(0).0 == (desiredNatural ? -1 : 1))
+    #expect(await recorder.scroll(0).1 == -2)
+
+    await controller.applyWheelPreferences(inverted: desiredNatural, highResolution: nil,
+                                           restorePreviousSettingsOnDisconnect: true,
+                                           amount: nil, scrollPostingAllowed: true)
+    #expect(await fixture.mode == nativeMode)
+    #expect(await wheelEventually { await recorder.last?.wheel.captureActive == false })
+    #expect(await recorder.last?.wheel.observedInverted == desiredNatural)
+    #expect(await controller.stopForRestart())
+    #expect(await fixture.mode == 0)
+}
+
+@Test(arguments: [false, true], [UInt8(0), 4])
+func wheelVerticalLeaveUnchangedPreservesRawMode(osNatural: Bool, originalMode: UInt8) async {
+    let fixture = WheelFixture()
+    await fixture.configure(capabilities: [8, 0x08], mode: originalMode)
+    let controller = BoltController(scrollPostingPreflight: { true }, nativeNaturalScrolling: { osNatural },
+                                    makeTransport: { WheelChannel(fixture) })
+    let recorder = WheelRecorder()
+    let reader = watchWheel(controller, recorder)
+    defer { reader.cancel() }
+    let expectedNatural = (originalMode == 4) != osNatural
+    await controller.discover()
+    await controller.applyWheelPreferences(inverted: nil, highResolution: nil,
+                                           restorePreviousSettingsOnDisconnect: true,
+                                           amount: nil, scrollPostingAllowed: true)
+    #expect(await fixture.mode == originalMode)
+    #expect(await fixture.writes.isEmpty)
+    #expect(await wheelEventually { await recorder.last?.wheel.observedInverted == expectedNatural })
+    await controller.applyWheelPreferences(inverted: nil, highResolution: nil,
+                                           restorePreviousSettingsOnDisconnect: true,
+                                           amount: 1, scrollPostingAllowed: true)
+    #expect(await fixture.mode == 1)
+    #expect(await wheelEventually { await recorder.last?.wheel.captureActive == true })
+    #expect(await recorder.last?.wheel.effectiveInverted == expectedNatural)
+    await fixture.sendWheel(vertical: 1)
+    #expect(await wheelEventually { await recorder.scrollCount == 1 })
+    #expect(await recorder.scroll(0).0 == (expectedNatural ? -1 : 1))
+    await controller.applyWheelPreferences(inverted: nil, highResolution: nil,
+                                           restorePreviousSettingsOnDisconnect: true,
+                                           amount: nil, scrollPostingAllowed: true)
+    #expect(await fixture.mode == originalMode)
+    #expect(await fixture.writes == [[1], [originalMode]])
+    #expect(await controller.stopForRestart())
+    #expect(await fixture.mode == originalMode)
+}
+
+private enum WheelCaptureFallback: CaseIterable, Sendable {
+    case postingDenied, permissionDenied, zeroMultiplier
+}
+
+@Test(arguments: [false, true], [false, true])
+func wheelVerticalNativeFallbackPreservesSemanticDirection(osNatural: Bool, desiredNatural: Bool) async {
+    for fallback in WheelCaptureFallback.allCases {
+        let fixture = WheelFixture()
+        await fixture.configure(capabilities: [fallback == .zeroMultiplier ? 0 : 8, 0x08])
+        let controller = BoltController(scrollPostingPreflight: { fallback != .permissionDenied },
+                                        nativeNaturalScrolling: { osNatural }, makeTransport: { WheelChannel(fixture) })
+        let recorder = WheelRecorder()
+        let reader = watchWheel(controller, recorder)
+        await controller.discover()
+        await controller.applyWheelPreferences(inverted: desiredNatural, highResolution: nil,
+                                               restorePreviousSettingsOnDisconnect: false,
+                                               amount: 1, scrollPostingAllowed: fallback != .postingDenied)
+        let expectedMode: UInt8 = desiredNatural != osNatural ? 4 : 0
+        #expect(await fixture.mode == expectedMode)
+        #expect(await wheelEventually { await recorder.last?.wheel.captureBlocker != nil })
+        #expect(await recorder.last?.wheel.captureActive == false)
+        #expect(await recorder.last?.wheel.observedInverted == desiredNatural)
+        #expect(await controller.stopForRestart())
+        #expect(await fixture.mode == expectedMode)
+        reader.cancel()
+    }
+}
+
+private final class WheelNaturalScrollingFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    private var reads = 0
+
+    var readCount: Int { lock.withLock { reads } }
+    func set(_ value: Bool) { lock.withLock { self.value = value } }
+    func read() -> Bool {
+        lock.withLock {
+            reads += 1
+            return value
+        }
+    }
+}
+
+@Test func wheelVerticalDirectionSamplesPreferenceAtReconciliationAndKeepsCaptureSnapshot() async {
+    let fixture = WheelFixture()
+    await fixture.configure(capabilities: [8, 0x08])
+    let preference = WheelNaturalScrollingFlag()
+    let controller = BoltController(scrollPostingPreflight: { true }, nativeNaturalScrolling: { preference.read() },
+                                    makeTransport: { WheelChannel(fixture) })
+    let recorder = WheelRecorder()
+    let reader = watchWheel(controller, recorder)
+    defer { reader.cancel() }
+    await controller.discover()
+    await controller.applyWheelPreferences(inverted: true, highResolution: nil,
+                                           restorePreviousSettingsOnDisconnect: true,
+                                           amount: 1, scrollPostingAllowed: true)
+    #expect(preference.readCount == 2)
+    preference.set(true)
+    await fixture.sendWheel(vertical: 1)
+    #expect(await wheelEventually { await recorder.scrollCount == 1 })
+    #expect(await recorder.scroll(0).0 == -1)
+    #expect(preference.readCount == 2)
+    await controller.applyWheelPreferences(inverted: true, highResolution: nil,
+                                           restorePreviousSettingsOnDisconnect: true,
+                                           amount: 1, scrollPostingAllowed: true)
+    #expect(preference.readCount == 3)
+    #expect(await fixture.writes == [[4], [1], [4], [0], [1]])
+    #expect(await wheelEventually { await recorder.last?.wheel.captureActive == true })
+    #expect(await recorder.last?.wheel.effectiveInverted == true)
+    await fixture.sendWheel(vertical: 1)
+    #expect(await wheelEventually { await recorder.scrollCount == 2 })
+    #expect(await recorder.scroll(1).0 == -1)
+    await controller.applyWheelPreferences(inverted: true, highResolution: nil,
+                                           restorePreviousSettingsOnDisconnect: true,
+                                           amount: nil, scrollPostingAllowed: true)
+    #expect(await fixture.mode == 0)
+    #expect(await wheelEventually { await recorder.last?.wheel.captureActive == false })
+    #expect(await recorder.last?.wheel.observedInverted == true)
+    #expect(await controller.stopForRestart())
+    #expect(await fixture.mode == 0)
+}
+
 @Test(arguments: [false, true])
 func wheelCaptureNormalizesAndNeutralizesDirectionThenRestoresRouting(restore: Bool) async {
     let fixture = WheelFixture()

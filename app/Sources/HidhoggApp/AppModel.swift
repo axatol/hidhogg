@@ -13,6 +13,9 @@ import GenericBluetooth
 protocol BindingSession: Sendable {
     var events: AsyncStream<BoltEvent> { get }
 
+    var requiresExplicitAssociation: Bool { get }
+    func existingConnections() async throws -> [LogitechEndpointCandidate]
+    func discover(target: LogitechConnectionTarget) async
     func discover() async
     func refreshDeviceInformation() async
     func enable() async
@@ -38,6 +41,10 @@ protocol BindingSession: Sendable {
 extension BoltController: BindingSession {}
 
 extension BindingSession {
+    var requiresExplicitAssociation: Bool { false }
+    func existingConnections() async throws -> [LogitechEndpointCandidate] { [] }
+    func discover(target: LogitechConnectionTarget) async { await discover() }
+
     func refreshDeviceInformation() async {}
 
     func stop(restorePreviousSettingsOnDisconnect: Bool) async { await stop() }
@@ -77,6 +84,8 @@ extension BindingSession {
 
 enum WorkspaceRoute: Hashable, Identifiable {
     case devices
+    case logitechSetup
+    case mouse(UUID)
     case d200x
     case flowLite
     case genericBluetooth(UUID)
@@ -165,6 +174,8 @@ final class AppModel: ObservableObject {
 
     private let store: ConfigurationStore
     private let bolt: any BindingSession
+    private let makeBoltPairingSession: (@Sendable () -> any BoltPairingManaging)?
+    private let makeBoltReceiverManagementSession: (@Sendable () -> any BoltReceiverManaging)?
     private let sender: ShortcutSender
     private let scrollSender: ScrollSender
     private let thumbwheelScrollSender: ScrollSender
@@ -177,6 +188,125 @@ final class AppModel: ObservableObject {
     private var hasUsableConfiguration = true
     private var deliveryGeneration: UInt64?
     private var lifecycleIntent: UInt64 = 0
+    private struct MouseLease: Equatable {
+        let ownerID: UUID
+        let epoch: UInt64
+        let statusGenerationFloor: UInt64
+        let startedAt: ContinuousClock.Instant
+    }
+    private var mouseLease: MouseLease?
+    @Published private(set) var mouseConnectionChoices: [LogitechEndpointCandidate] = []
+    @Published private(set) var isMouseSelectorPresented = false
+    @Published private(set) var isMouseSelectorLoading = false
+    @Published private(set) var mouseSelectorMessage: String?
+    @Published private(set) var isBoltPairingPresented = false
+    @Published private(set) var isBoltPairingLoading = false
+    @Published private(set) var boltPairingReceivers: [BoltReceiverCandidate] = []
+    @Published private(set) var boltPairingStatus: BoltPairingStatus?
+    @Published private(set) var boltPairingMessage: String?
+    @Published private(set) var logitechSetupDestination: LogitechSetupDestination?
+    @Published private(set) var logitechSetupCandidates: [LogitechEndpointCandidate] = []
+    @Published private(set) var isLogitechSetupLoading = false
+    @Published private(set) var logitechSetupMessage: String?
+    @Published private(set) var logitechSetupCompletedDeviceID: UUID?
+    @Published private(set) var requiresLogitechSetupRefreshBeforePairing = false
+    @Published private(set) var boltStoredInventories: [BoltReceiverInventory] = []
+    @Published private(set) var boltStoredReceiverLabels: [UUID: String] = [:]
+    @Published private(set) var isBoltManagedInventoryStale = true
+    @Published private(set) var boltManagedReceivers: [BoltReceiverCandidate] = []
+    @Published private(set) var boltManagedInventory: BoltReceiverInventory?
+    @Published private(set) var isBoltReceiverManagementBusy = false
+    @Published private(set) var boltReceiverManagementMessage: String?
+    private struct LogitechSetupSnapshot {
+        let token: UUID
+        let destination: LogitechSetupDestination
+        let workspace: WorkspaceConfiguration
+        let revision: FileRevision
+        let intent: UInt64
+        let priorLocation: WorkspaceLocation
+        let restoreConnection: Bool
+    }
+    private var logitechSetupSnapshot: LogitechSetupSnapshot?
+    private var logitechSetupOperationTask: Task<Void, Never>?
+    private var logitechSetupInventoryTask: Task<[LogitechEndpointCandidate]?, Never>?
+    private struct BoltReceiverManagementSnapshot {
+        let token: UUID
+        let setupToken: UUID
+        let intent: UInt64
+    }
+    private struct BoltReceiverManagementOperation {
+        let snapshot: BoltReceiverManagementSnapshot
+        let token: UUID
+    }
+    private var boltReceiverManagementSnapshot: BoltReceiverManagementSnapshot?
+    private var boltReceiverManagementOperationToken: UUID?
+    private var boltReceiverManagementSession: (any BoltReceiverManaging)?
+    private var boltReceiverManagementOperationTaskToken: UUID?
+    private var boltReceiverManagementOperationTask: Task<Void, Never>?
+    private var boltReceiverManagementCloseTask: Task<Void, Never>?
+    private var boltReceiverManagementCloseToken: UUID?
+    private struct BoltPairingSnapshot {
+        let token: UUID
+        let registrationID: UUID
+        let model: LogitechMouseModel?
+        let setup: LogitechSetupSnapshot?
+        let workspace: WorkspaceConfiguration
+        let revision: FileRevision
+        let intent: UInt64
+        let restoreConnection: Bool
+    }
+    private var boltPairingSnapshot: BoltPairingSnapshot?
+    private var boltPairingSession: (any BoltPairingManaging)?
+    private var boltPairingEventTask: Task<Void, Never>?
+    private var boltPairingFinishTask: Task<Void, Never>?
+    private var boltPairingPreparationToken: UUID?
+    private var boltPairingRevoked = false
+    private var boltPairingMayHaveSucceeded = false
+    private var boltPairingAssociationSaved = false
+    private var boltPairingIdentityVerified = false
+    private var boltPairingReceiverSelected = false
+    private var recoveryRefreshSetupToken: UUID?
+    private var recoveryRefreshConnectionsAreFresh = false
+    private var recoveryRefreshReceiverInventoriesAreFresh = false
+    private var isBoltPairingActive: Bool { boltPairingSnapshot != nil || boltPairingPreparationToken != nil }
+    var isBoltReceiverManagementActive: Bool { boltReceiverManagementSnapshot != nil }
+    var isLogitechSetupSelectionBlocked: Bool {
+        if requiresLogitechSetupRefreshBeforePairing { return true }
+        guard let status = boltPairingStatus else { return boltPairingMayHaveSucceeded }
+        return status.phase == .pairedButNotAdded || boltPairingMayHaveSucceeded ||
+            status.pairingMayHaveSucceeded || status.verifiedCandidate != nil
+    }
+    var shouldShowLogitechSetupRecoveryButton: Bool {
+        let phase = boltPairingStatus?.phase
+        return requiresLogitechSetupRefreshBeforePairing || phase == .failed || phase == .cancelled ||
+            phase == .pairedButNotAdded ||
+            (boltPairingStatus?.phase == .verified && !isBoltPairingActive && boltPairingFinishTask == nil &&
+             boltPairingMayHaveSucceeded && !boltPairingAssociationSaved)
+    }
+    var canRefreshLogitechSetup: Bool {
+        logitechSetupDestination != nil && !isLogitechSetupLoading && !isBoltPairingLoading &&
+            !isBoltPairingActive && boltPairingFinishTask == nil && !isSaving &&
+            !isBoltReceiverManagementBusy && boltReceiverManagementCloseTask == nil
+    }
+    private struct MouseSelectionSnapshot {
+        let token: UUID
+        let registrationID: UUID
+        let revision: FileRevision
+        let workspace: WorkspaceConfiguration
+        let intent: UInt64
+    }
+    private var mouseSelectionSnapshot: MouseSelectionSnapshot?
+    private var pendingMouseCandidateID: UUID?
+    private var mouseActivationID: UUID?
+    private var endpointOwnerID: UUID?
+    private struct MouseEndpointTarget: Equatable {
+        let ownerID: UUID
+        let model: LogitechMouseModel
+        let association: LogitechAssociation
+    }
+    private var endpointRecoveryTarget: MouseEndpointTarget?
+    private var cleanupRestorePreviousSettings = false
+    private var mouseOperations: [UUID: Task<Void, Never>] = [:]
     private struct WheelRequest: Equatable {
         var inverted: Bool?
         var highResolution: Bool?
@@ -235,7 +365,10 @@ final class AppModel: ObservableObject {
         self.init(
             configurationURL: url,
             store: ConfigurationStore(url: url),
-            bolt: BoltController(scrollPostingPreflight: { CGPreflightPostEventAccess() }),
+            bolt: BoltController(scrollPostingPreflight: { CGPreflightPostEventAccess() },
+                                 nativeNaturalScrolling: { SystemScrollDirection.naturalScrollingEnabled() }),
+            makeBoltPairingSession: { BoltPairingSession() },
+            makeBoltReceiverManagementSession: { BoltReceiverManagementSession() },
             sender: ShortcutSender(),
             scrollSender: ScrollSender(),
             thumbwheelScrollSender: ScrollSender(),
@@ -255,6 +388,8 @@ final class AppModel: ObservableObject {
         configurationURL: URL,
         store: ConfigurationStore,
         bolt: any BindingSession,
+        makeBoltPairingSession: (@Sendable () -> any BoltPairingManaging)? = nil,
+        makeBoltReceiverManagementSession: (@Sendable () -> any BoltReceiverManaging)? = nil,
         sender: ShortcutSender,
         scrollSender: ScrollSender = ScrollSender(preflight: { false }, post: { _, _ in }),
         thumbwheelScrollSender: ScrollSender = ScrollSender(preflight: { false }, post: { _, _ in }),
@@ -274,6 +409,8 @@ final class AppModel: ObservableObject {
         self.configurationURL = configurationURL
         self.store = store
         self.bolt = bolt
+        self.makeBoltPairingSession = makeBoltPairingSession
+        self.makeBoltReceiverManagementSession = makeBoltReceiverManagementSession
         self.sender = sender
         self.scrollSender = scrollSender
         self.thumbwheelScrollSender = thumbwheelScrollSender
@@ -356,6 +493,7 @@ final class AppModel: ObservableObject {
     isolated deinit {
         if let bluetoothAuthorizationObserver { NotificationCenter.default.removeObserver(bluetoothAuthorizationObserver) }
         eventTask?.cancel()
+        boltPairingEventTask?.cancel()
         autosaveTask?.cancel()
         reconciliationTask?.cancel()
         wakeStatusWait?.timeout.cancel()
@@ -368,14 +506,17 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var isDirty: Bool { document.isDirty || savedWorkspace.map { $0 != workspace.applying(document.draft) } == true }
+    var isDirty: Bool { savedWorkspace.map { $0 != workspace } ?? document.isDirty }
     var registeredDevices: [RegisteredDevice] { workspace.devices }
     var availableDeviceFamilies: [DeviceFamily] {
-        DeviceFamily.allCases.filter { family in family != .genericBluetooth && !registeredDevices.contains { $0.family == family } }
+        DeviceFamily.allCases.filter { family in
+            family != .genericBluetooth && (family.isLogitechMouse || !registeredDevices.contains { $0.family == family })
+        }
     }
 
     func registration(for family: DeviceFamily) -> RegisteredDevice? {
-        registeredDevices.first { $0.family == family }
+        let matches = registeredDevices.filter { $0.family == family }
+        return matches.count == 1 ? matches[0] : nil
     }
 
     func isDeviceEnabled(_ family: DeviceFamily) -> Bool {
@@ -386,10 +527,8 @@ final class AppModel: ObservableObject {
     func addDevice(_ family: DeviceFamily) {
         guard canEditConfiguration, registeredDevices.count < 256, availableDeviceFamilies.contains(family),
               let registration = RegisteredDevice.make(family: family) else { return }
-        let previous = workspace.applying(document.draft)
-        workspace = workspace.applying(document.draft)
+        let previous = workspace
         workspace.devices.append(registration)
-        document.updateDraft(workspace.configuration)
         synchronizeRegistrations(previous: previous)
         navigate(to: Self.route(for: registration))
         scheduleAutosave()
@@ -399,8 +538,7 @@ final class AppModel: ObservableObject {
         guard canEditConfiguration, registeredDevices.count < 256,
               bluetooth.canRegister(candidate.endpoint),
               !registeredDevices.contains(where: { $0.bluetoothConfiguration?.endpoint == candidate.endpoint }) else { return }
-        let previous = workspace.applying(document.draft)
-        workspace = previous
+        let previous = workspace
         let scalars = candidate.name.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
         let cleaned = String(String.UnicodeScalarView(scalars)).trimmingCharacters(in: .whitespacesAndNewlines)
         var name = ""
@@ -442,8 +580,7 @@ final class AppModel: ObservableObject {
         let original = configuration
         edit(&configuration)
         guard configuration != original else { return false }
-        let previous = workspace.applying(document.draft)
-        workspace = previous
+        let previous = workspace
         workspace.devices[index].configuration = .genericBluetooth(configuration)
         synchronizeRegistrations(previous: previous)
         scheduleAutosave()
@@ -460,7 +597,7 @@ final class AppModel: ObservableObject {
     func setDeviceEnabled(_ id: UUID, enabled: Bool) {
         guard canEditConfiguration, let index = workspace.devices.firstIndex(where: { $0.id == id }),
               workspace.devices[index].isEnabled != enabled else { return }
-        let previous = workspace.applying(document.draft)
+        let previous = workspace
         workspace.devices[index].isEnabled = enabled
         synchronizeRegistrations(previous: previous)
         scheduleAutosave()
@@ -468,12 +605,11 @@ final class AppModel: ObservableObject {
 
     func removeDevice(_ id: UUID) {
         guard canEditConfiguration, let removed = workspace.devices.first(where: { $0.id == id }) else { return }
-        let previous = workspace.applying(document.draft)
-        workspace = workspace.applying(document.draft)
+        let previous = workspace
         workspace.devices.removeAll { $0.id == id }
-        document.updateDraft(workspace.configuration)
+        if workspace.preferredMouseID == id { workspace.preferredMouseID = nil }
         synchronizeRegistrations(previous: previous)
-        if navigation.current.route == Self.route(for: removed) {
+        if navigation.current.route == Self.route(for: removed) || (removed.family.isLogitechMouse && navigation.current.route == .devices) {
             navigate(to: registeredDevices.first.map { Self.route(for: $0) } ?? .settings)
         }
         scheduleAutosave()
@@ -481,7 +617,7 @@ final class AppModel: ObservableObject {
 
     static func route(for registration: RegisteredDevice) -> WorkspaceRoute {
         switch registration.family {
-        case .mxMaster3S: .devices
+        case .mxMaster3S, .mxMaster4: .mouse(registration.id)
         case .d200x: .d200x
         case .flowLite84: .flowLite
         case .genericBluetooth: .genericBluetooth(registration.id)
@@ -489,23 +625,26 @@ final class AppModel: ObservableObject {
     }
 
     private func synchronizeRegistrations(previous: WorkspaceConfiguration) {
-        let previousMouse = previous.devices.first { $0.family == .mxMaster3S }
-        let currentMouse = registration(for: .mxMaster3S)
+        if workspace != previous { revokeLogitechSetup(); revokeBoltPairing() }
+        let previousOwner = mouseLease?.ownerID
+        let previousAdmissibleID = runtimeMouseID(in: previous)
         let mouseWasManaged = sessionActivationRequested || wakeRecovery.isRecovering ||
             ![BoltPhase.idle, .failed].contains(boltStatus.phase)
-        if previousMouse?.id != currentMouse?.id || !isDeviceEnabled(.mxMaster3S) {
+        let previousAssociation = previous.devices.first { $0.id == previousOwner }?.logitechAssociation
+        let currentAssociation = registeredDevices.first { $0.id == previousOwner }?.logitechAssociation
+        let admissionChanged = previousAdmissibleID != admissibleMouseID || previousAssociation != currentAssociation
+        let hadRuntime = endpointOwnerID != nil || sleepCleanupTask != nil || mouseWasManaged
+        if let selectedMouseID, registration(id: selectedMouseID)?.isEnabled != true { cancelRecording() }
+        if admissionChanged && hadRuntime {
+            let restore = previous.configuration(forMouseID: previousOwner ?? previousAdmissibleID).mouse?.restorePreviousSettingsOnDisconnect ?? cleanupRestorePreviousSettings
             cancelRecording()
-            if mouseWasManaged {
-                prepareForLifecycleStop()
-                let previousCleanup = sleepCleanupTask
-                sleepCleanupSequence = statusSequence
-                let restore = previous.configuration.mouse?.restorePreviousSettingsOnDisconnect ?? false
-                sleepCleanupTask = Task { [bolt] in
-                    if let previousCleanup { _ = await previousCleanup.value }
-                    return await bolt.stopForRestart(restorePreviousSettingsOnDisconnect: restore)
-                }
+            prepareForLifecycleStop()
+            cleanupRestorePreviousSettings = restore
+            if mouseWasManaged && (previousOwner != nil || sleepCleanupTask == nil) {
+                scheduleMouseCleanup(restore: restore)
             }
         }
+        synchronizeEditorProjection()
         if previous.devices.first(where: { $0.family == .d200x })?.id != registration(for: .d200x)?.id,
            d200x.connectionRequested || d200x.isConnected || d200x.isBusy {
             d200x.setManagementEnabled(false)
@@ -520,16 +659,200 @@ final class AppModel: ObservableObject {
         synchronizeLowBatteryPreference()
         refreshDeliveryAdmission()
     }
+    private var mouseRegistrations: [RegisteredDevice] {
+        registeredDevices.filter { $0.family.isLogitechMouse }
+    }
+
+    private func runtimeMouseID(in configuration: WorkspaceConfiguration) -> UUID? {
+        let mice = configuration.devices.filter { $0.family.isLogitechMouse }
+        if !bolt.requiresExplicitAssociation {
+            return mice.count == 1 && mice[0].isEnabled ? mice[0].id : nil
+        }
+        guard let preferred = configuration.preferredMouseID else { return nil }
+        return mice.first { $0.id == preferred && $0.isEnabled && $0.logitechAssociation != nil }?.id
+    }
+
+    private var admissibleMouseID: UUID? {
+        guard let id = runtimeMouseID(in: workspace) else { return nil }
+        if bolt.requiresExplicitAssociation {
+            guard let registration = registration(id: id),
+                  savedWorkspace?.devices.first(where: { $0.id == id })?.logitechAssociation == registration.logitechAssociation,
+                  savedWorkspace?.preferredMouseID == workspace.preferredMouseID else { return nil }
+        }
+        return id
+    }
+
+    private func mouseID(for route: WorkspaceRoute) -> UUID? {
+        if route == .logitechSetup { return nil }
+        if case .mouse(let id) = route {
+            return registration(id: id)?.family.isLogitechMouse == true ? id : nil
+        }
+        return mouseRegistrations.count == 1 ? mouseRegistrations[0].id : nil
+    }
+
+    var selectedMouseID: UUID? { mouseID(for: navigation.current.route) }
+    func needsMouseEndpointSelection(for id: UUID?) -> Bool {
+        bolt.requiresExplicitAssociation ? id.flatMap { registration(id: $0)?.logitechAssociation } == nil : mouseRegistrations.count > 1
+    }
+    var needsMouseEndpointSelection: Bool { needsMouseEndpointSelection(for: selectedMouseID) }
+    var isSelectedMouseRuntimeTarget: Bool { selectedMouseID != nil && selectedMouseID == admissibleMouseID }
+    var selectedMouseName: String { selectedMouseID.flatMap { registration(id: $0)?.displayName } ?? "Logitech Mouse" }
+    var canSelectExistingMouse: Bool {
+        canEditConfiguration && logitechSetupSnapshot == nil && !isBoltPairingActive && !isBoltPairingPresented &&
+            selectedMouseID.flatMap { registration(id: $0) }?.isEnabled == true && !isMouseSelectorLoading
+    }
+    var canPairNewMouse: Bool { makeBoltPairingSession != nil && canSelectExistingMouse && !isMouseSelectorPresented }
+    var isBoltPairingInProgress: Bool { isBoltPairingActive }
+    var selectedMouseSupportsManagement: Bool {
+        selectedMouseID.flatMap { registration(id: $0)?.mouseModel } != .mxMaster4 && selectedMouseStatus.supportsManagement
+    }
+
+    var presentedMouseOwnerID: UUID? {
+        guard let lease = activeMouseLease, runtimeIdentityVerified,
+              boltStatus.generation > lease.statusGenerationFloor else { return nil }
+        return lease.ownerID
+    }
+
+    func mouseStatus(for id: UUID?) -> BoltStatus {
+        guard let id, presentedMouseOwnerID == id else {
+            if let id, id == endpointOwnerID, id == admissibleMouseID,
+               let message = associationFailureMessage(for: boltStatus.failure?.code), boltStatus.phase == .failed {
+                return BoltStatus(phase: .failed, message: message, availableControls: [],
+                                  generation: boltStatus.generation, cleanupUncertain: boltStatus.cleanupUncertain,
+                                  failure: boltStatus.failure, supportsManagement: false)
+            }
+            return BoltStatus(phase: .idle, message: "Connect to discover a mouse endpoint.",
+                              availableControls: [], generation: boltStatus.generation, cleanupUncertain: false)
+        }
+        return boltStatus
+    }
+
+    var selectedMouseStatus: BoltStatus { mouseStatus(for: selectedMouseID) }
+
+    func mouseConnectionTitle(for id: UUID) -> String {
+        if needsMouseEndpointSelection(for: id) { return "Association required" }
+        return switch mouseStatus(for: id).phase {
+        case .idle: "Disconnected"
+        case .discovering: "Connecting"
+        case .ready, .enabled: "Connected"
+        case .enabling: "Enabling"
+        case .stopping: "Stopping"
+        case .failed: "Unavailable"
+        }
+    }
+
+    func mouseConnectionColor(for id: UUID) -> NSColor {
+        switch mouseStatus(for: id).phase {
+        case .ready, .enabled: .systemGreen
+        case .discovering, .enabling, .stopping: .systemOrange
+        case .failed: .systemRed
+        case .idle: .tertiaryLabelColor
+        }
+    }
+
+    private func synchronizeEditorProjection() {
+        let saved = (savedWorkspace ?? workspace).configuration(forMouseID: selectedMouseID)
+        var next = ConfigurationDraft(configuration: saved)
+        next.updateDraft(workspace.configuration(forMouseID: selectedMouseID))
+        document = next
+    }
+
+    private var activeMouseLease: MouseLease? {
+        guard !isBoltPairingActive, let lease = mouseLease, lease.ownerID == admissibleMouseID,
+              lease.epoch == lifecycleIntent, sleepCleanupTask == nil else { return nil }
+        return lease
+    }
+
+    private var runtimeMouse: DeviceBindings? {
+        guard let lease = activeMouseLease else { return nil }
+        return workspace.configuration(forMouseID: lease.ownerID).mouse
+    }
+
+    private var runtimeIdentityVerified: Bool {
+        guard bolt.requiresExplicitAssociation else { return true }
+        guard let owner = activeMouseLease?.ownerID,
+              let association = registration(id: owner)?.logitechAssociation else { return false }
+        return boltStatus.verifiedIdentity == association.identity
+    }
+
+    private var runtimeRestorePreviousSettings: Bool {
+        runtimeMouse?.restorePreviousSettingsOnDisconnect ?? cleanupRestorePreviousSettings
+    }
+
+    private func owns(_ lease: MouseLease) -> Bool { activeMouseLease == lease }
+
+    private func performMouseOperation(
+        for lease: MouseLease,
+        discoveryTarget: LogitechConnectionTarget? = nil,
+        _ operation: @escaping @Sendable (any BindingSession) async -> Void
+    ) async {
+        guard owns(lease) else { return }
+        let id = UUID()
+        let task = Task { [weak self, bolt] in
+            guard let self, self.owns(lease) else { return }
+            if let discoveryTarget {
+                self.endpointRecoveryTarget = MouseEndpointTarget(ownerID: lease.ownerID,
+                                                                  model: discoveryTarget.model,
+                                                                  association: discoveryTarget.association)
+            }
+            await operation(bolt)
+        }
+        mouseOperations[id] = task
+        await task.value
+        mouseOperations.removeValue(forKey: id)
+    }
+
+    @discardableResult
+    private func scheduleMouseCleanup(restore: Bool) -> Task<Bool, Never> {
+        let previous = sleepCleanupTask
+        let operations = Array(mouseOperations.values)
+        let inventory = logitechSetupInventoryTask
+        let pairingClose = boltPairingFinishTask
+        let receiverManagementClose = boltReceiverManagementCloseTask
+        sleepCleanupSequence = statusSequence
+        let cleanup = Task { [bolt] in
+            if let previous { _ = await previous.value }
+            for operation in operations { await operation.value }
+            if let inventory { _ = await inventory.value }
+            if let pairingClose { await pairingClose.value }
+            if let receiverManagementClose { await receiverManagementClose.value }
+            return await bolt.stopForRestart(restorePreviousSettingsOnDisconnect: restore)
+        }
+        sleepCleanupTask = cleanup
+        return cleanup
+    }
+
+    private func admitsInput(observedAt: ContinuousClock.Instant) -> Bool {
+        guard let lease = activeMouseLease else { return false }
+        return observedAt >= lease.startedAt
+    }
+
+    private var canClaimConnectedMouse: Bool {
+        guard let id = admissibleMouseID, sleepCleanupTask == nil,
+              !isBoltReceiverManagementActive, boltReceiverManagementCloseTask == nil else { return false }
+        return endpointOwnerID == nil || endpointOwnerID == id
+    }
+
+    private func claimConnectedMouse() {
+        guard !bolt.requiresExplicitAssociation, mouseLease == nil, canClaimConnectedMouse, let id = admissibleMouseID else { return }
+        endpointOwnerID = id
+        mouseLease = MouseLease(ownerID: id, epoch: lifecycleIntent,
+                                statusGenerationFloor: boltStatus.generation == 0 ? 0 : boltStatus.generation - 1,
+                                startedAt: .now)
+        synchronizeLowBatteryPreference()
+    }
+
     var permission: InputPermission { permissionChecks.eventPostingAllowed ? .granted : .denied }
     var selectedApplicationID: String? { navigation.current.applicationID }
     var selectedControl: MouseControl { navigation.current.control }
     var applicationIDs: [String] { document.draft.mouse?.applications.keys.sorted() ?? [] }
-    var isBindingsEnabled: Bool { boltStatus.phase == .enabled && actionsEnabled }
+    var isBindingsEnabled: Bool { isSelectedMouseRuntimeTarget && boltStatus.phase == .enabled && actionsEnabled }
 
     var buttonReadiness: String {
+        if !selectedMouseSupportsManagement { return "Unsupported by this mouse; basic information is available" }
         if recordingTarget != nil { return "Shortcuts paused while recording" }
         if !hasUsableConfiguration { return "Shortcuts blocked: configuration unavailable" }
-        if !hasConfiguredShortcut { return "No shortcuts configured" }
+        if !containsConfiguredShortcut(in: document.draft.mouse) { return "No shortcuts configured" }
         if permission != .granted { return "Shortcuts blocked: input permission required" }
         if isBindingsEnabled { return "Button shortcuts ready" }
         return "Shortcuts waiting for a usable connection"
@@ -545,11 +868,11 @@ final class AppModel: ObservableObject {
     var thumbwheelScrollAmountDraft: Double? { document.draft.mouse?.thumbwheelScrollAmount }
     var restorePreviousSettingsOnDisconnect: Bool { document.draft.mouse?.restorePreviousSettingsOnDisconnect ?? false }
     var observedWheelDirection: String {
-        switch boltStatus.wheel.support {
+        switch selectedMouseStatus.wheel.support {
         case .unknown: "Not observed"
         case .unsupported: "Unsupported"
         case .supported:
-            switch boltStatus.wheel.observedInverted {
+            switch selectedMouseStatus.wheel.observedInverted {
             case .none: "Unknown"
             case .some(false): "Standard"
             case .some(true): "Natural"
@@ -558,28 +881,28 @@ final class AppModel: ObservableObject {
     }
     var wheelSessionChange: String {
         if isWheelApplyInFlight { return "Applying" }
-        guard boltStatus.wheel.isOwned else { return "No active change" }
-        if boltStatus.wheel.captureActive { return "Temporary capture; always released on disconnect" }
+        guard selectedMouseStatus.wheel.isOwned else { return "No active change" }
+        if selectedMouseStatus.wheel.captureActive { return "Temporary capture; always released on disconnect" }
         return restorePreviousSettingsOnDisconnect ? "Will restore on disconnect" : "Kept on device"
     }
     var scrollAmountStatus: String {
         guard wheelScrollAmountDraft != nil else { return "Native scrolling" }
         if scrollPostingFailed { return "Blocked after input posting failed. Refresh permission or switch custom amount off and on to retry." }
-        if let blocker = boltStatus.wheel.captureBlocker { return blocker }
-        if boltStatus.wheel.captureActive { return "Active: fixed line output for this mouse" }
+        if let blocker = selectedMouseStatus.wheel.captureBlocker { return blocker }
+        if selectedMouseStatus.wheel.captureActive { return "Active: fixed line output for this mouse" }
         if wheelScrollAmountDraft != nil && permission != .granted { return "Blocked: input posting permission required; native scrolling is active" }
         return "Waiting for a connected supported mouse"
     }
     var effectiveWheelDirection: String {
-        guard let inverted = boltStatus.wheel.effectiveInverted else { return observedWheelDirection }
+        guard let inverted = selectedMouseStatus.wheel.effectiveInverted else { return observedWheelDirection }
         return inverted ? "Natural in software" : "Standard in software"
     }
     var observedThumbwheelDirection: String {
-        switch boltStatus.thumbwheel.support {
+        switch selectedMouseStatus.thumbwheel.support {
         case .unknown: "Not observed"
         case .unsupported: "Unsupported"
         case .supported:
-            switch boltStatus.thumbwheel.observedInverted {
+            switch selectedMouseStatus.thumbwheel.observedInverted {
             case .none: "Unknown"
             case .some(false): "Standard"
             case .some(true): "Natural"
@@ -587,31 +910,31 @@ final class AppModel: ObservableObject {
         }
     }
     var effectiveThumbwheelDirection: String {
-        guard let inverted = boltStatus.thumbwheel.effectiveInverted else { return observedThumbwheelDirection }
+        guard let inverted = selectedMouseStatus.thumbwheel.effectiveInverted else { return observedThumbwheelDirection }
         return inverted ? "Natural in software" : "Standard in software"
     }
     var thumbwheelSessionChange: String {
         if isThumbwheelApplyInFlight { return "Applying" }
-        guard boltStatus.thumbwheel.isOwned else { return "No active change" }
-        if boltStatus.thumbwheel.captureActive { return "Temporary capture; always released on disconnect" }
+        guard selectedMouseStatus.thumbwheel.isOwned else { return "No active change" }
+        if selectedMouseStatus.thumbwheel.captureActive { return "Temporary capture; always released on disconnect" }
         return restorePreviousSettingsOnDisconnect ? "Will restore on disconnect" : "Kept on device"
     }
     var thumbwheelScrollAmountStatus: String {
         guard thumbwheelScrollAmountDraft != nil else { return "Native thumb-wheel scrolling" }
         if thumbwheelPostingFailed { return "Blocked after thumb-wheel posting failed. Refresh permission or switch custom amount off and on to retry." }
-        if let blocker = boltStatus.thumbwheel.captureBlocker { return blocker }
-        if boltStatus.thumbwheel.captureActive { return "Active: fixed line output for the thumb wheel" }
+        if let blocker = selectedMouseStatus.thumbwheel.captureBlocker { return blocker }
+        if selectedMouseStatus.thumbwheel.captureActive { return "Active: fixed line output for the thumb wheel" }
         if permission != .granted { return "Blocked: input posting permission required; native scrolling is active" }
-        if boltStatus.thumbwheel.support == .unsupported { return "Unsupported by this connected mouse" }
-        if boltStatus.thumbwheel.support == .unknown { return "Waiting for thumb-wheel discovery" }
+        if selectedMouseStatus.thumbwheel.support == .unsupported { return "Unsupported by this connected mouse" }
+        if selectedMouseStatus.thumbwheel.support == .unknown { return "Waiting for thumb-wheel discovery" }
         return "Waiting for a connected supported mouse"
     }
     var observedWheelResolution: String {
-        switch boltStatus.wheel.support {
+        switch selectedMouseStatus.wheel.support {
         case .unknown: "Not observed"
         case .unsupported: "Unsupported"
         case .supported:
-            switch boltStatus.wheel.observedHighResolution {
+            switch selectedMouseStatus.wheel.observedHighResolution {
             case .none: "Unknown"
             case .some(false): "Low"
             case .some(true): "High"
@@ -619,35 +942,72 @@ final class AppModel: ObservableObject {
         }
     }
     var canDiscover: Bool {
-        isDeviceEnabled(.mxMaster3S) && !isRestarting && !isLoading && !discoveryPending && canStartDiscovery
+        logitechSetupSnapshot == nil && !isBoltPairingActive && !isBoltReceiverManagementActive &&
+            boltReceiverManagementCloseTask == nil && admissibleMouseID != nil && !isRestarting &&
+            !isLoading && !discoveryPending && canStartDiscovery
     }
     var connectionRequested: Bool { sessionActivationRequested || wakeRecovery.isRecovering }
     var isReconnectPending: Bool { wakeRecovery.isRecovering }
     var isBackgroundRecovery: Bool {
         isReconnectPending || (sessionActivationRequested && [.stopping, .failed].contains(boltStatus.phase))
     }
-    var connectionMessage: String {
-        guard isBackgroundRecovery else {
-            return boltStatus.phase == .enabled ? "Bindings enabled." : boltStatus.message
+    private var hasAmbiguousBoltEndpointFailure: Bool {
+        isSelectedMouseRuntimeTarget && boltStatus.phase == .failed && boltStatus.failure?.code == .endpointAmbiguous
+    }
+    private func associationFailureMessage(for code: BoltFailureCode?) -> String? {
+        guard bolt.requiresExplicitAssociation else { return nil }
+        switch code {
+        case .associationRequired:
+            return "Use Change Connection to associate this registration before connecting."
+        case .identityUnavailable:
+            return "The mouse identity could not be verified. Check its connection, then use Change Connection to retry."
+        case .identityMismatch:
+            return "The available mouse does not match this saved association. Use Change Connection to verify the intended mouse."
+        case .candidateStale:
+            return "The selected connection expired. Use Change Connection to refresh the list."
+        case .unsupportedModel:
+            return "This mouse model or connection is unsupported. Use Change Connection to select a supported connection."
+        default:
+            return nil
         }
-        return boltStatus.deviceResponding
+    }
+    private var selectedAssociationFailureMessage: String? {
+        guard selectedMouseID == endpointOwnerID, isSelectedMouseRuntimeTarget, boltStatus.phase == .failed else { return nil }
+        return associationFailureMessage(for: boltStatus.failure?.code)
+    }
+    var connectionMessage: String {
+        if let message = selectedAssociationFailureMessage { return message }
+        if hasAmbiguousBoltEndpointFailure {
+            return "The saved mouse has multiple matching connections. Choose an existing connection to continue."
+        }
+        if needsMouseEndpointSelection { return "Endpoint selection is needed. Associate an already-paired mouse to retain these settings." }
+        guard isSelectedMouseRuntimeTarget && isBackgroundRecovery else {
+            return selectedMouseStatus.phase == .enabled ? "Bindings enabled." : selectedMouseStatus.message
+        }
+        return selectedMouseStatus.deviceResponding
             ? "Mouse detected. Restoring saved settings."
             : "Mouse unavailable. Saved settings will apply when it returns."
     }
     var connectionPresentationPhase: BoltPhase {
-        guard isBackgroundRecovery else { return boltStatus.phase }
-        return boltStatus.deviceResponding ? .discovering : .idle
+        if selectedAssociationFailureMessage != nil { return .failed }
+        if hasAmbiguousBoltEndpointFailure { return .failed }
+        if needsMouseEndpointSelection { return .idle }
+        guard isSelectedMouseRuntimeTarget && isBackgroundRecovery else { return selectedMouseStatus.phase }
+        return selectedMouseStatus.deviceResponding ? .discovering : .idle
     }
     var canEnableBindings: Bool {
-        isDeviceEnabled(.mxMaster3S) && !isRestarting && !isLoading && hasUsableConfiguration &&
+        canClaimConnectedMouse && isSelectedMouseRuntimeTarget && admissibleMouseID != nil && runtimeIdentityVerified && boltStatus.supportsManagement && !isRestarting && !isLoading && hasUsableConfiguration &&
             permission == .granted && boltStatus.phase == .ready && !boltStatus.cleanupUncertain &&
             boltStatus.availableControls == Set(MouseControl.allCases) &&
             (try? document.draft.validated()) != nil
     }
 
     var connectionTitle: String {
-        if isBackgroundRecovery { return boltStatus.deviceResponding ? "Reconnecting" : "Disconnected" }
-        return switch boltStatus.phase {
+        if selectedAssociationFailureMessage != nil { return "Association needs attention" }
+        if hasAmbiguousBoltEndpointFailure { return "Receiver selection needed" }
+        if needsMouseEndpointSelection { return "Endpoint selection needed" }
+        if isSelectedMouseRuntimeTarget && isBackgroundRecovery { return selectedMouseStatus.deviceResponding ? "Reconnecting" : "Disconnected" }
+        return switch selectedMouseStatus.phase {
         case .idle: "Disconnected"
         case .discovering: "Discovering"
         case .ready: "Connected"
@@ -659,8 +1019,11 @@ final class AppModel: ObservableObject {
     }
 
     var connectionColor: NSColor {
-        if isBackgroundRecovery { return boltStatus.deviceResponding ? .systemOrange : .tertiaryLabelColor }
-        return switch boltStatus.phase {
+        if selectedAssociationFailureMessage != nil { return .systemRed }
+        if hasAmbiguousBoltEndpointFailure { return .systemRed }
+        if needsMouseEndpointSelection { return .tertiaryLabelColor }
+        if isSelectedMouseRuntimeTarget && isBackgroundRecovery { return selectedMouseStatus.deviceResponding ? .systemOrange : .tertiaryLabelColor }
+        return switch selectedMouseStatus.phase {
         case .ready: .systemGreen
         case .enabled: actionsEnabled ? .systemGreen : .systemOrange
         case .discovering, .enabling, .stopping: .systemOrange
@@ -692,57 +1055,1334 @@ final class AppModel: ObservableObject {
     }
 
     func navigate(to route: WorkspaceRoute) {
-        if navigation.current.route != route { cancelRecording() }
+        if navigation.current.route != route { cancelRecording(); dismissMouseSelector(); revokeLogitechSetup(); revokeBoltPairing() }
         var next = navigation
         var location = next.current
         location.route = route
         if initialConfigurationLoadPending {
             next.replaceCurrent(with: location)
             navigation = next
+            synchronizeEditorProjection()
             return
         }
         next.navigate(to: location)
         navigation = next
+        synchronizeEditorProjection()
     }
 
     func goBack() {
         var next = navigation
         guard next.goBack() else { return }
+        dismissMouseSelector()
+        revokeLogitechSetup()
+        revokeBoltPairing()
         cancelRecording()
         next.replaceCurrent(with: normalized(next.current))
         navigation = next
+        synchronizeEditorProjection()
     }
 
     func goForward() {
         var next = navigation
         guard next.goForward() else { return }
+        dismissMouseSelector()
+        revokeLogitechSetup()
+        revokeBoltPairing()
         cancelRecording()
         next.replaceCurrent(with: normalized(next.current))
         navigation = next
+        synchronizeEditorProjection()
     }
 
     func connect() {
-        guard isDeviceEnabled(.mxMaster3S) else { return }
+        guard bolt.requiresExplicitAssociation else { connectRuntime(); return }
+        guard canSelectExistingMouse, let id = selectedMouseID,
+              let registration = registration(id: id) else { return }
+        mouseSelectorMessage = nil
+        guard registration.logitechAssociation != nil else { presentLogitechSetup(destination: .reassociate(id)); return }
+        if id == admissibleMouseID, boltStatus.cleanupUncertain, matchesEndpointRecoveryTarget {
+            connectRuntime()
+            return
+        }
+        Task { await activateMouseRegistration(id, candidate: nil) }
+    }
+
+    func presentLogitechSetup(destination: LogitechSetupDestination = .newRegistration) {
+        presentLogitechSetup(destination: destination, automaticallyInspectStoredInventories: true)
+    }
+
+    private func presentLogitechSetup(
+        destination: LogitechSetupDestination,
+        automaticallyInspectStoredInventories: Bool,
+        preservingCachedRows: Bool = false
+    ) {
+        guard canEditConfiguration else { return }
+        if case .reassociate(let id) = destination {
+            guard let device = registration(id: id), device.isEnabled, device.family.isLogitechMouse else { return }
+        }
+        let prior = logitechSetupSnapshot?.priorLocation ?? navigation.current
+        let restoreConnection: Bool
+        if let previous = logitechSetupSnapshot {
+            restoreConnection = previous.restoreConnection && workspace == previous.workspace && fileRevision == previous.revision
+        } else {
+            restoreConnection = connectionRequested && workspace == savedWorkspace
+        }
+        let previous = logitechSetupOperationTask
+        prepareForLifecycleStop(
+            preservingStoredInventories: true,
+            preservingLogitechSetupCandidates: preservingCachedRows
+        )
+        navigate(to: .logitechSetup)
+        logitechSetupDestination = destination
+        logitechSetupCompletedDeviceID = nil
+        if !preservingCachedRows { logitechSetupCandidates = [] }
+        logitechSetupMessage = nil
+        boltPairingMessage = nil
+        boltPairingStatus = nil
+        isLogitechSetupLoading = true
+        let request = LogitechSetupSnapshot(token: UUID(), destination: destination, workspace: workspace,
+                                           revision: fileRevision, intent: lifecycleIntent,
+                                           priorLocation: prior, restoreConnection: restoreConnection)
+        logitechSetupSnapshot = request
+        if requiresLogitechSetupRefreshBeforePairing {
+            recoveryRefreshSetupToken = request.token
+            recoveryRefreshConnectionsAreFresh = false
+            recoveryRefreshReceiverInventoriesAreFresh = false
+        }
+        logitechSetupOperationTask = Task { [weak self, bolt] in
+            if let previous { await previous.value }
+            guard let self else { return }
+            if let close = self.boltPairingFinishTask { await close.value }
+            guard self.isCurrentLogitechSetup(request, checkingRevision: false) else { return }
+            var refreshedEndpointCandidates = false
+            defer {
+                if self.logitechSetupSnapshot?.token == request.token {
+                    if !refreshedEndpointCandidates && !self.requiresLogitechSetupRefreshBeforePairing {
+                        self.logitechSetupCandidates = []
+                    }
+                    self.isLogitechSetupLoading = false
+                }
+            }
+            let sequence = self.statusSequence
+            let cleaned = await self.scheduleMouseCleanup(restore: self.runtimeRestorePreviousSettings).value
+            guard self.isCurrentLogitechSetup(request, checkingRevision: false) else { return }
+            let settled = await self.waitForSettledControllerStatus(after: sequence)
+            guard self.isCurrentLogitechSetup(request, checkingRevision: false) else { return }
+            guard cleaned, settled?.cleanupUncertain == false else {
+                self.logitechSetupMessage = "The previous connection could not be released safely. Disconnect and retry."
+                return
+            }
+            self.sleepCleanupTask = nil
+            self.endpointOwnerID = nil
+            self.endpointRecoveryTarget = nil
+            let saved = await self.flushPendingSave()
+            guard self.isCurrentLogitechSetup(request, checkingRevision: false) else { return }
+            guard saved, self.savedWorkspace == request.workspace, await self.currentConfigurationRevisionMatches(),
+                  self.isCurrentLogitechSetup(request, checkingRevision: false) else {
+                self.logitechSetupMessage = "Save and verify the configuration before adding a mouse."
+                return
+            }
+            let snapshot = LogitechSetupSnapshot(token: request.token, destination: destination, workspace: self.workspace,
+                                                revision: self.fileRevision, intent: request.intent,
+                                                priorLocation: prior, restoreConnection: restoreConnection)
+            self.logitechSetupSnapshot = snapshot
+            let inventory = Task { () -> [LogitechEndpointCandidate]? in
+                try? await bolt.existingConnections()
+            }
+            self.logitechSetupInventoryTask = inventory
+            let candidates = await inventory.value
+            self.logitechSetupInventoryTask = nil
+            guard self.isCurrentLogitechSetup(snapshot) else { return }
+            defer {
+                if self.logitechSetupSnapshot?.token == snapshot.token {
+                    self.isLogitechSetupLoading = false
+                    if automaticallyInspectStoredInventories {
+                        self.inspectBoltReceivers()
+                    }
+                }
+            }
+            guard let candidates else {
+                self.logitechSetupMessage = "Existing connections could not be checked. Refresh to retry."
+                return
+            }
+            let verified = candidates.filter { (try? $0.identity.validated()) != nil }
+            self.logitechSetupCandidates = verified.filter { candidate in
+                if case .reassociate(let id) = destination { return candidate.model == self.registration(id: id)?.mouseModel }
+                return true
+            }
+            refreshedEndpointCandidates = true
+            if self.logitechSetupCandidates.isEmpty {
+                let message = verified.isEmpty
+                    ? "No verified mouse connection was found. Check the receiver or Bluetooth connection and refresh."
+                    : "Verified mice were found, but none matches the registered model. Connect a matching mouse and refresh."
+                if self.logitechSetupMessage == nil { self.logitechSetupMessage = message }
+            }
+            self.markRecoveryConnectionsFresh(for: snapshot.token)
+        }
+    }
+
+    func refreshLogitechSetup() {
+        guard let destination = logitechSetupDestination, !isBoltPairingActive,
+              boltPairingFinishTask == nil, !isSaving else { return }
+        if shouldShowLogitechSetupRecoveryButton {
+            guard canRefreshLogitechSetup else { return }
+            requireLogitechSetupRefresh()
+        }
+        presentLogitechSetup(
+            destination: destination,
+            automaticallyInspectStoredInventories: true,
+            preservingCachedRows: true
+        )
+    }
+
+    private func requireLogitechSetupRefresh() {
+        requiresLogitechSetupRefreshBeforePairing = true
+        recoveryRefreshSetupToken = nil
+        recoveryRefreshConnectionsAreFresh = false
+        recoveryRefreshReceiverInventoriesAreFresh = false
+    }
+
+    private func markRecoveryConnectionsFresh(for setupToken: UUID) {
+        guard requiresLogitechSetupRefreshBeforePairing,
+              recoveryRefreshSetupToken == setupToken,
+              logitechSetupSnapshot?.token == setupToken else { return }
+        recoveryRefreshConnectionsAreFresh = true
+        clearRecoveryRefreshIfComplete()
+    }
+
+    private func markRecoveryReceiverInventoriesFresh(for setupToken: UUID) {
+        guard requiresLogitechSetupRefreshBeforePairing,
+              recoveryRefreshSetupToken == setupToken,
+              logitechSetupSnapshot?.token == setupToken else { return }
+        recoveryRefreshReceiverInventoriesAreFresh = true
+        clearRecoveryRefreshIfComplete()
+    }
+
+    private func clearRecoveryRefreshIfComplete() {
+        guard recoveryRefreshConnectionsAreFresh, recoveryRefreshReceiverInventoriesAreFresh else { return }
+        requiresLogitechSetupRefreshBeforePairing = false
+        recoveryRefreshSetupToken = nil
+        recoveryRefreshConnectionsAreFresh = false
+        recoveryRefreshReceiverInventoriesAreFresh = false
+        boltPairingMayHaveSucceeded = false
+    }
+
+    func inspectBoltReceivers() {
+        guard let setup = logitechSetupSnapshot,
+              isCurrentLogitechSetup(setup, checkingRevision: false) else { return }
+        guard let makeBoltReceiverManagementSession else {
+            boltReceiverManagementMessage = "Stored-pairing inspection is unavailable."
+            return
+        }
+        guard !isBoltPairingActive, boltPairingFinishTask == nil, !isBoltReceiverManagementBusy,
+              logitechSetupInventoryTask == nil, !isLogitechSetupLoading else {
+            boltReceiverManagementMessage = "Wait for the current receiver operation to finish, then refresh."
+            return
+        }
+
+        let previousClose = revokeBoltReceiverManagement(preservingStoredInventories: true)
+        let snapshot = BoltReceiverManagementSnapshot(token: UUID(), setupToken: setup.token, intent: setup.intent)
+        let operation = BoltReceiverManagementOperation(snapshot: snapshot, token: UUID())
+        boltReceiverManagementSnapshot = snapshot
+        boltReceiverManagementOperationToken = operation.token
+        boltManagedReceivers = []
+        boltManagedInventory = nil
+        isBoltManagedInventoryStale = true
+        boltReceiverManagementMessage = nil
+        isBoltReceiverManagementBusy = true
+
+        boltReceiverManagementOperationTaskToken = operation.token
+        boltReceiverManagementOperationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.finishBoltReceiverManagementOperation(operation) }
+            if let previousClose { await previousClose.value }
+            guard self.isCurrentBoltReceiverManagement(operation) else { return }
+            if let pairingClose = self.boltPairingFinishTask { await pairingClose.value }
+            guard self.isCurrentBoltReceiverManagement(operation) else { return }
+
+            let sequence = self.statusSequence
+            let cleanup = self.scheduleMouseCleanup(restore: self.runtimeRestorePreviousSettings)
+            let cleaned = await cleanup.value
+            guard self.isCurrentBoltReceiverManagement(operation) else { return }
+            let settled = await self.waitForSettledControllerStatus(after: sequence)
+            guard self.isCurrentBoltReceiverManagement(operation) else { return }
+            guard cleaned, settled?.cleanupUncertain == false else {
+                self.boltReceiverManagementMessage = "The previous connection could not be released safely. Disconnect and retry before inspecting the receiver."
+                self.finishBoltReceiverManagementOperation(operation)
+                return
+            }
+            self.sleepCleanupTask = nil
+            self.endpointOwnerID = nil
+            self.endpointRecoveryTarget = nil
+
+            let session = makeBoltReceiverManagementSession()
+            self.boltReceiverManagementSession = session
+            do {
+                let receivers = try await session.receivers()
+                guard self.isCurrentBoltReceiverManagement(operation) else { return }
+                self.boltManagedReceivers = receivers
+                if receivers.isEmpty {
+                    self.boltReceiverManagementMessage = "No accessible Logi Bolt receiver was found. Connect a receiver and retry."
+                    self.finishBoltReceiverManagementOperation(operation)
+                    self.markRecoveryReceiverInventoriesFresh(for: snapshot.setupToken)
+                    return
+                }
+
+                var receiverLabels: [UUID: String] = [:]
+                for receiver in receivers {
+                    receiverLabels[receiver.id] = receiver.label
+                }
+                let inventoriesLoaded = await self.loadBoltManagedInventories(
+                    receivers, labels: receiverLabels, session: session, operation: operation
+                )
+                guard self.isCurrentBoltReceiverManagement(operation) else { return }
+                self.finishBoltReceiverManagementOperation(operation)
+                if inventoriesLoaded {
+                    self.markRecoveryReceiverInventoriesFresh(for: snapshot.setupToken)
+                }
+            } catch {
+                guard self.isCurrentBoltReceiverManagement(operation) else { return }
+                self.revokeBoltReceiverManagement(preservingStoredInventories: true)
+                self.boltReceiverManagementMessage = "Logi Bolt receivers could not be checked. Refresh to retry."
+            }
+        }
+    }
+
+    func selectBoltManagedReceiver(_ receiverID: UUID) {
+        guard let snapshot = boltReceiverManagementSnapshot,
+              isCurrentBoltReceiverManagement(snapshot), !isBoltReceiverManagementBusy,
+              !isBoltPairingActive, boltPairingFinishTask == nil,
+              boltManagedReceivers.contains(where: { $0.id == receiverID }) else { return }
+
+        let session = boltReceiverManagementSession
+        let operation = BoltReceiverManagementOperation(snapshot: snapshot, token: UUID())
+        boltReceiverManagementOperationToken = operation.token
+        boltManagedInventory = nil
+        isBoltManagedInventoryStale = true
+        boltReceiverManagementMessage = nil
+        isBoltReceiverManagementBusy = true
+
+        boltReceiverManagementOperationTaskToken = operation.token
+        boltReceiverManagementOperationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.finishBoltReceiverManagementOperation(operation) }
+            guard self.isCurrentBoltReceiverManagement(operation) else { return }
+            guard let session else {
+                self.failBoltReceiverManagementOperation(operation, message: "Refresh the receiver list before inspecting a receiver.")
+                return
+            }
+            await self.loadBoltManagedInventory(receiverID: receiverID, session: session, operation: operation)
+            self.finishBoltReceiverManagementOperation(operation)
+        }
+    }
+
+    func canUnpairStoredRecord(inventoryID: UUID, recordID: UUID) -> Bool {
+        guard let snapshot = boltReceiverManagementSnapshot,
+              isCurrentBoltReceiverManagement(snapshot),
+              !isBoltReceiverManagementBusy, !isBoltManagedInventoryStale,
+              !isLogitechSetupLoading, !isBoltPairingActive, boltPairingFinishTask == nil,
+              boltReceiverManagementSession != nil,
+              let inventory = boltManagedInventory, inventory.id == inventoryID,
+              inventory.rows.contains(where: { $0.id == recordID }),
+              boltStoredInventories.contains(where: { $0 == inventory }),
+              boltManagedReceivers.contains(where: { $0.id == inventory.receiverID }) else { return false }
+        return true
+    }
+
+    func unpairBoltManagedRecord(recordID: UUID, inventoryID: UUID) {
+        guard let snapshot = boltReceiverManagementSnapshot,
+              canUnpairStoredRecord(inventoryID: inventoryID, recordID: recordID),
+              let session = boltReceiverManagementSession,
+              let inventory = boltManagedInventory else {
+            if isBoltReceiverManagementActive, !isBoltReceiverManagementBusy {
+                boltReceiverManagementMessage = "Inspect this receiver again before unpairing a stored device."
+            }
+            return
+        }
+
+        let operation = BoltReceiverManagementOperation(snapshot: snapshot, token: UUID())
+        boltReceiverManagementOperationToken = operation.token
+        isBoltReceiverManagementBusy = true
+        boltReceiverManagementMessage = nil
+        boltReceiverManagementOperationTaskToken = operation.token
+        boltReceiverManagementOperationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.finishBoltReceiverManagementOperation(operation) }
+            guard self.isCurrentBoltReceiverManagement(operation),
+                  self.boltManagedInventory?.id == inventoryID,
+                  self.boltManagedInventory?.rows.contains(where: { $0.id == recordID }) == true else { return }
+
+            let outcome = await session.unpair(recordID: recordID, inventoryID: inventoryID)
+            let setupStillCurrent = self.logitechSetupSnapshot?.token == snapshot.setupToken &&
+                self.lifecycleIntent == snapshot.intent && self.navigation.current.route == .logitechSetup
+            switch outcome {
+            case .verifiedRemoved(let updatedInventory):
+                if setupStillCurrent {
+                    self.logitechSetupCandidates = []
+                    self.logitechSetupMessage = "Refresh Devices before adding a mouse."
+                    self.boltPairingStatus = nil
+                    self.boltPairingMessage = nil
+                    self.boltPairingMayHaveSucceeded = false
+                    self.boltPairingIdentityVerified = false
+                    self.boltPairingAssociationSaved = false
+                    self.boltPairingReceiverSelected = false
+                }
+                if self.boltReceiverManagementSnapshot?.token == snapshot.token,
+                   self.boltManagedInventory?.id == inventoryID,
+                   setupStillCurrent,
+                   updatedInventory.receiverID == inventory.receiverID {
+                    self.boltManagedInventory = updatedInventory
+                    self.storeBoltManagedInventory(updatedInventory)
+                    self.isBoltManagedInventoryStale = false
+                    self.boltReceiverManagementMessage = "The selected device was unpaired and its removal was verified."
+                }
+            case .notRemoved(let message):
+                if self.boltReceiverManagementSnapshot?.token == snapshot.token {
+                    self.boltManagedInventory = nil
+                    self.isBoltManagedInventoryStale = true
+                    self.boltReceiverManagementMessage = message
+                }
+            case .uncertain:
+                if self.boltReceiverManagementSnapshot?.token == snapshot.token {
+                    self.revokeBoltReceiverManagement(preservingStoredInventories: true)
+                    self.boltReceiverManagementMessage = "The unpair result is uncertain. Refresh the receiver list to start a new session before trying again."
+                }
+                if setupStillCurrent {
+                    self.logitechSetupCandidates = []
+                    self.logitechSetupMessage = "The receiver state is uncertain. Refresh Devices before pairing."
+                }
+            }
+            self.finishBoltReceiverManagementOperation(operation)
+        }
+    }
+
+    @discardableResult
+    func closeBoltReceiverManagement() -> Task<Void, Never>? {
+        closeBoltReceiverManagement(preservingStoredInventories: false)
+    }
+
+    @discardableResult
+    private func closeBoltReceiverManagement(preservingStoredInventories: Bool) -> Task<Void, Never>? {
+        revokeBoltReceiverManagement(preservingStoredInventories: preservingStoredInventories)
+    }
+
+    private func loadBoltManagedInventory(
+        receiverID: UUID,
+        session: any BoltReceiverManaging,
+        operation: BoltReceiverManagementOperation
+    ) async {
+        guard isCurrentBoltReceiverManagement(operation) else { return }
+        do {
+            let inventory = try await session.inventory(receiverID: receiverID)
+            guard isCurrentBoltReceiverManagement(operation) else { return }
+            guard inventory.receiverID == receiverID else {
+                failBoltReceiverManagementOperation(operation, message: "The receiver changed. Refresh before inspecting it.")
+                return
+            }
+            boltManagedInventory = inventory
+            storeBoltManagedInventory(inventory)
+            isBoltManagedInventoryStale = false
+        } catch {
+            guard isCurrentBoltReceiverManagement(operation) else { return }
+            failBoltReceiverManagementOperation(operation, message: "Stored pairings could not be checked. Refresh to retry.")
+        }
+    }
+
+    private func loadBoltManagedInventories(
+        _ receivers: [BoltReceiverCandidate],
+        labels: [UUID: String],
+        session: any BoltReceiverManaging,
+        operation: BoltReceiverManagementOperation
+    ) async -> Bool {
+        var lastInventory: BoltReceiverInventory?
+        var inventories: [BoltReceiverInventory] = []
+        for receiver in receivers {
+            guard isCurrentBoltReceiverManagement(operation) else { return false }
+            do {
+                let inventory = try await session.inventory(receiverID: receiver.id)
+                guard isCurrentBoltReceiverManagement(operation) else { return false }
+                guard inventory.receiverID == receiver.id else {
+                    failBoltReceiverManagementOperation(operation, message: "The receiver changed. Refresh before inspecting it.")
+                    return false
+                }
+                inventories.append(inventory)
+                lastInventory = inventory
+            } catch {
+                guard isCurrentBoltReceiverManagement(operation) else { return false }
+                failBoltReceiverManagementOperation(operation, message: "Stored pairings could not be checked. Refresh to retry.")
+                return false
+            }
+        }
+        guard isCurrentBoltReceiverManagement(operation) else { return false }
+        boltStoredInventories = inventories
+        boltStoredReceiverLabels = labels
+        boltManagedInventory = lastInventory
+        isBoltManagedInventoryStale = lastInventory == nil
+        return true
+    }
+
+    private func storeBoltManagedInventory(_ inventory: BoltReceiverInventory) {
+        if let index = boltStoredInventories.firstIndex(where: { $0.receiverID == inventory.receiverID }) {
+            boltStoredInventories[index] = inventory
+        } else {
+            boltStoredInventories.append(inventory)
+        }
+    }
+
+    private func isCurrentBoltReceiverManagement(_ operation: BoltReceiverManagementOperation) -> Bool {
+        boltReceiverManagementOperationToken == operation.token &&
+            isCurrentBoltReceiverManagement(operation.snapshot)
+    }
+
+    private func isCurrentBoltReceiverManagement(_ snapshot: BoltReceiverManagementSnapshot) -> Bool {
+        guard boltReceiverManagementSnapshot?.token == snapshot.token,
+              logitechSetupSnapshot?.token == snapshot.setupToken,
+              navigation.current.route == .logitechSetup,
+              lifecycleIntent == snapshot.intent,
+              !isLoading, !isRestarting, !wakeRecovery.sleeping else { return false }
+        return true
+    }
+
+    private func finishBoltReceiverManagementOperation(_ operation: BoltReceiverManagementOperation) {
+        if boltReceiverManagementOperationTaskToken == operation.token {
+            boltReceiverManagementOperationTaskToken = nil
+            boltReceiverManagementOperationTask = nil
+        }
+        guard isCurrentBoltReceiverManagement(operation) else { return }
+        boltReceiverManagementOperationToken = nil
+        boltReceiverManagementOperationTask = nil
+        isBoltReceiverManagementBusy = false
+    }
+
+    private func failBoltReceiverManagementOperation(_ operation: BoltReceiverManagementOperation, message: String) {
+        guard isCurrentBoltReceiverManagement(operation) else { return }
+        revokeBoltReceiverManagement(preservingStoredInventories: true)
+        boltReceiverManagementMessage = message
+    }
+
+    @discardableResult
+    private func retireBoltReceiverManagementSession() -> Task<Void, Never>? {
+        if let boltReceiverManagementCloseTask { return boltReceiverManagementCloseTask }
+        guard let session = boltReceiverManagementSession else { return nil }
+        boltReceiverManagementSession = nil
+        let operation = boltReceiverManagementOperationTask
+        let token = UUID()
+        boltReceiverManagementCloseToken = token
+        let close = Task { @MainActor [weak self] in
+            await session.close()
+            if let operation { await operation.value }
+            guard let self, self.boltReceiverManagementCloseToken == token else { return }
+            self.boltReceiverManagementCloseTask = nil
+            self.boltReceiverManagementCloseToken = nil
+        }
+        boltReceiverManagementCloseTask = close
+        return close
+    }
+
+    @discardableResult
+    private func revokeBoltReceiverManagement(preservingStoredInventories: Bool = false) -> Task<Void, Never>? {
+        boltReceiverManagementSnapshot = nil
+        boltReceiverManagementOperationToken = nil
+        isBoltReceiverManagementBusy = false
+        boltManagedReceivers = []
+        boltManagedInventory = nil
+        isBoltManagedInventoryStale = true
+        if !preservingStoredInventories {
+            boltStoredInventories = []
+            boltStoredReceiverLabels = [:]
+        }
+        boltReceiverManagementMessage = nil
+        return retireBoltReceiverManagementSession()
+    }
+
+    func existingLogitechRegistrationID(for candidate: LogitechEndpointCandidate) -> UUID? {
+        registeredDevices.first { $0.logitechAssociation?.identity == candidate.identity }?.id
+    }
+
+    func addLogitechSetupCandidate(_ id: UUID) {
+        guard let snapshot = logitechSetupSnapshot, isCurrentLogitechSetup(snapshot), !isLogitechSetupLoading,
+              !isBoltPairingActive, !isBoltReceiverManagementBusy, !isLogitechSetupSelectionBlocked,
+              let candidate = logitechSetupCandidates.first(where: { $0.id == id }) else { return }
+        if let existing = existingLogitechRegistrationID(for: candidate) {
+            if snapshot.destination != .reassociate(existing) {
+                logitechSetupMessage = "This mouse is already added. Open the existing device to retain its settings."
+                return
+            }
+        }
+        let receiverManagementClose = closeBoltReceiverManagement()
+        isLogitechSetupLoading = true
+        logitechSetupOperationTask = Task { [weak self] in
+            if let receiverManagementClose { await receiverManagementClose.value }
+            guard let self else { return }
+            let id = await self.commitLogitechSetupCandidate(candidate, snapshot: snapshot)
+            self.isLogitechSetupLoading = false
+            guard id != nil, self.isCurrentLogitechSetup(snapshot, checkingRevision: false, checkingWorkspace: false) else { return }
+            self.completeLogitechSetup()
+        }
+    }
+
+    func pairLogitechSetup(receiverID: UUID? = nil) {
+        if let receiverID, isBoltPairingActive { selectBoltPairingReceiver(receiverID); return }
+        guard let snapshot = logitechSetupSnapshot, isCurrentLogitechSetup(snapshot), !isLogitechSetupLoading,
+              makeBoltPairingSession != nil, !isBoltPairingActive, !isBoltReceiverManagementBusy,
+              !isLogitechSetupSelectionBlocked else { return }
+        let model: LogitechMouseModel?
+        let id: UUID
+        switch snapshot.destination {
+        case .newRegistration: model = nil; id = UUID()
+        case .reassociate(let registrationID): model = registration(id: registrationID)?.mouseModel; id = registrationID
+        }
+        let preparationToken = UUID()
+        boltPairingPreparationToken = preparationToken
+        isBoltPairingLoading = true
+        let receiverManagementClose = closeBoltReceiverManagement(preservingStoredInventories: true)
+        Task { @MainActor [weak self] in
+            if let receiverManagementClose { await receiverManagementClose.value }
+            guard let self, self.boltPairingPreparationToken == preparationToken else { return }
+            self.boltPairingPreparationToken = nil
+            guard self.isCurrentLogitechSetup(snapshot), !self.isLogitechSetupLoading,
+                  !self.isBoltPairingActive, !self.isBoltReceiverManagementBusy else {
+                self.isBoltPairingLoading = false
+                return
+            }
+            self.startBoltPairing(registrationID: id, model: model, setup: snapshot)
+        }
+    }
+
+    func cancelLogitechSetupPairing() {
+        if boltPairingPreparationToken != nil {
+            boltPairingPreparationToken = nil
+            isBoltPairingLoading = false
+            return
+        }
+        guard isBoltPairingActive, let snapshot = logitechSetupSnapshot else { return }
+        boltPairingRevoked = true
+        finishBoltPairing(cancel: true, restore: false)
+        isLogitechSetupLoading = true
+        let close = boltPairingFinishTask
+        let previous = logitechSetupOperationTask
+        logitechSetupOperationTask = Task { [weak self] in
+            if let previous { await previous.value }
+            if let close { await close.value }
+            guard let self else { return }
+            self.isLogitechSetupLoading = false
+            guard self.isCurrentLogitechSetup(snapshot, checkingRevision: false, checkingWorkspace: false) else { return }
+            let outcome = self.boltPairingMessage
+            self.presentLogitechSetup(
+                destination: snapshot.destination,
+                automaticallyInspectStoredInventories: false,
+                preservingCachedRows: true
+            )
+            self.logitechSetupMessage = outcome
+        }
+    }
+
+    func cancelLogitechSetup() { leaveLogitechSetup() }
+
+    func openExistingLogitechSetupDevice(_ id: UUID) {
+        guard registration(id: id)?.family.isLogitechMouse == true else { return }
+        leaveLogitechSetup(opening: id)
+    }
+
+    private func leaveLogitechSetup(opening id: UUID? = nil) {
+        guard let snapshot = logitechSetupSnapshot else {
+            if let id { navigate(to: .mouse(id)) }
+            else if navigation.current.route == .logitechSetup { navigate(to: .devices) }
+            return
+        }
+        revokeLogitechSetup()
+        revokeBoltPairing()
+        let receiverManagementClose = closeBoltReceiverManagement()
+        let pending = logitechSetupOperationTask
+        let close = boltPairingFinishTask
+        Task { [weak self] in
+            if let pending { await pending.value }
+            if let close { await close.value }
+            if let receiverManagementClose { await receiverManagementClose.value }
+            guard let self, self.navigation.current.route == .logitechSetup,
+                  self.logitechSetupSnapshot == nil, self.lifecycleIntent == snapshot.intent,
+                  !self.isRestarting, !self.wakeRecovery.sleeping else { return }
+            var destination = self.normalized(snapshot.priorLocation)
+            if let id, self.registration(id: id)?.family.isLogitechMouse == true {
+                destination.route = .mouse(id)
+                destination.applicationID = nil
+            }
+            var next = self.navigation
+            next.replaceCurrent(with: destination)
+            self.navigation = next
+            self.synchronizeEditorProjection()
+            if snapshot.restoreConnection, self.workspace == snapshot.workspace, self.fileRevision == snapshot.revision,
+               await self.currentConfigurationRevisionMatches(),
+               self.navigation.current == destination,
+               self.workspace == snapshot.workspace, self.fileRevision == snapshot.revision,
+               self.lifecycleIntent == snapshot.intent, !self.isRestarting, !self.wakeRecovery.sleeping {
+                self.connectRuntime()
+            }
+        }
+    }
+
+    func dismissLogitechSetup() {
+        revokeLogitechSetup()
+        revokeBoltPairing()
+    }
+
+    func openLogitechSetupDevice() {
+        guard let id = logitechSetupCompletedDeviceID, registration(id: id) != nil else { return }
+        navigate(to: .mouse(id))
+    }
+
+    func addAnotherLogitechDevice() { presentLogitechSetup() }
+
+    private func revokeLogitechSetup(
+        preservingStoredInventories: Bool = false,
+        preservingCandidates: Bool = false
+    ) {
+        closeBoltReceiverManagement(preservingStoredInventories: preservingStoredInventories)
+        guard logitechSetupSnapshot != nil else { return }
+        logitechSetupSnapshot = nil
+        isLogitechSetupLoading = false
+        if !preservingCandidates { logitechSetupCandidates = [] }
+        logitechSetupMessage = "The setup changed or was cancelled. Refresh before adding a mouse."
+    }
+
+    private func isCurrentLogitechSetup(
+        _ snapshot: LogitechSetupSnapshot, checkingRevision: Bool = true, checkingWorkspace: Bool = true
+    ) -> Bool {
+        guard logitechSetupSnapshot?.token == snapshot.token, logitechSetupDestination == snapshot.destination,
+              navigation.current.route == .logitechSetup, lifecycleIntent == snapshot.intent,
+              (!checkingRevision || fileRevision == snapshot.revision),
+              (!checkingWorkspace || workspace == snapshot.workspace),
+              !isLoading, !isRestarting, !wakeRecovery.sleeping else { return false }
+        if case .reassociate(let id) = snapshot.destination {
+            return registration(id: id)?.isEnabled == true &&
+                registration(id: id)?.mouseModel == snapshot.workspace.devices.first(where: { $0.id == id })?.mouseModel
+        }
+        return true
+    }
+
+    private func completeLogitechSetup() {
+        guard let id = logitechSetupCompletedDeviceID, registration(id: id)?.isEnabled == true else { return }
+        logitechSetupSnapshot = nil
+        isLogitechSetupLoading = false
+        logitechSetupMessage = nil
+        navigate(to: .mouse(id))
+        connectRuntime()
+    }
+
+    private func commitLogitechSetupCandidate(
+        _ candidate: LogitechEndpointCandidate, snapshot: LogitechSetupSnapshot
+    ) async -> UUID? {
+        guard isCurrentLogitechSetup(snapshot), (try? candidate.identity.validated()) != nil,
+              await currentConfigurationRevisionMatches(), isCurrentLogitechSetup(snapshot) else { return nil }
+        if let existing = existingLogitechRegistrationID(for: candidate), snapshot.destination != .reassociate(existing) {
+            logitechSetupMessage = "This mouse is already added. Open the existing device to retain its settings."
+            return nil
+        }
+        if let pending = saveTask { _ = await pending.value }
+        guard isCurrentLogitechSetup(snapshot), savedWorkspace == workspace else { return nil }
+        let base = workspace
+        var proposed = base
+        let id: UUID
+        switch snapshot.destination {
+        case .newRegistration:
+            guard proposed.devices.count < 256, let device = RegisteredDevice.make(family: candidate.model.family) else { return nil }
+            proposed.devices.append(device)
+            id = device.id
+        case .reassociate(let registrationID):
+            guard registration(id: registrationID)?.mouseModel == candidate.model else { return nil }
+            id = registrationID
+        }
+        guard let index = proposed.devices.firstIndex(where: { $0.id == id }) else { return nil }
+        proposed.devices[index].logitechAssociation = LogitechAssociation(identity: candidate.identity, preferredConnection: candidate.connection)
+        proposed.preferredMouseID = id
+        guard let validated = try? proposed.validated() else { return nil }
+        let stagedDevice = validated.devices[index]
+        let revision = fileRevision
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        isSaving = true
+        // The shared lane fences canonical autosaves while the staged registration is unpublished.
+        let publication = Task { @MainActor [self] in
+            defer { isSaving = false; saveTask = nil }
+            do {
+                let saved = try await store.save(validated, expecting: revision)
+                fileRevision = saved.revision
+                savedWorkspace = saved.workspace
+                switch snapshot.destination {
+                case .newRegistration:
+                    workspace.devices.append(stagedDevice)
+                case .reassociate:
+                    if let current = workspace.devices.firstIndex(where: { $0.id == id }),
+                       workspace.devices[current].logitechAssociation == base.devices[index].logitechAssociation {
+                        workspace.devices[current].logitechAssociation = stagedDevice.logitechAssociation
+                    }
+                }
+                if workspace.preferredMouseID == base.preferredMouseID, registration(id: id)?.isEnabled == true {
+                    workspace.preferredMouseID = id
+                }
+                synchronizeEditorProjection()
+                synchronizeD200X()
+                configurationSaveError = nil
+                configurationFailureKind = nil
+                logitechSetupCompletedDeviceID = id
+                return true
+            } catch {
+                configurationSaveError = error.localizedDescription
+                configurationFailureKind = (error as? ConfigurationError) == .revisionConflict ? .conflict : .save
+                logitechSetupMessage = "The verified mouse could not be saved. Resolve the configuration error and retry."
+                return false
+            }
+        }
+        saveTask = publication
+        let saved = await publication.value
+        if isDirty { scheduleAutosave() }
+        guard saved else { return nil }
+        guard isCurrentLogitechSetup(snapshot, checkingRevision: false, checkingWorkspace: false) else {
+            logitechSetupMessage = "The mouse was saved; connection was cancelled. Open the device when ready."
+            return id
+        }
+        guard workspace == savedWorkspace, await currentConfigurationRevisionMatches(),
+              isCurrentLogitechSetup(snapshot, checkingRevision: false, checkingWorkspace: false) else {
+            revokeLogitechSetup()
+            logitechSetupMessage = "The mouse was saved; configuration changed before connection. Open the device when ready."
+            return id
+        }
+        return id
+    }
+
+    func addDeviceAndPair(_ family: DeviceFamily) {
+        guard family.isLogitechMouse else { addDevice(family); return }
+        presentLogitechSetup()
+    }
+
+    func presentBoltPairing() {
+        guard canPairNewMouse, let id = selectedMouseID,
+              let model = registration(id: id)?.mouseModel else { return }
+        startBoltPairing(registrationID: id, model: model, setup: nil)
+    }
+
+    private func startBoltPairing(registrationID id: UUID, model: LogitechMouseModel?, setup: LogitechSetupSnapshot?) {
+        guard let makeBoltPairingSession, !isBoltPairingActive else { return }
+        let restoreConnection = setup?.restoreConnection ?? (connectionRequested && workspace == savedWorkspace)
+        let restore = runtimeRestorePreviousSettings
+        if setup == nil { prepareForLifecycleStop() }
+        isBoltPairingPresented = setup == nil
+        isBoltPairingLoading = true
+        boltPairingMessage = nil
+        boltPairingStatus = nil
+        boltPairingReceivers = []
+        boltPairingRevoked = false
+        boltPairingMayHaveSucceeded = false
+        boltPairingAssociationSaved = false
+        boltPairingIdentityVerified = false
+        boltPairingReceiverSelected = false
+        let request = BoltPairingSnapshot(token: UUID(), registrationID: id, model: model, setup: setup,
+                                          workspace: workspace, revision: fileRevision,
+                                          intent: lifecycleIntent, restoreConnection: restoreConnection)
+        boltPairingSnapshot = request
+        let session = makeBoltPairingSession()
+        boltPairingSession = session
+        boltPairingEventTask = Task { [weak self] in
+            for await status in session.events {
+                guard !Task.isCancelled, let self, self.boltPairingSnapshot?.token == request.token else { return }
+                self.receiveBoltPairing(status)
+            }
+        }
+        let sequence = statusSequence
+        let cleanup = scheduleMouseCleanup(restore: restore)
+        Task { [weak self] in
+            guard let self else { return }
+            let cleaned = await cleanup.value
+            guard self.requireCurrentBoltPairing(request, checkingRevision: false) else { return }
+            let settled = await self.waitForSettledControllerStatus(after: sequence)
+            guard self.requireCurrentBoltPairing(request, checkingRevision: false) else { return }
+            guard cleaned, settled?.cleanupUncertain == false else {
+                self.boltPairingMessage = "The previous connection could not be released safely. Disconnect and retry."
+                self.requireLogitechSetupRefresh()
+                self.finishBoltPairing(cancel: true, restore: false)
+                return
+            }
+            self.sleepCleanupTask = nil
+            self.endpointOwnerID = nil
+            self.endpointRecoveryTarget = nil
+            let saved = await self.flushPendingSave()
+            guard self.requireCurrentBoltPairing(request, checkingRevision: false) else { return }
+            guard saved, self.savedWorkspace == request.workspace,
+                  await self.currentConfigurationRevisionMatches(),
+                  self.isCurrentBoltPairing(request, checkingRevision: false) else {
+                self.boltPairingMessage = "Save and verify the configuration before pairing a mouse."
+                self.finishBoltPairing(cancel: true, restore: false)
+                return
+            }
+            let snapshot = BoltPairingSnapshot(token: request.token, registrationID: id, model: model, setup: setup,
+                                               workspace: self.workspace, revision: self.fileRevision,
+                                               intent: request.intent, restoreConnection: restoreConnection)
+            self.boltPairingSnapshot = snapshot
+            do {
+                let receivers = try await session.receivers()
+                guard self.requireCurrentBoltPairing(snapshot) else { return }
+                self.boltPairingReceivers = receivers
+                self.isBoltPairingLoading = false
+                if receivers.isEmpty { self.boltPairingMessage = "No accessible Logi Bolt receiver was found. Connect a receiver and retry." }
+                if setup != nil, receivers.count == 1, let receiver = receivers.first {
+                    self.selectBoltPairingReceiver(receiver.id)
+                }
+            } catch {
+                guard self.requireCurrentBoltPairing(snapshot) else { return }
+                self.boltPairingMessage = "Logi Bolt receivers could not be checked. Stop pairing and retry."
+                self.requireLogitechSetupRefresh()
+                self.finishBoltPairing(cancel: true, restore: true)
+            }
+        }
+    }
+
+    func selectBoltPairingReceiver(_ id: UUID) {
+        guard let snapshot = boltPairingSnapshot, isCurrentBoltPairing(snapshot),
+              boltPairingFinishTask == nil, !isBoltPairingLoading, !boltPairingReceiverSelected,
+              boltPairingReceivers.contains(where: { $0.id == id }), let session = boltPairingSession else { return }
+        boltPairingReceiverSelected = true
+        isBoltPairingLoading = true
+        Task { await session.start(receiverID: id) }
+    }
+
+    func selectBoltPairingCandidate(_ id: UUID) {
+        guard let snapshot = boltPairingSnapshot, isCurrentBoltPairing(snapshot),
+              boltPairingFinishTask == nil, !isBoltPairingLoading,
+              boltPairingStatus?.phase == .awaitingSelection,
+              boltPairingStatus?.candidates.contains(where: { $0.id == id && (snapshot.model == nil || $0.model == snapshot.model) }) == true,
+              let session = boltPairingSession else { return }
+        isBoltPairingLoading = true
+        Task { await session.select(candidateID: id) }
+    }
+
+    func dismissBoltPairing() {
+        isBoltPairingPresented = false
+        if boltPairingPreparationToken != nil {
+            boltPairingPreparationToken = nil
+            isBoltPairingLoading = false
+            return
+        }
+        guard isBoltPairingActive else { return }
+        boltPairingRevoked = true
+        finishBoltPairing(cancel: true, restore: true)
+    }
+
+    private func revokeBoltPairing() {
+        if boltPairingPreparationToken != nil {
+            boltPairingPreparationToken = nil
+            isBoltPairingLoading = false
+        }
+        guard isBoltPairingActive else { return }
+        boltPairingRevoked = true
+        isBoltPairingPresented = false
+        finishBoltPairing(cancel: true, restore: false)
+    }
+
+    private func isCurrentBoltPairing(_ snapshot: BoltPairingSnapshot, checkingRevision: Bool = true) -> Bool {
+        let destinationMatches: Bool
+        if let setup = snapshot.setup {
+            destinationMatches = isCurrentLogitechSetup(setup, checkingRevision: checkingRevision)
+        } else {
+            destinationMatches = selectedMouseID == snapshot.registrationID && registration(id: snapshot.registrationID)?.isEnabled == true &&
+                registration(id: snapshot.registrationID)?.mouseModel == snapshot.model
+        }
+        return boltPairingSnapshot?.token == snapshot.token && !boltPairingRevoked && destinationMatches &&
+            workspace == snapshot.workspace && (!checkingRevision || fileRevision == snapshot.revision) &&
+            lifecycleIntent == snapshot.intent && !isRestarting && !isLoading && !wakeRecovery.sleeping
+    }
+
+    private func requireCurrentBoltPairing(_ snapshot: BoltPairingSnapshot, checkingRevision: Bool = true) -> Bool {
+        guard isCurrentBoltPairing(snapshot, checkingRevision: checkingRevision) else {
+            if boltPairingSnapshot?.token == snapshot.token { revokeBoltPairing() }
+            return false
+        }
+        return true
+    }
+
+    private func receiveBoltPairing(_ status: BoltPairingStatus) {
+        boltPairingStatus = status
+        boltPairingMayHaveSucceeded = boltPairingMayHaveSucceeded || status.pairingMayHaveSucceeded || status.verifiedCandidate != nil
+        boltPairingIdentityVerified = boltPairingIdentityVerified || status.verifiedCandidate != nil
+        if [.failed, .cancelled, .pairedButNotAdded].contains(status.phase) {
+            requireLogitechSetupRefresh()
+        }
+        if boltPairingRevoked, boltPairingMayHaveSucceeded { recordPairedButNotAdded() }
+        switch status.phase {
+        case .verified:
+            finishBoltPairing(cancel: false, restore: false)
+        case .failed, .cancelled, .pairedButNotAdded:
+            finishBoltPairing(cancel: false, restore: true)
+        case .discovering, .awaitingSelection, .authenticating, .verifying:
+            isBoltPairingLoading = false
+        default:
+            break
+        }
+    }
+
+    private func recordPairedButNotAdded() {
+        if boltPairingAssociationSaved {
+            boltPairingMessage = "Paired and saved; connection cancelled. The association is retained. Connect when you are ready."
+        } else if boltPairingIdentityVerified {
+            boltPairingMessage = "Paired, but not added to Hidhogg. Refresh Devices to associate it. Pairing was not undone."
+        } else {
+            boltPairingMessage = "Pairing may have completed, but the mouse was not added to Hidhogg. Refresh Devices to check. Pairing was not undone."
+        }
+    }
+
+    private func finishBoltPairing(cancel: Bool, restore: Bool) {
+        guard boltPairingFinishTask == nil, let snapshot = boltPairingSnapshot,
+              let session = boltPairingSession else { return }
+        boltPairingFinishTask = Task { [weak self] in
+            guard let self else { return }
+            if cancel { await session.cancel() }
+            await session.close()
+            self.boltPairingEventTask?.cancel()
+            self.boltPairingEventTask = nil
+            let finalStatus = await session.currentStatus()
+            guard self.boltPairingSnapshot?.token == snapshot.token else { return }
+            self.boltPairingStatus = finalStatus
+            let definiteFailureWithoutVerifiedIdentity = finalStatus.phase == .failed &&
+                !finalStatus.pairingMayHaveSucceeded && finalStatus.verifiedCandidate == nil &&
+                !self.boltPairingIdentityVerified
+            self.boltPairingMayHaveSucceeded = definiteFailureWithoutVerifiedIdentity
+                ? false
+                : self.boltPairingMayHaveSucceeded || finalStatus.pairingMayHaveSucceeded || finalStatus.verifiedCandidate != nil
+            self.boltPairingIdentityVerified = self.boltPairingIdentityVerified || finalStatus.verifiedCandidate != nil
+            if [.failed, .cancelled, .pairedButNotAdded].contains(finalStatus.phase) {
+                self.requireLogitechSetupRefresh()
+            }
+            self.isBoltPairingLoading = false
+            var activated = false
+            if !cancel, finalStatus.phase == .verified, let candidate = finalStatus.verifiedCandidate,
+               self.isCurrentBoltPairing(snapshot) {
+                activated = await self.savePairedMouse(candidate, snapshot: snapshot)
+            }
+            if !activated, self.boltPairingMayHaveSucceeded {
+                self.requireLogitechSetupRefresh()
+                self.recordPairedButNotAdded()
+            }
+            let mayRestore = !activated && !self.boltPairingMayHaveSucceeded && restore && snapshot.restoreConnection &&
+                self.workspace == snapshot.workspace && self.fileRevision == snapshot.revision &&
+                self.lifecycleIntent == snapshot.intent && !self.isRestarting && !self.wakeRecovery.sleeping
+            self.boltPairingSession = nil
+            self.boltPairingSnapshot = nil
+            self.boltPairingFinishTask = nil
+            if activated {
+                self.isBoltPairingPresented = false
+                self.boltPairingMessage = nil
+                self.requiresLogitechSetupRefreshBeforePairing = false
+                self.recoveryRefreshSetupToken = nil
+                self.recoveryRefreshConnectionsAreFresh = false
+                self.recoveryRefreshReceiverInventoriesAreFresh = false
+                if snapshot.setup != nil {
+                    self.completeLogitechSetup()
+                } else {
+                    self.connectRuntime()
+                }
+            } else if mayRestore, await self.currentConfigurationRevisionMatches(),
+                      self.workspace == snapshot.workspace, self.lifecycleIntent == snapshot.intent,
+                      self.fileRevision == snapshot.revision, !self.isRestarting, !self.wakeRecovery.sleeping {
+                self.connectRuntime()
+            }
+            if finalStatus.notificationCleanupRequiresAttention {
+                let cleanupWarning = "The Bolt receiver notification cleanup could not be verified. Review receiver state before pairing again."
+                let message: String
+                if let existingMessage = self.errorMessage, !existingMessage.isEmpty {
+                    message = existingMessage.contains(cleanupWarning)
+                        ? existingMessage
+                        : "\(existingMessage)\n\n\(cleanupWarning)"
+                } else {
+                    message = cleanupWarning
+                }
+                self.reportError(
+                    message,
+                    code: .boltCleanupUncertain,
+                    diagnosticMessage: "Bolt pairing receiver notification cleanup could not be verified."
+                )
+            }
+        }
+    }
+
+    private func savePairedMouse(_ candidate: LogitechEndpointCandidate, snapshot: BoltPairingSnapshot) async -> Bool {
+        if let setup = snapshot.setup {
+            guard isCurrentBoltPairing(snapshot), candidate.connection == .bolt else { return false }
+            let id = await commitLogitechSetupCandidate(candidate, snapshot: setup)
+            boltPairingAssociationSaved = id != nil
+            return id != nil && isCurrentLogitechSetup(setup, checkingRevision: false, checkingWorkspace: false) && !boltPairingRevoked
+        }
+        guard isCurrentBoltPairing(snapshot), candidate.model == snapshot.model, candidate.connection == .bolt,
+              (try? candidate.identity.validated()) != nil,
+              !workspace.devices.contains(where: { $0.id != snapshot.registrationID && $0.logitechAssociation?.identity == candidate.identity }),
+              await currentConfigurationRevisionMatches(), isCurrentBoltPairing(snapshot),
+              let index = workspace.devices.firstIndex(where: { $0.id == snapshot.registrationID }) else { return false }
+        workspace.devices[index].logitechAssociation = LogitechAssociation(identity: candidate.identity, preferredConnection: .bolt)
+        workspace.preferredMouseID = snapshot.registrationID
+        synchronizeEditorProjection()
+        let submitted = workspace
+        let saved = await flushPendingSave()
+        boltPairingAssociationSaved = saved && savedWorkspace?.devices.first(where: { $0.id == snapshot.registrationID })?.logitechAssociation?.identity == candidate.identity
+        guard saved, !boltPairingRevoked, boltPairingSnapshot?.token == snapshot.token,
+              lifecycleIntent == snapshot.intent, selectedMouseID == snapshot.registrationID,
+              workspace == submitted, savedWorkspace == submitted, !isRestarting, !wakeRecovery.sleeping,
+              await currentConfigurationRevisionMatches(), !boltPairingRevoked,
+              workspace == submitted, lifecycleIntent == snapshot.intent else {
+            if !saved, workspace == submitted {
+                workspace = snapshot.workspace
+                synchronizeEditorProjection()
+            }
+            return false
+        }
+        return true
+    }
+
+    func presentMouseSelector() {
+        guard canSelectExistingMouse, let id = selectedMouseID else { return }
+        isMouseSelectorPresented = true
+        isMouseSelectorLoading = true
+        mouseConnectionChoices = []
+        mouseSelectorMessage = nil
+        let restore = runtimeRestorePreviousSettings
+        prepareForLifecycleStop()
+        let request = MouseSelectionSnapshot(token: UUID(), registrationID: id, revision: fileRevision,
+                                             workspace: workspace, intent: lifecycleIntent)
+        mouseSelectionSnapshot = request
+        let sequence = statusSequence
+        let cleanup = scheduleMouseCleanup(restore: restore)
+        Task { [weak self, bolt] in
+            guard let self else { return }
+            defer {
+                if self.mouseSelectionSnapshot?.token == request.token {
+                    self.isMouseSelectorLoading = false
+                }
+            }
+            let cleaned = await cleanup.value
+            guard self.isCurrentSelection(request) else { return }
+            let settled = await self.waitForSettledControllerStatus(after: sequence)
+            guard self.isCurrentSelection(request) else { return }
+            guard cleaned, settled?.cleanupUncertain == false else {
+                self.mouseSelectorMessage = "The previous connection could not be released safely. Disconnect and retry."
+                return
+            }
+            self.sleepCleanupTask = nil
+            self.endpointOwnerID = nil
+            self.endpointRecoveryTarget = nil
+            let snapshot = MouseSelectionSnapshot(token: request.token, registrationID: id, revision: self.fileRevision,
+                                                  workspace: self.workspace, intent: self.lifecycleIntent)
+            self.mouseSelectionSnapshot = snapshot
+            let candidates: [LogitechEndpointCandidate]
+            do {
+                candidates = try await bolt.existingConnections()
+            } catch {
+                guard self.mouseSelectionSnapshot?.token == snapshot.token else { return }
+                self.mouseSelectorMessage = "Existing connections could not be checked. Refresh to retry."
+                return
+            }
+            guard self.mouseSelectionSnapshot?.token == snapshot.token else { return }
+            guard self.isCurrentSelection(snapshot) else {
+                self.mouseSelectorMessage = "The configuration changed. Refresh the list before associating."
+                return
+            }
+            self.mouseConnectionChoices = candidates.filter {
+                $0.model == self.registration(id: id)?.mouseModel
+            }
+            if self.mouseConnectionChoices.isEmpty {
+                self.mouseSelectorMessage = candidates.isEmpty
+                    ? "No verified mouse connection was found. Check the receiver or Bluetooth connection and refresh."
+                    : "Verified mice were found, but none matches this registration’s model. Select the matching registration and retry."
+            }
+        }
+    }
+
+    func dismissMouseSelector() {
+        mouseActivationID = nil
+        mouseSelectionSnapshot = nil
+        isMouseSelectorPresented = false
+        isMouseSelectorLoading = false
+        mouseConnectionChoices = []
+    }
+
+    func associateMouse(candidateID: UUID) {
+        guard let snapshot = mouseSelectionSnapshot, isCurrentSelection(snapshot),
+              let candidate = mouseConnectionChoices.first(where: { $0.id == candidateID }) else {
+            mouseSelectorMessage = "The selection changed. Refresh the list before associating."
+            return
+        }
+        isMouseSelectorLoading = true
+        Task { await activateMouseRegistration(snapshot.registrationID, candidate: candidate, snapshot: snapshot) }
+    }
+
+    private func isCurrentSelection(_ snapshot: MouseSelectionSnapshot) -> Bool {
+        mouseSelectionSnapshot?.token == snapshot.token && selectedMouseID == snapshot.registrationID &&
+            fileRevision == snapshot.revision && workspace == snapshot.workspace &&
+            lifecycleIntent == snapshot.intent && !isRestarting && !isLoading
+    }
+
+    private func activateMouseRegistration(
+        _ id: UUID, candidate: LogitechEndpointCandidate?, snapshot: MouseSelectionSnapshot? = nil
+    ) async {
+        guard canEditConfiguration, let registration = registration(id: id), registration.isEnabled,
+              registration.family.isLogitechMouse else { return }
+        if let snapshot, !isCurrentSelection(snapshot) { return }
+        if let candidate {
+            guard candidate.model == registration.mouseModel,
+                  (try? candidate.identity.validated()) != nil,
+                  !workspace.devices.contains(where: {
+                      $0.id != id && $0.logitechAssociation?.identity == candidate.identity
+                  }) else {
+                mouseSelectorMessage = "This mouse is already associated with another registration, or its identity is unavailable."
+                isMouseSelectorLoading = false
+                return
+            }
+        }
+        isMouseSelectorLoading = true
+        let activationID = UUID()
+        mouseActivationID = activationID
+        defer {
+            if mouseActivationID == activationID {
+                isMouseSelectorLoading = false
+                mouseActivationID = nil
+            }
+        }
+        let originalWorkspace = workspace
+        let revision = fileRevision
+        let restore = runtimeRestorePreviousSettings
+        prepareForLifecycleStop()
+        let intent = lifecycleIntent
+        let sequence = statusSequence
+        let cleaned = await scheduleMouseCleanup(restore: restore).value
+        guard mouseActivationID == activationID, lifecycleIntent == intent, workspace == originalWorkspace, fileRevision == revision,
+              selectedMouseID == id, !isRestarting else {
+            isMouseSelectorLoading = false
+            return
+        }
+        let settled = await waitForSettledControllerStatus(after: sequence)
+        guard mouseActivationID == activationID, lifecycleIntent == intent, workspace == originalWorkspace, fileRevision == revision,
+              selectedMouseID == id, !isRestarting else {
+            isMouseSelectorLoading = false
+            return
+        }
+        guard cleaned, settled?.cleanupUncertain == false else {
+            mouseSelectorMessage = "The previous connection could not be released safely. Disconnect and retry."
+            isMouseSelectorLoading = false
+            return
+        }
+        sleepCleanupTask = nil
+        endpointOwnerID = nil
+        endpointRecoveryTarget = nil
+        guard let index = workspace.devices.firstIndex(where: { $0.id == id }) else { return }
+        if let candidate {
+            workspace.devices[index].logitechAssociation = LogitechAssociation(
+                identity: candidate.identity, preferredConnection: candidate.connection)
+        }
+        workspace.preferredMouseID = id
+        synchronizeEditorProjection()
+        let submitted = workspace
+        let saved = await flushPendingSave()
+        guard mouseActivationID == activationID, lifecycleIntent == intent, workspace == submitted, selectedMouseID == id, !isRestarting else {
+            isMouseSelectorLoading = false
+            return
+        }
+        guard saved, savedWorkspace == submitted, await currentConfigurationRevisionMatches(),
+              mouseActivationID == activationID, lifecycleIntent == intent, workspace == submitted, selectedMouseID == id else {
+            mouseSelectorMessage = "The association could not be saved and verified. The mouse remains unmanaged; resolve the configuration error and retry."
+            isMouseSelectorLoading = false
+            return
+        }
+        pendingMouseCandidateID = candidate?.id
+        dismissMouseSelector()
+        connectRuntime()
+    }
+
+    private func currentConfigurationRevisionMatches() async -> Bool {
+        guard bolt.requiresExplicitAssociation else { return true }
+        let revision = fileRevision
+        do {
+            let current = try await store.load()
+            guard fileRevision == revision, current.revision == revision else {
+                configurationFailureKind = .conflict
+                configurationSaveError = "The configuration changed outside Hidhogg. Reload before connecting."
+                return false
+            }
+            return true
+        } catch {
+            configurationFailureKind = .load
+            configurationLoadError = "The saved association could not be verified."
+            return false
+        }
+    }
+
+    private var matchesEndpointRecoveryTarget: Bool {
+        guard bolt.requiresExplicitAssociation, let target = endpointRecoveryTarget,
+              target.ownerID == endpointOwnerID, target.ownerID == admissibleMouseID,
+              let registration = registration(id: target.ownerID), registration.isEnabled,
+              registration.mouseModel == target.model, registration.logitechAssociation == target.association,
+              let saved = savedWorkspace?.devices.first(where: { $0.id == target.ownerID }),
+              saved.mouseModel == target.model, saved.logitechAssociation == target.association,
+              savedWorkspace?.preferredMouseID == target.ownerID else { return false }
+        return true
+    }
+
+    private func canRecoverUncertainEndpoint(after status: BoltStatus?) async -> Bool {
+        guard let status, status.cleanupUncertain, [.idle, .failed].contains(status.phase),
+              matchesEndpointRecoveryTarget else { return false }
+        let target = endpointRecoveryTarget
+        let intent = lifecycleIntent
+        let revision = fileRevision
+        guard await currentConfigurationRevisionMatches(), !Task.isCancelled,
+              lifecycleIntent == intent, fileRevision == revision,
+              endpointRecoveryTarget == target, matchesEndpointRecoveryTarget else { return false }
+        return true
+    }
+
+    private func discoverMouse(for lease: MouseLease) async {
+        guard owns(lease) else { return }
+        guard bolt.requiresExplicitAssociation else {
+            await performMouseOperation(for: lease) { await $0.discover() }
+            return
+        }
+        guard let registration = registration(id: lease.ownerID),
+              let model = registration.mouseModel, let association = registration.logitechAssociation,
+              await currentConfigurationRevisionMatches(), owns(lease),
+              self.registration(id: lease.ownerID) == registration else { return }
+        if boltStatus.cleanupUncertain {
+            guard await canRecoverUncertainEndpoint(after: boltStatus), owns(lease) else { return }
+        }
+        let target = LogitechConnectionTarget(model: model, association: association, candidateID: pendingMouseCandidateID)
+        pendingMouseCandidateID = nil
+        await performMouseOperation(for: lease, discoveryTarget: target) { await $0.discover(target: target) }
+    }
+
+    private func connectRuntime() {
+        guard logitechSetupSnapshot == nil, logitechSetupInventoryTask == nil,
+              !isBoltPairingActive, !isBoltReceiverManagementActive,
+              boltReceiverManagementCloseTask == nil, admissibleMouseID != nil else { return }
         cancelWakeRecovery()
         guard !isRestarting else { return }
         if let cleanup = sleepCleanupTask {
             let intent = advanceLifecycleIntent()
             let sequence = sleepCleanupSequence
             Task { @MainActor [weak self] in
-                _ = await cleanup.value
+                var cleaned = await cleanup.value
                 guard let self, self.lifecycleIntent == intent, !self.isRestarting else { return }
                 var status = await self.waitForSettledControllerStatus(after: sequence)
                 guard self.lifecycleIntent == intent else { return }
                 if status == nil, !self.canDiscover {
                     let stopSequence = self.statusSequence
-                    await self.bolt.stop(restorePreviousSettingsOnDisconnect: self.restorePreviousSettingsOnDisconnect)
+                    cleaned = await self.scheduleMouseCleanup(restore: self.runtimeRestorePreviousSettings).value
                     guard self.lifecycleIntent == intent, !self.isRestarting else { return }
                     status = await self.waitForSettledControllerStatus(after: stopSequence)
                     guard self.lifecycleIntent == intent else { return }
                 }
+                let recoveringSameTarget = await self.canRecoverUncertainEndpoint(after: status)
+                guard self.lifecycleIntent == intent else { return }
+                guard (cleaned && status?.cleanupUncertain != true) || recoveringSameTarget else {
+                    self.scheduleMouseCleanup(restore: self.runtimeRestorePreviousSettings)
+                    return
+                }
                 guard status != nil || self.canDiscover else { return }
+                if cleaned && status?.cleanupUncertain == false { self.endpointRecoveryTarget = nil }
                 self.sleepCleanupTask = nil
-                self.connect()
+                self.connectRuntime()
             }
             return
         }
@@ -760,9 +2400,10 @@ final class AppModel: ObservableObject {
                   self.discoveryPending,
                   !self.isRestarting,
                   self.canStartDiscovery else { return }
+            guard let lease = self.activeMouseLease else { return }
             let sequence = self.statusSequence
-            await self.bolt.discover()
-            guard self.lifecycleIntent == intent else { return }
+            await self.discoverMouse(for: lease)
+            guard self.lifecycleIntent == intent, self.owns(lease) else { return }
             self.discoveryPending = false
             self.requestReconciliation()
             if self.statusSequence > sequence, !self.isRestarting, self.sessionActivationRequested,
@@ -774,8 +2415,8 @@ final class AppModel: ObservableObject {
 
     func disconnect() {
         prepareForLifecycleStop()
-        let restore = restorePreviousSettingsOnDisconnect
-        Task { await bolt.stop(restorePreviousSettingsOnDisconnect: restore) }
+        let restore = runtimeRestorePreviousSettings
+        scheduleMouseCleanup(restore: restore)
     }
 
     func requestEnableConfirmation() {
@@ -806,6 +2447,8 @@ final class AppModel: ObservableObject {
             attemptedButtonState = nil
             attemptedWheelRequest = nil
         }
+        claimConnectedMouse()
+        guard activeMouseLease != nil else { return }
         sessionActivationRequested = true
         requestReconciliation()
     }
@@ -901,14 +2544,27 @@ final class AppModel: ObservableObject {
     }
 
     var canRefreshDeviceInformation: Bool {
-        isDeviceEnabled(.mxMaster3S) && !isRestarting && !boltStatus.cleanupUncertain &&
+        isSelectedMouseRuntimeTarget && canRefreshRuntimeDeviceInformation
+    }
+
+    private var canRefreshRuntimeDeviceInformation: Bool {
+        presentedMouseOwnerID != nil && !isRestarting && !boltStatus.cleanupUncertain &&
             [.ready, .enabled].contains(boltStatus.phase) &&
             !boltStatus.deviceInformation.isRefreshing
     }
 
     func refreshDeviceInformation() {
         guard canRefreshDeviceInformation else { return }
-        Task { await bolt.refreshDeviceInformation() }
+        refreshRuntimeDeviceInformation()
+    }
+
+    private func refreshRuntimeDeviceInformation() {
+        guard canRefreshRuntimeDeviceInformation else { return }
+        guard let lease = activeMouseLease else { return }
+        Task { [weak self] in
+            guard let self, self.owns(lease) else { return }
+            await self.performMouseOperation(for: lease) { await $0.refreshDeviceInformation() }
+        }
     }
 
     func setLowBatteryNotificationsEnabled(_ enabled: Bool) {
@@ -917,16 +2573,19 @@ final class AppModel: ObservableObject {
         guard let index = configuration.devices.firstIndex(where: { $0.id == AppConfiguration.logitechProfileID }) else { return }
         configuration.devices[index].lowBatteryNotificationsEnabled = enabled
         updateDraft(configuration)
+        let mouseID = selectedMouseID
         Task { [weak self] in
-            await notifications.setEnabled(enabled)
-            self?.updateLowBatteryObservation()
+            if enabled { await notifications.requestAuthorization() }
+            guard let self, self.selectedMouseID == mouseID else { return }
+            self.synchronizeLowBatteryPreference()
+            self.updateLowBatteryObservation()
         }
     }
 
     private func synchronizeLowBatteryPreference() {
         guard let notifications = lowBatteryNotifications else { return }
-        notifications.synchronizeEnabled(isDeviceEnabled(.mxMaster3S) && hasUsableConfiguration && !configurationLoadFailed &&
-            document.draft.mouse?.lowBatteryNotificationsEnabled == true)
+        notifications.synchronizeEnabled(admissibleMouseID != nil && hasUsableConfiguration && !configurationLoadFailed &&
+            runtimeMouse?.lowBatteryNotificationsEnabled == true)
     }
 
     private func refreshNotificationAuthorization() {
@@ -945,20 +2604,24 @@ final class AppModel: ObservableObject {
         guard let notifications = lowBatteryNotifications else { return }
         let information = boltStatus.deviceInformation
         let battery = information.battery
-        let fresh = [.ready, .enabled].contains(boltStatus.phase) && information.batteryState == .available &&
+        let lease = activeMouseLease
+        let fresh = lease != nil && [.ready, .enabled].contains(boltStatus.phase) && information.batteryState == .available &&
             battery.map { (0...300).contains(Date.now.timeIntervalSince($0.observedAt)) } == true
         let charging: Bool? = switch battery?.charging {
         case .discharging: false
         case .charging, .slowCharging, .complete: true
         default: nil
         }
-        Task {
+        Task { [weak self] in
+            guard let self, let lease, self.owns(lease) else { return }
             await notifications.observe(percentage: battery?.percentage, charging: charging, isFresh: fresh)
         }
     }
 
     func applySavedWheelPreference() {
         guard canApplyWheelPreference else { return }
+        claimConnectedMouse()
+        guard activeMouseLease != nil else { return }
         sessionActivationRequested = true
         attemptedWheelRequest = nil
         isWheelApplyPending = document.draft.mouse?.wheelInverted != nil || wheelHighResolutionDraft != nil || boltStatus.wheel.isOwned
@@ -1013,7 +2676,8 @@ final class AppModel: ObservableObject {
     }
 
     func beginRecording(for control: MouseControl, applicationID: String? = nil) {
-        guard isDeviceEnabled(.mxMaster3S), canEditConfiguration else { return }
+        guard let selectedMouseID, registration(id: selectedMouseID)?.isEnabled == true,
+              canEditConfiguration else { return }
         captureSessionID = UUID()
         recordingTarget = ShortcutRecordingTarget(control: control, applicationID: applicationID)
         refreshDeliveryAdmission()
@@ -1027,6 +2691,7 @@ final class AppModel: ObservableObject {
         var next = navigation
         next.navigate(to: location)
         navigation = next
+        synchronizeEditorProjection()
     }
 
     func selectControl(_ control: MouseControl) {
@@ -1044,6 +2709,7 @@ final class AppModel: ObservableObject {
         var next = navigation
         next.navigate(to: location)
         navigation = next
+        synchronizeEditorProjection()
     }
 
     func completeRecording(_ shortcut: KeyboardShortcut) {
@@ -1106,6 +2772,7 @@ final class AppModel: ObservableObject {
         var next = navigation
         next.navigate(to: location)
         navigation = next
+        synchronizeEditorProjection()
         errorMessage = nil
     }
 
@@ -1122,14 +2789,18 @@ final class AppModel: ObservableObject {
         var next = navigation
         next.replaceCurrent(with: location)
         navigation = next
+        synchronizeEditorProjection()
     }
 
     func updateDraft(_ configuration: AppConfiguration) {
         guard canEditConfiguration else { return }
         do {
-            let input = try configuration.validated()
-            let validated = workspace.applying(input).configuration
+            let input = selectedMouseID == nil ? configuration : try configuration.validated()
+            let updatedWorkspace = try workspace.applying(input, mouseID: selectedMouseID).validated()
+            let validated = updatedWorkspace.configuration(forMouseID: selectedMouseID)
             guard document.draft != validated else { return }
+            revokeLogitechSetup()
+            revokeBoltPairing()
             if document.draft.mouse?.wheelInverted != validated.mouse?.wheelInverted ||
                 document.draft.mouse?.wheelHighResolution != validated.mouse?.wheelHighResolution ||
                 (document.draft.mouse?.wheelScrollAmount != nil && validated.mouse?.wheelScrollAmount == nil) {
@@ -1144,7 +2815,7 @@ final class AppModel: ObservableObject {
                 attemptedThumbwheelRequest = nil
             }
             document.updateDraft(validated)
-            workspace = workspace.applying(validated)
+            workspace = updatedWorkspace
             synchronizeD200X()
             synchronizeLowBatteryPreference()
             scheduleAutosave()
@@ -1192,8 +2863,7 @@ final class AppModel: ObservableObject {
         if let saveTask { return await saveTask.value }
         guard !isLoading, !initialConfigurationLoadPending, !configurationLoadFailed else { return !isDirty }
         guard isDirty || !fileRevision.exists else { return true }
-        let submittedConfiguration = document.draft
-        let submittedWorkspace = workspace.applying(submittedConfiguration)
+        let submittedWorkspace = workspace
         let revision = fileRevision
         isSaving = true
         let task = Task { @MainActor [self] in
@@ -1204,8 +2874,8 @@ final class AppModel: ObservableObject {
             do {
                 let snapshot = try await store.save(submittedWorkspace, expecting: revision)
                 fileRevision = snapshot.revision
-                document.acceptSaved(snapshot.configuration)
                 savedWorkspace = snapshot.workspace
+                synchronizeEditorProjection()
                 configurationSaveError = nil
                 configurationFailureKind = nil
                 return true
@@ -1317,14 +2987,7 @@ final class AppModel: ObservableObject {
         bluetooth.synchronize(registeredDevices, suspended: true)
         let reconnect = connectionRequested && !isRestarting
         prepareForLifecycleStop()
-        sleepCleanupSequence = statusSequence
-        let previous = sleepCleanupTask
-        let restore = restorePreviousSettingsOnDisconnect
-        let cleanup = Task { [bolt] in
-            if let previous { _ = await previous.value }
-            return await bolt.stopForRestart(restorePreviousSettingsOnDisconnect: restore)
-        }
-        sleepCleanupTask = cleanup
+        let cleanup = scheduleMouseCleanup(restore: runtimeRestorePreviousSettings)
         wakeRecovery.sleep(reconnect: reconnect) { await cleanup.value }
     }
 
@@ -1343,10 +3006,11 @@ final class AppModel: ObservableObject {
         bluetooth.stop()
         cancelRecording()
         prepareForLifecycleStop()
+        if let boltPairingFinishTask { await boltPairingFinishTask.value }
         let saved = await flushPendingSave()
         await flowLite.stop()
         await d200x.stop()
-        await bolt.stop(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
+        _ = await scheduleMouseCleanup(restore: runtimeRestorePreviousSettings).value
         return saved
     }
 
@@ -1354,14 +3018,28 @@ final class AppModel: ObservableObject {
         bluetooth.stop()
         cancelRecording()
         prepareForLifecycleStop()
+        if let boltPairingFinishTask { await boltPairingFinishTask.value }
         let saved = await flushPendingSave()
         await flowLite.stop()
         await d200x.stop()
-        let cleaned = await bolt.stopForRestart(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
+        let cleaned = await scheduleMouseCleanup(restore: runtimeRestorePreviousSettings).value
         return saved && cleaned
     }
 
     func prepareForLifecycleStop() {
+        prepareForLifecycleStop(preservingStoredInventories: false)
+    }
+
+    private func prepareForLifecycleStop(
+        preservingStoredInventories: Bool,
+        preservingLogitechSetupCandidates: Bool = false
+    ) {
+        revokeLogitechSetup(
+            preservingStoredInventories: preservingStoredInventories,
+            preservingCandidates: preservingLogitechSetupCandidates
+        )
+        revokeBoltPairing()
+        cleanupRestorePreviousSettings = runtimeRestorePreviousSettings
         cancelWakeRecovery()
         invalidateLifecycleIntent()
         reconciliationRequested = false
@@ -1374,7 +3052,11 @@ final class AppModel: ObservableObject {
 
     private func stopControllerSession() async {
         prepareForLifecycleStop()
-        await bolt.stop(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
+        if let boltPairingFinishTask { await boltPairingFinishTask.value }
+        let intent = lifecycleIntent
+        let cleaned = await scheduleMouseCleanup(restore: runtimeRestorePreviousSettings).value
+        guard cleaned, lifecycleIntent == intent else { return }
+        sleepCleanupTask = nil
     }
 
     private func loadInitialConfiguration(startupIntent: UInt64) async {
@@ -1399,10 +3081,10 @@ final class AppModel: ObservableObject {
         switch result {
         case .success(let snapshot):
             fileRevision = snapshot.revision
-            let previous = workspace.applying(document.draft)
+            let previous = workspace
             workspace = snapshot.workspace
             savedWorkspace = snapshot.workspace
-            document.acceptReload(snapshot.configuration)
+            synchronizeEditorProjection()
             synchronizeRegistrations(previous: previous)
             configurationLoadFailed = false
             configurationLoadError = nil
@@ -1448,7 +3130,7 @@ final class AppModel: ObservableObject {
               let startupIntent,
               lifecycleIntent == startupIntent,
               loadedConfiguration?.connectOnLaunch == true else { return }
-        connect()
+        connectRuntime()
     }
 
     private func reloadFromDisk() async {
@@ -1461,10 +3143,10 @@ final class AppModel: ObservableObject {
                 return
             }
             fileRevision = snapshot.revision
-            let previous = workspace.applying(document.draft)
+            let previous = workspace
             workspace = snapshot.workspace
             savedWorkspace = snapshot.workspace
-            document.acceptReload(snapshot.configuration)
+            synchronizeEditorProjection()
             synchronizeRegistrations(previous: previous)
             configurationSaveError = nil
             configurationFailureKind = nil
@@ -1481,6 +3163,7 @@ final class AppModel: ObservableObject {
                 var next = navigation
                 next.replaceCurrent(with: location)
                 navigation = next
+                synchronizeEditorProjection()
             }
         } catch {
             guard !isRestarting else {
@@ -1505,6 +3188,8 @@ final class AppModel: ObservableObject {
 
     private func startReload() {
         guard canReloadConfiguration else { return }
+        revokeLogitechSetup()
+        revokeBoltPairing()
         autosaveTask?.cancel()
         autosaveTask = nil
         isLoading = true
@@ -1533,26 +3218,31 @@ final class AppModel: ObservableObject {
 
     var canEditConfiguration: Bool { !isRestarting && !isLoading && !configurationLoadFailed }
     private var canStartWheelApply: Bool {
-        isDeviceEnabled(.mxMaster3S) && !isRestarting && !isLoading && hasUsableConfiguration &&
+        canClaimConnectedMouse && isSelectedMouseRuntimeTarget && admissibleMouseID != nil && runtimeIdentityVerified && boltStatus.supportsManagement && !isRestarting && !isLoading && hasUsableConfiguration &&
             [.ready, .enabled].contains(boltStatus.phase) &&
             !boltStatus.cleanupUncertain && boltStatus.wheel.support == .supported &&
             !boltStatus.wheel.isApplying && (try? document.draft.validated()) != nil
     }
 
     private var hasConfiguredShortcut: Bool {
-        guard let mouse = document.draft.mouse else { return false }
+        containsConfiguredShortcut(in: runtimeMouse ?? document.draft.mouse)
+    }
+
+    private func containsConfiguredShortcut(in mouse: DeviceBindings?) -> Bool {
+        guard let mouse else { return false }
         return (Array(mouse.defaults.values) + mouse.applications.values.flatMap { $0.values })
             .contains { $0.kind == .shortcut }
     }
 
     private var shouldEnableButtons: Bool {
-        isDeviceEnabled(.mxMaster3S) && sessionActivationRequested && !isRestarting && !isLoading && !boltStatus.cleanupUncertain && hasUsableConfiguration &&
+        activeMouseLease != nil && runtimeIdentityVerified && sessionActivationRequested && boltStatus.supportsManagement && !isRestarting && !isLoading && !boltStatus.cleanupUncertain && hasUsableConfiguration &&
             permission == .granted && hasConfiguredShortcut &&
             boltStatus.availableControls == Set(MouseControl.allCases)
     }
 
     private func refreshDeliveryAdmission() {
-        let canDeliver = isDeviceEnabled(.mxMaster3S) && permission == .granted && sessionActivationRequested && !isRestarting &&
+        let canDeliver = activeMouseLease != nil && runtimeIdentityVerified && boltStatus.supportsManagement && permission == .granted && sessionActivationRequested && !isRestarting &&
+            !isBoltReceiverManagementActive && boltReceiverManagementCloseTask == nil &&
             !boltStatus.cleanupUncertain && [.ready, .enabling, .enabled].contains(boltStatus.phase)
         if !canDeliver {
             bolt.invalidateScrollAdmission()
@@ -1560,11 +3250,13 @@ final class AppModel: ObservableObject {
             bolt.invalidateThumbwheelAdmission()
             thumbwheelScrollSender.reset()
         }
-        actionsEnabled = shouldEnableButtons && boltStatus.phase == .enabled && recordingTarget == nil
+        actionsEnabled = shouldEnableButtons && boltStatus.phase == .enabled && recordingTarget == nil &&
+            activeMouseLease.map { boltStatus.generation > $0.statusGenerationFloor } == true
         deliveryGeneration = actionsEnabled ? boltStatus.generation : nil
     }
 
     private func requestReconciliation() {
+        guard !isBoltPairingActive else { return }
         reconciliationRequested = true
         guard reconciliationTask == nil else { return }
         reconciliationTask = Task { @MainActor [weak self] in
@@ -1578,16 +3270,17 @@ final class AppModel: ObservableObject {
     private func reconcileSession() async {
         while reconciliationRequested {
             reconciliationRequested = false
-            guard isDeviceEnabled(.mxMaster3S), sessionActivationRequested, !isRestarting, !isLoading, hasUsableConfiguration,
+            guard !isBoltReceiverManagementActive, boltReceiverManagementCloseTask == nil else { continue }
+            guard let lease = activeMouseLease, sessionActivationRequested, !isRestarting, !isLoading, hasUsableConfiguration,
                   !discoveryPending, [.ready, .enabled].contains(boltStatus.phase),
-                  !boltStatus.cleanupUncertain else { continue }
+                  !boltStatus.cleanupUncertain, runtimeIdentityVerified, boltStatus.supportsManagement, boltStatus.generation > lease.statusGenerationFloor else { continue }
             let intent = lifecycleIntent
             let wheel = WheelRequest(
-                inverted: document.draft.mouse?.wheelInverted,
-                highResolution: wheelHighResolutionDraft,
-                amount: wheelScrollAmountDraft,
-                postingAllowed: !scrollReleasePending && !scrollPostingFailed && permission == .granted && (wheelScrollAmountDraft == nil || scrollSender.canPostEvents()),
-                restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect
+                inverted: runtimeMouse?.wheelInverted,
+                highResolution: runtimeMouse?.wheelHighResolution,
+                amount: runtimeMouse?.wheelScrollAmount,
+                postingAllowed: !scrollReleasePending && !scrollPostingFailed && permission == .granted && (runtimeMouse?.wheelScrollAmount == nil || scrollSender.canPostEvents()),
+                restorePreviousSettingsOnDisconnect: runtimeRestorePreviousSettings
             )
             if attemptedWheelRequest != wheel {
                 let previous = attemptedWheelRequest
@@ -1597,26 +3290,28 @@ final class AppModel: ObservableObject {
                      wheel.restorePreviousSettingsOnDisconnect || previous?.restorePreviousSettingsOnDisconnect == true) {
                     attemptedWheelRequest = wheel
                     isWheelApplyPending = true
-                    await bolt.applyWheelPreferences(
-                        inverted: wheel.inverted,
-                        highResolution: wheel.highResolution,
-                        restorePreviousSettingsOnDisconnect: wheel.restorePreviousSettingsOnDisconnect,
-                        amount: wheel.amount,
-                        scrollPostingAllowed: wheel.postingAllowed
-                    )
+                    await performMouseOperation(for: lease) { session in
+                        await session.applyWheelPreferences(
+                            inverted: wheel.inverted,
+                            highResolution: wheel.highResolution,
+                            restorePreviousSettingsOnDisconnect: wheel.restorePreviousSettingsOnDisconnect,
+                            amount: wheel.amount,
+                            scrollPostingAllowed: wheel.postingAllowed
+                        )
+                    }
+                    guard lifecycleIntent == intent, owns(lease) else { continue }
                     if !wheel.postingAllowed { scrollReleasePending = false }
-                    guard lifecycleIntent == intent else { continue }
                     isWheelApplyPending = false
                     reconciliationRequested = true
                     continue
                 }
             }
             let thumbwheel = ThumbwheelRequest(
-                inverted: thumbwheelPreferenceDraft,
-                amount: thumbwheelScrollAmountDraft,
+                inverted: runtimeMouse?.thumbwheelInverted,
+                amount: runtimeMouse?.thumbwheelScrollAmount,
                 postingAllowed: !thumbwheelReleasePending && !thumbwheelPostingFailed && permission == .granted &&
-                    (thumbwheelScrollAmountDraft == nil || thumbwheelScrollSender.canPostEvents()),
-                restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect
+                    (runtimeMouse?.thumbwheelScrollAmount == nil || thumbwheelScrollSender.canPostEvents()),
+                restorePreviousSettingsOnDisconnect: runtimeRestorePreviousSettings
             )
             if attemptedThumbwheelRequest != thumbwheel {
                 let previous = attemptedThumbwheelRequest
@@ -1629,14 +3324,16 @@ final class AppModel: ObservableObject {
                 if hasIntent && canApply {
                     attemptedThumbwheelRequest = thumbwheel
                     isThumbwheelApplyPending = true
-                    await bolt.applyThumbwheelPreferences(
-                        inverted: thumbwheel.inverted,
-                        amount: thumbwheel.amount,
-                        restorePreviousSettingsOnDisconnect: thumbwheel.restorePreviousSettingsOnDisconnect,
-                        scrollPostingAllowed: thumbwheel.postingAllowed
-                    )
+                    await performMouseOperation(for: lease) { session in
+                        await session.applyThumbwheelPreferences(
+                            inverted: thumbwheel.inverted,
+                            amount: thumbwheel.amount,
+                            restorePreviousSettingsOnDisconnect: thumbwheel.restorePreviousSettingsOnDisconnect,
+                            scrollPostingAllowed: thumbwheel.postingAllowed
+                        )
+                    }
+                    guard lifecycleIntent == intent, owns(lease) else { continue }
                     if !thumbwheel.postingAllowed { thumbwheelReleasePending = false }
-                    guard lifecycleIntent == intent else { continue }
                     isThumbwheelApplyPending = false
                     reconciliationRequested = true
                     continue
@@ -1646,12 +3343,12 @@ final class AppModel: ObservableObject {
             guard attemptedButtonState != enabled else { continue }
             if enabled && boltStatus.phase == .ready {
                 attemptedButtonState = enabled
-                await bolt.enable()
+                await performMouseOperation(for: lease) { await $0.enable() }
             } else if !enabled && [.enabling, .enabled].contains(boltStatus.phase) {
                 attemptedButtonState = enabled
-                await bolt.disable()
+                await performMouseOperation(for: lease) { await $0.disable() }
             }
-            guard lifecycleIntent == intent else { continue }
+            guard lifecycleIntent == intent, owns(lease) else { continue }
             refreshDeliveryAdmission()
         }
     }
@@ -1665,6 +3362,11 @@ final class AppModel: ObservableObject {
         thumbwheelPostingFailed = false
         _ = refreshPermission()
         let intent = advanceLifecycleIntent()
+        if let id = admissibleMouseID {
+            endpointOwnerID = id
+            mouseLease = MouseLease(ownerID: id, epoch: intent, statusGenerationFloor: boltStatus.generation, startedAt: .now)
+        }
+        synchronizeLowBatteryPreference()
         discoveryPending = true
         sessionActivationRequested = true
         attemptedWheelRequest = nil
@@ -1676,7 +3378,8 @@ final class AppModel: ObservableObject {
     }
 
     private func startConnectionRecovery() {
-        guard isDeviceEnabled(.mxMaster3S), sessionActivationRequested, !isRestarting, !wakeRecovery.sleeping else { return }
+        guard logitechSetupSnapshot == nil, logitechSetupInventoryTask == nil, !isBoltPairingActive,
+              admissibleMouseID != nil, sessionActivationRequested, !isRestarting, !wakeRecovery.sleeping else { return }
         wakeRecovery.retry { [weak self] in
             guard let self else { return .stop }
             return await self.performRecoveryAttempt()
@@ -1684,38 +3387,48 @@ final class AppModel: ObservableObject {
     }
 
     private func performRecoveryAttempt() async -> WakeRecoveryCoordinator.Outcome {
-        guard isDeviceEnabled(.mxMaster3S) else { return .stop }
+        guard logitechSetupSnapshot == nil, logitechSetupInventoryTask == nil, !isBoltPairingActive,
+              admissibleMouseID != nil else { return .stop }
         if let cleanup = sleepCleanupTask {
             let cleanupIntent = lifecycleIntent
-            _ = await cleanup.value
+            var cleaned = await cleanup.value
             guard !Task.isCancelled, lifecycleIntent == cleanupIntent else { return .stop }
             var status = await waitForSettledControllerStatus(after: sleepCleanupSequence)
             guard lifecycleIntent == cleanupIntent, !Task.isCancelled else { return .stop }
             if status == nil {
                 let stopSequence = statusSequence
-                await bolt.stop(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
+                cleaned = await scheduleMouseCleanup(restore: runtimeRestorePreviousSettings).value
                 guard lifecycleIntent == cleanupIntent, !Task.isCancelled else { return .stop }
                 status = await waitForSettledControllerStatus(after: stopSequence)
                 guard lifecycleIntent == cleanupIntent, !Task.isCancelled else { return .stop }
             }
+            let recoveringSameTarget = await canRecoverUncertainEndpoint(after: status)
+            guard lifecycleIntent == cleanupIntent, !Task.isCancelled else { return .stop }
+            guard (cleaned && status?.cleanupUncertain != true) || recoveringSameTarget else {
+                scheduleMouseCleanup(restore: runtimeRestorePreviousSettings)
+                return .retry
+            }
+            if cleaned && status?.cleanupUncertain == false { endpointRecoveryTarget = nil }
             sleepCleanupTask = nil
             guard status != nil else { return .retry }
         }
         guard !Task.isCancelled, !isRestarting else { return .stop }
         guard !isLoading, hasUsableConfiguration else { return .retry }
-        if [.ready, .enabled].contains(boltStatus.phase), !boltStatus.cleanupUncertain { return .connected }
+        if activeMouseLease != nil, [.ready, .enabled].contains(boltStatus.phase), !boltStatus.cleanupUncertain { return .connected }
         guard !discoveryPending, canDiscover else { return .retry }
         let intent = beginDiscovery()
+        guard let lease = activeMouseLease else { return .stop }
         let sequence = statusSequence
-        await bolt.discover()
-        guard lifecycleIntent == intent else { return .stop }
+        await discoverMouse(for: lease)
+        guard owns(lease), lifecycleIntent == intent else { return .stop }
         let status = await waitForWakeStatus(after: sequence, matching: { [.ready, .failed, .idle].contains($0.phase) })
-        guard lifecycleIntent == intent else { return .stop }
+        guard owns(lease), lifecycleIntent == intent else { return .stop }
         discoveryPending = false
         guard let status else {
             guard !Task.isCancelled else { return .stop }
-            await bolt.stop(restorePreviousSettingsOnDisconnect: restorePreviousSettingsOnDisconnect)
-            guard lifecycleIntent == intent, !Task.isCancelled else { return .stop }
+            let restore = runtimeRestorePreviousSettings
+            await performMouseOperation(for: lease) { await $0.stop(restorePreviousSettingsOnDisconnect: restore) }
+            guard owns(lease), lifecycleIntent == intent, !Task.isCancelled else { return .stop }
             requestReconciliation()
             return .retry
         }
@@ -1763,18 +3476,22 @@ final class AppModel: ObservableObject {
     }
 
     private func advanceLifecycleIntent() -> UInt64 {
+        mouseSelectionSnapshot = nil
         lifecycleIntent &+= 1
         discoveryPending = false
         return lifecycleIntent
     }
 
     private func invalidateLifecycleIntent() {
+        pendingMouseCandidateID = nil
         bolt.invalidateScrollAdmission()
         scrollSender.reset()
         bolt.invalidateThumbwheelAdmission()
         thumbwheelScrollSender.reset()
         _ = advanceLifecycleIntent()
+        mouseLease = nil
         sessionActivationRequested = false
+        synchronizeLowBatteryPreference()
     }
 
     private func normalized(_ location: WorkspaceLocation) -> WorkspaceLocation {
@@ -1784,7 +3501,14 @@ final class AppModel: ObservableObject {
             normalized.route = registeredDevices.first.map { Self.route(for: $0) } ?? .settings
             return normalized
         }
-        guard let applicationID = location.applicationID, !applicationIDs.contains(applicationID) else { return location }
+        if case .mouse(let id) = location.route, registration(id: id)?.family.isLogitechMouse != true {
+            var normalized = location
+            normalized.route = registeredDevices.first.map { Self.route(for: $0) } ?? .settings
+            normalized.applicationID = nil
+            return normalized
+        }
+        let applications = workspace.configuration(forMouseID: mouseID(for: location.route)).mouse?.applications ?? [:]
+        guard let applicationID = location.applicationID, applications[applicationID] == nil else { return location }
         var normalized = location
         normalized.applicationID = nil
         return normalized
@@ -1792,20 +3516,23 @@ final class AppModel: ObservableObject {
 
     private func replaceMissingInitialDeviceSelection() {
         let route = navigation.current.route
+        let initialMouseRoute = route == .devices ? mouseRegistrations.first.map { WorkspaceRoute.mouse($0.id) } : nil
         let isMissingDeviceRoute: Bool = switch route {
-        case .devices: registration(for: .mxMaster3S) == nil
+        case .devices: mouseRegistrations.isEmpty
+        case .mouse(let id): registration(id: id)?.family.isLogitechMouse != true
         case .d200x: registration(for: .d200x) == nil
         case .flowLite: registration(for: .flowLite84) == nil
         case .genericBluetooth(let id): registration(id: id)?.family != .genericBluetooth
-        case .actions, .notifications, .tilePresets, .settings: false
+        case .logitechSetup, .actions, .notifications, .tilePresets, .settings: false
         }
-        guard isMissingDeviceRoute else { return }
+        guard isMissingDeviceRoute || initialMouseRoute != nil else { return }
 
         var location = navigation.current
-        location.route = registeredDevices.first.map { Self.route(for: $0) } ?? .settings
+        location.route = initialMouseRoute ?? registeredDevices.first.map { Self.route(for: $0) } ?? .settings
         var next = navigation
         next.replaceCurrent(with: location)
         navigation = next
+        synchronizeEditorProjection()
     }
 
     private func receive(_ event: BoltEvent) {
@@ -1824,7 +3551,7 @@ final class AppModel: ObservableObject {
             }
             if [.ready, .enabled].contains(status.phase), !informationRequestedForConnection {
                 informationRequestedForConnection = true
-                refreshDeviceInformation()
+                refreshRuntimeDeviceInformation()
             }
             if [.ready, .enabled].contains(status.phase), !status.cleanupUncertain {
                 wakeRecovery.connectionRestored()
@@ -1848,9 +3575,10 @@ final class AppModel: ObservableObject {
     }
 
     private func deliverScroll(vertical: Double, horizontal: Double, generation: UInt64, observedAt: ContinuousClock.Instant) {
-        guard sessionActivationRequested, !isRestarting, !boltStatus.cleanupUncertain,
+        guard admitsInput(observedAt: observedAt), runtimeIdentityVerified, boltStatus.supportsManagement,
+              sessionActivationRequested, !isRestarting, !boltStatus.cleanupUncertain,
               [.ready, .enabling, .enabled].contains(boltStatus.phase), permission == .granted,
-              let amount = wheelScrollAmountDraft else { return }
+              let amount = runtimeMouse?.wheelScrollAmount else { return }
         var deliveryError: Error?
         let admitted = bolt.withScrollAdmission(generation: generation, observedAt: observedAt) {
             do {
@@ -1877,9 +3605,10 @@ final class AppModel: ObservableObject {
     }
 
     private func deliverThumbwheel(rotation: Double, state: UInt8, generation: UInt64, observedAt: ContinuousClock.Instant) {
-        guard sessionActivationRequested, !isRestarting, !boltStatus.cleanupUncertain,
+        guard admitsInput(observedAt: observedAt), runtimeIdentityVerified, boltStatus.supportsManagement,
+              sessionActivationRequested, !isRestarting, !boltStatus.cleanupUncertain,
               [.ready, .enabling, .enabled].contains(boltStatus.phase), permission == .granted,
-              let amount = thumbwheelScrollAmountDraft else { return }
+              let amount = runtimeMouse?.thumbwheelScrollAmount else { return }
         var deliveryError: Error?
         let admitted = bolt.withThumbwheelAdmission(generation: generation, observedAt: observedAt) {
             do {
@@ -1908,7 +3637,7 @@ final class AppModel: ObservableObject {
     }
 
     private func deliver(control: MouseControl, generation: UInt64, observedAt: ContinuousClock.Instant) {
-        guard actionsEnabled,
+        guard admitsInput(observedAt: observedAt), actionsEnabled,
               !boltStatus.cleanupUncertain,
               deliveryGeneration == generation,
               boltStatus.phase == .enabled,
@@ -1917,7 +3646,7 @@ final class AppModel: ObservableObject {
               recordingTarget == nil else { return }
 
         let applicationID = frontmostApplication()
-        let binding = document.draft.mouse?.binding(for: control, application: applicationID) ?? .disabled
+        let binding = runtimeMouse?.binding(for: control, application: applicationID) ?? .disabled
         guard binding.kind == .shortcut, let shortcut = binding.shortcut else { return }
 
         var deliveryError: Error?

@@ -241,6 +241,11 @@ private actor DeviceInformationBindingSession: BindingSession {
         await emitStatus(.idle, advancingGeneration: true)
     }
 
+    func stopForRestart() async -> Bool {
+        await stop()
+        return true
+    }
+
     func emitStatus(_ phase: BoltPhase, advancingGeneration: Bool) async {
         if advancingGeneration { generation &+= 1 }
         continuation.yield(.status(status(phase)))

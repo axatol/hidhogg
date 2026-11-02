@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import GenericBluetooth
 import Combine
@@ -238,7 +239,7 @@ final class AppModelIntegrationTests: XCTestCase {
         XCTAssertNotEqual(model.registration(for: .mxMaster3S)?.id, id)
         XCTAssertEqual(model.registeredDevices.filter { $0.family == .mxMaster3S }.count, 1)
         model.addDevice(.mxMaster3S)
-        XCTAssertEqual(model.registeredDevices.filter { $0.family == .mxMaster3S }.count, 1)
+        XCTAssertEqual(model.registeredDevices.filter { $0.family == .mxMaster3S }.count, 2)
         let saved = await model.flushPendingSave()
         XCTAssertTrue(saved)
     }
@@ -623,6 +624,80 @@ final class AppModelIntegrationTests: XCTestCase {
         XCTAssertTrue(consoleRecord.contains("source=\(entry.source.description)"))
         XCTAssertTrue(consoleRecord.contains("message=Session failed."))
         withExtendedLifetime((model, diagnostics)) {}
+    }
+
+    func testAmbiguousBoltFailureIsVisibleWithoutMouseLeaseAndClearsOnSuccess() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let session = FixtureBindingSession()
+        let model = AppModel(
+            configurationURL: url,
+            store: ConfigurationStore(url: url),
+            bolt: session,
+            sender: ShortcutSender(preflight: { false }, request: { true }, postPair: { _ in }),
+            loadImmediately: false,
+            observeSleep: false
+        )
+
+        session.emit(BoltStatus(
+            phase: .failed,
+            message: "No Bolt receiver is available.",
+            availableControls: [],
+            generation: 7,
+            cleanupUncertain: false,
+            failure: BoltFailureContext(
+                code: .endpointUnavailable,
+                sourceFileID: "LogitechBolt/BoltController.swift",
+                sourceLine: 1083
+            )
+        ))
+        let absentFailureReceived = await eventually { model.boltStatus.failure?.code == .endpointUnavailable }
+        XCTAssertTrue(absentFailureReceived)
+        XCTAssertEqual(model.selectedMouseStatus.phase, .idle)
+        XCTAssertEqual(model.connectionTitle, "Disconnected")
+        XCTAssertEqual(model.connectionMessage, "Connect to discover a mouse endpoint.")
+        XCTAssertEqual(model.connectionPresentationPhase, .idle)
+        XCTAssertTrue(model.connectionColor.isEqual(NSColor.tertiaryLabelColor))
+
+        session.emit(BoltStatus(
+            phase: .failed,
+            message: "Multiple Bolt endpoints were detected.",
+            availableControls: [],
+            generation: 8,
+            cleanupUncertain: false,
+            failure: BoltFailureContext(
+                code: .endpointAmbiguous,
+                sourceFileID: "LogitechBolt/BoltController.swift",
+                sourceLine: 1083
+            )
+        ))
+        let ambiguousFailureReceived = await eventually { model.boltStatus.failure?.code == .endpointAmbiguous }
+        XCTAssertTrue(ambiguousFailureReceived)
+        XCTAssertEqual(model.selectedMouseStatus.phase, .idle)
+        XCTAssertEqual(model.connectionTitle, "Receiver selection needed")
+        XCTAssertEqual(
+            model.connectionMessage,
+            "The saved mouse has multiple matching connections. Choose an existing connection to continue."
+        )
+        XCTAssertEqual(model.connectionPresentationPhase, .failed)
+        XCTAssertTrue(model.connectionColor.isEqual(NSColor.systemRed))
+
+        session.emit(BoltStatus(
+            phase: .ready,
+            message: "Fixture ready",
+            availableControls: Set(MouseControl.allCases),
+            generation: 9,
+            cleanupUncertain: false
+        ))
+        let successReceived = await eventually {
+            model.boltStatus.phase == .ready && model.boltStatus.failure == nil
+        }
+        XCTAssertTrue(successReceived)
+        XCTAssertEqual(model.connectionTitle, "Disconnected")
+        XCTAssertEqual(model.connectionPresentationPhase, .idle)
+        XCTAssertTrue(model.connectionColor.isEqual(NSColor.tertiaryLabelColor))
+        withExtendedLifetime((model, session)) {}
     }
 
     func testMissingConfigurationDoesNotGateValidatedDraftReadiness() async throws {
@@ -1155,6 +1230,11 @@ private final class FixtureBindingSession: BindingSession, @unchecked Sendable {
     }
 
     func pauseNextDisableStatus() { locked { pauseDisableStatus = true } }
+
+    func stopForRestart() async -> Bool {
+        await stop()
+        return true
+    }
 
     func resumeDisableStatus() {
         locked { pauseDisableStatus = false }

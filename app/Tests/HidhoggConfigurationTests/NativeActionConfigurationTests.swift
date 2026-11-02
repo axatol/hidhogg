@@ -48,6 +48,7 @@ final class NativeActionConfigurationTests: XCTestCase {
         XCTAssertTrue(source.contains("native_actions"))
         XCTAssertTrue(source.contains("kind = \"play_sound\""))
         XCTAssertTrue(source.contains("kind = \"open_application\""))
+        XCTAssertTrue(source.contains("kind = \"lock_screen\""))
         XCTAssertTrue(source.contains("app_id = \"com.example.Builder\""))
         XCTAssertTrue(source.contains("ttl_seconds = 86400"))
         XCTAssertTrue(source.contains("nativeActions") == false)
@@ -61,6 +62,22 @@ final class NativeActionConfigurationTests: XCTestCase {
             Set(nativeActions.values.map(\.kind.rawValue)),
             Set(NativeAction.Kind.allCases.map(\.rawValue))
         )
+    }
+
+    func testLockScreenJSONRoundTripsAndRejectsParametersAndUnknownFields() throws {
+        let action = NativeAction(kind: .lockScreen)
+        let encoded = try JSONEncoder().encode(action)
+        let source = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+
+        XCTAssertTrue(source.contains("\"kind\":\"lock_screen\""))
+        XCTAssertEqual(try JSONDecoder().decode(NativeAction.self, from: encoded), action)
+
+        for json in [
+            #"{"kind":"lock_screen","target":"/synthetic/extra"}"#,
+            #"{"kind":"lock_screen","extra":true}"#
+        ] {
+            XCTAssertThrowsError(try JSONDecoder().decode(NativeAction.self, from: Data(json.utf8)))
+        }
     }
 
     func testNativeActionsAcceptInclusiveFieldAndRegistryLimits() throws {
@@ -132,7 +149,8 @@ final class NativeActionConfigurationTests: XCTestCase {
             NativeAction(kind: .deckNotification, topic: "build.finished", text: "\n"),
             NativeAction(kind: .deckNotification, topic: "build.finished", text: "Ready", ttlSeconds: 0),
             NativeAction(kind: .deckNotification, topic: "build.finished", text: String(repeating: "💾", count: 65)),
-            NativeAction(kind: .shortcut, shortcut: KeyboardShortcut(keyCode: 55))
+            NativeAction(kind: .shortcut, shortcut: KeyboardShortcut(keyCode: 55)),
+            NativeAction(kind: .lockScreen, target: "/synthetic/extra")
         ]
 
         for action in invalidActions {
@@ -157,6 +175,26 @@ final class NativeActionConfigurationTests: XCTestCase {
         XCTAssertThrowsError(try ConfigurationCodec.decode(ConfigurationFixtures.data(unknownNativeField))) {
             XCTAssertEqual($0 as? ConfigurationError, .unknownKey("extra"))
         }
+
+        let unknownLockScreenField = ConfigurationFixtures.toml + """
+
+
+        [d200x.native_actions."native-lock-screen"]
+        kind = "lock_screen"
+        extra = true
+        """
+        XCTAssertThrowsError(try ConfigurationCodec.decode(ConfigurationFixtures.data(unknownLockScreenField))) {
+            XCTAssertEqual($0 as? ConfigurationError, .unknownKey("extra"))
+        }
+
+        let parameterizedLockScreen = ConfigurationFixtures.toml + """
+
+
+        [d200x.native_actions."native-lock-screen"]
+        kind = "lock_screen"
+        target = "/synthetic/extra"
+        """
+        XCTAssertThrowsError(try ConfigurationCodec.decode(ConfigurationFixtures.data(parameterizedLockScreen)))
 
         let unknownShortcutField = ConfigurationFixtures.toml + """
 
@@ -224,7 +262,8 @@ final class NativeActionConfigurationTests: XCTestCase {
             "open-url": .init(kind: .openURL, target: "https://example.test/path"),
             "deck-notification": .init(kind: .deckNotification, topic: "build.finished", appID: "com.example.Builder"),
             "deck-notification-text": .init(kind: .deckNotification, topic: "build.finished", text: "Complete", appID: "com.example.Builder", ttlSeconds: 86_400),
-            "shortcut": .init(kind: .shortcut, shortcut: KeyboardShortcut(keyCode: 4, modifiers: [.command]))
+            "shortcut": .init(kind: .shortcut, shortcut: KeyboardShortcut(keyCode: 4, modifiers: [.command])),
+            "lock-screen": .init(kind: .lockScreen)
         ]
     }
 }

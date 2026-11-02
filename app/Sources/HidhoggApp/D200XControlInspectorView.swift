@@ -19,6 +19,7 @@ struct D200XControlInspectorView: View {
     @State private var manualEditorApplicationID: String?
     @State private var manualEditorInitialShortcut: HidhoggDomain.KeyboardShortcut?
     @State private var manualEditorPresentationID = UUID()
+    @State private var presetChooserContext: D200XPresetAssignmentContext?
     @State private var topicDraft = ""
     @State private var topicError: String?
 
@@ -37,6 +38,12 @@ struct D200XControlInspectorView: View {
 
     private var canEditControl: Bool {
         model.canEdit && model.isConfigured
+    }
+
+    private var canChoosePreset: Bool {
+        let control = model.selectedControl
+        return control.isTile || control == .side0 || control == .side1
+            || control.gesture == .press || control.gesture == .left || control.gesture == .right
     }
 
     private var parsedTopicFilters: [String] {
@@ -106,10 +113,16 @@ struct D200XControlInspectorView: View {
             if !isPresented { finishActionChooser() }
         }
         .onChange(of: model.canEdit) { _, canEdit in
-            if !canEdit { cancelInputSessions() }
+            if !canEdit {
+                cancelInputSessions()
+                cancelPresetChooser()
+            }
         }
         .onChange(of: model.isConfigured) { _, isConfigured in
-            if !isConfigured { cancelInputSessions() }
+            if !isConfigured {
+                cancelInputSessions()
+                cancelPresetChooser()
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { cancelInputSessions() }
@@ -117,7 +130,10 @@ struct D200XControlInspectorView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             cancelInputSessions()
         }
-        .onDisappear(perform: cancelInputSessions)
+        .onDisappear {
+            cancelInputSessions()
+            cancelPresetChooser()
+        }
         .sheet(isPresented: $isManualEditorPresented, onDismiss: finishManualEditor) {
             if let control = manualEditorControl {
                 ShortcutEditorView(
@@ -296,6 +312,16 @@ struct D200XControlInspectorView: View {
                     .controlSize(.small)
                     .help("Choose a key and modifiers without pressing the shortcut.")
                     .disabled(!canEditControl)
+
+                    if canChoosePreset {
+                        Button("Choose Preset…", systemImage: "square.grid.2x2") {
+                            beginPresetChooser()
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .help("Preview a complete preset and apply it without running its action.")
+                        .disabled(!canEditControl)
+                    }
                 }
 
                 if model.applicationID != nil && !model.isInherited {
@@ -312,6 +338,12 @@ struct D200XControlInspectorView: View {
         }
         .popover(isPresented: $isActionChooserPresented, arrowEdge: .bottom) {
             actionChooserPopover
+        }
+        .sheet(item: $presetChooserContext, onDismiss: finishPresetChooser) { context in
+            D200XPresetChooserView(model: model, context: context) {
+                presetChooserContext = nil
+            }
+            .id(context)
         }
     }
 
@@ -514,6 +546,25 @@ struct D200XControlInspectorView: View {
         actionChooserApplicationID = model.applicationID
         actionChooserSessionID = UUID()
         isActionChooserPresented = true
+    }
+
+    private func beginPresetChooser() {
+        guard canEditControl, canChoosePreset else { return }
+        cancelActionChooser()
+        cancelShortcutCapture()
+        if isManualEditorPresented { isManualEditorPresented = false }
+        presetChooserContext = D200XPresetAssignmentContext(
+            control: model.selectedControl,
+            applicationID: model.applicationID
+        )
+    }
+
+    private func finishPresetChooser() {
+        presetChooserContext = nil
+    }
+
+    private func cancelPresetChooser() {
+        finishPresetChooser()
     }
 
     private func commitChosenAction(

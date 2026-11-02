@@ -25,7 +25,8 @@ final class AppNativeActionRunner: ConfiguredNativeActionRunning {
                 if action.kind == .deckNotification, trigger?.profile != model.activeProfileName {
                     return .init(status: .cancelled, failureMessage: "The triggering profile is no longer active.")
                 }
-                if action.kind == .shortcut, trigger?.sessionEpoch != nil, trigger?.applicationID != model.activeApplicationID {
+                if (action.kind == .shortcut || action.kind == .lockScreen),
+                   trigger?.sessionEpoch != nil, trigger?.applicationID != model.activeApplicationID {
                     return .init(status: .cancelled, failureMessage: "The triggering application is no longer active.")
                 }
             }

@@ -81,6 +81,7 @@ struct D200XActionChooserView: View {
             case .openURL: "Open URL"
             case .deckNotification: "Deck Notification"
             case .shortcut: "Keyboard Shortcut"
+            case .lockScreen: "Lock Screen"
             }
         case .none:
             "Unavailable"

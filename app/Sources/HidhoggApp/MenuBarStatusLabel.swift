@@ -14,8 +14,9 @@ struct MenuBarStatusLabel: View {
     var overrideStatus: MenuBarStatus? = nil
     var summary: MenuBarDeviceSummary? = nil
 
-    private var status: MenuBarStatus {
-        summary?.status ?? overrideStatus ?? MenuBarStatus(phase: phase, cleanupUncertain: cleanupUncertain, permissionChecks: permissionChecks)
+    var status: MenuBarStatus {
+        if cleanupUncertain { return .cleanupUncertain }
+        return summary?.status ?? overrideStatus ?? MenuBarStatus(phase: phase, cleanupUncertain: false, permissionChecks: permissionChecks)
     }
 
     private var accessibilityLabel: String {
@@ -51,6 +52,7 @@ struct MultiDeviceMenuBarStatusLabel: View {
     let cleanupUncertain: Bool
     let permissionChecks: PermissionChecks
     let registeredDevices: [RegisteredDevice]
+    let mouseOwnerID: UUID?
 
     var body: some View {
         let summary = deviceSummary
@@ -68,8 +70,13 @@ struct MultiDeviceMenuBarStatusLabel: View {
 
     private func deviceState(for registration: RegisteredDevice) -> MenuBarDeviceState {
         switch registration.family {
-        case .mxMaster3S:
-            return MenuBarDeviceState(mousePhase: phase, cleanupUncertain: cleanupUncertain, permissionChecks: permissionChecks)
+        case .mxMaster3S, .mxMaster4:
+            guard mouseOwnerID == registration.id else {
+                return MenuBarDeviceState(status: .disconnected, isConnected: false)
+            }
+            let checks = registration.family == .mxMaster4
+                ? PermissionChecks(accessibilityTrusted: true, eventPostingAllowed: true) : permissionChecks
+            return MenuBarDeviceState(mousePhase: phase, cleanupUncertain: cleanupUncertain, permissionChecks: checks)
         case .d200x:
             guard deck.managementEnabled, deck.isConfigured else {
                 return MenuBarDeviceState(status: .disconnected, isConnected: false)

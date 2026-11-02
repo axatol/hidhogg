@@ -183,7 +183,8 @@ final class WheelEditorTests: XCTestCase {
         await model.save()
         XCTAssertFalse(model.canApplyWheelPreference)
 
-        session.emitReady(wheel: BoltWheelStatus(support: .unsupported, message: "Wheel preference unavailable."))
+        session.setDiscoveryWheel(BoltWheelStatus(support: .unsupported, message: "Wheel preference unavailable."))
+        model.connect()
         let ready = await eventually { model.boltStatus.phase == .ready }
         XCTAssertTrue(ready)
         XCTAssertEqual(model.observedWheelDirection, "Unsupported")
@@ -471,6 +472,8 @@ private final class WheelBindingSession: BindingSession, @unchecked Sendable {
     private var stopPolicyValues = [Bool]()
     private var observedWheel = true
     private var ownedWheel = false
+    private var generation: UInt64 = 1
+    private var discoveryWheel = BoltWheelStatus(support: .supported, observedInverted: true)
 
     init() {
         let stream = AsyncStream<BoltEvent>.makeStream(bufferingPolicy: .unbounded)
@@ -488,8 +491,12 @@ private final class WheelBindingSession: BindingSession, @unchecked Sendable {
     var stoppedPolicies: [Bool] { locked { stopPolicyValues } }
 
     func discover() async {
-        locked { discoverCalls += 1 }
-        emitReady(wheel: BoltWheelStatus(support: .supported, observedInverted: true))
+        let wheel = locked {
+            discoverCalls += 1
+            generation &+= 1
+            return discoveryWheel
+        }
+        emitReady(wheel: wheel)
     }
 
     func enable() async {
@@ -511,6 +518,7 @@ private final class WheelBindingSession: BindingSession, @unchecked Sendable {
     func stop() async {
         let continuationToResume = locked { () -> CheckedContinuation<Void, Never>? in
             stopCalls += 1
+            generation &+= 1
             let pending = applyContinuation
             applyContinuation = nil
             applyIsPendingValue = false
@@ -521,7 +529,7 @@ private final class WheelBindingSession: BindingSession, @unchecked Sendable {
             phase: .idle,
             message: "Stopped.",
             availableControls: [],
-            generation: 1,
+            generation: locked { generation },
             cleanupUncertain: false,
             wheel: BoltWheelStatus(support: .supported, observedInverted: false)
         )))
@@ -548,7 +556,7 @@ private final class WheelBindingSession: BindingSession, @unchecked Sendable {
             phase: .ready,
             message: "Applying wheel preference.",
             availableControls: Set(MouseControl.allCases),
-            generation: 1,
+            generation: locked { generation },
             cleanupUncertain: false,
             wheel: BoltWheelStatus(support: .supported, observedInverted: true, isApplying: true)
         )))
@@ -592,7 +600,7 @@ private final class WheelBindingSession: BindingSession, @unchecked Sendable {
             phase: .ready,
             message: "Wheel preference complete.",
             availableControls: Set(MouseControl.allCases),
-            generation: 1,
+            generation: locked { generation },
             cleanupUncertain: false,
             wheel: BoltWheelStatus(
                 support: .supported,
@@ -622,11 +630,13 @@ private final class WheelBindingSession: BindingSession, @unchecked Sendable {
             phase: .ready,
             message: "Ready.",
             availableControls: Set(MouseControl.allCases),
-            generation: 1,
+            generation: locked { generation },
             cleanupUncertain: false,
             wheel: wheel
         )))
     }
+
+    func setDiscoveryWheel(_ wheel: BoltWheelStatus) { locked { discoveryWheel = wheel } }
 
     func pauseNextApply() { locked { pauseNextApplyValue = true } }
 

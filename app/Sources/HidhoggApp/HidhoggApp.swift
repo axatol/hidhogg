@@ -65,7 +65,8 @@ struct HidhoggApp: App {
                 phase: model.connectionPresentationPhase,
                 cleanupUncertain: model.boltStatus.cleanupUncertain && !model.isBackgroundRecovery,
                 permissionChecks: model.permissionChecks,
-                registeredDevices: model.registeredDevices
+                registeredDevices: model.registeredDevices,
+                mouseOwnerID: model.presentedMouseOwnerID
             )
                 .background {
                     WorkspaceActivationAdapter(presentationCoordinator: workspacePresentationCoordinator)

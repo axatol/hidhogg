@@ -68,8 +68,12 @@ public struct BoltStatus: Equatable, Sendable {
     public let thumbwheel: BoltThumbwheelStatus
     public let failure: BoltFailureContext?
     public let deviceInformation: BoltDeviceInformation
+    public let supportsManagement: Bool
+    public let model: LogitechMouseModel?
+    public let connection: LogitechConnection?
+    public let verifiedIdentity: LogitechIdentity?
 
-    public init(phase: BoltPhase, message: String, availableControls: Set<MouseControl>, generation: UInt64, cleanupUncertain: Bool, wheel: BoltWheelStatus = .init(), thumbwheel: BoltThumbwheelStatus = .init(), failure: BoltFailureContext? = nil, deviceInformation: BoltDeviceInformation = .init(), deviceResponding: Bool = false) {
+    public init(phase: BoltPhase, message: String, availableControls: Set<MouseControl>, generation: UInt64, cleanupUncertain: Bool, wheel: BoltWheelStatus = .init(), thumbwheel: BoltThumbwheelStatus = .init(), failure: BoltFailureContext? = nil, deviceInformation: BoltDeviceInformation = .init(), deviceResponding: Bool = false, supportsManagement: Bool = true, model: LogitechMouseModel? = nil, connection: LogitechConnection? = nil, verifiedIdentity: LogitechIdentity? = nil) {
         self.phase = phase
         self.message = message
         self.availableControls = availableControls
@@ -80,6 +84,10 @@ public struct BoltStatus: Equatable, Sendable {
         self.thumbwheel = thumbwheel
         self.failure = failure
         self.deviceInformation = deviceInformation
+        self.supportsManagement = supportsManagement
+        self.model = model
+        self.connection = connection
+        self.verifiedIdentity = verifiedIdentity
     }
 }
 
@@ -96,9 +104,15 @@ public enum BoltFailureCode: String, Equatable, Sendable {
     case eventsOverflowed = "bolt.events.overflow"
     case operationCancelled = "bolt.operation.cancelled"
     case requestIDsExhausted = "bolt.request-id.exhausted"
+    case associationRequired = "logitech.association.required"
+    case identityUnavailable = "logitech.identity.unavailable"
+    case identityMismatch = "logitech.identity.mismatch"
+    case candidateStale = "logitech.candidate.stale"
+    case unsupportedModel = "logitech.model.unsupported"
 }
 
 public enum BoltFailureStage: String, Equatable, Sendable {
+    case identityPreflight = "identity-preflight"
     case connectPreflight = "connect-preflight"
     case connectRecoveryWrite = "connect-recovery-write"
     case connectRecoveryReadback = "connect-recovery-readback"
@@ -137,6 +151,7 @@ public enum BoltEvent: Sendable {
 enum BoltFailure: Error, LocalizedError, Equatable {
     case unavailable, ambiguous, timeout, disconnected, transport, malformed, unsupported
     case foreignState, stale, overflow, cancelled, tokenExhausted
+    case associationRequired, identityUnavailable, identityMismatch, candidateStale, unsupportedModel
 
     var diagnosticCode: BoltFailureCode {
         switch self {
@@ -152,6 +167,11 @@ enum BoltFailure: Error, LocalizedError, Equatable {
         case .overflow: .eventsOverflowed
         case .cancelled: .operationCancelled
         case .tokenExhausted: .requestIDsExhausted
+        case .associationRequired: .associationRequired
+        case .identityUnavailable: .identityUnavailable
+        case .identityMismatch: .identityMismatch
+        case .candidateStale: .candidateStale
+        case .unsupportedModel: .unsupportedModel
         }
     }
 
@@ -169,6 +189,11 @@ enum BoltFailure: Error, LocalizedError, Equatable {
         case .overflow: "The event consumer fell behind; bindings were stopped."
         case .cancelled: "The operation was stopped."
         case .tokenExhausted: "Too many device requests could not be verified. Start a fresh discovery to verify a new session."
+        case .associationRequired: "Select a verified Logitech mouse association before connecting."
+        case .identityUnavailable: "The Logitech mouse identity could not be verified."
+        case .identityMismatch: "The connected Logitech mouse does not match the saved association."
+        case .candidateStale: "The selected Logitech candidate expired. Refresh the device list and select it again."
+        case .unsupportedModel: "This Logitech model or transport variant is not supported."
         }
     }
 }

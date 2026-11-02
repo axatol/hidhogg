@@ -57,6 +57,56 @@ struct NativeActionSenderTests {
         #expect(posted.isEmpty)
     }
 
+    @Test func lockScreenUsesFixedControlCommandQShortcut() throws {
+        let shortcutRecorder = RecordingShortcutSender()
+        var mediaPermissionChecks = 0
+        let sender = NativeActionSender(
+            shortcuts: shortcutRecorder.make(),
+            permissionCheck: { mediaPermissionChecks += 1; return false },
+            postMediaPair: { _ in Issue.record("Lock Screen must use the permission-checked shortcut sender.") },
+            setVolume: { _ in },
+            openTarget: { _ in true },
+            playSound: { _ in },
+            bell: {},
+            stopSound: {}
+        )
+
+        try sender.perform(.init(kind: .lockScreen))
+
+        #expect(shortcutRecorder.posted == [KeyboardShortcut(keyCode: 12, modifiers: [.control, .command])])
+        #expect(mediaPermissionChecks == 0)
+    }
+
+    @Test func deniedOrCancelledLockScreenDoesNotPostShortcut() async {
+        var posted = [KeyboardShortcut]()
+        let shortcuts = ShortcutSender(
+            preflight: { false },
+            request: { Issue.record("Lock Screen must not request permission automatically."); return false },
+            postPair: { posted.append($0) }
+        )
+        let sender = NativeActionSender(
+            shortcuts: shortcuts,
+            permissionCheck: { false },
+            postMediaPair: { _ in Issue.record("Lock Screen must not post media keys.") },
+            setVolume: { _ in },
+            openTarget: { _ in true },
+            playSound: { _ in },
+            bell: {},
+            stopSound: {}
+        )
+        let action = NativeAction(kind: .lockScreen)
+
+        #expect(throws: ShortcutDeliveryError.self) { try sender.perform(action) }
+        #expect(posted.isEmpty)
+
+        let cancelledTask = Task { @MainActor in
+            withUnsafeCurrentTask { task in task?.cancel() }
+            try sender.perform(action)
+        }
+        await #expect(throws: CancellationError.self) { try await cancelledTask.value }
+        #expect(posted.isEmpty)
+    }
+
     @Test func fileApplicationURLSoundBellAndSetVolumeUseOnlyInjectedClosures() throws {
         var opened = [URL]()
         var played = [URL]()

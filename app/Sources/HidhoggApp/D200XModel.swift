@@ -481,6 +481,77 @@ final class D200XModel: ObservableObject {
         onEdit?(next)
     }
 
+    func importPresetImage(data: Data) async throws -> String {
+        guard canEdit, isConfigured, let assetDirectory else { throw CancellationError() }
+        let reference = try await Task.detached(priority: .utility) {
+            try D200XAssetStore(directory: assetDirectory).importImage(data: data)
+        }.value
+        guard canEdit, isConfigured, self.assetDirectory == assetDirectory else { throw CancellationError() }
+        return reference
+    }
+
+    func applyTilePreset(id: String) throws {
+        guard let preset = configuration?.tilePresets[id] else { throw CancellationError() }
+        try applyTilePreset(preset: preset, control: selectedControl, applicationID: applicationID)
+    }
+
+    func applyTilePreset(preset: D200XTilePreset, control: D200XControl, applicationID: String?) throws {
+        guard canEdit, selectedControl == control, self.applicationID == applicationID,
+              let configuration, applicationID.map({ configuration.applicationIDs.contains($0) }) ?? true else {
+            throw CancellationError()
+        }
+        let next = try D200XPresetApplication.applying(preset, to: configuration,
+            control: control, applicationID: applicationID)
+        onEdit?(next)
+    }
+
+    func applyDialRotationPreset(id: String, dialIndex: Int) throws {
+        guard let preset = configuration?.dialRotationPresets[id] else { throw CancellationError() }
+        try applyDialRotationPreset(preset: preset, dialIndex: dialIndex, applicationID: applicationID)
+    }
+
+    func applyDialRotationPreset(preset: D200XDialRotationPreset, dialIndex: Int, applicationID: String?) throws {
+        guard canEdit, (0...2).contains(dialIndex), selectedControl.gesture != nil,
+              selectedControl.wireIndex == 17 + dialIndex, self.applicationID == applicationID,
+              let configuration, applicationID.map({ configuration.applicationIDs.contains($0) }) ?? true else {
+            throw CancellationError()
+        }
+        let next = try D200XPresetApplication.applying(preset, to: configuration,
+            dialIndex: dialIndex, applicationID: applicationID)
+        onEdit?(next)
+    }
+
+    func saveDialRotationPreset(id: String, preset: D200XDialRotationPreset,
+                                replacing original: D200XDialRotationPreset? = nil) throws {
+        guard canEdit, var next = configuration else { throw CancellationError() }
+        guard ConfiguredExecutable.isValidIdentifier(id) else { throw D200XTilePresetPackage.Failure.duplicatePreset }
+        guard next.dialRotationPresets[id] == original else {
+            throw original == nil ? D200XTilePresetPackage.Failure.duplicatePreset : .presetChanged
+        }
+        next.dialRotationPresets[id] = try preset.validated()
+        onEdit?(try next.validated())
+    }
+
+    func removeDialRotationPreset(id: String) {
+        guard canEdit, var next = configuration else { return }
+        next.dialRotationPresets.removeValue(forKey: id)
+        onEdit?(next)
+    }
+
+    func dialRotationPresetPackage(id: String) throws -> D200XDialRotationPresetPackage {
+        guard let preset = configuration?.dialRotationPresets[id] else { throw CancellationError() }
+        return try D200XDialRotationPresetPackage(preset: preset).validated()
+    }
+
+    func importDialRotationPreset(_ package: D200XDialRotationPresetPackage, id: String) throws {
+        guard canEdit, var next = configuration else { throw CancellationError() }
+        guard ConfiguredExecutable.isValidIdentifier(id), next.dialRotationPresets[id] == nil else {
+            throw D200XTilePresetPackage.Failure.duplicatePreset
+        }
+        next.dialRotationPresets[id] = try package.validated().preset
+        onEdit?(try next.validated())
+    }
+
     func applyTilePreset(id: String, includeAction: Bool) throws {
         guard canEdit, selectedControl.isTile, var next = configuration,
               let preset = next.tilePresets[id] else { throw CancellationError() }

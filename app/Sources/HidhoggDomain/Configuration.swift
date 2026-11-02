@@ -222,7 +222,7 @@ public enum ConfigurationValidationError: Error, LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
-        case .invalidRegistry: "Device registrations must have unique UUIDs, one per supported family, and valid names."
+        case .invalidRegistry: "Device registrations require unique UUIDs and endpoints, singleton D200X and Flow Lite84 entries, and valid names."
         case .unsupportedVersion: "Unsupported configuration version."
         case .invalidProfile: "Expected one Logitech MX Master 3S profile."
         case .invalidControls: "Back and Forward defaults are required; unknown controls are not supported."

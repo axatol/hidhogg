@@ -87,18 +87,140 @@ final class DeviceRegistryStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(firstReferences[1].relativePath).path))
     }
 
-    func testGenericRegistryRejectsDuplicateEndpointsNativeFamiliesAndMoreThan256Entries() throws {
+    func testGenericRegistryRejectsDuplicateEndpointsSingletonNativeFamiliesAndMoreThan256Entries() throws {
         let endpoint = BluetoothEndpoint(address: "AA:00:00:00:00:01")!
         let duplicateEndpoint = WorkspaceConfiguration(devices: [RegisteredDevice(configuration: .genericBluetooth(endpoint)), RegisteredDevice(configuration: .genericBluetooth(endpoint))])
         XCTAssertThrowsError(try duplicateEndpoint.validated())
-        let native = try XCTUnwrap(RegisteredDevice.make(family: .mxMaster3S))
-        XCTAssertThrowsError(try WorkspaceConfiguration(devices: [native, try XCTUnwrap(RegisteredDevice.make(family: .mxMaster3S))]).validated())
+        let deck = try XCTUnwrap(RegisteredDevice.make(family: .d200x))
+        XCTAssertThrowsError(try WorkspaceConfiguration(devices: [deck, try XCTUnwrap(RegisteredDevice.make(family: .d200x))]).validated())
+        let flow = try XCTUnwrap(RegisteredDevice.make(family: .flowLite84))
+        XCTAssertThrowsError(try WorkspaceConfiguration(devices: [flow, try XCTUnwrap(RegisteredDevice.make(family: .flowLite84))]).validated())
         let devices = (0..<256).map { index in
             RegisteredDevice(configuration: .genericBluetooth(BluetoothEndpoint(address: String(format: "AA:00:00:00:%02X:%02X", index / 256, index % 256))!))
         }
         XCTAssertNoThrow(try WorkspaceConfiguration(devices: devices).validated())
-        XCTAssertThrowsError(try WorkspaceConfiguration(devices: devices + [native]).validated())
+        XCTAssertThrowsError(try WorkspaceConfiguration(devices: devices + [deck]).validated())
         XCTAssertNil(RegisteredDevice.make(family: .genericBluetooth))
+    }
+
+    func testLegacyProjectionAndApplyRemainCompatibleForZeroAndOneMouse() {
+        let zeroMouse = WorkspaceConfiguration(devices: [RegisteredDevice(configuration: .d200x(nil))])
+        XCTAssertEqual(zeroMouse.configuration, .defaultConfiguration)
+
+        var edited = ConfigurationFixtures.configuration
+        edited.connectOnLaunch = false
+        edited.d200x = D200XConfiguration(brightnessPercent: 37)
+        let zeroMouseApplied = zeroMouse.applying(edited)
+        XCTAssertEqual(zeroMouseApplied.configuration.mouse, AppConfiguration.defaultConfiguration.mouse)
+        XCTAssertEqual(zeroMouseApplied.configuration.connectOnLaunch, false)
+        XCTAssertEqual(zeroMouseApplied.configuration.d200x, edited.d200x)
+
+        let oneMouse = WorkspaceConfiguration(legacy: ConfigurationFixtures.configuration)
+        XCTAssertEqual(oneMouse.configuration, ConfigurationFixtures.configuration)
+        XCTAssertEqual(oneMouse.applying(edited).configuration, edited)
+    }
+
+    func testMultipleMousePayloadsRoundTripAndUUIDTargetedEditPreservesOtherMouse() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let store = ConfigurationStore(url: url)
+
+        let firstMouse = DeviceBindings(
+            id: AppConfiguration.logitechProfileID,
+            defaults: [
+                "back": .key(KeyboardShortcut(keyCode: 10)),
+                "forward": .key(KeyboardShortcut(keyCode: 11))
+            ],
+            applications: ["com.example.First": ["back": .disabled]],
+            wheelInverted: true,
+            wheelScrollAmount: 0.5,
+            thumbwheelInverted: true,
+            thumbwheelScrollAmount: 0.75
+        )
+        let secondMouse = DeviceBindings(
+            id: AppConfiguration.logitechProfileID,
+            defaults: [
+                "back": .key(KeyboardShortcut(keyCode: 12)),
+                "forward": .key(KeyboardShortcut(keyCode: 13))
+            ],
+            applications: ["com.example.Second": ["forward": .disabled]],
+            wheelInverted: false,
+            wheelScrollAmount: 1.5,
+            thumbwheelInverted: false,
+            thumbwheelScrollAmount: 2.5
+        )
+
+        var workspace = WorkspaceConfiguration(legacy: ConfigurationFixtures.configuration)
+        let firstIndex = try XCTUnwrap(workspace.devices.firstIndex { $0.family == .mxMaster3S })
+        let firstMouseID = workspace.devices[firstIndex].id
+        workspace.devices[firstIndex].configuration = .mouse(firstMouse)
+        let deck = D200XConfiguration(brightnessPercent: 20)
+        let deckIndex = try XCTUnwrap(workspace.devices.firstIndex { $0.family == .d200x })
+        workspace.devices[deckIndex].configuration = .d200x(deck)
+        let secondRegistration = RegisteredDevice(displayName: "Second mouse", isEnabled: false,
+                                                 configuration: .mouse(secondMouse))
+        let secondMouseID = secondRegistration.id
+        workspace.devices.append(secondRegistration)
+
+        let saved = try await store.save(workspace, expecting: .missing)
+        let loaded = try await store.load()
+        XCTAssertEqual(loaded.workspace, saved.workspace)
+        XCTAssertEqual(loaded.configuration.mouse, nil)
+        XCTAssertEqual(loaded.configuration.connectOnLaunch, workspace.connectOnLaunch)
+        XCTAssertEqual(loaded.configuration.d200x, deck)
+        XCTAssertEqual(loaded.workspace.configuration(forMouseID: firstMouseID).mouse, firstMouse)
+        XCTAssertEqual(loaded.workspace.configuration(forMouseID: secondMouseID).mouse, secondMouse)
+        XCTAssertNil(loaded.workspace.configuration(forMouseID: UUID()).mouse)
+
+        let manifestBeforeEdit = try RegistryCodec.manifest(Data(contentsOf: url))
+        let mouseReferencesBeforeEdit = Dictionary(uniqueKeysWithValues: manifestBeforeEdit.devices
+            .filter { $0.family == .mxMaster3S }
+            .map { ($0.id, $0.relativePath) })
+        XCTAssertEqual(Set(mouseReferencesBeforeEdit.keys), Set([firstMouseID, secondMouseID]))
+        XCTAssertEqual(try RegistryCodec.version(Data(contentsOf: url)), WorkspaceConfiguration.currentVersion)
+
+        var legacyEdit = ConfigurationFixtures.configuration
+        legacyEdit.devices[0].defaults["back"] = .key(KeyboardShortcut(keyCode: 20))
+        legacyEdit.devices[0].wheelInverted = true
+        legacyEdit.connectOnLaunch = false
+        legacyEdit.d200x = D200XConfiguration(brightnessPercent: 31)
+        let legacySave = try await store.save(legacyEdit, expecting: loaded.revision)
+        XCTAssertEqual(legacySave.workspace.devices.first { $0.id == firstMouseID }?.configuration, .mouse(firstMouse))
+        XCTAssertEqual(legacySave.workspace.devices.first { $0.id == secondMouseID }?.configuration, .mouse(secondMouse))
+        XCTAssertEqual(legacySave.workspace.connectOnLaunch, false)
+        XCTAssertEqual(legacySave.workspace.devices.first { $0.family == .d200x }?.configuration, .d200x(legacyEdit.d200x))
+
+        var targetedEdit = legacySave.workspace.configuration(forMouseID: firstMouseID)
+        targetedEdit.devices[0].defaults["back"] = .key(KeyboardShortcut(keyCode: 14))
+        targetedEdit.devices[0].wheelInverted = false
+        targetedEdit.devices[0].wheelScrollAmount = 3.5
+
+        let unknownMouseID = UUID()
+        XCTAssertFalse(legacySave.workspace.devices.contains { $0.id == unknownMouseID })
+        let deckID = try XCTUnwrap(legacySave.workspace.devices.first { $0.family == .d200x }?.id)
+        let nonTargetMouseIDs: [UUID?] = [nil, unknownMouseID, deckID]
+        for mouseID in nonTargetMouseIDs {
+            let ignoredEdit = legacySave.workspace.applying(targetedEdit, mouseID: mouseID)
+            XCTAssertEqual(ignoredEdit.devices.first { $0.id == firstMouseID }?.configuration, .mouse(firstMouse))
+            XCTAssertEqual(ignoredEdit.devices.first { $0.id == secondMouseID }?.configuration, .mouse(secondMouse))
+        }
+
+        let targetedWorkspace = legacySave.workspace.applying(targetedEdit, mouseID: firstMouseID)
+        let targetedSave = try await store.save(targetedWorkspace, expecting: legacySave.revision)
+        let roundTrip = try await store.load()
+        let editedFirstMouse = try XCTUnwrap(roundTrip.workspace.devices.first { $0.id == firstMouseID })
+        let unchangedSecondMouse = try XCTUnwrap(roundTrip.workspace.devices.first { $0.id == secondMouseID })
+        XCTAssertEqual(editedFirstMouse.configuration, .mouse(targetedEdit.mouse!))
+        XCTAssertEqual(unchangedSecondMouse.configuration, .mouse(secondMouse))
+        XCTAssertFalse(unchangedSecondMouse.isEnabled)
+        XCTAssertEqual(roundTrip.workspace, targetedSave.workspace)
+
+        let mouseReferencesAfterEdit = Dictionary(uniqueKeysWithValues: try RegistryCodec.manifest(Data(contentsOf: url)).devices
+            .filter { $0.family == .mxMaster3S }
+            .map { ($0.id, $0.relativePath) })
+        XCTAssertNotEqual(mouseReferencesAfterEdit[firstMouseID], mouseReferencesBeforeEdit[firstMouseID])
+        XCTAssertEqual(mouseReferencesAfterEdit[secondMouseID], mouseReferencesBeforeEdit[secondMouseID])
     }
 
     func testLegacyMigrationBacksUpExactBytesAndKeepsUUIDsAcrossReload() async throws {
@@ -554,12 +676,138 @@ final class DeviceRegistryStoreTests: XCTestCase {
             } catch {}
         }
         var duplicate = saved.workspace
-        duplicate.devices.append(try XCTUnwrap(RegisteredDevice.make(family: .mxMaster3S)))
+        duplicate.devices.append(try XCTUnwrap(RegisteredDevice.make(family: .d200x)))
         do {
             _ = try await store.save(duplicate, expecting: saved.revision)
             XCTFail("Expected duplicate family rejection")
         } catch {}
         XCTAssertEqual(try Data(contentsOf: url), bytes)
+    }
+
+    func testMX3SAndMX4AssociationsAndPreferredMouseRoundTrip() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("config.toml")
+        let store = ConfigurationStore(url: url)
+        let mouseConfiguration = ConfigurationFixtures.configuration.devices[0]
+        let mx3S = RegisteredDevice(
+            displayName: "MX Master 3S",
+            configuration: .mouse(mouseConfiguration),
+            logitechAssociation: LogitechAssociation(
+                identity: LogitechIdentity(unitID: "DEADBEEF", modelID: "001122334455"),
+                preferredConnection: .bolt
+            )
+        )
+        let mx4 = RegisteredDevice(
+            displayName: "MX Master 4",
+            isEnabled: false,
+            configuration: .mouse(mouseConfiguration),
+            mouseModel: .mxMaster4,
+            logitechAssociation: LogitechAssociation(
+                identity: LogitechIdentity(unitID: "0123ABCD", modelID: "AABBCCDDEEFF"),
+                preferredConnection: .bluetooth
+            )
+        )
+        var workspace = WorkspaceConfiguration(devices: [mx3S, mx4], preferredMouseID: mx4.id)
+        XCTAssertNoThrow(try workspace.validated())
+        XCTAssertEqual(mx3S.family, .mxMaster3S)
+        XCTAssertEqual(mx4.family, .mxMaster4)
+        XCTAssertTrue(DeviceFamily.mxMaster4.isLogitechMouse)
+        XCTAssertEqual(workspace.configuration.mouse, mouseConfiguration)
+
+        let saved = try await store.save(workspace, expecting: .missing)
+        let manifest = try RegistryCodec.manifest(Data(contentsOf: url))
+        XCTAssertEqual(manifest.preferredMouseID, mx4.id)
+        let mx4Reference = try XCTUnwrap(manifest.devices.first { $0.id == mx4.id })
+        let mx4Payload = try Data(contentsOf: root.appendingPathComponent(mx4Reference.relativePath))
+        let mx4Source = try XCTUnwrap(String(data: mx4Payload, encoding: .utf8))
+        XCTAssertTrue(mx4Source.contains("logitech_association"))
+        XCTAssertTrue(mx4Source.contains("unit_id = \"0123abcd\""))
+        XCTAssertTrue(mx4Source.contains("model_id = \"aabbccddeeff\""))
+
+        let loaded = try await store.load()
+        XCTAssertEqual(loaded.workspace, saved.workspace)
+        XCTAssertEqual(loaded.workspace.preferredMouseID, mx4.id)
+        XCTAssertEqual(loaded.workspace.devices.first { $0.id == mx4.id }?.mouseModel, .mxMaster4)
+        XCTAssertEqual(loaded.workspace.devices.first { $0.id == mx4.id }?.logitechAssociation, mx4.logitechAssociation)
+        XCTAssertFalse(try XCTUnwrap(loaded.workspace.devices.first { $0.id == mx4.id }).isEnabled)
+        XCTAssertEqual(loaded.workspace.configuration.mouse, mouseConfiguration)
+        XCTAssertEqual(loaded.workspace.configuration(forMouseID: mx3S.id).mouse, mouseConfiguration)
+        var targetedMX4Edit = loaded.workspace.configuration(forMouseID: mx4.id)
+        targetedMX4Edit.devices[0].wheelInverted = true
+        let applied = loaded.workspace.applying(targetedMX4Edit, mouseID: mx4.id)
+        XCTAssertEqual(applied.devices.first { $0.id == mx4.id }?.configuration,
+                       .mouse(targetedMX4Edit.devices[0]))
+        XCTAssertEqual(applied.devices.first { $0.id == mx3S.id }?.configuration, mx3S.configuration)
+        XCTAssertEqual(applied.preferredMouseID, mx4.id)
+        XCTAssertNoThrow(try loaded.workspace.validated())
+    }
+
+    func testAssociationIdentityValidationAndEnabledDuplicateRejection() throws {
+        let mouseConfiguration = ConfigurationFixtures.configuration.devices[0]
+        let identity = LogitechIdentity(unitID: "DEADBEEF", modelID: "001122334455")
+        XCTAssertEqual(identity.unitID, "deadbeef")
+        XCTAssertEqual(identity.modelID, "001122334455")
+        XCTAssertNoThrow(try identity.validated())
+        XCTAssertThrowsError(try LogitechIdentity(unitID: "00000000", modelID: "001122334455").validated())
+        XCTAssertThrowsError(try LogitechIdentity(unitID: "deadbee", modelID: "001122334455").validated())
+        XCTAssertThrowsError(try LogitechIdentity(unitID: "deadbeef", modelID: "000000000000").validated())
+        XCTAssertThrowsError(try LogitechIdentity(unitID: "deadbeeg", modelID: "001122334455").validated())
+
+        let association = LogitechAssociation(identity: identity, preferredConnection: .bolt)
+        let enabledFirst = RegisteredDevice(configuration: .mouse(mouseConfiguration), logitechAssociation: association)
+        let enabledDuplicate = RegisteredDevice(configuration: .mouse(mouseConfiguration), logitechAssociation: association)
+        XCTAssertThrowsError(try WorkspaceConfiguration(devices: [enabledFirst, enabledDuplicate]).validated())
+        let nonMouseWithAssociation = RegisteredDevice(configuration: .flowLite84, logitechAssociation: association)
+        XCTAssertThrowsError(try WorkspaceConfiguration(devices: [nonMouseWithAssociation]).validated())
+        XCTAssertThrowsError(try RegistryCodec.encode(device: nonMouseWithAssociation))
+
+        let disabledDuplicate = RegisteredDevice(isEnabled: false, configuration: .mouse(mouseConfiguration),
+                                                 logitechAssociation: association)
+        XCTAssertNoThrow(try WorkspaceConfiguration(devices: [enabledFirst, disabledDuplicate]).validated())
+        XCTAssertThrowsError(try LogitechAssociation(version: 2, identity: identity, preferredConnection: .bolt).validated())
+
+        let deck = RegisteredDevice(configuration: .d200x(nil))
+        XCTAssertThrowsError(try WorkspaceConfiguration(devices: [enabledFirst, deck], preferredMouseID: deck.id).validated())
+        XCTAssertThrowsError(try WorkspaceConfiguration(devices: [enabledFirst], preferredMouseID: UUID()).validated())
+        XCTAssertNoThrow(try WorkspaceConfiguration(devices: [enabledFirst, disabledDuplicate],
+                                                     preferredMouseID: disabledDuplicate.id).validated())
+    }
+
+    func testLegacyMousePayloadAndManifestOmitOptionalLogitechFields() throws {
+        let mouse = RegisteredDevice(configuration: .mouse(ConfigurationFixtures.configuration.devices[0]))
+        let reference = RegistryReference(device: mouse, contentHash: "012345abcdef")
+        let payload = try RegistryCodec.encode(device: mouse)
+        let payloadSource = try XCTUnwrap(String(data: payload, encoding: .utf8))
+        XCTAssertFalse(payloadSource.contains("logitech_association"))
+        XCTAssertEqual(try RegistryCodec.device(payload, reference: reference), mouse)
+
+        let manifestData = try RegistryCodec.encode(RegistryManifest(connectOnLaunch: true, devices: [reference]))
+        let manifestSource = try XCTUnwrap(String(data: manifestData, encoding: .utf8))
+        XCTAssertFalse(manifestSource.contains("preferred_mouse_id"))
+        XCTAssertNil(try RegistryCodec.manifest(manifestData).preferredMouseID)
+    }
+
+    func testMalformedLogitechAssociationMetadataIsRejected() throws {
+        let association = LogitechAssociation(
+            identity: LogitechIdentity(unitID: "deadbeef", modelID: "001122334455"),
+            preferredConnection: .bolt
+        )
+        let device = RegisteredDevice(configuration: .mouse(ConfigurationFixtures.configuration.devices[0]),
+                                      logitechAssociation: association)
+        let reference = RegistryReference(device: device, contentHash: "012345abcdef")
+        let validData = try RegistryCodec.encode(device: device)
+        let validSource = try XCTUnwrap(String(data: validData, encoding: .utf8))
+        let invalidSources = [
+            validSource.replacingOccurrences(of: "unit_id = \"deadbeef\"", with: "unit_id = \"123\""),
+            validSource.replacingOccurrences(of: "model_id = \"001122334455\"", with: "model_id = \"000000000000\""),
+            validSource.replacingOccurrences(of: "\nversion = 1\n", with: "\nversion = 2\n"),
+            validSource.replacingOccurrences(of: "connection = \"bolt\"", with: "connection = \"wifi\""),
+            validSource.replacingOccurrences(of: "connection = \"bolt\"", with: "connection = \"bolt\"\nunknown_field = true")
+        ]
+        for source in invalidSources {
+            XCTAssertThrowsError(try RegistryCodec.device(Data(source.utf8), reference: reference))
+        }
     }
 
     private func temporaryDirectory() throws -> URL {

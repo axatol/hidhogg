@@ -195,7 +195,11 @@ private func informationEventually(_ condition: @escaping @Sendable () async -> 
     #expect(await informationEventually { await h.recorder.last?.phase == .ready })
     let before = await h.recorder.last
     await h.controller.refreshDeviceInformation()
-    #expect(await informationEventually { await h.recorder.last?.deviceInformation.firmwareState == .available })
+    #expect(await informationEventually {
+        let status = await h.recorder.last
+        return status?.deviceInformation.firmwareState == .available &&
+            status?.deviceInformation.isRefreshing == false
+    })
     let after = await h.recorder.last
     #expect(after?.phase == before?.phase)
     #expect(after?.message == before?.message)

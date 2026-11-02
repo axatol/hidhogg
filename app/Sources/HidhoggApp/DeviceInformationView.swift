@@ -4,15 +4,25 @@ struct DeviceInformationView: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        let presentation = DeviceInformationPresentation(status: model.boltStatus)
+        let presentation = DeviceInformationPresentation(status: model.selectedMouseStatus, modelName: model.selectedMouseName)
         GroupBox("Device information") {
             let firmwareRows = presentation.firmwareRows
             let mainFirmwareRows = firmwareRows.filter(\.isPrimary)
             let additionalFirmwareRows = firmwareRows.filter { !$0.isPrimary }
             VStack(alignment: .leading, spacing: 12) {
-                if presentation.isConnected, model.boltStatus.deviceInformation.firmwareState == .available {
+                if let id = model.selectedMouseID, let registration = model.registration(id: id) {
+                    LabeledContent("Hardware association", value: registration.logitechAssociation == nil ? "Association required" : "Saved")
+                    if let connection = model.selectedMouseStatus.connection {
+                        LabeledContent("Connection", value: connection == .bolt ? "Bolt receiver" : "Bluetooth")
+                    }
+                    if presentation.isConnected {
+                        LabeledContent("Identity", value: model.selectedMouseStatus.verifiedIdentity == registration.logitechAssociation?.identity ? "Verified" : "Unavailable")
+                        LabeledContent("Capabilities", value: model.selectedMouseSupportsManagement ? "Buttons and supported wheel controls" : "Basic information; control writes unsupported")
+                    }
+                }
+                if presentation.isConnected, model.selectedMouseStatus.deviceInformation.firmwareState == .available {
                     if firmwareRows.isEmpty {
-                        LabeledContent("MX Master 3S firmware", value: "No firmware components reported")
+                        LabeledContent("\(model.selectedMouseName) firmware", value: "No firmware components reported")
                     }
                     ForEach(mainFirmwareRows) { row in
                         firmwareRow(row)
@@ -28,7 +38,7 @@ struct DeviceInformationView: View {
                         }
                     }
                 } else {
-                    LabeledContent("MX Master 3S firmware", value: presentation.firmwareStateText)
+                    LabeledContent("\(model.selectedMouseName) firmware", value: presentation.firmwareStateText)
                 }
 
                 Button("Refresh Device Information", systemImage: "arrow.clockwise") {

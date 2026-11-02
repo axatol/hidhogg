@@ -12,6 +12,7 @@ public final class NativeActionSender: NativeActionPerforming {
     private let playSound: (URL) throws -> Void
     private let bell: () -> Void
     private let stopSound: () -> Void
+    private static let lockScreenShortcut = KeyboardShortcut(keyCode: 12, modifiers: [.control, .command])
 
     public convenience init(shortcuts: ShortcutSender = ShortcutSender()) {
         let player = OwnedNativeSoundPlayer()
@@ -61,6 +62,7 @@ public final class NativeActionSender: NativeActionPerforming {
         case .openURL:
             guard let url = URL(string: action.target!), openTarget(url) else { throw NativeActionFailure.targetUnavailable }
         case .shortcut: try shortcuts.send(action.shortcut!)
+        case .lockScreen: try shortcuts.send(Self.lockScreenShortcut)
         case .deckNotification: throw NativeActionFailure.unsupported
         }
     }

@@ -35,8 +35,13 @@ struct WorkspaceView: View {
                         Text("No registered devices").foregroundStyle(.secondary)
                     }
                     Menu {
-                        ForEach(model.availableDeviceFamilies, id: \.self) { family in
-                            Button(family.title) { model.addDevice(family) }
+                        Button("Logitech Mouse…", systemImage: "computermouse") {
+                            model.presentLogitechSetup()
+                        }
+                        ForEach(model.availableDeviceFamilies.filter { !$0.isLogitechMouse }, id: \.self) { family in
+                            Button(family.title) {
+                                model.addDevice(family)
+                            }
                         }
                         Button("Paired Bluetooth Device…") {
                             isBluetoothPickerPresented = true
@@ -56,7 +61,7 @@ struct WorkspaceView: View {
                         .padding(.vertical, 4)
                     }
                     .disabled(!model.canEditConfiguration || model.registeredDevices.count >= 256)
-                    .help("Add a supported adapter or an existing paired Bluetooth device for monitoring.")
+                    .help("Add a Logitech mouse, supported adapter, or already-paired Bluetooth device for monitoring.")
                 }
                 Section("Workspace") {
                     ForEach([WorkspaceRoute.actions, .notifications, .tilePresets]) { route in
@@ -115,6 +120,7 @@ struct WorkspaceView: View {
                 presentationCoordinator: presentationCoordinator,
                 onClose: {
                     model.cancelRecording()
+                    model.dismissLogitechSetup()
                     inspectorContentID = UUID()
                 }
             )
@@ -184,7 +190,8 @@ struct WorkspaceView: View {
                                    description: Text("Add a supported device from the sidebar to configure it."))
         } else {
             switch model.navigation.current.route {
-            case .devices: DevicesView(isInspectorPresented: $isDevicesInspectorPresented)
+            case .devices, .mouse: DevicesView(isInspectorPresented: $isDevicesInspectorPresented)
+            case .logitechSetup: LogitechSetupView()
             case .d200x: D200XDeviceView(model: model.d200x, isInspectorPresented: $isD200XInspectorPresented)
             case .flowLite: FlowLite84DeviceView(model: model.flowLite)
             case .genericBluetooth(let id): GenericBluetoothDeviceView(model: model.bluetooth, registrationID: id)
@@ -202,22 +209,22 @@ struct WorkspaceView: View {
         case .d200x: D200XSidebarLabel(model: model.d200x, registration: registration)
         case .flowLite84: FlowLite84SidebarLabel(model: model.flowLite, registration: registration)
         case .genericBluetooth: GenericBluetoothSidebarLabel(model: model.bluetooth, registration: registration)
-        case .mxMaster3S:
+        case .mxMaster3S, .mxMaster4:
             Label {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(registration.displayName)
                     HStack(spacing: 9) {
                         HStack(spacing: 4) {
                             Circle()
-                                .fill(registration.isEnabled ? Color(nsColor: model.connectionColor) : .secondary)
+                                .fill(registration.isEnabled ? Color(nsColor: model.mouseConnectionColor(for: registration.id)) : .secondary)
                                 .frame(width: 7, height: 7)
                                 .accessibilityHidden(true)
-                            Text(registration.isEnabled ? model.connectionTitle : "Disabled")
+                            Text(registration.isEnabled ? model.mouseConnectionTitle(for: registration.id) : "Disabled")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
-                        if registration.isEnabled { sidebarBatteryLabel }
+                        if registration.isEnabled && model.presentedMouseOwnerID == registration.id { sidebarBatteryLabel }
                     }
                 }
             } icon: {
@@ -235,11 +242,11 @@ struct WorkspaceView: View {
     private var isInspectorPresentedForCurrentRoute: Bool {
         if currentDeviceMissing { return false }
         return switch model.navigation.current.route {
-        case .devices:
+        case .devices, .mouse:
             isDevicesInspectorPresented
         case .d200x:
             isD200XInspectorPresented
-        case .flowLite, .genericBluetooth, .actions, .notifications, .tilePresets, .settings:
+        case .logitechSetup, .flowLite, .genericBluetooth, .actions, .notifications, .tilePresets, .settings:
             false
         }
     }
@@ -247,6 +254,7 @@ struct WorkspaceView: View {
     private var currentFamily: DeviceFamily? {
         switch model.navigation.current.route {
         case .devices: .mxMaster3S
+        case .mouse(let id): model.registration(id: id)?.family
         case .d200x: .d200x
         case .flowLite: .flowLite84
         default: nil
@@ -255,17 +263,19 @@ struct WorkspaceView: View {
 
     private var currentRegistration: RegisteredDevice? {
         if case .genericBluetooth(let id) = model.navigation.current.route { return model.registration(id: id) }
+        if case .mouse(let id) = model.navigation.current.route { return model.registration(id: id) }
         return currentFamily.flatMap { model.registration(for: $0) }
     }
 
     private var currentDeviceMissing: Bool {
         if case .genericBluetooth = model.navigation.current.route { return currentRegistration == nil }
+        if case .devices = model.navigation.current.route, model.needsMouseEndpointSelection { return false }
         return currentFamily != nil && currentRegistration == nil
     }
 
     private var sidebarBatteryLabel: some View {
-        let information = DeviceInformationPresentation(status: model.boltStatus)
-        let deviceInformation = model.boltStatus.deviceInformation
+        let information = DeviceInformationPresentation(status: model.selectedMouseStatus)
+        let deviceInformation = model.selectedMouseStatus.deviceInformation
         let percentage = information.isConnected && deviceInformation.batteryState == .available
             ? deviceInformation.battery?.percentage
             : nil
@@ -302,11 +312,12 @@ struct WorkspaceView: View {
 fileprivate extension WorkspaceRoute {
     var title: String {
         switch self {
-        case .devices: "Devices"
+        case .devices, .mouse: "Devices"
+        case .logitechSetup: "Logitech Setup"
         case .d200x: "Ulanzi D200X"
         case .flowLite: "Lofree Flow Lite84"
         case .genericBluetooth: "Bluetooth Device"
-        case .actions: "Actions"
+        case .actions: "Scripts"
         case .notifications: "Notifications"
         case .tilePresets: "Tile Presets"
         case .settings: "Settings"
@@ -315,11 +326,12 @@ fileprivate extension WorkspaceRoute {
 
     var symbol: String {
         switch self {
-        case .devices: "rectangle.connected.to.line.below"
+        case .devices, .mouse: "rectangle.connected.to.line.below"
+        case .logitechSetup: "computermouse"
         case .d200x: "square.grid.3x3"
         case .flowLite: "keyboard"
         case .genericBluetooth: "antenna.radiowaves.left.and.right"
-        case .actions: "bolt.fill"
+        case .actions: "terminal"
         case .notifications: "bell.badge"
         case .tilePresets: "square.grid.2x2"
         case .settings: "gearshape"

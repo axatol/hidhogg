@@ -1,8 +1,51 @@
 # Roadmap
 
+Check-in readiness (2 November 2026): owner confirms the signed MX4 discovery correction works, with current behavior as expected. No blocker found in accumulated D200X presets/scripts/Lock Screen and Logitech association/pairing/receiver-management source. Nonblocking follow-ups remain padding, notification icons, discovery ACK ordering and numeric error/admission evidence; new Bluetooth pairing remains planned.
+
+BOLT-KIND-01 offline verified and signed (2 November 2026): one-line low-nibble device-kind normalization; five independent MX4 tests RED→GREEN, focused304/full1,037 pass. Owner confirms discovery/current flow works on the signed build; actual prior wire value remains unknown. [Evidence/checklist](logitech-discovery-regression-2026-11-02.md).
+
+Pairing recovery offline verified and signed (2 November 2026): stable repeated-advertisement candidates, receiver-driven challenge highlighting and fresh-inventory retry recovery. Focused 299/full 1,032 pass on the final runs; initial thumbwheel-only full failure is preserved with cause unconfirmed. Real pairing remains owner acceptance. [Scope/checklist](logitech-pairing-recovery-plan.md).
+
+Deferred UI polish (2 November 2026): owner reports missing internal padding on several surfaces, including connection cards and Devices rows/groups in the latest Logitech setup screenshots. Audit consistent card/group/row insets later; no padding changes in the pairing diagnosis slice.
+
+
+Notification setup/unified device list implemented, verified and signed (2 November 2026): approved verified temporary notification bits and last-read display retention; owner then requested one Devices list for stored, paired and discovered entries. One Devices list retains last-read rows while stale mutation authority is revoked; verified temporary notification setup precedes discovery, with guarded cleanup. Full1,011 tests pass, strict signatures/help and318 input hashes match. New Bluetooth discovery/pairing remains next; real discovery/cleanup still needs owner verification. [Plan/checklist](logitech-notification-discovery-plan.md).
+
+Native receiver-boundary diagnostics implemented, verified and signed (2 November 2026): approved read-only flag query returned `0x000000`; anonymous callback/filter counters are now available. Full990 offline cases pass and315 input hashes match the signed build; an initial thumbwheel recorder assertion failed once and passed in subsequent full/isolated/focused checks. Additional research corroborates discovery framing but does not establish a discovery-specific flag requirement. No notification flags are being changed. [Evidence/scope](logitech-discovery-ui-followup.md).
+
+Logitech discovery UI follow-up implemented, offline verified and signed (2 November 2026): first-click disclosure state, phase-correct loading and anonymous typed-event counters. Full981 cases and signed app/CLI verification pass. Physical discovery timeout remains unconfirmed; native first-click/resizing and next-attempt counters await owner checks. No notification-flag writes were added. [Scope/checklist](logitech-discovery-ui-followup.md).
+
+LC-07 receiver management implemented, offline verified and signed (1 November 2026): approved expandable stored-pairing inventory and explicit selected-slot Unpair with confirmation, stale-target checks and post-operation inventory verification. Hidhogg settings remain separate. Full978 offline cases, strict signatures and311 input hashes pass. The full receiver blocks MX Master 4 pairing acceptance until the owner explicitly removes an old bond; real unpairing remains owner-operated. [Scope/checklist](logitech-receiver-management-plan.md).
+
+Deferred owner-reported issue (1 November 2026): the macOS low-battery notification shows a generic placeholder instead of the Hidhogg app icon or an appropriate device icon. Investigate notification attribution/icon rendering later; no fix or acceptance claim yet. Proposed next receiver slice: show all stored pairings, including offline devices, and provide explicit per-slot Unpair with confirmation and refreshed inventory verification. Removing a Hidhogg registration remains distinct from deleting a receiver bond; implementation was approved and is tracked in LC-07 above.
+
+
+Pairing follow-up delivered (1 November 2026): existing mice remain visible through a new-pairing attempt/failure. Approved anonymous read-only checks found six returned pairing records, five offline, on the attached receiver; the capacity error now explains that offline stored pairings occupy slots. Full958 offline cases and signed app/CLI verification pass. Uncertain outcomes require Refresh before selection or retry. No pairing/unpairing writes were performed. [Evidence](logitech-compact-setup-plan.md#pairing-follow-up--1-november-2026).
+
+
+Compact Logitech setup implemented, offline verified and signed (1 November 2026): one centre-pane connection view shows existing Bolt/Bluetooth mice and new connection options immediately after choosing Logitech. Inline Bolt pairing saves then opens the device. Full gate passes 955 cases with two existing suite exclusions; native UI/hardware acceptance remains open. New Bluetooth pairing remains unavailable. [Scope/checklist](logitech-compact-setup-plan.md).
+
+LC-04 implemented, offline verified and signed (1 November 2026), ahead of LC-03 Bluetooth pairing: receiver-selected Bolt pairing plus the existing chooser correction. Full gate passes 940 checks with two documented existing suite exclusions. Hardware pairing, allocation/empty-slot assumptions and input continuity remain owner checks. [Plan/checklist](logitech-bolt-pairing-plan.md).
+
+LC-02 implemented, offline verified and signed (1 November 2026): explicit existing-device association, persisted identity/reconnection and basic read-only MX Master 4 support. Full gate passes 908 checks with two documented existing suite exclusions. Owner subsequently confirmed chooser visibility after the LC-04 SDK enum correction; association/reconnect and new pairing acceptance remain open. [Scope/checklist](logitech-lc02-plan.md).
+
+Post-LC01 receiver ambiguity warning and vertical direction mapping are offline verified and signed (1 November 2026); owner confirmed direction works while connected. LC-02 adds guarded saved-target uncertain-cleanup recovery; the older legacy fake suite remains excluded. [Evidence](logitech-direction-ambiguity-fix.md).
+
+LC-01 implemented, offline verified and signed (1 November 2026): UUID-scoped mouse editing and runtime ownership, preserving existing storage. LC-02 adds explicit endpoint selection; one active managed Logitech backend remains the boundary. [Scope/checklist](logitech-lc01-plan.md).
+
+Historical planning checkpoint before LC-01/02/04: MX Master 3S/4, existing connections and new pairings were requested; current implementation status is recorded above. [Proposed slices and evidence](logitech-connectivity-pairing-plan.md).
+
+Scripts-page simplification is implemented, signed and offline verified (1 November 2026): executable scripts only, New Script button, retained history; built-in actions remain in Tile Presets. [Scope](scripts-page-plan.md).
+
 Updated 1 November 2026. TaskView Personal / HIDhogg project 5 owns stable task IDs, dependencies and completion status. This file is the concise implementation/acceptance index. [Earlier dated checkpoints](roadmap-history-2026-10-26.md) are historical evidence.
 
 ## Current checkpoint
+
+DX-PRESET-01 implemented and signed, 1 November 2026: complete Tile Presets bundle appearance and behavior, include all 16 supported-action defaults with icons, configure actions inline, apply copies within the edited profile, and preserve manual controls. Paired dial rotation presets preserve press; press/front controls reuse action-only tile presets. Focused68/full862 offline cases pass and source/build manifests match. Native usability and physical effects remain owner checks; source remains uncommitted with Lock Screen. [Contracts/evidence](d200x-preset-assignment-plan.md).
+
+DX-LOCK-01 implemented and signed, 1 November 2026: parameter-free Lock Screen action uses the existing Control–Command–Q shortcut path, with normal action selection/preset support. Twenty-seven fake-only tests pass; actual Mac lock behavior remains an owner check. Brightness, pages and multi-actions are not part of this slice. [Implementation and evidence](d200x-lock-screen-plan.md).
+
+1 November 2026 D200X steering: pages/folders remain out of scope; review individual Studio actions before multi-actions. Brightness controls and Lock Screen are the requested candidates. [Action catalog and target distinctions](d200x-action-catalog-review-2026-11-01.md). D200X versus Mac display brightness still needs clarification; no action-extension feature code has started.
 
 1 November 2026: owner accepts the Bluetooth/menu/count checkpoint and requests local check-in. The threshold now saves valid typing after 200 ms; Return/focus loss remain immediate. Consolidated 822 offline tests plus final UI-only targeted/probe checks pass. Immediate next focus is D200X feature parity: [fresh review and proposed multi-action slice](d200x-next-parity-review-2026-11-01.md). No new D200X feature implementation is approved by that proposal; Logitech Bluetooth work remains queued.
 

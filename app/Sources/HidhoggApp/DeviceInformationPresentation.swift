@@ -12,6 +12,7 @@ struct DeviceInformationPresentation {
     }
 
     let status: BoltStatus
+    var modelName: String = "MX Master 3S"
 
     var batteryText: String {
         guard isConnected else { return "Unavailable" }
@@ -61,7 +62,7 @@ struct DeviceInformationPresentation {
 
             switch componentType {
             case 0:
-                label = "MX Master 3S firmware"
+                label = "\(modelName) firmware"
                 caption = prefixCaption
                 isPrimary = true
             case 1:

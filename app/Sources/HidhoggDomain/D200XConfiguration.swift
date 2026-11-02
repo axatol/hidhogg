@@ -170,6 +170,7 @@ public struct D200XConfiguration: Codable, Equatable, Sendable {
     public var applicationTiles: [String: [String: D200XTileAppearance]]
     public var applicationNotificationTopics: [String: [String: [String]]]
     public var tilePresets: [String: D200XTilePreset]
+    public var dialRotationPresets: [String: D200XDialRotationPreset]
 
     public init(
         defaults: [String: D200XBinding] = [:],
@@ -183,7 +184,8 @@ public struct D200XConfiguration: Codable, Equatable, Sendable {
         tilePresets: [String: D200XTilePreset] = [:],
         nativeActions: [String: NativeAction] = [:],
         wideDisplayMode: D200XWideDisplayMode = .custom,
-        clockFormat: D200XClockFormat = .twentyFourHour
+        clockFormat: D200XClockFormat = .twentyFourHour,
+        dialRotationPresets: [String: D200XDialRotationPreset] = [:]
     ) {
         self.defaults = defaults
         self.applications = applications
@@ -197,6 +199,28 @@ public struct D200XConfiguration: Codable, Equatable, Sendable {
         self.applicationTiles = applicationTiles
         self.applicationNotificationTopics = applicationNotificationTopics
         self.tilePresets = tilePresets
+        self.dialRotationPresets = dialRotationPresets
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case defaults, applications, tiles, brightnessPercent, wideDisplayMode, clockFormat, actions, nativeActions, notificationTopics, applicationTiles, applicationNotificationTopics, tilePresets, dialRotationPresets
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        defaults = try container.decode([String: D200XBinding].self, forKey: .defaults)
+        applications = try container.decode([String: [String: D200XBinding]].self, forKey: .applications)
+        tiles = try container.decode([String: D200XTileAppearance].self, forKey: .tiles)
+        brightnessPercent = try container.decodeIfPresent(Int.self, forKey: .brightnessPercent)
+        wideDisplayMode = try container.decode(D200XWideDisplayMode.self, forKey: .wideDisplayMode)
+        clockFormat = try container.decode(D200XClockFormat.self, forKey: .clockFormat)
+        actions = try container.decode([String: ConfiguredExecutable].self, forKey: .actions)
+        nativeActions = try container.decode([String: NativeAction].self, forKey: .nativeActions)
+        notificationTopics = try container.decode([String: [String]].self, forKey: .notificationTopics)
+        applicationTiles = try container.decode([String: [String: D200XTileAppearance]].self, forKey: .applicationTiles)
+        applicationNotificationTopics = try container.decode([String: [String: [String]]].self, forKey: .applicationNotificationTopics)
+        tilePresets = try container.decode([String: D200XTilePreset].self, forKey: .tilePresets)
+        dialRotationPresets = try container.decodeIfPresent([String: D200XDialRotationPreset].self, forKey: .dialRotationPresets) ?? [:]
     }
 
     public static let empty = Self()
@@ -240,6 +264,7 @@ public struct D200XConfiguration: Codable, Equatable, Sendable {
         result.applicationTiles = [:]
         result.applicationNotificationTopics = [:]
         result.tilePresets = [:]
+        result.dialRotationPresets = [:]
         return result
     }
 
@@ -291,10 +316,13 @@ public struct D200XConfiguration: Codable, Equatable, Sendable {
                       topics.count <= 16 && Set(topics).count == topics.count && topics.allSatisfy(NotificationTopic.isValidFilter)
                   }
               }), tilePresets.count <= 128,
-              tilePresets.keys.allSatisfy(ConfiguredExecutable.isValidIdentifier) else {
+              tilePresets.keys.allSatisfy(ConfiguredExecutable.isValidIdentifier),
+              dialRotationPresets.count <= 128,
+              dialRotationPresets.keys.allSatisfy(ConfiguredExecutable.isValidIdentifier) else {
             throw ConfigurationValidationError.invalidD200XAppearance
         }
         for preset in tilePresets.values { _ = try preset.validated() }
+        for preset in dialRotationPresets.values { _ = try preset.validated() }
 
         return self
     }

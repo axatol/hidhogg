@@ -4,6 +4,7 @@ public struct NativeAction: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, CaseIterable, Sendable {
         case media, volume, bell, playSound = "play_sound", openApplication = "open_application"
         case openFile = "open_file", openURL = "open_url", deckNotification = "deck_notification", shortcut
+        case lockScreen = "lock_screen"
     }
     public enum Media: String, Codable, CaseIterable, Sendable { case playPause = "play_pause", nextTrack = "next_track", previousTrack = "previous_track" }
     public enum Volume: String, Codable, CaseIterable, Sendable { case up, down, mute, set }
@@ -64,6 +65,7 @@ public struct NativeAction: Codable, Equatable, Sendable {
                 && (ttlSeconds.map { (1...86_400).contains($0) } ?? true)
         case .shortcut:
             valid = fields == ["shortcut"] && shortcut.map { ConfigurationValueValidation.isValid(binding: .key($0)) } == true
+        case .lockScreen: valid = fields.isEmpty
         }
         guard valid else { throw ConfigurationValidationError.invalidD200XAction }
         return self
@@ -120,6 +122,7 @@ public struct NativeAction: Codable, Equatable, Sendable {
         case .playSound, .openFile, .openApplication, .openURL: allowed = ["kind", "target"]
         case .deckNotification: allowed = ["kind", "topic", "text", "appID", "ttlSeconds"]
         case .shortcut: allowed = ["kind", "shortcut"]
+        case .lockScreen: allowed = ["kind"]
         }
         let fields = try decoder.container(keyedBy: FieldKey.self)
         guard Set(fields.allKeys.map(\.stringValue)).isSubset(of: allowed) else { throw ConfigurationValidationError.invalidD200XAction }

@@ -8,6 +8,35 @@ import MacOSActions
 
 @MainActor
 final class ThumbwheelModelTests: XCTestCase {
+    func testReconnectedThumbwheelUsesIndependentGenerationAndRejectsPreviousLeaseTime() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = ThumbwheelModelSession()
+        var posts = [PostedLines]()
+        let model = makeModel(root, session,
+                              scrollSender: ScrollSender(preflight: { true }, post: { _, _ in }),
+                              thumbwheelSender: ScrollSender(preflight: { true }, post: {
+                                  posts.append(.init(vertical: $0, horizontal: $1))
+                              }))
+        model.setThumbwheelScrollAmount(1)
+        model.connect()
+        await expectEventually { session.thumbwheelCaptureActive }
+        let previousLeaseTime = ContinuousClock.now
+        model.disconnect()
+        await expectEventually { model.boltStatus.phase == .idle }
+        model.connect()
+        await expectEventually { session.thumbwheelCaptureActive }
+        XCTAssertGreaterThan(model.boltStatus.generation, 40)
+        session.emitThumbwheel(rotation: 1, state: 0, observedAt: previousLeaseTime)
+        try? await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(session.thumbwheelAttemptCount, 0)
+        XCTAssertTrue(posts.isEmpty)
+        session.emitThumbwheel(rotation: 1, state: 0, observedAt: .now)
+        await expectEventually { posts == [.init(vertical: 0, horizontal: 1)] }
+        model.disconnect()
+        await expectEventually { !session.thumbwheelCaptureActive }
+    }
+
     func testThumbwheelAndVerticalFractionsRemainIndependentAcrossZeroStop() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -252,6 +281,7 @@ private final class ThumbwheelModelSession: BindingSession, @unchecked Sendable 
     private var thumbwheelActive = false
     private var wheelGeneration: UInt64 = 0
     private var thumbwheelGeneration: UInt64 = 0
+    private var statusGeneration: UInt64 = 0
     private var lastWheelEventAt: ContinuousClock.Instant?
     private var lastThumbwheelEventAt: ContinuousClock.Instant?
     private var wheelAdmissions = 0
@@ -275,7 +305,10 @@ private final class ThumbwheelModelSession: BindingSession, @unchecked Sendable 
     var admittedThumbwheelCount: Int { lock.withLock { thumbwheelAdmissions } }
     var thumbwheelAttemptCount: Int { lock.withLock { thumbwheelAdmissionAttempts } }
 
-    func discover() async { publish(.ready) }
+    func discover() async {
+        lock.withLock { statusGeneration &+= 40 }
+        publish(.ready)
+    }
     func enable() async { publish(.enabled) }
     func disable() async { publish(.ready) }
 
@@ -285,6 +318,7 @@ private final class ThumbwheelModelSession: BindingSession, @unchecked Sendable 
             thumbwheelActive = false
             wheelGeneration &+= 1
             thumbwheelGeneration &+= 1
+            statusGeneration &+= 40
         }
         publish(.idle)
     }
@@ -381,7 +415,7 @@ private final class ThumbwheelModelSession: BindingSession, @unchecked Sendable 
                 effectiveInverted: thumbwheelRequest?.inverted ?? false
             )
             return BoltStatus(phase: phase, message: "Fixture", availableControls: Set(MouseControl.allCases),
-                              generation: 1, cleanupUncertain: false, wheel: wheel, thumbwheel: thumbwheel)
+                              generation: statusGeneration, cleanupUncertain: false, wheel: wheel, thumbwheel: thumbwheel)
         }
         continuation.yield(.status(status))
     }

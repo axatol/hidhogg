@@ -5,7 +5,10 @@ struct DeviceInspectorView: View {
 
     var body: some View {
         Group {
-            if model.selectedTarget.control != nil {
+            if !model.selectedMouseSupportsManagement {
+                ContentUnavailableView("Controls unsupported", systemImage: "computermouse",
+                                       description: Text("Basic device information is available in the device workspace."))
+            } else if model.selectedTarget.control != nil {
                 ControlBindingInspector(control: model.selectedControl)
             } else {
                 WheelSettingsInspector(target: model.selectedTarget)

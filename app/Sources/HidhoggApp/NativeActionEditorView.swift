@@ -58,6 +58,8 @@ struct NativeActionEditorView: View {
             "Use a concrete topic and provide valid one-line text or an application bundle ID."
         case .shortcut:
             "Choose a valid keyboard shortcut."
+        case .lockScreen:
+            "Lock Screen does not accept parameters."
         }
     }
 
@@ -220,6 +222,13 @@ struct NativeActionEditorView: View {
                 Text("Plays the system alert sound when this action is assigned and invoked.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .padding(.vertical, 4)
+            }
+        case .lockScreen:
+            GroupBox("Lock Screen") {
+                Label("Locks this Mac with Control–Command–Q when invoked.", systemImage: "lock")
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.vertical, 4)
             }
         case .playSound, .openApplication, .openFile:
@@ -385,6 +394,7 @@ struct NativeActionEditorView: View {
         case .openURL: "Open URL"
         case .deckNotification: "Deck Notification"
         case .shortcut: "Keyboard Shortcut"
+        case .lockScreen: "Lock Screen"
         }
     }
 }

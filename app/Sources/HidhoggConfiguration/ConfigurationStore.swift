@@ -73,7 +73,10 @@ public actor ConfigurationStore {
             return try RegistryCodec.device(payload, reference: reference)
         }
         let workspace: WorkspaceConfiguration
-        do { workspace = try WorkspaceConfiguration(connectOnLaunch: manifest.connectOnLaunch, devices: devices).validated() }
+        do {
+            workspace = try WorkspaceConfiguration(connectOnLaunch: manifest.connectOnLaunch, devices: devices,
+                                                   preferredMouseID: manifest.preferredMouseID).validated()
+        }
         catch { throw ConfigurationError.invalidConfiguration(error.localizedDescription) }
         return (ConfigurationSnapshot(workspace: workspace, revision: FileRevision(contents: data, references: references)), data)
     }
@@ -104,7 +107,8 @@ public actor ConfigurationStore {
                 payloads[reference.relativePath] = data
                 return reference
             }
-            let data = try RegistryCodec.encode(RegistryManifest(connectOnLaunch: validated.connectOnLaunch, devices: references))
+            let data = try RegistryCodec.encode(RegistryManifest(connectOnLaunch: validated.connectOnLaunch,
+                devices: references, preferredMouseID: validated.preferredMouseID))
             try beforeRegistryPublication?()
             try requireRevision(expectedRevision)
             _ = try ConfigurationFileSystem.replace(data, at: url, expecting: FileRevision(contents: current.root)) {
